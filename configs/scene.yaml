@@ -14,14 +14,6 @@ env:
   ignore_done: false
   camera_name: frontview
 
-objects:
-  cubeA:
-    color_name: red
-    rgba: [1.0, 0.0, 0.0, 1.0]
-  cubeB:
-    color_name: green
-    rgba: [0.0, 1.0, 0.0, 1.0]
-
 run:
   seed: 7
   num_rollouts: 1
@@ -31,7 +23,7 @@ run:
   rollout_log_path: artifacts/logs/stack_rollouts.parquet
 
 policy:
-  name: scripted_pick
+  backend: scripted_pick
   target_object: cubeA
   approach_height: 0.10
   grasp_offset: 0.01
@@ -43,4 +35,4 @@ policy:
     approach: 40
     descend: 35
     close: 25
-    lift: 40
+    lift: 0

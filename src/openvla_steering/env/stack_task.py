@@ -16,25 +16,6 @@ from openvla_steering.utils.seeding import set_global_seed
 
 
 @dataclass(slots=True)
-class ScriptedPickPolicyConfig:
-    target_object: str = "cubeA"
-    approach_height: float = 0.10
-    grasp_offset: float = 0.01
-    lift_height: float = 0.18
-    position_gain: float = 8.0
-    open_gripper: float = -1.0
-    close_gripper: float = 1.0
-    approach_steps: int = 40
-    descend_steps: int = 35
-    close_steps: int = 25
-    lift_steps: int = 40
-
-    @property
-    def total_steps(self) -> int:
-        return self.approach_steps + self.descend_steps + self.close_steps + self.lift_steps
-
-
-@dataclass(slots=True)
 class ObjectMetadata:
     object_id: str
     color_name: str
@@ -42,26 +23,12 @@ class ObjectMetadata:
 
 
 @dataclass(slots=True)
-class StackTaskMetadata:
-    cubeA: ObjectMetadata
-    cubeB: ObjectMetadata
-
-    def object_ids(self) -> tuple[str, str]:
-        return self.cubeA.object_id, self.cubeB.object_id
-
-    def color_map(self) -> dict[str, str]:
-        return {
-            self.cubeA.object_id: self.cubeA.color_name,
-            self.cubeB.object_id: self.cubeB.color_name,
-        }
-
-
-@dataclass(slots=True)
 class RolloutSummary:
     rollout_id: str
     seed: int
-    target_object: str
-    target_color_name: str
+    policy_id: str
+    target_object: str | None
+    target_color_name: str | None
     selected_object: str | None
     selected_color_name: str | None
     success: bool
@@ -85,11 +52,14 @@ class RolloutSummary:
 class StackTaskEnv:
     """Small experiment wrapper around robosuite's built-in Stack task."""
 
-    def __init__(self, env_config: RobosuiteEnvConfig, task_metadata: StackTaskMetadata):
+    def __init__(self, env_config: RobosuiteEnvConfig):
         self.env_config = env_config
-        self.task_metadata = task_metadata
         self._env: Any | None = None
         self._current_seed: int | None = None
+        self._object_metadata = {
+            "cubeA": ObjectMetadata(object_id="cubeA", color_name="red", rgba=[1.0, 0.0, 0.0, 1.0]),
+            "cubeB": ObjectMetadata(object_id="cubeB", color_name="green", rgba=[0.0, 1.0, 0.0, 1.0]),
+        }
 
     @property
     def env(self) -> Any:
@@ -118,12 +88,12 @@ class StackTaskEnv:
         return {
             "env_name": self.env.__class__.__name__,
             "seed": self._current_seed,
-            "cubeA_object_id": self.task_metadata.cubeA.object_id,
-            "cubeA_color_name": self.task_metadata.cubeA.color_name,
-            "cubeA_rgba": self.task_metadata.cubeA.rgba,
-            "cubeB_object_id": self.task_metadata.cubeB.object_id,
-            "cubeB_color_name": self.task_metadata.cubeB.color_name,
-            "cubeB_rgba": self.task_metadata.cubeB.rgba,
+            "cubeA_object_id": self._object_metadata["cubeA"].object_id,
+            "cubeA_color_name": self._object_metadata["cubeA"].color_name,
+            "cubeA_rgba": self._object_metadata["cubeA"].rgba,
+            "cubeB_object_id": self._object_metadata["cubeB"].object_id,
+            "cubeB_color_name": self._object_metadata["cubeB"].color_name,
+            "cubeB_rgba": self._object_metadata["cubeB"].rgba,
             "cubeA_pos": obs["cubeA_pos"].round(6).tolist(),
             "cubeB_pos": obs["cubeB_pos"].round(6).tolist(),
             "robot0_eef_pos": obs["robot0_eef_pos"].round(6).tolist(),
@@ -137,42 +107,6 @@ class StackTaskEnv:
             depth=False,
         )
         return np.flipud(frame)
-
-    def _scripted_action(
-        self, obs: dict[str, np.ndarray], policy: ScriptedPickPolicyConfig, step: int
-    ) -> tuple[np.ndarray, str]:
-        if policy.target_object not in {"cubeA", "cubeB"}:
-            raise ValueError(f"Unsupported scripted target object: {policy.target_object}")
-
-        target_pos = np.array(obs[f"{policy.target_object}_pos"])
-        eef_pos = np.array(obs["robot0_eef_pos"])
-        action = np.zeros(self.env.action_dim, dtype=np.float64)
-
-        approach_end = policy.approach_steps
-        descend_end = approach_end + policy.descend_steps
-        close_end = descend_end + policy.close_steps
-
-        if step < approach_end:
-            desired = target_pos + np.array([0.0, 0.0, policy.approach_height])
-            grip = policy.open_gripper
-            phase = "approach"
-        elif step < descend_end:
-            desired = target_pos + np.array([0.0, 0.0, policy.grasp_offset])
-            grip = policy.open_gripper
-            phase = "descend"
-        elif step < close_end:
-            desired = target_pos + np.array([0.0, 0.0, policy.grasp_offset])
-            grip = policy.close_gripper
-            phase = "close"
-        else:
-            desired = target_pos + np.array([0.0, 0.0, policy.lift_height])
-            grip = policy.close_gripper
-            phase = "lift"
-
-        delta = (desired - eef_pos) * policy.position_gain
-        action[:3] = np.clip(delta, -1.0, 1.0)
-        action[-1] = grip
-        return action, phase
 
     def infer_selected_object(
         self,
@@ -188,10 +122,17 @@ class StackTaskEnv:
             return None, cubeA_gain, cubeB_gain
         return best_name, cubeA_gain, cubeB_gain
 
-    def run_scripted_pick(
+    def color_name_for(self, object_id: str | None) -> str | None:
+        if object_id is None:
+            return None
+        metadata = self._object_metadata.get(object_id)
+        return metadata.color_name if metadata is not None else None
+
+    def run_policy_rollout(
         self,
         seed: int,
-        policy: ScriptedPickPolicyConfig,
+        policy: Any,
+        num_steps: int,
         save_video: bool = False,
         video_path: str | None = None,
         camera_name: str = "frontview",
@@ -202,6 +143,9 @@ class StackTaskEnv:
             "cubeA_pos": np.array(initial_obs["cubeA_pos"]),
             "cubeB_pos": np.array(initial_obs["cubeB_pos"]),
         }
+
+        if hasattr(policy, "reset"):
+            policy.reset(initial_obs=initial_obs, scene_metadata=self.scene_metadata())
 
         frames: list[np.ndarray] = []
         debug_lines: list[str] = [
@@ -216,8 +160,9 @@ class StackTaskEnv:
         done = False
         executed_steps = 0
 
-        for step in range(policy.total_steps):
-            action, phase = self._scripted_action(obs, policy, step)
+        for step in range(num_steps):
+            action, info = policy.act(obs=obs, step=step)
+            phase = info.get("phase", "policy")
             obs, reward, done, _ = self.env.step(action)
             final_reward = float(reward)
             max_reward = max(max_reward, final_reward)
@@ -227,19 +172,23 @@ class StackTaskEnv:
                 frames.append(self.render_frame(camera_name=camera_name))
 
             if step % log_every == 0:
-                target_dist = float(
-                    np.linalg.norm(np.array(obs["robot0_eef_pos"]) - np.array(obs[f"{policy.target_object}_pos"]))
-                )
+                target_object = getattr(policy, "target_object", None)
+                target_dist = None
+                if target_object in {"cubeA", "cubeB"}:
+                    target_dist = float(
+                        np.linalg.norm(np.array(obs["robot0_eef_pos"]) - np.array(obs[f"{target_object}_pos"]))
+                    )
                 debug_lines.append(
-                    f"step={step} phase={phase} reward={reward:.4f} done={done} target_dist={target_dist:.6f}"
+                    f"step={step} phase={phase} reward={reward:.4f} done={done} "
+                    f"target_dist={target_dist if target_dist is not None else 'n/a'}"
                 )
             if done:
                 debug_lines.append(f"Episode ended early at step {step}")
                 break
 
         selected_object, cubeA_gain, cubeB_gain = self.infer_selected_object(initial_obs, obs)
-        success = selected_object == policy.target_object
-        color_map = self.task_metadata.color_map()
+        target_object = getattr(policy, "target_object", None)
+        success = selected_object == target_object if target_object is not None else selected_object is not None
 
         saved_video_path: str | None = None
         if save_video and frames and video_path is not None:
@@ -251,10 +200,11 @@ class StackTaskEnv:
         summary = RolloutSummary(
             rollout_id=uuid4().hex[:12],
             seed=seed,
-            target_object=policy.target_object,
-            target_color_name=color_map[policy.target_object],
+            policy_id=getattr(policy, "policy_id", policy.__class__.__name__),
+            target_object=target_object,
+            target_color_name=self.color_name_for(target_object),
             selected_object=selected_object,
-            selected_color_name=color_map[selected_object] if selected_object is not None else None,
+            selected_color_name=self.color_name_for(selected_object),
             success=success,
             initial_cubeA_pos=initial_snapshot["cubeA_pos"].round(6).tolist(),
             initial_cubeB_pos=initial_snapshot["cubeB_pos"].round(6).tolist(),
@@ -272,5 +222,6 @@ class StackTaskEnv:
         return summary, debug_lines
 
 
-def default_video_path(root: str | Path, seed: int, target_object: str) -> str:
-    return str(Path(root) / f"seed_{seed:04d}_{target_object}.mp4")
+def default_video_path(root: str | Path, seed: int, target_object: str | None, policy_id: str) -> str:
+    target_suffix = target_object if target_object is not None else policy_id
+    return str(Path(root) / f"seed_{seed:04d}_{target_suffix}.mp4")

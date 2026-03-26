@@ -5,13 +5,8 @@ from pathlib import Path
 import hydra
 from omegaconf import DictConfig
 
-from openvla_steering.env import (
-    ObjectMetadata,
-    RobosuiteEnvConfig,
-    ScriptedPickPolicyConfig,
-    StackTaskMetadata,
-    StackTaskEnv,
-)
+from openvla_steering.env import RobosuiteEnvConfig, StackTaskEnv
+from openvla_steering.model import ScriptedPickPolicy, ScriptedPickPolicyConfig
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="scene")
@@ -29,21 +24,10 @@ def main(cfg: DictConfig) -> None:
             hard_reset=bool(cfg.env.hard_reset),
             ignore_done=bool(cfg.env.ignore_done),
             camera_name=str(cfg.env.camera_name),
-        ),
-        StackTaskMetadata(
-            cubeA=ObjectMetadata(
-                object_id="cubeA",
-                color_name=str(cfg.objects.cubeA.color_name),
-                rgba=[float(value) for value in cfg.objects.cubeA.rgba],
-            ),
-            cubeB=ObjectMetadata(
-                object_id="cubeB",
-                color_name=str(cfg.objects.cubeB.color_name),
-                rgba=[float(value) for value in cfg.objects.cubeB.rgba],
-            ),
-        ),
+        )
     )
-    policy = ScriptedPickPolicyConfig(
+    policy = ScriptedPickPolicy(
+        ScriptedPickPolicyConfig(
         target_object=str(cfg.policy.target_object),
         approach_height=float(cfg.policy.approach_height),
         grasp_offset=float(cfg.policy.grasp_offset),
@@ -55,10 +39,12 @@ def main(cfg: DictConfig) -> None:
         descend_steps=int(cfg.policy.phase_steps.descend),
         close_steps=int(cfg.policy.phase_steps.close),
         lift_steps=int(cfg.policy.phase_steps.lift),
+        )
     )
-    summary, debug_lines = env.run_scripted_pick(
+    summary, debug_lines = env.run_policy_rollout(
         seed=int(cfg.run.seed),
         policy=policy,
+        num_steps=policy.config.total_steps,
         save_video=bool(cfg.run.save_video),
         video_path=str(Path(str(cfg.run.video_path))),
         camera_name=str(cfg.env.camera_name),
