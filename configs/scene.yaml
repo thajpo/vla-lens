@@ -14,6 +14,14 @@ env:
   ignore_done: false
   camera_name: frontview
 
+objects:
+  cubeA:
+    color_name: red
+    rgba: [1.0, 0.0, 0.0, 1.0]
+  cubeB:
+    color_name: green
+    rgba: [0.0, 1.0, 0.0, 1.0]
+
 run:
   seed: 7
   num_rollouts: 1

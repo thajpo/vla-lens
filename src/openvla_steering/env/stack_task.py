@@ -35,11 +35,35 @@ class ScriptedPickPolicyConfig:
 
 
 @dataclass(slots=True)
+class ObjectMetadata:
+    object_id: str
+    color_name: str
+    rgba: list[float]
+
+
+@dataclass(slots=True)
+class StackTaskMetadata:
+    cubeA: ObjectMetadata
+    cubeB: ObjectMetadata
+
+    def object_ids(self) -> tuple[str, str]:
+        return self.cubeA.object_id, self.cubeB.object_id
+
+    def color_map(self) -> dict[str, str]:
+        return {
+            self.cubeA.object_id: self.cubeA.color_name,
+            self.cubeB.object_id: self.cubeB.color_name,
+        }
+
+
+@dataclass(slots=True)
 class RolloutSummary:
     rollout_id: str
     seed: int
     target_object: str
+    target_color_name: str
     selected_object: str | None
+    selected_color_name: str | None
     success: bool
     initial_cubeA_pos: list[float]
     initial_cubeB_pos: list[float]
@@ -61,8 +85,9 @@ class RolloutSummary:
 class StackTaskEnv:
     """Small experiment wrapper around robosuite's built-in Stack task."""
 
-    def __init__(self, env_config: RobosuiteEnvConfig):
+    def __init__(self, env_config: RobosuiteEnvConfig, task_metadata: StackTaskMetadata):
         self.env_config = env_config
+        self.task_metadata = task_metadata
         self._env: Any | None = None
         self._current_seed: int | None = None
 
@@ -93,8 +118,12 @@ class StackTaskEnv:
         return {
             "env_name": self.env.__class__.__name__,
             "seed": self._current_seed,
-            "cubeA_color": "red",
-            "cubeB_color": "green",
+            "cubeA_object_id": self.task_metadata.cubeA.object_id,
+            "cubeA_color_name": self.task_metadata.cubeA.color_name,
+            "cubeA_rgba": self.task_metadata.cubeA.rgba,
+            "cubeB_object_id": self.task_metadata.cubeB.object_id,
+            "cubeB_color_name": self.task_metadata.cubeB.color_name,
+            "cubeB_rgba": self.task_metadata.cubeB.rgba,
             "cubeA_pos": obs["cubeA_pos"].round(6).tolist(),
             "cubeB_pos": obs["cubeB_pos"].round(6).tolist(),
             "robot0_eef_pos": obs["robot0_eef_pos"].round(6).tolist(),
@@ -210,6 +239,7 @@ class StackTaskEnv:
 
         selected_object, cubeA_gain, cubeB_gain = self.infer_selected_object(initial_obs, obs)
         success = selected_object == policy.target_object
+        color_map = self.task_metadata.color_map()
 
         saved_video_path: str | None = None
         if save_video and frames and video_path is not None:
@@ -222,7 +252,9 @@ class StackTaskEnv:
             rollout_id=uuid4().hex[:12],
             seed=seed,
             target_object=policy.target_object,
+            target_color_name=color_map[policy.target_object],
             selected_object=selected_object,
+            selected_color_name=color_map[selected_object] if selected_object is not None else None,
             success=success,
             initial_cubeA_pos=initial_snapshot["cubeA_pos"].round(6).tolist(),
             initial_cubeB_pos=initial_snapshot["cubeB_pos"].round(6).tolist(),

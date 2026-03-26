@@ -6,8 +6,10 @@ import hydra
 from omegaconf import DictConfig
 
 from openvla_steering.env import (
+    ObjectMetadata,
     RobosuiteEnvConfig,
     ScriptedPickPolicyConfig,
+    StackTaskMetadata,
     StackTaskEnv,
 )
 
@@ -27,7 +29,19 @@ def main(cfg: DictConfig) -> None:
             hard_reset=bool(cfg.env.hard_reset),
             ignore_done=bool(cfg.env.ignore_done),
             camera_name=str(cfg.env.camera_name),
-        )
+        ),
+        StackTaskMetadata(
+            cubeA=ObjectMetadata(
+                object_id="cubeA",
+                color_name=str(cfg.objects.cubeA.color_name),
+                rgba=[float(value) for value in cfg.objects.cubeA.rgba],
+            ),
+            cubeB=ObjectMetadata(
+                object_id="cubeB",
+                color_name=str(cfg.objects.cubeB.color_name),
+                rgba=[float(value) for value in cfg.objects.cubeB.rgba],
+            ),
+        ),
     )
     policy = ScriptedPickPolicyConfig(
         target_object=str(cfg.policy.target_object),
@@ -52,7 +66,8 @@ def main(cfg: DictConfig) -> None:
     for line in debug_lines:
         print(line)
     print(
-        f"Rollout summary: target={summary.target_object} selected={summary.selected_object} "
+        f"Rollout summary: target={summary.target_object}/{summary.target_color_name} "
+        f"selected={summary.selected_object}/{summary.selected_color_name} "
         f"success={summary.success} video_path={summary.video_path}"
     )
     env.close()

@@ -6,8 +6,10 @@ import hydra
 from omegaconf import DictConfig
 
 from openvla_steering.env import (
+    ObjectMetadata,
     RobosuiteEnvConfig,
     ScriptedPickPolicyConfig,
+    StackTaskMetadata,
     StackTaskEnv,
     default_video_path,
 )
@@ -29,7 +31,19 @@ def main(cfg: DictConfig) -> None:
             hard_reset=bool(cfg.env.hard_reset),
             ignore_done=bool(cfg.env.ignore_done),
             camera_name=str(cfg.env.camera_name),
-        )
+        ),
+        StackTaskMetadata(
+            cubeA=ObjectMetadata(
+                object_id="cubeA",
+                color_name=str(cfg.objects.cubeA.color_name),
+                rgba=[float(value) for value in cfg.objects.cubeA.rgba],
+            ),
+            cubeB=ObjectMetadata(
+                object_id="cubeB",
+                color_name=str(cfg.objects.cubeB.color_name),
+                rgba=[float(value) for value in cfg.objects.cubeB.rgba],
+            ),
+        ),
     )
     policy = ScriptedPickPolicyConfig(
         target_object=str(cfg.policy.target_object),
@@ -65,7 +79,8 @@ def main(cfg: DictConfig) -> None:
             print(f"[seed={seed}] {line}")
         records.append(summary.to_record())
         print(
-            f"[seed={seed}] target={summary.target_object} selected={summary.selected_object} "
+            f"[seed={seed}] target={summary.target_object}/{summary.target_color_name} "
+            f"selected={summary.selected_object}/{summary.selected_color_name} "
             f"success={summary.success} cubeA_gain={summary.cubeA_height_gain:.4f} "
             f"cubeB_gain={summary.cubeB_height_gain:.4f}"
         )
@@ -77,4 +92,3 @@ def main(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()
-

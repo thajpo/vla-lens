@@ -3,7 +3,7 @@ from __future__ import annotations
 import hydra
 from omegaconf import DictConfig
 
-from openvla_steering.env import RobosuiteEnvConfig, StackTaskEnv
+from openvla_steering.env import ObjectMetadata, RobosuiteEnvConfig, StackTaskEnv, StackTaskMetadata
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="scene")
@@ -21,7 +21,19 @@ def main(cfg: DictConfig) -> None:
             hard_reset=bool(cfg.env.hard_reset),
             ignore_done=bool(cfg.env.ignore_done),
             camera_name=str(cfg.env.camera_name),
-        )
+        ),
+        StackTaskMetadata(
+            cubeA=ObjectMetadata(
+                object_id="cubeA",
+                color_name=str(cfg.objects.cubeA.color_name),
+                rgba=[float(value) for value in cfg.objects.cubeA.rgba],
+            ),
+            cubeB=ObjectMetadata(
+                object_id="cubeB",
+                color_name=str(cfg.objects.cubeB.color_name),
+                rgba=[float(value) for value in cfg.objects.cubeB.rgba],
+            ),
+        ),
     )
 
     seed = int(cfg.run.seed)
@@ -38,4 +50,3 @@ def main(cfg: DictConfig) -> None:
 
 if __name__ == "__main__":
     main()
-
