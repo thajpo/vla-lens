@@ -9,7 +9,9 @@ from openvla_steering.env import (
     RobosuiteEnvConfig,
     ScriptedPickPolicyConfig,
     StackTaskEnv,
+    default_video_path,
 )
+from openvla_steering.utils.io import write_records_parquet
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="scene")
@@ -42,21 +44,37 @@ def main(cfg: DictConfig) -> None:
         close_steps=int(cfg.policy.phase_steps.close),
         lift_steps=int(cfg.policy.phase_steps.lift),
     )
-    summary, debug_lines = env.run_scripted_pick(
-        seed=int(cfg.run.seed),
-        policy=policy,
-        save_video=bool(cfg.run.save_video),
-        video_path=str(Path(str(cfg.run.video_path))),
-        camera_name=str(cfg.env.camera_name),
-    )
-    for line in debug_lines:
-        print(line)
-    print(
-        f"Rollout summary: target={summary.target_object} selected={summary.selected_object} "
-        f"success={summary.success} video_path={summary.video_path}"
-    )
+
+    records: list[dict[str, object]] = []
+    seed_start = int(cfg.run.seed)
+    num_rollouts = int(cfg.run.num_rollouts)
+    video_root = Path(str(cfg.run.video_dir))
+    for offset in range(num_rollouts):
+        seed = seed_start + offset
+        video_path = None
+        if bool(cfg.run.save_video):
+            video_path = default_video_path(video_root, seed=seed, target_object=policy.target_object)
+        summary, debug_lines = env.run_scripted_pick(
+            seed=seed,
+            policy=policy,
+            save_video=bool(cfg.run.save_video),
+            video_path=video_path,
+            camera_name=str(cfg.env.camera_name),
+        )
+        for line in debug_lines:
+            print(f"[seed={seed}] {line}")
+        records.append(summary.to_record())
+        print(
+            f"[seed={seed}] target={summary.target_object} selected={summary.selected_object} "
+            f"success={summary.success} cubeA_gain={summary.cubeA_height_gain:.4f} "
+            f"cubeB_gain={summary.cubeB_height_gain:.4f}"
+        )
+
     env.close()
+    output_path = write_records_parquet(records, str(cfg.run.rollout_log_path))
+    print(f"Wrote {len(records)} rollout records to {output_path}")
 
 
 if __name__ == "__main__":
     main()
+

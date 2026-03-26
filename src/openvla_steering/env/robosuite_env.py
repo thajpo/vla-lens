@@ -21,9 +21,10 @@ class RobosuiteEnvConfig:
     hard_reset: bool = True
     ignore_done: bool = False
     camera_name: str = "frontview"
+    seed: int | None = None
 
 
-def make_env(config: RobosuiteEnvConfig) -> Any:
+def make_env(config: RobosuiteEnvConfig, seed: int | None = None) -> Any:
     return suite.make(
         env_name=config.name,
         robots=config.robot,
@@ -36,6 +37,7 @@ def make_env(config: RobosuiteEnvConfig) -> Any:
         hard_reset=config.hard_reset,
         ignore_done=config.ignore_done,
         camera_names=config.camera_name,
+        seed=config.seed if seed is None else seed,
     )
 
 

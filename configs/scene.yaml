@@ -16,9 +16,11 @@ env:
 
 run:
   seed: 7
-  steps: 140
+  num_rollouts: 1
   save_video: true
+  video_dir: artifacts/videos
   video_path: artifacts/videos/stack_pick_debug.mp4
+  rollout_log_path: artifacts/logs/stack_rollouts.parquet
 
 policy:
   name: scripted_pick
