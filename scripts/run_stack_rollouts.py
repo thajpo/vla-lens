@@ -6,12 +6,19 @@ import hydra
 from omegaconf import DictConfig
 
 from openvla_steering.env import RobosuiteEnvConfig, StackTaskEnv, default_video_path
-from openvla_steering.model import ScriptedPickPolicy, ScriptedPickPolicyConfig
+from openvla_steering.model import build_policy_from_config
 from openvla_steering.utils.io import write_records_parquet
 
 
 @hydra.main(version_base=None, config_path="../configs", config_name="scene")
 def main(cfg: DictConfig) -> None:
+    backend = str(cfg.model.backend)
+    if backend in {"openvla", "minivla"}:
+        if not bool(cfg.env.use_camera_obs):
+            raise RuntimeError(f"{backend} rollouts require `env.use_camera_obs=true`.")
+        if not bool(cfg.env.has_offscreen_renderer):
+            raise RuntimeError(f"{backend} rollouts require `env.has_offscreen_renderer=true`.")
+
     env = StackTaskEnv(
         RobosuiteEnvConfig(
             name=str(cfg.env.name).capitalize(),
@@ -25,23 +32,13 @@ def main(cfg: DictConfig) -> None:
             hard_reset=bool(cfg.env.hard_reset),
             ignore_done=bool(cfg.env.ignore_done),
             camera_name=str(cfg.env.camera_name),
+            camera_height=int(cfg.env.camera_height),
+            camera_width=int(cfg.env.camera_width),
+            camera_depth=bool(cfg.env.camera_depth),
         )
     )
-    policy = ScriptedPickPolicy(
-        ScriptedPickPolicyConfig(
-        target_object=str(cfg.policy.target_object),
-        approach_height=float(cfg.policy.approach_height),
-        grasp_offset=float(cfg.policy.grasp_offset),
-        lift_height=float(cfg.policy.lift_height),
-        position_gain=float(cfg.policy.position_gain),
-        open_gripper=float(cfg.policy.open_gripper),
-        close_gripper=float(cfg.policy.close_gripper),
-        approach_steps=int(cfg.policy.phase_steps.approach),
-        descend_steps=int(cfg.policy.phase_steps.descend),
-        close_steps=int(cfg.policy.phase_steps.close),
-        lift_steps=int(cfg.policy.phase_steps.lift),
-        )
-    )
+    policy = build_policy_from_config(cfg)
+    print(f"Running rollouts with backend={backend}")
 
     records: list[dict[str, object]] = []
     seed_start = int(cfg.run.seed)
@@ -57,7 +54,7 @@ def main(cfg: DictConfig) -> None:
         summary, debug_lines = env.run_policy_rollout(
             seed=seed,
             policy=policy,
-            num_steps=policy.config.total_steps,
+            num_steps=getattr(getattr(policy, "config", None), "total_steps", int(cfg.env.horizon)),
             save_video=bool(cfg.run.save_video),
             video_path=video_path,
             camera_name=str(cfg.env.camera_name),

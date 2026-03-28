@@ -21,6 +21,9 @@ class RobosuiteEnvConfig:
     hard_reset: bool = True
     ignore_done: bool = False
     camera_name: str = "frontview"
+    camera_height: int = 224
+    camera_width: int = 224
+    camera_depth: bool = False
     seed: int | None = None
 
 
@@ -37,6 +40,9 @@ def make_env(config: RobosuiteEnvConfig, seed: int | None = None) -> Any:
         hard_reset=config.hard_reset,
         ignore_done=config.ignore_done,
         camera_names=config.camera_name,
+        camera_heights=config.camera_height,
+        camera_widths=config.camera_width,
+        camera_depths=config.camera_depth,
         seed=config.seed if seed is None else seed,
     )
 

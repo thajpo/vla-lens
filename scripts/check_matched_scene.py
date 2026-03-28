@@ -21,6 +21,9 @@ def main(cfg: DictConfig) -> None:
             hard_reset=bool(cfg.env.hard_reset),
             ignore_done=bool(cfg.env.ignore_done),
             camera_name=str(cfg.env.camera_name),
+            camera_height=int(cfg.env.camera_height),
+            camera_width=int(cfg.env.camera_width),
+            camera_depth=bool(cfg.env.camera_depth),
         )
     )
 
