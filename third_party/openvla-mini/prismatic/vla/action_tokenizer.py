@@ -12,9 +12,9 @@ from typing import List, Union
 import numpy as np
 import torch
 from transformers import PreTrainedTokenizerBase
-from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFast
 
 from prismatic.overwatch.overwatch import initialize_overwatch
+from prismatic.util.qwen_compat import Qwen2TokenizerFast
 
 overwatch = initialize_overwatch(__name__)
 
@@ -137,10 +137,19 @@ class VQActionTokenizer(ActionTokenizer):
         # number of bins to assign for each "action" dimension
         self.n_bins = self.vq_vae.vqvae_n_embed
 
-        self.tokenizer_len = self.tokenizer.vocab_size
+        use_extra = False # HACK: The checkpoint predicts tokens in the standard vocab, not extra tokens!
         if isinstance(tokenizer, Qwen2TokenizerFast) and use_extra:
             self.tokenizer_len = len(self.tokenizer)
-        elif use_extra:
+        elif isinstance(tokenizer, Qwen2TokenizerFast) and not use_extra:
+            # Training used len(tokenizer) directly (151921 after adding 256 extra action tokens).
+            # The embedding table is padded to 151936 for alignment, but padding slots are NOT
+            # valid token positions — the action tokens live at [len-128, len-1] = [151793, 151920].
+            # Using ceil(len/64)*64=151936 shifts the mapping by 15 positions, causing invalid codes.
+            self.tokenizer_len = len(self.tokenizer)
+            print(f"[VQActionTokenizer] tokenizer_len={self.tokenizer_len}  (=len(tokenizer))")
+        else:
+            self.tokenizer_len = self.tokenizer.vocab_size
+        if use_extra and not isinstance(tokenizer, Qwen2TokenizerFast):
             raise NotImplementedError("Cannot use extra tokens for this tokenizer!")
 
         # [Contract] Set "action_token_begin_idx" based on `self.tokenizer.vocab_size - (self.n_bins + 1)`
@@ -161,24 +170,29 @@ class VQActionTokenizer(ActionTokenizer):
 
     def decode_token_ids_to_actions(self, action_token_ids: np.ndarray) -> np.ndarray:
         # first convert from tokens to bins (inverse of what happens in __call__)
+        vq_codes_raw = action_token_ids.copy()
         action_token_ids = self.tokenizer_len - 1 - action_token_ids
+        print(f"[DBG:vq] tokenizer_len={self.tokenizer_len}  n_bins={self.n_bins}  raw_tokens={vq_codes_raw}  vq_codes_pre_clip={action_token_ids}")
         initial_shape = action_token_ids.shape
         # these directly correspond to the bins
         action_token_ids = np.clip(action_token_ids, 0, self.n_bins - 1)
+        print(f"[DBG:vq] vq_codes_post_clip={action_token_ids}")
         action_token_ids = torch.from_numpy(action_token_ids).to(self.device).reshape(-1, self.vq_vae.vqvae_groups)
         assert torch.all(action_token_ids >= 0) and torch.all(action_token_ids < self.n_bins)
         # (1 x G) --> (1 x Z_DIM)
         latent = self.vq_vae.draw_code_forward(action_token_ids)
+        print(f"[DBG:vq] latent  shape={tuple(latent.shape)}  mean={latent.float().mean().item():.6f}  std={latent.float().std().item():.6f}")
         # --> (1 x A) --> (A,)
         ret_action = self.vq_vae.get_action_from_latent(latent)
 
         # reshape to be a flat array if the input was a single action
         if action_token_ids.shape[0] == 1 and len(initial_shape) == 1:
-            return ret_action[0, 0]
+            raw_action = ret_action[0, 0].detach().cpu().numpy()
+            print("VQ DECODED ACTION (normalized bounds should be ~[-1, 1]):", raw_action)
+            return raw_action
 
-        # get the first horizon element of the returned actions (VQ might return an action horizon)
-        # TODO parameterize this
-        return ret_action[:, 0]
+        # get the first horizon element of the returned actions
+        return ret_action[:, 0].detach().cpu().numpy()
 
     @property
     def required_future_horizon(self) -> int:
