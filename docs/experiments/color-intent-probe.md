@@ -1,5 +1,21 @@
 # Color Intent Probe Experiments: MiniVLA on LIBERO-90
 
+## Thesis
+
+VLA models are black boxes at deployment time. When a robot arm reaches toward an object, there is currently no way to know — from the model's internals — what it intends to interact with, how it plans to interact with it, or whether its internal intent matches the operator's instruction, until the action has already been executed. This project asks: **can we build a lightweight, real-time intent monitor that decodes target-object identity and interaction plan from a VLA's hidden activations before the action is committed?**
+
+The red/white mug experiment (LIBERO tasks 71 and 72) is a controlled case study for this broader question. Two visually distinct objects sit in the same scene; the instruction specifies one. This is the minimal setting in which intent monitoring is both necessary (the scene is ambiguous) and verifiable (we know ground truth from the simulator). Every experiment in this document serves one of three roles:
+
+- **Descriptive**: What does the model represent internally? (Experiments 2, 3, 4, 6)
+- **Causal**: Is that representation actually used to select actions? (Experiment 5)
+- **Applied**: Can we extract it in real time with calibrated confidence? (Experiment 7)
+
+The safety contribution is the full pipeline: mechanistic understanding → real-time extraction → calibrated monitoring. The scientific contribution is the failure decomposition: separating "the model had the wrong intent" from "the model had the right intent but failed at execution," which has different implications for training, data collection, and human oversight.
+
+Future work extends beyond color/object identity to interaction type (grasp type, approach vector, contact geometry), which requires task pairs that share the same object but differ in the required manipulation. This is scoped but deferred — the infrastructure built here supports it directly.
+
+---
+
 ## Overview
 
 **Model**: MiniVLA (Qwen2.5-0.5B + DINOv2 + SigLIP + VQ-VAE action chunking)
@@ -43,6 +59,23 @@ MiniVLA hidden states at at least one layer encode the target color (red vs. whi
   - The EOS / padding token
 - Save activations as (episode_id, step, layer, position, hidden_dim=896) tensors.
 
+#### Additional metadata to capture per step
+
+Beyond activations, the rollout harness must log the following at every step for downstream analyses (failure decomposition, behavioral confusion matrix, Experiment 1 temporal analysis):
+
+| Field | Source | Type | Purpose |
+|-------|--------|------|---------|
+| `ee_pos` | `env.get_ee_pos()` or MuJoCo `sim.data.site_xpos` | float[3] | End-effector position for reach-direction analysis |
+| `contacted_object` | MuJoCo contact pair detection | str or None | Which object (if any) the gripper is contacting this step |
+| `target_mug_pos` | MuJoCo body xpos for target mug | float[3] | Ground-truth target location |
+| `other_mug_pos` | MuJoCo body xpos for non-target mug | float[3] | Distractor location |
+| `gripper_state` | Action dim 7 (gripper open/close) | float | Whether gripper is commanding open or close |
+| `vq_codes` | VQ-VAE hard assignment output | int[7] | The 7 VQ codebook indices selected this step |
+| `vq_logits` | Pre-quantization continuous vectors | float[7 × 128] | Soft assignments before hard VQ selection (needed for Exp 3, Exp 7) |
+| `decoded_action` | VQ-VAE decoder output | float[7] | The continuous action chunk decoded from VQ codes |
+
+The `contacted_object` field is critical for the failure decomposition. Without it, cell C ("probe correct + task failure") is ambiguous — you can't tell whether the arm reached for the right mug and fumbled the grasp, or whether the arm went somewhere unrelated. LIBERO's MuJoCo environment exposes contact pairs via `sim.data.contact`; filter for contacts involving the gripper body and either mug body.
+
 ### Independent Variables
 - Layer index (0–23)
 - Token position type: {instruction_color_word, final_token, EOS}
@@ -54,9 +87,16 @@ MiniVLA hidden states at at least one layer encode the target color (red vs. whi
 - Probe weight vector (for subsequent steering experiments)
 
 ### Controls
-- **Scrambled label baseline**: refit probe with shuffled task labels → should give ~50% accuracy. Any real probe must beat this by margin.
-- **Spatial confound control**: Include episodes with left/right position of the two mugs varied (if LIBERO initial states provide this variation). Probe must generalize across spatial positions to be credited as semantic.
-- **Non-target object color baseline**: train a probe to predict the *other* mug's color (the one not being grasped). If this probe also achieves high accuracy from the same layer/position, the feature is scene-level not intent-level.
+
+- **Scrambled label baseline**: Refit probe with shuffled task labels → should give ~50% accuracy. Any real probe must exceed this by a statistically significant margin (permutation test, not just point estimate).
+
+- **Spatial confound control**: The red and white mugs occupy different positions in LIVING_ROOM_SCENE6. If the model has simply memorized "instruction says red → move left" without any visual grounding, the probe would still succeed but the representation wouldn't generalize. To test this: check whether LIBERO's initial state randomization varies mug positions across episodes. If it does, verify that probe accuracy holds across spatial configurations. If it doesn't (mug positions are fixed), acknowledge this as a limitation: **the probe may be detecting a learned spatial prior rather than a genuine color-object binding.** This is the single most important confound in the experiment.
+
+- **Non-target object color baseline**: Train a probe to predict the *other* mug's color (the one not being grasped). In this specific setup (red and white are always both present), this is trivially anti-correlated with the target probe — if target is red, non-target is white. This control is only informative if extended to scenes with more than two objects, where the non-target probe should be at chance.
+
+- **Language-only baseline**: Run the model's forward pass with the instruction tokens but *no image tokens* (or a blank/random image). Probe the same layers. If probe accuracy is similar to the full-model probe, the model is solving the task from instruction alone without visual grounding. This isolates the "did the model just read the word red" confound. Expected: language-only probe accuracy should be near 100% at the instruction token position (the word "red" is literally in the input) but lower at the final token position (where visual context should matter). If both are equally high, the model may not be visually grounding at all.
+
+- **Cross-temporal generalization**: Train probe on step 0 activations, test on step T activations. If the intent representation is stable, accuracy should remain high across the trajectory. If it degrades, the model's intent representation is time-varying and the probe must be recalibrated per phase.
 
 ### Analysis
 Train one probe per (layer, token_position) pair. Report accuracy as a heatmap over (layer × position). Identify the peak layer and position. Fit a sigmoid learning curve over training set size to estimate data efficiency.
@@ -68,6 +108,7 @@ Peak accuracy in layers 14–20 (upper-middle of the 24-layer stack), likely hig
 - Alain & Bengio (2016) "Understanding Intermediate Representations with Linear Classifiers"
 - Burns et al. (2023) "Discovering Latent Knowledge" (contrast consistent probing)
 - Ghandeharioun et al. (2024) "Patchscopes" (token position selection)
+- Lu et al. (2025) "Probing a VLA for Symbolic States"
 
 ---
 
@@ -76,15 +117,25 @@ Peak accuracy in layers 14–20 (upper-middle of the 24-layer stack), likely hig
 ### Hypothesis
 The VQ codebook distribution over an episode is predictably different between red-mug and white-mug trials in a way that a linear classifier can detect from early steps — before the policy has committed to grasping either object.
 
-### Why This Matters
-If an intent signal appears in the action token space before the grasp occurs, it constitutes evidence that the model computes a categorical intent variable, not just reactive sensorimotor mapping. This is the scientific contribution: bridging representation (Exp 2) to behavioral commitment.
-
 ### Setup
 - From the same rollout data as Exp 2, extract the VQ code sequence at each step.
 - VQ codes are 7 integers in [0, 127] per step.
 - Derive a step-level feature vector: histogram of VQ codes across the 7 groups (7 × 128 = 896-dim one-hot, or just the 7-dim code vector).
 - Train a linear classifier on step-level code vectors to predict task identity (red vs. white).
 - Train one classifier per step index to get a temporal accuracy curve.
+
+#### Relationship to Experiment 2
+
+Experiment 1 and Experiment 2 ask the same question ("can we predict which mug the model targets?") but from different representations:
+
+- Experiment 2 probes the **hidden state** (the model's internal computation, pre-action).
+- Experiment 1 probes the **action output** (the model's behavioral commitment, post-action-decoding).
+
+The key scientific result is the **lag** between these two. If hidden-state probe accuracy rises at step 3 but action-space probe accuracy rises at step 8, there are 5 steps where the model "knows" internally which mug it's targeting but hasn't yet committed to a distinguishable motor plan. That gap is the window in which a safety monitor could intervene.
+
+If the two probes rise simultaneously, the model has no pre-commitment phase — intent and action are computed together. This would be a negative result for the safety-monitor narrative but still informative.
+
+If the action-space probe rises *before* the hidden-state probe (unlikely but possible), this would suggest the model's action tokenizer compresses task-relevant information that the backbone doesn't explicitly represent, which would be surprising and worth investigating.
 
 ### Independent Variables
 - Step index in the rollout
@@ -117,16 +168,29 @@ Hidden-state probe succeeds ~5–15 steps earlier than action-space probe, consi
 The intent signal identified by Exp 2 is causally necessary: corrupting it causes the policy to select the wrong mug, and restoring it recovers correct behavior.
 
 ### Setup
-Adapted from Meng et al. (2022) ROME / Hernandez et al. (2023) RAVEL causal tracing protocol.
 
-Three forward passes per step:
-1. **Clean**: correct instruction (e.g., "pick up red mug"), record all residual stream states `h_l^{clean}` for l=0..23.
-2. **Corrupted**: wrong instruction ("pick up white mug"), record `h_l^{corrupt}` and final VQ codes.
-3. **Patched**: run corrupted forward pass, but restore `h_l^{clean}` at one layer `l` and one token position. Measure VQ code recovery.
+Adapted from Meng et al. (2022) ROME, with the targeted corruption approach recommended by NOTICE (2024) to avoid illusory patching artifacts from Gaussian noise.
 
-**Recovery metric**: Euclidean distance in decoded-action space between patched output and clean output, normalized by clean-corrupted distance. A score of 1.0 = full recovery; 0.0 = no recovery.
+**Corruption strategy**: We use instruction-swap corruption (replace "red" with "white" in the instruction text, keeping all other tokens identical) rather than Gaussian noise on image embeddings. This is superior to noise corruption for two reasons: (1) it produces a semantically valid but *wrong* forward pass rather than a degenerate one, making recovery scores interpretable; (2) it avoids the illusory patching artifacts that Palit et al. and the NOTICE authors identified, where noise corruption creates artificial "causal" signals at early layers that are actually just denoising artifacts.
 
-Run for all l ∈ {0..23} × positions ∈ {color_word_token, final_token} → 48 patch sites.
+**Important semantic note**: Because the corrupted instruction ("pick up white mug") is itself a valid LIBERO task, the corrupted forward pass produces a *coherent but wrong* action — the model will attempt to pick up the white mug. "Recovery" therefore means: patching at layer L causes the model to switch from the white-mug trajectory back to the red-mug trajectory. This is behavioral *flipping*, not noise recovery, which makes the causal claim stronger.
+
+**Offline evaluation protocol**: Causal tracing runs on *saved observations* from clean rollouts, not live environments. The procedure is:
+
+1. Run a clean rollout of task 71 (red mug), saving observations `{obs_0, obs_1, ..., obs_T}` at every step.
+2. For each saved observation `obs_t`:
+   a. **Clean pass**: Forward pass with `obs_t` + "pick up red mug" → record all `h_l^{clean}`, record output VQ codes and decoded action.
+   b. **Corrupt pass**: Forward pass with `obs_t` + "pick up white mug" → record all `h_l^{corrupt}`, record output VQ codes and decoded action.
+   c. **Patched passes** (one per patch site): Forward pass with `obs_t` + "pick up white mug", but at layer `l` and token position `p`, replace `h_l^{corrupt}` with `h_l^{clean}` → record output VQ codes and decoded action.
+3. Compute recovery score for each patch site.
+
+This is explicitly *not* a live rollout with patched actions executed in the environment. The environment state is frozen per step. This isolates the patching effect from cascading environmental changes.
+
+**Why offline**: If you patch at step 5 and execute the patched action, step 6's observation changes, making step 6's patching results confounded by step 5's intervention. Offline evaluation keeps each step independent.
+
+**Recovery metric**: `1 - ||a_patched - a_clean||₂ / ||a_corrupt - a_clean||₂`, clipped to [0, 1]. A score of 1.0 means the patched action exactly matches the clean action (full recovery). A score of 0.0 means the patch had no effect.
+
+Run for all l ∈ {0..23} × positions ∈ {color_word_token, final_token} → 48 patch sites per step.
 
 ### Independent Variables
 - Patch layer l
@@ -142,6 +206,16 @@ Run for all l ∈ {0..23} × positions ∈ {color_word_token, final_token} → 4
 - Vary the corruption: wrong color word vs. completely different instruction → check if recovery requires semantic similarity
 - Null patch: patch same layer with zero vector → should give same result as corrupted baseline
 
+#### Additional corruption variants (secondary analysis)
+
+Beyond the primary color-word swap, test these corruptions to characterize the breadth of the causal pathway:
+
+- **Synonym corruption**: Replace "red" with "crimson" or "scarlet." If recovery patterns change, the model is sensitive to exact token identity, not just semantic content. This probes tokenizer-level versus concept-level representation.
+
+- **Unrelated instruction corruption**: Replace the full instruction with a different LIBERO-90 task instruction (e.g., "close the top drawer"). If patching still recovers the red-mug action, the causal site stores intent independent of instruction format.
+
+- **Visual corruption** (secondary mode): Instead of swapping the instruction, keep the instruction fixed but swap the image — feed an observation from task 72 with the instruction from task 71. Patch visual token positions. This tests whether the causal pathway runs through the visual tokens versus the language tokens. Requires `collect_activations.py` to save raw observations alongside hidden states.
+
 ### Analysis
 Report recovery score as a heatmap over (layer × position). Identify the minimum set of layers sufficient for >90% recovery. This is the "intent localization."
 
@@ -152,6 +226,7 @@ A compact set of 2–4 layers in the upper half of the network dominates recover
 - Meng et al. (2022) "Locating and Editing Factual Associations in GPT" (ROME)
 - Hernandez et al. (2023) "RAVEL: Evaluating Interpretability Methods on Disentangling Language Model Representations"
 - Geiger et al. (2023) "Finding Alignments Between Interpretability Techniques and Behavioral Phenomena"
+- Palit et al. / NOTICE (2024) — illusory patching artifacts from noise corruption
 
 ---
 
@@ -169,6 +244,8 @@ Use split conformal prediction (Angelopoulos & Bates 2021):
 
 **Safety signal**: At any step, if the prediction set contains both "red" and "white" (or is empty), flag as ambiguous. Log ambiguity rate vs. episode success rate.
 
+**Critical note on step aggregation**: Do not average softmax uncertainty across all steps. Naive averaging poorly discriminates success from failure because successful trajectories contain high-entropy segments (Shifting Uncertainty to Critical Moments, 2026). Use max-based sliding window pooling: `episode_uncertainty = max(window_max(step_uncertainty, window=5))` over the first 30 steps. Focus on the pre-grasp phase.
+
 ### Independent Variables
 - Coverage level α ∈ {0.05, 0.10, 0.20}
 - Probe layer and position (use best from Exp 2)
@@ -184,7 +261,7 @@ Use split conformal prediction (Angelopoulos & Bates 2021):
 - FIPER baseline: use fixed prediction interval rather than conformal
 
 ### Analysis
-Failure decomposition table (see also failure_decomp analysis in Exp 2):
+Failure decomposition table:
 ```
                 | Monitor: confident | Monitor: ambiguous
 Success         |        TP          |        FP
@@ -193,12 +270,13 @@ Failure         |        FN          |        TN
 Measure precision, recall, F1. Plot AUC of (ambiguity score) as predictor of failure.
 
 ### Expected Finding
-Conformal monitor achieves exact marginal coverage by construction. Ambiguity rate has positive correlation with failure rate (expected Spearman r ≥ 0.4). Monitor is more reliable than raw softmax threshold.
+Conformal monitor achieves exact marginal coverage by construction. Ambiguity rate has positive correlation with failure rate (expected Spearman r ≥ 0.4). Monitor is more reliable than raw softmax threshold. Max-pooled uncertainty outperforms average uncertainty for failure prediction.
 
 ### Papers
 - Angelopoulos & Bates (2021) "A Gentle Introduction to Conformal Prediction and Distribution-Free Uncertainty Quantification"
-- SAFE paper (conformal for robot safety monitoring, if available)
-- FIPER: Fixed Prediction Intervals for Robot Evaluation
+- SAFE (Toyota Research Institute, NeurIPS 2025) — binary success/failure conformal monitoring
+- FIPER (NeurIPS 2025) — action-chunk entropy for uncertainty
+- "Averaging Trap" / Shifting Uncertainty to Critical Moments (2026) — max-pooling for VLA uncertainty
 
 ---
 
@@ -265,11 +343,12 @@ where K = X X^T, L = Y Y^T (linear kernel).
 - Compare CKA within-task (71-71 or 72-72) vs. cross-task (71-72) to assess discriminability
 
 ### Expected Finding
-CKA increases across layers (modalities align as information propagates). Cross-task CKA in the upper layers is lower than within-task CKA, suggesting semantic differentiation. CKA between vision and action tokens correlates positively with success.
+CKA increases across layers. Cross-task CKA in upper layers is lower than within-task CKA. If Grant et al.'s visual-dominance finding holds here, CKA between visual tokens and action tokens should be high while language-action CKA remains lower. Finding the opposite (high language-action CKA) would suggest instruction-disambiguated tasks are a special regime where language drives action selection.
 
 ### Papers
 - Kornblith et al. (2019) "Similarity of Neural Network Representations Revisited"
 - Nguyen et al. (2021) "Do Wide and Deep Networks Learn the Same Things?"
+- Grant et al. (ICLR 2026 Workshop) — visual vs. language pathway dominance in VLAs
 
 ---
 
@@ -281,7 +360,7 @@ Hidden states in the MiniVLA LLM backbone contain sparse, monosemantic features 
 ### Setup
 Train a TopK sparse autoencoder (SAE) with:
 - Input: residual stream activations at the identified peak layer (from Exp 2), hidden_dim=896
-- Latent dimension: 4096 (4× expansion)
+- Latent dimension: 4096 (4× expansion) and 7168 (8× expansion, to test Dr. VLA's scaling recommendation)
 - TopK=32 (active features per forward pass)
 - Training data: all episodes from Exp 2 rollouts, flattened to (n_steps × n_episodes, 896)
 
@@ -294,25 +373,27 @@ Evaluate each latent dimension's selectivity:
 - Flag features with class frequency ratio > 3.0 as "selective"
 
 ### Independent Variables
-- SAE latent dimension count
+- SAE latent dimension count (4096 vs. 7168)
 - TopK value
 - Layer (compare peak layer to mid-layer)
 
 ### Dependent Variables
 - Reconstruction loss
 - Number of selective features per class
+- Fraction of features that are "memorized" (highly correlated with specific episode seeds) vs. "generalizable"
 - Correlation between selective feature activation and task success
 
 ### Controls
 - Compare SAE features to linear probe direction: do SAE-selective features project onto the probe weight vector?
 - Ablation: zero out selective features → does success rate drop?
+- Compare fraction-memorized vs. fraction-generalizable to Dr. VLA's published numbers on 7B models
 
 ### Expected Finding
-Similar to Dr. VLA findings on π0.5: SAEs will find features, but they will be largely correlated with demonstrations rather than purely semantic. Some features may be color-selective, but pure monosemanticity is not expected.
+Similar to Dr. VLA findings: majority of features correspond to memorized demonstration patterns. Some features show color selectivity, but pure monosemanticity is limited at 0.5B scale. The fraction-memorized metric should be lower than Dr. VLA's 7B results (less capacity = less memorization room). The 8× expansion ratio may be necessary to resolve superposed color features that the 4× model conflates.
 
 ### Papers
 - Cunningham et al. (2023) "Sparse Autoencoders Find Highly Interpretable Features in Language Models"
-- Dr. VLA (2024) "Interpreting Robot Foundation Models via Sparse Autoencoders"
+- Dr. VLA / Swann et al. (March 2026) — SAEs on π0.5 and OpenVLA
 - Templeton et al. (2024) "Scaling Monosemanticity"
 
 ---
@@ -341,11 +422,40 @@ task_success=0  |    C (exec fail)   |     D (intent fail)
 
 **Key test**: Is cell C / (C + D) significantly greater than 0.5? If yes, most failures are execution failures given correct intent, not perception failures.
 
+### Behavioral Ground Truth for Cell Assignment
+
+The 2×2 table requires a definition of `probe_correct` and `task_success`. But it also benefits from a finer-grained behavioral categorization that uses the `contacted_object` and `ee_pos` metadata:
+
+| Behavior | Definition | Cell assignment |
+|----------|-----------|-----------------|
+| Correct grasp | Contacted correct mug, task succeeded | A |
+| Lucky recovery | Probe predicted wrong mug, but task succeeded (model corrected mid-trajectory or probe layer was wrong) | B |
+| Motor failure | Contacted correct mug but task failed (dropped it, placed it wrong, timeout) | C |
+| Binding failure | Contacted wrong mug, or contacted nothing, task failed | D |
+| Reach-direction error | End-effector moved toward wrong mug (computed from `ee_pos` delta vs. `target_mug_pos` delta) even if no contact occurred | D (subcategory) |
+
+The `contacted_object` field enables this decomposition. Without it, cells C and D are distinguished only by the probe prediction, which is circular — you'd be using the probe to validate the probe.
+
+**Reach-direction metric**: At each step, compute `cos(ee_velocity, direction_to_target_mug)`. Average over the first 10 steps of the episode (pre-grasp phase). If this cosine is negative (moving away from target), classify as a reach-direction error regardless of eventual outcome.
+
 ### Statistical Analysis
 Fisher's exact test for association between probe_correct and task_success. Report odds ratio and 95% CI. With N=200 episodes per task (400 total), this has ~80% power to detect OR > 2.5.
 
 ### Why This Matters
 This decomposition separates "the model did not understand the instruction" from "the model understood but failed at execution." These have different implications for safety, training data quality, and human oversight.
+
+---
+
+## Future Scope: Interaction Type Probing
+
+The red/white mug experiment probes **what** the model intends to interact with. The natural extension is **how** it intends to interact — grasp type, approach angle, force profile. This requires task pairs that share the same target object but differ in the required manipulation:
+
+- LIBERO tasks involving the same object with different verbs (e.g., "pick up X" vs. "push X" vs. "place X on Y")
+- Tasks requiring top-down vs. lateral grasps of the same object
+
+The infrastructure built for the color probe (activation capture, probe training, causal tracing) transfers directly. The only change is the label: instead of color identity, the probe predicts interaction type. This is deferred because LIBERO-90 tasks 71/72 use the same grasp type for both mugs, making interaction-type probing uninformative on this specific task pair.
+
+The activation capture harness and metadata schema are designed to support this extension without modification — `contacted_object`, `ee_pos`, and `gripper_state` provide the labels needed for grasp-type classification.
 
 ---
 
