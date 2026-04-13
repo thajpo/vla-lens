@@ -56,9 +56,10 @@ except ImportError as exc:
 
 from openvla_steering.interp.hooks import (
     HookManager,
+    N_VISION_PATCHES,
     discover_modules,
     llm_layer_names,
-    resolve_token_position,
+    resolve_token_position_in_full_seq,
 )
 from openvla_steering.utils.io import write_records_parquet
 
@@ -239,6 +240,32 @@ def load_model(checkpoint: str, hf_token: str | None = None):
 # Per-step activation + inference
 # ---------------------------------------------------------------------------
 
+def capture_input_ids_hook(model) -> tuple[dict, object]:
+    """
+    Register a one-shot hook on the LLM embedding layer to capture the actual
+    text input_ids during the prefill forward pass.
+
+    The hook only records the FIRST call where seq_len > 1 (the prefill).
+    Subsequent decode-step calls have seq_len=1 and are ignored.
+
+    Returns:
+        (captured_dict, handle) — call handle.remove() when done.
+        captured_dict['input_ids'] is populated after the first prefill forward pass.
+    """
+    captured: dict = {}
+
+    def hook(module, input, output):
+        if 'input_ids' in captured:
+            return  # already captured prefill
+        if len(input) > 0:
+            ids = input[0]  # shape (batch, seq_len)
+            if hasattr(ids, 'shape') and len(ids.shape) == 2 and ids.shape[1] > 1:
+                captured['input_ids'] = ids[0].cpu().tolist()
+
+    handle = model.llm_backbone.llm.model.embed_tokens.register_forward_hook(hook)
+    return captured, handle
+
+
 def step_with_capture(
     model,
     image_np: np.ndarray,
@@ -253,6 +280,12 @@ def step_with_capture(
     """
     Run model inference for one step while capturing activations.
 
+    The hook captures only the PREFILL forward pass (first call with full sequence),
+    not the subsequent KV-cache decode steps (which only process 1 new token at a time).
+
+    Token positions are resolved against the FULL LLM sequence layout:
+        [BOS] [n_vision_patches vision tokens] [remaining text tokens]
+
     Returns:
         (action, activations)
         action: (7,) numpy array (post-processed, ready for env.step)
@@ -262,25 +295,38 @@ def step_with_capture(
     if center_crop:
         pil_img = apply_center_crop(pil_img)
 
-    # Resolve token positions for this instruction
-    pos_indices = {}
-    for spec in token_position_specs:
-        try:
-            pos_indices[spec] = resolve_token_position(tokenizer, instruction, spec)
-        except ValueError as e:
-            print(f"[WARN] Token position resolution failed for spec={spec!r}: {e}")
-            pos_indices[spec] = -1  # fallback to final token
+    # Capture the actual text input_ids during prefill (needed for color_word position)
+    captured_ids, ids_handle = capture_input_ids_hook(model)
 
     with hook_manager:
         with torch.no_grad():
             action_raw = model.predict_action(pil_img, instruction, unnorm_key=unnorm_key)
 
+        ids_handle.remove()
+        full_input_ids = captured_ids.get('input_ids', [])
+
+        # Resolve token positions against the full LLM sequence (vision + text)
+        pos_indices: dict[str, int] = {}
+        for spec in token_position_specs:
+            try:
+                idx = resolve_token_position_in_full_seq(
+                    spec, full_input_ids, instruction, tokenizer
+                )
+            except ValueError as e:
+                print(f"[WARN] Position resolution failed for spec={spec!r}: {e}")
+                idx = -1
+            pos_indices[spec] = idx
+
         activations: dict[str, dict[str, torch.Tensor]] = {}
         for layer in layer_names:
-            full_tensor = hook_manager.get(layer)  # (seq_len, hidden_dim)
+            full_tensor = hook_manager.get(layer)  # (full_seq_len, hidden_dim)
             activations[layer] = {}
             for spec, idx in pos_indices.items():
-                activations[layer][spec] = full_tensor[idx].clone()  # (hidden_dim,)
+                if idx == -1 or (0 <= idx < full_tensor.shape[0]):
+                    activations[layer][spec] = full_tensor[idx].clone()  # (hidden_dim,)
+                else:
+                    print(f"[WARN] Position idx={idx} out of range for tensor shape {full_tensor.shape}, falling back to -1")
+                    activations[layer][spec] = full_tensor[-1].clone()
 
     action = normalize_gripper_action(action_raw, binarize=True)
     action = invert_gripper_action(action)
