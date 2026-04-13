@@ -453,8 +453,8 @@ def collect_task(
     num_steps_wait = args.num_steps_wait
 
     TARGET_BODIES = {
-        71: ("red_coffee_mug_1", "porcelain_mug_1"),
-        72: ("porcelain_mug_1", "red_coffee_mug_1"),
+        71: ("red_coffee_mug_1_main", "porcelain_mug_1_main"),
+        72: ("porcelain_mug_1_main", "red_coffee_mug_1_main"),
     }
     target_body, other_body = TARGET_BODIES.get(task_id, (None, None))
 
