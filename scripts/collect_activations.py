@@ -61,7 +61,6 @@ except ImportError as exc:
 
 from openvla_steering.interp.hooks import (
     HookManager,
-    N_VISION_PATCHES,
     discover_modules,
     llm_layer_names,
     resolve_token_position_in_full_seq,
@@ -392,18 +391,6 @@ def load_completed_episodes(out_dir: Path) -> set[tuple[int, int]]:
     return done
 
 
-def count_completed_episodes(out_dir: Path) -> int:
-    """Count lines in episodes.jsonl for episode_id offset on resume."""
-    path = out_dir / "episodes.jsonl"
-    if not path.exists():
-        return 0
-    count = 0
-    with open(path) as f:
-        for line in f:
-            if line.strip():
-                count += 1
-    return count
-
 
 def jsonl_to_parquet(jsonl_path: Path, parquet_path: Path) -> None:
     """Convert a JSONL file to parquet. No-op if the JSONL doesn't exist or is empty."""
@@ -477,7 +464,6 @@ def collect_task(
 
     completed = load_completed_episodes(out_dir)
     n_trials = min(args.num_trials_per_task, len(initial_states))
-    n_completed_before = sum(1 for (tid, _) in completed if tid == task_id)
 
     for ep_idx in range(n_trials):
         if (task_id, ep_idx) in completed:
@@ -720,13 +706,17 @@ def main() -> None:
     suite = benchmark_dict[args.task_suite_name]()
 
     total_eps = 0
-    for task_id in args.task_ids:
+    for task_idx, task_id in enumerate(args.task_ids):
         task = suite.get_task(task_id)
         initial_states = suite.get_task_init_states(task_id)
         print(f"\n=== task {task_id}: {task.language} ===")
 
-        # episode_offset: global ID base for this task's episodes
-        episode_offset = count_completed_episodes(out_dir)
+        # episode_offset: count only episodes from tasks that precede this one in the
+        # task list. Using total count would inflate the offset on resume because
+        # partially-completed later tasks are already counted.
+        prior_task_ids = set(args.task_ids[:task_idx])
+        completed_all = load_completed_episodes(out_dir)
+        episode_offset = sum(1 for (tid, _) in completed_all if tid in prior_task_ids)
 
         n_done = collect_task(
             args, model, tokenizer,
