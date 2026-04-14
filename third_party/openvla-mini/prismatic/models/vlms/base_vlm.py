@@ -29,6 +29,10 @@ from prismatic.models.backbones.vision import VisionBackbone
 
 # === Abstract Base Class for arbitrary Vision-Language Models ===
 class VLM(nn.Module, GenerationMixin, ABC):
+    # Transformers 5.x generation code now expects this class attribute on models
+    # using GenerationMixin. Prismatic's VLMs are stateless at the generation API level.
+    _is_stateful = False
+
     def __init__(
         self,
         model_family: str,

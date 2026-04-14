@@ -7,3 +7,27 @@ outputs/
 artifacts/
 
 *.pyc
+vq/
+
+# OS
+.DS_Store
+
+# Loose debug/scratch files
+*.log
+debug*.log
+gen*.log
+*_out.txt
+stats.txt
+
+# Scratch test scripts at root
+check_*.py
+decode.py
+test_*.py
+
+# Third-party data and model weights
+third_party/LIBERO/
+third_party/openvla-mini/prismatic/conf/_choice_registry.py
+third_party/openvla-mini/prismatic/util/qwen_compat.py
+
+# HuggingFace cache (snapshots downloaded at runtime)
+~/.cache/huggingface/

@@ -5,16 +5,17 @@ PyTorch Module defining OpenVLA as a lightweight wrapper around a PrismaticVLM; 
 discretizing actions with the ActionTokenizer.
 """
 
+import hashlib
 from typing import Dict, List, Optional, Union
 
 import numpy as np
 import torch
 from PIL.Image import Image as Img
 from transformers import LlamaTokenizerFast
-from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFast
 
 from prismatic.models.vlms.prismatic import PrismaticVLM
 from prismatic.overwatch import initialize_overwatch
+from prismatic.util.qwen_compat import Qwen2TokenizerFast
 from prismatic.vla.action_tokenizer import ActionTokenizer
 
 # Initialize Overwatch =>> Wraps `logging.Logger`
@@ -49,6 +50,12 @@ class OpenVLA(PrismaticVLM):
         """
         image_transform, tokenizer = self.vision_backbone.get_image_transform(), self.llm_backbone.tokenizer
 
+        # ── DEBUG: image identity ──────────────────────────────────────────────
+        img_arr = np.asarray(image)
+        img_hash = hashlib.md5(img_arr.tobytes()).hexdigest()[:8]
+        print(f"[DBG] image  shape={img_arr.shape}  dtype={img_arr.dtype}  "
+              f"mean={img_arr.mean():.2f}  std={img_arr.std():.2f}  hash={img_hash}")
+
         # Build VLA Prompt
         prompt_builder = self.get_prompt_builder()
         prompt_builder.add_turn(role="human", message=f"What action should the robot take to {instruction.lower()}?")
@@ -78,20 +85,59 @@ class OpenVLA(PrismaticVLM):
         else:
             raise ValueError(f"Unsupported `pixel_values` type = {type(pixel_values)}")
 
+        # ── DEBUG: pixel_values after transform ───────────────────────────────
+        _pv = pixel_values if isinstance(pixel_values, torch.Tensor) else next(iter(pixel_values.values()))
+        print(f"[DBG] pixel_values  shape={tuple(_pv.shape)}  dtype={_pv.dtype}  device={_pv.device}  "
+              f"mean={_pv.float().mean().item():.4f}  std={_pv.float().std().item():.4f}  "
+              f"min={_pv.float().min().item():.4f}  max={_pv.float().max().item():.4f}")
+
+        # ── DEBUG: pixel_values dict details ─────────────────────────────────
+        _bb_dtype = next(self.vision_backbone.parameters()).dtype
+        if isinstance(pixel_values, dict):
+            print(f"[DBG] pixel_values keys={list(pixel_values.keys())}  backbone_dtype={_bb_dtype}")
+            for k, v in pixel_values.items():
+                print(f"[DBG]   [{k}]  shape={tuple(v.shape)}  dtype={v.dtype}  "
+                      f"mean={v.float().mean().item():.4f}  std={v.float().std().item():.4f}")
+        else:
+            print(f"[DBG] pixel_values  shape={tuple(pixel_values.shape)}  dtype={pixel_values.dtype}  backbone_dtype={_bb_dtype}")
+
         # Invoke super().generate --> taps into `GenerationMixin` which (redirects) to `forward()`
         autocast_dtype = self.llm_backbone.half_precision_dtype
-        with torch.autocast("cuda", dtype=autocast_dtype, enabled=self.enable_mixed_precision_training):
+        autocast_enabled = self.enable_mixed_precision_training and self.device.type == "cuda"
+        print(f"[DBG] device={self.device}  autocast_enabled={autocast_enabled}  autocast_dtype={autocast_dtype}  "
+              f"model_dtype={next(self.parameters()).dtype}")
+
+        # Cast pixel_values to match model dtype (important on MPS where autocast is disabled)
+        if isinstance(pixel_values, dict):
+            pixel_values = {k: v.to(dtype=autocast_dtype) for k, v in pixel_values.items()}
+        else:
+            pixel_values = pixel_values.to(dtype=autocast_dtype)
+        print(f"[DBG] pixel_values cast to dtype={autocast_dtype}")
+
+        with torch.autocast("cuda", dtype=autocast_dtype, enabled=autocast_enabled):
             # fmt: off
             generated_ids = super(PrismaticVLM, self).generate(
                 input_ids=input_ids,                            # Shape: [1, seq]
                 pixel_values=pixel_values,                      # Shape: [1, (opt T,) 3, res, res] or Dict[str, ...]
                 max_new_tokens=self.get_action_dim(unnorm_key),
+                output_scores=True,
+                return_dict_in_generate=True,
                 **kwargs
             )
             # fmt: on
 
+        # ── DEBUG: logit entropy at each generation step ──────────────────────
+        if hasattr(generated_ids, "scores") and generated_ids.scores:
+            for step_i, score in enumerate(generated_ids.scores):
+                probs = torch.softmax(score[0].float(), dim=-1)
+                top_prob, top_tok = probs.max(dim=-1)
+                entropy = -(probs * (probs + 1e-10).log()).sum().item()
+                print(f"[DBG] gen step {step_i}  top_tok={top_tok.item()}  top_prob={top_prob.item():.4f}  entropy={entropy:.4f}")
+        generated_ids = generated_ids.sequences
+
         # Extract predicted action tokens and translate into (normalized) continuous actions
         predicted_action_token_ids = generated_ids[0, -self.get_action_dim(unnorm_key) :]
+        print("PREDICTED ACTION TOKENS:", predicted_action_token_ids.cpu().numpy())
         normalized_actions = self.action_tokenizer.decode_token_ids_to_actions(predicted_action_token_ids.cpu().numpy())
 
         # Un-normalize Actions

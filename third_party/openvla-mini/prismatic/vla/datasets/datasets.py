@@ -14,11 +14,11 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset, IterableDataset
 from transformers import PreTrainedTokenizerBase
-from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFast
 
 from prismatic.models.backbones.llm.prompting import PromptBuilder
 from prismatic.models.backbones.vision import ImageTransform
 from prismatic.util.data_utils import tree_map
+from prismatic.util.qwen_compat import Qwen2TokenizerFast
 from prismatic.vla.action_tokenizer import ActionTokenizer
 from prismatic.vla.datasets.rlds import make_interleaved_dataset, make_single_dataset
 from prismatic.vla.datasets.rlds.oxe import OXE_NAMED_MIXTURES, get_oxe_dataset_kwargs_and_weights

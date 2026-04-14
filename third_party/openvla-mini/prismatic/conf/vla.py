@@ -14,7 +14,10 @@ from enum import Enum, unique
 from pathlib import Path
 from typing import Optional, Union
 
-from draccus import ChoiceRegistry
+try:
+    from draccus import ChoiceRegistry
+except ImportError:
+    from prismatic.conf._choice_registry import ChoiceRegistry
 
 
 @dataclass

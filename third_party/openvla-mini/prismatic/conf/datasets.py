@@ -15,7 +15,10 @@ from enum import Enum, unique
 from pathlib import Path
 from typing import Tuple
 
-from draccus import ChoiceRegistry
+try:
+    from draccus import ChoiceRegistry
+except ImportError:
+    from prismatic.conf._choice_registry import ChoiceRegistry
 
 DEFAULT_DATA_ROOT = "/tmp/datasets"
 

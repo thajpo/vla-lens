@@ -18,10 +18,10 @@ import torch
 from PIL import Image
 from torch.utils.data import Dataset
 from transformers import CodeGenTokenizerFast, LlamaTokenizerFast, PreTrainedTokenizerBase
-from transformers.models.qwen2.tokenization_qwen2_fast import Qwen2TokenizerFast
 
 from prismatic.models.backbones.llm.prompting import PromptBuilder
 from prismatic.models.backbones.vision import ImageTransform
+from prismatic.util.qwen_compat import Qwen2TokenizerFast
 
 # HuggingFace Default / LLaMa-2 IGNORE_INDEX (for labels)
 IGNORE_INDEX = -100

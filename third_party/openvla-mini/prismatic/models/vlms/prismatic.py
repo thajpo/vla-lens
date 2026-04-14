@@ -324,9 +324,26 @@ class PrismaticVLM(VLM):
         multimodal_indices: Optional[torch.LongTensor] = None,
     ) -> CausalLMOutputWithPast:
         """Run a forward pass through the VLM, returning a CausalLMOutputWithPast instance (contains loss)."""
+        import sys
+        _pv_info = "None" if pixel_values is None else (list(pixel_values.keys()) if isinstance(pixel_values, dict) else tuple(pixel_values.shape))
+        _ids_shape = tuple(input_ids.shape) if input_ids is not None else None
+        _cache_len = None
+        if past_key_values is not None:
+            if hasattr(past_key_values, 'get_seq_length'):
+                _cache_len = past_key_values.get_seq_length()
+            elif isinstance(past_key_values, (list, tuple)):
+                _cache_len = len(past_key_values)
+        print(f"[DBG:fwd] ENTER forward  input_ids={_ids_shape}  pixel_values={_pv_info}  past_kv={'yes' if past_key_values is not None else 'no'}  cache_len={_cache_len}", flush=True)
+        sys.stdout.flush()
 
-        # Handle Inference (leverage cache, short-circuit on just LLM forward)
-        if input_ids.shape[1] == 1 and past_key_values is not None:
+        # Handle Inference (leverage cache, short-circuit on just LLM forward).
+        # Use cache_has_content to distinguish an empty DynamicCache (transformers 4.41+)
+        # from a populated one — an empty DynamicCache is "not None" but has seq_len 0.
+        _cache_has_content = past_key_values is not None and (
+            (hasattr(past_key_values, 'get_seq_length') and past_key_values.get_seq_length() > 0)
+            or (isinstance(past_key_values, (list, tuple)) and len(past_key_values) > 0)
+        )
+        if input_ids.shape[1] == 1 and _cache_has_content:
             # We're leveraging the cache, so just redirect to `self.llm_backbone` with `input_ids` and `past_key_values`
             output = self.llm_backbone(
                 input_ids=input_ids,
@@ -371,8 +388,21 @@ class PrismaticVLM(VLM):
             else:
                 patch_features = self.vision_backbone(pixel_values[multimodal_indices])
 
+        # ── DEBUG: vision feature stats ───────────────────────────────────────
+        import hashlib
+        _pf = patch_features[0] if isinstance(patch_features, (list, tuple)) else patch_features
+        _pf_np = _pf.detach().float().cpu().numpy()
+        _pf_hash = hashlib.md5(_pf_np.tobytes()).hexdigest()[:8]
+        print(f"[DBG:fwd] patch_features  shape={tuple(_pf.shape)}  "
+              f"mean={_pf_np.mean():.6f}  std={_pf_np.std():.6f}  "
+              f"nan={bool((_pf_np != _pf_np).any())}  hash={_pf_hash}")
+
         # Projection Logic :: [bsz, num_patches, llm_embed_dim] =>> num_patches = (2 *) (256 + 1) for ViT-L + CLS
         projected_patch_embeddings = self.projector(patch_features)
+        _pp_np = projected_patch_embeddings.detach().float().cpu().numpy()
+        _pp_hash = hashlib.md5(_pp_np.tobytes()).hexdigest()[:8]
+        print(f"[DBG:fwd] projected_patches  shape={tuple(projected_patch_embeddings.shape)}  "
+              f"mean={_pp_np.mean():.6f}  std={_pp_np.std():.6f}  hash={_pp_hash}")
         projected_patch_attention_mask = None
         if attention_mask is not None:
             projected_patch_attention_mask = torch.full(
@@ -496,7 +526,13 @@ class PrismaticVLM(VLM):
         **kwargs: torch.Tensor,
     ) -> Dict[str, torch.Tensor]:
         """Borrowed from `LlamaForCausalLM` --> in general, just handles caching logic during generation."""
-        if past_key_values:
+        # Use explicit content check — newer transformers passes an empty DynamicCache
+        # as the initial past_key_values, which is "not None" but has no content yet.
+        _cache_has_content = past_key_values is not None and (
+            (hasattr(past_key_values, 'get_seq_length') and past_key_values.get_seq_length() > 0)
+            or (isinstance(past_key_values, (list, tuple)) and len(past_key_values) > 0)
+        )
+        if _cache_has_content:
             input_ids = input_ids[:, -1:]
 
         # if `inputs_embeds` are passed, we only want to use them in the 1st generation step
@@ -544,7 +580,8 @@ class PrismaticVLM(VLM):
 
         # Invoke super().generate --> taps into `GenerationMixin` which (redirects) to `forward()`
         autocast_dtype = self.llm_backbone.half_precision_dtype
-        with torch.autocast("cuda", dtype=autocast_dtype, enabled=self.enable_mixed_precision_training):
+        autocast_enabled = self.enable_mixed_precision_training and self.device.type == "cuda"
+        with torch.autocast("cuda", dtype=autocast_dtype, enabled=autocast_enabled):
             for idx, input_ids in enumerate(batch_input_ids):
                 if isinstance(pixel_values, torch.Tensor):
                     pixel_values = pixel_values[idx]
@@ -607,7 +644,8 @@ class PrismaticVLM(VLM):
 
         # Invoke super().generate --> taps into `GenerationMixin` which (redirects) to `forward()`
         autocast_dtype = self.llm_backbone.half_precision_dtype
-        with torch.autocast("cuda", dtype=autocast_dtype, enabled=self.enable_mixed_precision_training):
+        autocast_enabled = self.enable_mixed_precision_training and self.device.type == "cuda"
+        with torch.autocast("cuda", dtype=autocast_dtype, enabled=autocast_enabled):
             # fmt: off
             generated_ids = super().generate(
                 input_ids=input_ids,            # Shape: [1, seq]

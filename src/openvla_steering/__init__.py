@@ -1,2 +1,1 @@
-"""OpenVLA steering experiment scaffold."""
-
+"""VLA interpretability and steering experiment scaffolding."""

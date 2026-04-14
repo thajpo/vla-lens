@@ -29,7 +29,8 @@ from prismatic.util.torch_utils import merge_two_dims, sequence_combine_call_spl
 def unpack_tuple(fn: Callable[[Any], Tuple[Any]]) -> Callable[[Any], Any]:
     def wrapper(*args: Any, **kwargs: Any) -> Any:
         result = fn(*args, **kwargs)
-        return result[0] if isinstance(result, tuple) else result
+        # timm ≥1.0 returns list; older timm returns tuple; both need unpacking
+        return result[0] if isinstance(result, (tuple, list)) else result
 
     return wrapper
 
