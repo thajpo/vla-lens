@@ -1,0 +1,237 @@
+from __future__ import annotations
+
+import numpy as np
+
+from vla_lens.pi05.capture import (
+    PROFILE_EXPERT_LAYERS,
+    PROFILE_VLM_LAYERS,
+    CaptureCall,
+    CapturePlan,
+    EpisodeBuffer,
+    _declared_pi05_sites,
+    _episode_success,
+    _model_arrays,
+    canonical_profile,
+    profile_dimensions,
+)
+
+
+def test_episode_success_uses_any_late_success_info() -> None:
+    buffer = EpisodeBuffer(
+        trace_id="trace",
+        task_id=0,
+        task_name="task",
+        prompt="task",
+        seed=0,
+    )
+    buffer.infos = [{"is_success": False}, {"is_success": False}, {"is_success": True}]
+    buffer.rewards = [0.0, 0.0, 1.0]
+
+    assert _episode_success(buffer) is True
+
+
+def test_episode_success_false_when_success_signal_never_passes() -> None:
+    buffer = EpisodeBuffer(
+        trace_id="trace",
+        task_id=0,
+        task_name="task",
+        prompt="task",
+        seed=0,
+    )
+    buffer.infos = [{"is_success": False}, {"is_success": False}]
+    buffer.rewards = [0.0, 1.0]
+
+    assert _episode_success(buffer) is False
+
+
+def test_episode_success_falls_back_to_reward_without_success_signal() -> None:
+    buffer = EpisodeBuffer(
+        trace_id="trace",
+        task_id=0,
+        task_name="task",
+        prompt="task",
+        seed=0,
+    )
+    buffer.infos = [{}, {}]
+    buffer.rewards = [0.0, 1.0]
+
+    assert _episode_success(buffer) is True
+
+
+def test_profile_aliases_resolve_to_canonical_capture_profiles() -> None:
+    assert canonical_profile("representation") == "features"
+    assert canonical_profile("mechanistic_light") == "mechanistic_sampled"
+    assert canonical_profile("mechanistic_heavy") == "mechanistic_all"
+    assert canonical_profile("full") == "audit_full"
+
+
+def test_sampled_profiles_use_same_vlm_and_expert_layer_pairs() -> None:
+    expected_layers = (0, 4, 8, 12, 17)
+
+    for profile in ("mechanistic_sampled", "internals_sampled"):
+        assert PROFILE_VLM_LAYERS[profile] == expected_layers
+        assert PROFILE_EXPERT_LAYERS[profile] == expected_layers
+        assert profile_dimensions(profile)["layer_coverage"] == {
+            "vlm": "sampled_5",
+            "expert": "sampled_5",
+        }
+
+
+def test_custom_plan_metadata_reflects_resolved_families() -> None:
+    plan = CapturePlan(
+        profile="custom",
+        vlm_layers=(0, 4, 8, 12, 17),
+        expert_layers=(0, 4, 8, 12, 17),
+        vlm_hidden="tokens",
+        vlm_attention="none",
+        expert_hidden="tokens",
+        expert_attention="none",
+        storage_dtype="float16",
+    )
+
+    metadata = plan.to_metadata()
+
+    assert metadata["profile_dimensions"] == {
+        "layer_coverage": {"vlm": "sampled_5", "expert": "sampled_5"},
+        "families": {
+            "representations": "tokens",
+            "attention": "none",
+            "cache": "none",
+            "action_head": "none",
+            "internals": "none",
+            "state_setup": "none",
+        },
+    }
+    assert profile_dimensions("custom") == metadata["profile_dimensions"]
+
+
+def test_mechanistic_sampled_declares_bridge_and_action_head_sites() -> None:
+    plan = CapturePlan(
+        profile="mechanistic_sampled",
+        vlm_layers=(0, 4),
+        expert_layers=(0,),
+        vlm_hidden="tokens",
+        vlm_attention="full",
+        expert_hidden="tokens",
+        expert_attention="full",
+        storage_dtype="float16",
+    )
+
+    sites = set(_declared_pi05_sites(plan))
+
+    assert "pi05.vlm.layers.0.kv_cache.key" in sites
+    assert "pi05.vlm.layers.0.kv_cache.value" in sites
+    assert "pi05.vlm.layers.4.kv_cache.key" in sites
+    assert "pi05.expert.by_step.input_embeddings" in sites
+    assert "pi05.action_head.input" in sites
+    assert "pi05.action_head.output" in sites
+    assert plan.to_metadata()["captures_bridge_sites"] is True
+
+
+def test_mechanistic_sampled_materializes_bridge_and_action_head_model_sites() -> None:
+    plan = CapturePlan(
+        profile="mechanistic_sampled",
+        vlm_layers=(0,),
+        expert_layers=(0,),
+        vlm_hidden="tokens",
+        vlm_attention="full",
+        expert_hidden="tokens",
+        expert_attention="full",
+        storage_dtype="float16",
+    )
+    buffer = EpisodeBuffer(
+        trace_id="trace",
+        task_id=0,
+        task_name="task",
+        prompt="task",
+        seed=0,
+    )
+    buffer.calls = [
+        CaptureCall(
+            call_index=0,
+            env_timestep=0,
+            final_action_chunk=np.zeros((2, 7), dtype=np.float16),
+            denoising_actions=np.zeros((3, 2, 7), dtype=np.float16),
+            suffix_hidden=np.zeros((3, 2, 7), dtype=np.float16),
+            vlm_kv_key_by_layer={0: np.zeros((2, 5, 4), dtype=np.float16)},
+            vlm_kv_value_by_layer={0: np.ones((2, 5, 4), dtype=np.float16)},
+            generation_input_embeddings=np.zeros((3, 2, 8), dtype=np.float16),
+            action_head_input=np.ones((3, 2, 8), dtype=np.float16),
+            action_head_output=np.ones((3, 2, 7), dtype=np.float16),
+        )
+    ]
+
+    specs = {spec.name: spec for spec in _model_arrays(buffer, plan)}
+
+    assert specs["pi05.vlm.layers.0.kv_cache.key"].axes == [
+        "policy_call",
+        "kv_head",
+        "cached_token",
+        "head_channel",
+    ]
+    assert specs["pi05.vlm.layers.0.kv_cache.key"].array.shape == (1, 2, 5, 4)
+    assert specs["pi05.vlm.layers.0.kv_cache.key"].role == "kv_cache_key"
+    assert specs["pi05.vlm.layers.0.kv_cache.value"].role == "kv_cache_value"
+    assert specs["pi05.expert.by_step.input_embeddings"].axes == [
+        "policy_call",
+        "generation_step",
+        "token",
+        "channel",
+    ]
+    assert specs["pi05.action_head.input"].axes == [
+        "policy_call",
+        "generation_step",
+        "token",
+        "channel",
+    ]
+    assert specs["pi05.action_head.output"].axes == [
+        "policy_call",
+        "generation_step",
+        "horizon",
+        "action_dim",
+    ]
+    assert specs["pi05.action_head.output"].materialization == "raw"
+    assert specs["pi05.action_head.output"].exactness == "exact"
+
+
+def test_token_profiles_do_not_store_redundant_hidden_mean_or_attention_key_mass() -> None:
+    plan = CapturePlan(
+        profile="mechanistic_sampled",
+        vlm_layers=(0,),
+        expert_layers=(0,),
+        vlm_hidden="tokens",
+        vlm_attention="full",
+        expert_hidden="tokens",
+        expert_attention="full",
+        storage_dtype="float16",
+    )
+    buffer = EpisodeBuffer(
+        trace_id="trace",
+        task_id=0,
+        task_name="task",
+        prompt="task",
+        seed=0,
+    )
+    buffer.calls = [
+        CaptureCall(
+            call_index=0,
+            env_timestep=0,
+            final_action_chunk=np.zeros((2, 7), dtype=np.float16),
+            denoising_actions=np.zeros((3, 2, 7), dtype=np.float16),
+            suffix_hidden=np.zeros((3, 2, 7), dtype=np.float16),
+            expert_hidden_by_layer={0: np.zeros((3, 2, 8), dtype=np.float16)},
+            expert_attention_by_layer={0: np.zeros((3, 1, 2, 6), dtype=np.float16)},
+        )
+    ]
+
+    names = {spec.name for spec in _model_arrays(buffer, plan)}
+
+    assert "pi05.expert.layers.0.by_step.hidden_tokens" in names
+    assert "pi05.expert.layers.0.by_step.hidden_mean" not in names
+    assert "pi05.expert.layers.0.by_step.attention" in names
+    assert "pi05.expert.by_step.attention_key_mass" not in names
+    attention = {spec.name: spec for spec in _model_arrays(buffer, plan)}[
+        "pi05.expert.layers.0.by_step.attention"
+    ]
+    assert attention.query_token_space_id == "pi05.action_suffix"
+    assert attention.key_token_space_id == "pi05.expert_context"

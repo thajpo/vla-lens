@@ -1,0 +1,54 @@
+name: pi05-diverse-100
+dataset_id: pi05-diverse-100
+description: >
+  Medium diverse PI0.5/LIBERO mechanistic_sampled capture for initial probe
+  training and dataset descriptor work. This keeps the full LIBERO suite/task
+  spread from the 500 episode plan, but uses two seeds per task for a 100
+  episode overnight-sized batch.
+
+output_root: /media/j/New Volume/vla-lens/pi05-diverse-100
+model_id: lerobot/pi05_libero_finetuned
+python_executable: /home/j/Projects/vla-lens/.venv-lerobot/bin/python
+pythonpath: /home/j/Projects/vla-lens/src
+capture_profile: mechanistic_sampled
+storage_dtype: float16
+obs_size: 256
+device: cuda
+dtype: bfloat16
+start_seed: 1400
+seeds_per_task: 2
+estimated_mb_per_episode: 320
+minimum_free_gb_after_capture: 25
+
+benchmarks:
+  - libero_object
+  - libero_spatial
+  - libero_goal
+  - libero_10
+  - libero_90
+
+task_ids:
+  train_seen_task:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+  val_heldout_task:
+    - 6
+    - 7
+  test_heldout_task:
+    - 8
+    - 9
+
+seed_splits_for_train_seen_tasks:
+  train:
+    - 1400
+  test_seen_task:
+    - 1401
+
+full_calibration:
+  enabled: false
+  capture_profile: audit_full
+  episodes: []

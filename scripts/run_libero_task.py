@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import io
 import json
 import math
 import os
@@ -12,7 +11,6 @@ import random
 import sys
 import time
 from pathlib import Path
-from types import SimpleNamespace
 
 import imageio
 import numpy as np
@@ -30,10 +28,7 @@ try:
     from libero.libero import benchmark, get_libero_path
     from libero.libero.envs import OffScreenRenderEnv
 except ImportError as exc:
-    raise SystemExit(
-        "LIBERO is not installed. Run:\n"
-        "  uv pip install third_party/LIBERO/"
-    ) from exc
+    raise SystemExit("LIBERO is not installed. Run:\n  uv pip install third_party/LIBERO/") from exc
 
 try:
     import torch
@@ -60,6 +55,7 @@ MAX_STEPS_BY_SUITE = {
 # Seeding
 # ---------------------------------------------------------------------------
 
+
 def set_seed_everywhere(seed: int) -> None:
     torch.manual_seed(seed)
     np.random.seed(seed)
@@ -70,6 +66,7 @@ def set_seed_everywhere(seed: int) -> None:
 # ---------------------------------------------------------------------------
 # Image utilities
 # ---------------------------------------------------------------------------
+
 
 def get_libero_image(obs: dict, resize_size: int, key: str = "agentview_image") -> np.ndarray:
     """
@@ -85,6 +82,7 @@ def get_libero_image(obs: dict, resize_size: int, key: str = "agentview_image") 
 # ---------------------------------------------------------------------------
 # Environment utilities
 # ---------------------------------------------------------------------------
+
 
 def get_libero_env(task, resolution: int = 224):
     task_description = task.language
@@ -116,6 +114,7 @@ def quat2axisangle(quat: np.ndarray) -> np.ndarray:
 # Action utilities
 # ---------------------------------------------------------------------------
 
+
 def normalize_gripper_action(action: np.ndarray, binarize: bool = True) -> np.ndarray:
     """Map gripper from [0,1] → [-1,+1] and optionally binarize."""
     action = action.copy()
@@ -134,6 +133,7 @@ def invert_gripper_action(action: np.ndarray) -> np.ndarray:
 # ---------------------------------------------------------------------------
 # Model loading and inference
 # ---------------------------------------------------------------------------
+
 
 def load_model(checkpoint: str, hf_token: str | None = None):
     from huggingface_hub import snapshot_download
@@ -170,7 +170,7 @@ def load_model(checkpoint: str, hf_token: str | None = None):
     else:
         device = torch.device("cpu")
     vla.to(device)
-    if hasattr(vla, 'action_tokenizer') and hasattr(vla.action_tokenizer, 'vq_vae'):
+    if hasattr(vla, "action_tokenizer") and hasattr(vla.action_tokenizer, "vq_vae"):
         # VqVae is a custom class, not an nn.Module, so we move its components
         vla.action_tokenizer.vq_vae.encoder = vla.action_tokenizer.vq_vae.encoder.to(device)
         vla.action_tokenizer.vq_vae.decoder = vla.action_tokenizer.vq_vae.decoder.to(device)
@@ -190,10 +190,13 @@ def get_action(
     step: int = -1,
 ) -> np.ndarray:
     import hashlib
+
     raw = image_history[-1]
     raw_hash = hashlib.md5(raw.tobytes()).hexdigest()[:8]
-    print(f"[DBG] get_action step={step}  raw_img shape={raw.shape} dtype={raw.dtype}  "
-          f"mean={raw.mean():.2f}  std={raw.std():.2f}  hash={raw_hash}")
+    print(
+        f"[DBG] get_action step={step}  raw_img shape={raw.shape} dtype={raw.dtype}  "
+        f"mean={raw.mean():.2f}  std={raw.std():.2f}  hash={raw_hash}"
+    )
 
     images = [Image.fromarray(img).convert("RGB") for img in image_history]
     if center_crop:
@@ -219,6 +222,7 @@ def _apply_center_crop(image: Image.Image, crop_scale: float = 0.9) -> Image.Ima
 # Video saving
 # ---------------------------------------------------------------------------
 
+
 def save_rollout_video(
     images: list[np.ndarray],
     path: Path,
@@ -237,6 +241,7 @@ def save_rollout_video(
 # ---------------------------------------------------------------------------
 # Suite / task selection
 # ---------------------------------------------------------------------------
+
 
 def get_suite(task_suite_name: str):
     benchmark_dict = benchmark.get_benchmark_dict()
@@ -262,9 +267,15 @@ def select_tasks(args: argparse.Namespace, suite) -> list[tuple[int, object]]:
         task = suite.get_task(i)
         if args.task_id is not None and i != args.task_id:
             continue
-        if args.task_name_substring and args.task_name_substring.lower() not in getattr(task, "name", "").lower():
+        if (
+            args.task_name_substring
+            and args.task_name_substring.lower() not in getattr(task, "name", "").lower()
+        ):
             continue
-        if args.task_language_substring and args.task_language_substring.lower() not in getattr(task, "language", "").lower():
+        if (
+            args.task_language_substring
+            and args.task_language_substring.lower() not in getattr(task, "language", "").lower()
+        ):
             continue
         selected.append((i, task))
     return selected
@@ -273,6 +284,7 @@ def select_tasks(args: argparse.Namespace, suite) -> list[tuple[int, object]]:
 # ---------------------------------------------------------------------------
 # Rollout
 # ---------------------------------------------------------------------------
+
 
 def rollout_task(
     args: argparse.Namespace,
@@ -293,7 +305,9 @@ def rollout_task(
     n_trials = min(args.num_trials_per_task, len(initial_states))
 
     with log_path.open("w") as log_file:
-        log_file.write(f"task_id={task_id}\nlanguage={task_description}\ncheckpoint={args.pretrained_checkpoint}\n")
+        log_file.write(
+            f"task_id={task_id}\nlanguage={task_description}\ncheckpoint={args.pretrained_checkpoint}\n"
+        )
         log_file.flush()
 
         for ep_idx in range(n_trials):
@@ -312,11 +326,18 @@ def rollout_task(
                 img = get_libero_image(obs, resize_size=224)
                 replay_images.append(img)
 
-                history = replay_images[-args.obs_history:]
+                history = replay_images[-args.obs_history :]
                 if len(history) < args.obs_history:
                     history = [replay_images[-1]] * (args.obs_history - len(history)) + history
 
-                action = get_action(model, history, task_description, unnorm_key, center_crop=args.center_crop, step=t)
+                action = get_action(
+                    model,
+                    history,
+                    task_description,
+                    unnorm_key,
+                    center_crop=args.center_crop,
+                    step=t,
+                )
                 action = normalize_gripper_action(action, binarize=True)
                 action = invert_gripper_action(action)
                 if t < 15 or t % 50 == 0:
@@ -347,7 +368,9 @@ def rollout_task(
 
             if args.save_videos and replay_images:
                 video_dir = ROOT / "artifacts" / "videos" / "libero"
-                video_path = video_dir / f"{DATE_TIME}--task={task_id}--ep={ep_idx}--success={done}.mp4"
+                video_path = (
+                    video_dir / f"{DATE_TIME}--task={task_id}--ep={ep_idx}--success={done}.mp4"
+                )
                 summary["video_path"] = save_rollout_video(replay_images, video_path)
 
             summary_path = ROOT / args.summary_jsonl
@@ -356,12 +379,18 @@ def rollout_task(
                 f.write(json.dumps(summary) + "\n")
 
     env.close()
-    return {"task_id": task_id, "episodes": n_trials, "successes": successes, "log_path": str(log_path)}
+    return {
+        "task_id": task_id,
+        "episodes": n_trials,
+        "successes": successes,
+        "log_path": str(log_path),
+    }
 
 
 # ---------------------------------------------------------------------------
 # CLI
 # ---------------------------------------------------------------------------
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)

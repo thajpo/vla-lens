@@ -1,0 +1,78 @@
+name: pi05-diverse-500
+dataset_id: pi05-diverse-500
+description: >
+  Dataset-scale PI0.5/LIBERO capture for first serious probe work. The split
+  uses held-out tasks plus held-out seeds so probe results can be checked
+  against task/layout priors instead of relying on row-level random splits.
+
+output_root: /media/j/New Volume/vla-lens/pi05-diverse-500
+model_id: lerobot/pi05_libero_finetuned
+python_executable: /home/j/Projects/vla-lens/.venv-lerobot/bin/python
+pythonpath: /home/j/Projects/vla-lens/src
+capture_profile: mechanistic_sampled
+storage_dtype: float16
+obs_size: 256
+device: cuda
+dtype: bfloat16
+start_seed: 1000
+seeds_per_task: 10
+estimated_mb_per_episode: 320
+minimum_free_gb_after_capture: 25
+
+benchmarks:
+  - libero_object
+  - libero_spatial
+  - libero_goal
+  - libero_10
+  - libero_90
+
+task_ids:
+  train_seen_task:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+  val_heldout_task:
+    - 6
+    - 7
+  test_heldout_task:
+    - 8
+    - 9
+
+seed_splits_for_train_seen_tasks:
+  train:
+    - 1000
+    - 1001
+    - 1002
+    - 1003
+    - 1004
+    - 1005
+  val_seen_task:
+    - 1006
+    - 1007
+  test_seen_task:
+    - 1008
+    - 1009
+
+full_calibration:
+  enabled: false
+  capture_profile: audit_full
+  # Keep this off by default. Turn it on later for a tiny site-coverage slice.
+  episodes:
+    - benchmark: libero_object
+      task_id: 0
+      seed: 1000
+    - benchmark: libero_spatial
+      task_id: 0
+      seed: 1000
+    - benchmark: libero_goal
+      task_id: 0
+      seed: 1000
+    - benchmark: libero_10
+      task_id: 0
+      seed: 1000
+    - benchmark: libero_90
+      task_id: 0
+      seed: 1000

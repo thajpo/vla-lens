@@ -1,0 +1,43 @@
+name: pi05-light-20-smoke
+dataset_id: pi05-light-20-smoke
+description: >
+  Small diverse PI0.5 mechanistic_sampled smoke capture for developing dataset
+  coverage/descriptor tooling before the full 500-episode run.
+
+output_root: /media/j/New Volume/vla-lens/pi05-light-20-smoke
+model_id: lerobot/pi05_libero_finetuned
+python_executable: /home/j/Projects/vla-lens/.venv-lerobot/bin/python
+pythonpath: /home/j/Projects/vla-lens/src
+capture_profile: mechanistic_sampled
+storage_dtype: float16
+obs_size: 256
+device: cuda
+dtype: bfloat16
+start_seed: 1200
+seeds_per_task: 2
+estimated_mb_per_episode: 220
+minimum_free_gb_after_capture: 25
+
+benchmarks:
+  - libero_object
+  - libero_spatial
+  - libero_goal
+  - libero_10
+  - libero_90
+
+task_ids:
+  train_seen_task:
+    - 0
+  test_heldout_task:
+    - 1
+
+seed_splits_for_train_seen_tasks:
+  train:
+    - 1200
+  test_seen_task:
+    - 1201
+
+full_calibration:
+  enabled: false
+  capture_profile: audit_full
+  episodes: []

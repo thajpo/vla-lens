@@ -1,4 +1,14 @@
-# Rollout Timing on Apple Silicon (MPS)
+# Rollout Timing Reference
+
+> **Note**: The measurements below are from MiniVLA (Qwen2.5-0.5B) on Apple Silicon MPS.
+> The current project target is CogACT-Small (Prismatic 7B) on ROCm (Radeon 7900 XTX).
+> These numbers are stale for planning purposes. Update this file after the first CogACT
+> timing runs. The qualitative patterns (failed episodes run to timeout, successful
+> episodes terminate early) will likely hold.
+
+---
+
+# Rollout Timing on Apple Silicon (MPS) — MiniVLA Reference (Archived)
 
 Empirical measurements from completed runs on MiniVLA (minivla-vq-libero90-prismatic),
 measured 2026-04-12, Apple Silicon MPS backend.

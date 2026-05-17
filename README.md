@@ -1,207 +1,231 @@
-# OpenVLA Steering Experiment
+# VLA-lens
 
-This repository is a stepwise scaffold for a robotics interpretability project.
+Episode-aligned interpretability packaging for Vision-Language-Action robot
+policies.
 
-Research goal:
+VLA-lens stores robot rollouts, camera frames, actions, model internals, and saved
+analysis outputs in a trace format. It then provides selectors, probes, action-head
+analysis, reusable artifacts, and a local dashboard for inspecting what a policy saw,
+represented, and planned over time.
 
-- determine whether a VLA internally represents which object it is going to pick before motor commitment
-- build a probe-ready rollout pipeline for hidden-state decoding
-- eventually test causal steering of that decoded target signal
+The main idea:
 
-Current phase:
+```text
+HF model + environment + capture profile
+→ captured episodes
+→ VLA-lens interpretability package
+→ linked visual workbench and reproducible analyses
+```
 
-- `uv`-managed Python project
-- minimal `robosuite` simulation setup
-- experiment-facing `Stack` wrapper with deterministic seeded resets
-- baseline rollout logging for scripted two-object picks
-- backend abstraction with `scripted_pick`, `openvla`, and `minivla`
-- working OpenVLA action path into robosuite
-- MiniVLA loader integration in progress via upstream Prismatic code
+## What You Can Do
 
-Immediate goal:
+- Run PI0.5 in LIBERO and receive a reusable `.vlatrace` interpretability package.
+- Import compatible capture directories into the same trace contract when needed.
+- Browse datasets and open individual robot episodes.
+- Inspect frames, prompts, actions, model data, feature activations, image-token overlays,
+  expert/action-token activations, and generation/action-flow traces.
+- Choose PI0.5 capture profiles for rollout, features, mechanistic_sampled, mechanistic_all, internals_sampled, audit_full, or custom interpretability budgets.
+- Run a dataset analyzer that recommends defensible next analyses with concrete evidence.
+- Generate compressed episode videos from recorded policy decisions.
+- Train probe suites from YAML specs and save them as `LensArtifact`s.
+- Save VLA-specific `ActionGeneration` artifacts that summarize how action chunks form over
+  generation steps.
 
-- finish validating a lightweight baseline VLA rollout path
-- add lean per-step rollout logging needed for probe dataset construction
-- avoid bloated instrumentation before the first probe-ready dataset exists
+## Package Split
+
+`src/vla_lens` is the framework:
+
+- `traces.py`: trace bundles, dataset indexes, array loading, artifact persistence.
+- `selectors.py`: axis-aware activation selection and feature matrix caching.
+- `artifacts.py`: saved analysis records with provenance and display metadata.
+- `analyzer.py`: dataset-aware analysis recommendations.
+- `probes/`: probe training workflows and baselines.
+- `action_generation.py`: action-head generation summaries.
+- `server.py` and `live_dashboard.py`: local dashboard and APIs.
+- `importers/pi05_legacy.py`: one-way PI0.5 capture-to-`.vlatrace` converter.
+- `pi05/`: PI0.5-specific selectors, replay, and intervention specs.
 
 ## Quick Start
 
-```bash
-uv sync
-MUJOCO_GL=egl uv run python scripts/visualize_scene.py
-```
-
-If rendering fails because the local machine needs a different MuJoCo / OpenGL backend, set the backend explicitly before running:
+Serve an existing trace dataset:
 
 ```bash
-MUJOCO_GL=egl uv run python scripts/visualize_scene.py
+uv run python scripts/serve_vla_lens_dashboard.py runs/pi05_high10_vlatraces --port 8765
 ```
 
-or:
-
-```bash
-MUJOCO_GL=glfw uv run python scripts/visualize_scene.py
-```
-
-The default config now uses `robosuite`'s `Stack` environment as a simple proxy for the target task:
-
-- two colored cubes
-- one scripted pick target
-- saved offscreen debug video by default
-- deterministic seeded resets for matched-scene checks
-- structured rollout summaries written to Parquet
-
-You can switch the scripted target with:
-
-```bash
-MUJOCO_GL=egl uv run python scripts/visualize_scene.py model.scripted_pick.target_object=cubeB
-```
-
-Backend selection now lives under `model.backend`.
-Current supported values:
-
-- `scripted_pick`
-- `openvla`
-- `minivla`
-
-## Current Workflow
-
-1. Visualize a scripted rollout
-
-```bash
-MUJOCO_GL=egl uv run python scripts/visualize_scene.py
-```
-
-Or explicitly:
-
-```bash
-MUJOCO_GL=egl uv run python scripts/visualize_scene.py model.backend=scripted_pick
-```
-
-2. Verify that the same seed reproduces the same scene
-
-```bash
-MUJOCO_GL=egl uv run python scripts/check_matched_scene.py
-```
-
-3. Run and log baseline scripted rollouts
-
-```bash
-MUJOCO_GL=egl uv run python scripts/run_stack_rollouts.py run.num_rollouts=4 run.save_video=false
-```
-
-## Backend Status
-
-### OpenVLA
-
-The `openvla` backend is now runnable in this environment.
-
-What is in place:
-
-- backend selection via `model.backend=openvla`
-- camera-observation extraction from `{camera_name}_image`
-- direct `(prompt, image) -> processor -> predict_action(...)` path
-- explicit `unnorm_key` support, with `bridge_orig` currently configured
-- clipping and 7D action validation before robosuite stepping
-
-Current status:
-
-- smoke tests produced valid 7D actions in the robosuite loop
-- this is enough to treat OpenVLA as the current baseline VLA path
-
-### MiniVLA
-
-The `minivla` backend is wired, but it does not use the Hugging Face AutoClasses path.
-
-Important note:
-
-- Stanford MiniVLA checkpoints such as `Stanford-ILIAD/minivla-vq-bridge-prismatic` are not currently deployable through vanilla `AutoProcessor` / `AutoModelForVision2Seq`
-- the repo now routes MiniVLA through the upstream `openvla-mini` Prismatic loader instead
-
-Current status:
-
-- backend selection via `model.backend=minivla`
-- vendored upstream `openvla-mini` code under `third_party/openvla-mini`
-- local dependency path updated to support the Prismatic loader
-- MiniVLA smoke validation is in progress
-
-## ROCm Setup
-
-Use the ROCm PyTorch wheel path from the official PyTorch install docs. For Linux ROCm 6.4, the command is:
-
-```bash
-uv pip install torch==2.9.1 torchvision==0.24.1 torchaudio==2.9.1 --index-url https://download.pytorch.org/whl/rocm6.4
-```
-
-Then install the minimal OpenVLA inference stack referenced by the OpenVLA README:
-
-```bash
-uv pip install transformers timm tokenizers sentencepiece pillow accelerate
-```
-
-If you want to mirror the OpenVLA README more closely, its minimal path is based on Hugging Face `AutoProcessor` plus `AutoModelForVision2Seq` with `trust_remote_code=True`.
-
-## VLA Smoke Paths
-
-OpenVLA:
-
-```bash
-MUJOCO_GL=egl uv run python scripts/visualize_scene.py \
-  model.backend=openvla \
-  env.use_camera_obs=true \
-  env.has_offscreen_renderer=true
-```
-
-MiniVLA:
-
-```bash
-MUJOCO_GL=egl PRISMATIC_DATA_ROOT=/tmp uv run python scripts/visualize_scene.py \
-  model.backend=minivla \
-  env.use_camera_obs=true \
-  env.has_offscreen_renderer=true
-```
-
-For MiniVLA, the loader path is heavier because it uses the upstream Prismatic checkpoint format rather than a Hugging Face-exported inference checkpoint.
-
-Rollout records are written to:
+Open:
 
 ```text
-artifacts/logs/stack_rollouts.parquet
+http://127.0.0.1:8765/
 ```
 
-Saved videos, when enabled, are written under:
+Capture PI0.5 episodes directly into VLA-lens traces:
+
+```bash
+uv run vla-pi05-batch-capture --config configs/pi05_light_5_test.yaml --run
+```
+
+The `.vlatrace` bundle is the canonical VLA-lens episode record used by the
+backend and webapp.
+
+The batch runner is the normal run surface. It writes an `episode_plan.csv`
+containing one row per intended episode:
+
+```csv
+dataset_id,benchmark,task_id,seed,split,capture_profile
+pi05-light-5-test,libero_object,0,1300,train,mechanistic_sampled
+```
+
+Each captured episode stores that value as `manifest.metadata.dataset_id`. The
+CSV controls dataset/task/seed/profile variation; the capture code stays one
+package-native command.
+
+For schema/UI smoke testing, run a tiny matrix over all capture profiles:
+
+```bash
+uv run python scripts/run_capture_profile_smoke.py \
+  --model-id lerobot/pi05_libero_finetuned \
+  --episodes 2 \
+  --delete-existing \
+  --capture-command 'uv run vla-pi05-capture --model-id {model_id} --episodes {episodes} --start-seed {start_seed} --capture-profile {profile} --dataset-id {dataset_id} --vlatrace-out-root {traces_root}'
+```
+
+The smoke script owns the profile roots and trace validation. The runner
+command is a template because the concrete PI0.5 capture
+entrypoint is model/environment-specific.
+
+Run dataset diagnostics:
+
+```bash
+uv run python scripts/save_vla_lens_dataset_report.py runs/pi05_high10_vlatraces
+```
+
+Train a probe from a YAML spec:
+
+```bash
+uv run python scripts/train_vla_lens_probe.py runs/pi05_high10_vlatraces --spec - <<'YAML'
+name: Outcome probe over expert action features
+target:
+  kind: outcome
+features:
+  module: pi05.expert.layers.*
+  tensor_type: hidden_tokens
+  token_kind: action
+  layers: null
+  timesteps: all
+  generation_step: null
+  reduction: mean
+split:
+  kind: heldout_benchmark
+baseline:
+  - majority_class
+  - benchmark
+  - target_object
+sweep: layer
+YAML
+```
+
+Save an action-generation artifact:
+
+```bash
+uv run python scripts/save_vla_lens_action_generation.py runs/pi05_high10_vlatraces
+```
+
+Refresh the dashboard and open the Artifacts page to inspect saved results.
+
+PI0.5 capture profiles are named `rollout`, `features`,
+`mechanistic_sampled`, `mechanistic_all`, `internals_sampled`, `audit_full`,
+and `custom`. In short: use `vla-pi05-batch-capture` for dataset-scale work.
+`mechanistic_sampled` is the cheap default; `mechanistic_all` is the best
+serious single-trace inspector profile; `audit_full` adds raw forward internals
+and is intentionally expensive. Legacy aliases still work for one compatibility
+cycle: `representation`, `mechanistic_light`, `mechanistic_heavy`, and `full`.
+Sampled PI0.5 model profiles capture the same VLM and expert layer indices
+(`0, 4, 8, 12, 17`) so inspected prefix K/V pairs line up as
+`VLM L_i -> Expert L_i`.
+
+Use `dataset_id` for capture-run provenance. It is stored in
+`manifest.metadata.dataset_id` and in generated `episode_plan.csv` /
+`probe_splits.csv` files so datasets can stay flat-ish while still being easy to
+filter and audit.
+
+Every newly written `.vlatrace` also stores fast provenance fingerprints in
+`tables/fingerprints.json`, `manifest.metadata.fingerprints`, and
+`capture_report.fingerprints`:
+
+- `trajectory_fingerprint`: executed/actions/generation trajectory plus timestep-policy mapping.
+- `context_fingerprint`: object/robot/camera/evaluation/preprocessing context.
+- `trace_schema_fingerprint`: token/model-site/table semantics and capture request/plan/report.
+- `trace_fingerprint`: the combined trace identity for provenance checks.
+
+Probe artifacts record source episode fingerprints plus the concrete feature
+matrix, target, and row-index fingerprints, so a later probe result can tell
+whether behavior, context, trace semantics, or the extracted training data changed.
+
+## Trace And Artifact Workflow
+
+```mermaid
+flowchart LR
+    Capture["Policy rollout / legacy capture"] --> Import["Importer / recorder"]
+    Import --> Trace[".vlatrace bundle"]
+    Trace --> Dataset["TraceDataset"]
+    Dataset --> Selector["ActivationQuery"]
+    Selector --> Probe["ProbeSuite"]
+    Dataset --> Action["ActionGeneration"]
+    Probe --> Artifact["LensArtifact"]
+    Action --> Artifact
+    Artifact --> Dashboard["Dashboard"]
+```
+
+## Dataset Analyzer Philosophy
+
+The analyzer should guide researchers with evidence, not jargon.
+
+Good guidance looks like:
 
 ```text
-artifacts/videos/
+Outcome probe is possible.
+Evidence: 14 success and 6 failure episodes are available.
+Risk: 0/20 tasks have both success and failure, so task identity can be confused with behavior.
+Suggested artifact: ProbeSuite over expert action-token features with benchmark/object baselines.
 ```
 
-## Repository Shape
+Bad guidance looks like:
 
 ```text
-src/openvla_steering/
-  model/
-  env/
-  interp/
-  utils/
-configs/
-scripts/
-artifacts/
+Warning: seed split invalid.
 ```
 
-## Key Files
+The goal is to help a researcher choose analyses that the current dataset can actually support.
 
-- [scripts/visualize_scene.py](/home/j/Projects/OpenVLA_Patching_Experiment/scripts/visualize_scene.py): scripted debug rollout with optional video
-- [scripts/check_matched_scene.py](/home/j/Projects/OpenVLA_Patching_Experiment/scripts/check_matched_scene.py): confirms deterministic same-seed resets
-- [scripts/run_stack_rollouts.py](/home/j/Projects/OpenVLA_Patching_Experiment/scripts/run_stack_rollouts.py): baseline rollout runner and Parquet logger
-- [src/openvla_steering/env/stack_task.py](/home/j/Projects/OpenVLA_Patching_Experiment/src/openvla_steering/env/stack_task.py): experiment-facing wrapper around robosuite `Stack`
+## Current Direction
 
-The repo stays intentionally small until the first end-to-end simulation, logging, and matched-scene path is stable.
+The dashboard remains episode-first for inspection:
 
-## Next Work
+- Home: dataset analyzer and artifact overview.
+- Episodes: browse and inspect robot episodes.
+- Artifacts: saved probes, videos, reports, action-generation summaries, and future analysis outputs.
 
-The next milestone is not "more model plumbing". It is lean probe-oriented data collection:
+Artifacts are becoming the durable research objects. Every serious analysis should save:
 
-- save episode metadata plus per-step actions and kinematics
-- keep activation capture optional and selective
-- build the first probe dataset split by episode, not timestep
-- only then add intervention hooks
+- source episodes
+- selector/spec
+- method
+- metrics
+- display data
+- linked dashboard state when possible
+
+## Development
+
+Run checks:
+
+```bash
+uv run ruff check src tests scripts
+uv run pytest
+```
+
+Run the focused trace MVP tests:
+
+```bash
+uv run pytest tests/vla_lens_trace_mvp_test.py
+```
