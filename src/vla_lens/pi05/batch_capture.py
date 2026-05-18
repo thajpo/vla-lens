@@ -252,7 +252,11 @@ def _capture_commands(
     ):
         group_rows = list(group_iter)
         dataset_id, profile, benchmark, task_id = group_key
-        for seeds in _contiguous_seed_groups([row.seed for row in group_rows]):
+        if config.get("group_seed_list"):
+            seed_groups = [sorted({int(row.seed) for row in group_rows})]
+        else:
+            seed_groups = _contiguous_seed_groups([row.seed for row in group_rows])
+        for seeds in seed_groups:
             seed_set = set(seeds)
             seed_rows = [row for row in group_rows if row.seed in seed_set]
             task_root = _trace_root(output_root, seed_rows[0])
@@ -287,6 +291,12 @@ def _capture_commands(
                 "--dataset-id",
                 dataset_id,
             )
+            if config.get("group_seed_list"):
+                command = (
+                    *command,
+                    "--seed-list",
+                    ",".join(str(seed) for seed in seeds),
+                )
             commands.append(
                 CaptureCommand(
                     dataset_id=dataset_id,

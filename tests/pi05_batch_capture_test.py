@@ -80,3 +80,28 @@ def test_batch_capture_reads_explicit_episode_plan_csv(tmp_path):
     assert [row.seed for row in rows] == [42, 44]
     assert len(commands) == 2
     assert {command.start_seed for command in commands} == {42, 44}
+
+
+def test_batch_capture_can_group_noncontiguous_seed_list(tmp_path):
+    plan = tmp_path / "episodes.csv"
+    plan.write_text(
+        "\n".join(
+            [
+                "dataset_id,benchmark,task_id,seed,split,capture_profile",
+                "dataset-a,libero_goal,1,1000,train,mechanistic_sampled",
+                "dataset-a,libero_goal,1,2000,test,mechanistic_sampled",
+                "dataset-a,libero_goal,1,3000,test,mechanistic_sampled",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = {**_config(tmp_path), "group_seed_list": True}
+    rows = _read_episode_plan(plan)
+    commands = _capture_commands(config, tmp_path, rows)
+
+    assert len(commands) == 1
+    assert commands[0].episodes == 3
+    assert commands[0].start_seed == 1000
+    assert "--seed-list" in commands[0].command
+    assert "1000,2000,3000" in commands[0].command

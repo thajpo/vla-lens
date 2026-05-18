@@ -366,6 +366,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, default=2)
     parser.add_argument("--start-seed", type=int, default=1000)
     parser.add_argument(
+        "--seed-list",
+        help=(
+            "Comma-separated explicit episode seeds. When provided, this overrides "
+            "--episodes/--start-seed iteration while preserving the same output naming."
+        ),
+    )
+    parser.add_argument(
         "--capture-profile",
         choices=PROFILE_CHOICES,
         default="mechanistic_sampled",
@@ -469,8 +476,7 @@ def _run_capture(args: argparse.Namespace) -> None:
     )
 
     try:
-        for episode_index in range(args.episodes):
-            seed = args.start_seed + episode_index
+        for seed in _episode_seeds(args):
             trace_id = f"pi05_{args.capture_profile}_{args.benchmark}_task{args.task_id}_seed{seed}"
             buffer = EpisodeBuffer(
                 trace_id=trace_id,
@@ -527,6 +533,18 @@ def _run_capture(args: argparse.Namespace) -> None:
             print(f"{trace_id} steps={step} calls={len(buffer.calls)} success={buffer.success}")
     finally:
         env.close()
+
+
+def _episode_seeds(args: argparse.Namespace) -> list[int]:
+    seed_list = str(args.seed_list or "").strip()
+    if not seed_list:
+        return [int(args.start_seed) + index for index in range(int(args.episodes))]
+    seeds = [int(item.strip()) for item in seed_list.split(",") if item.strip()]
+    if not seeds:
+        raise ValueError("--seed-list did not contain any seeds")
+    if len(set(seeds)) != len(seeds):
+        raise ValueError(f"--seed-list contains duplicate seeds: {seed_list}")
+    return seeds
 
 
 def _resolve_capture_plan(args: argparse.Namespace) -> CapturePlan:
