@@ -4,6 +4,8 @@ Status: living planning contract from the May 18, 2026 capture-profile and inspe
 
 Last implementation update: Phase 1 code contract is implemented, unit/type validated, and one real `audit_sampled` PI0.5/LIBERO smoke trace has been captured and validated. The next scale-up gate is a 3-5 trace benchmark across varied episode lengths.
 
+Current planning update: adjacent-layer capture for transcoders is tracked as `audit_windowed`, a future capture tier. It is not implemented yet and must stay gated on the `audit_sampled` benchmark.
+
 Audience: future agents, GPT Pro review, and implementation sessions before changing code.
 
 Purpose: preserve the high-resolution product/research direction so future implementation does not drift into already-solved work, vague "more tensors" capture, or UI diagrams that misrepresent PI0.5.
@@ -223,6 +225,7 @@ use scripts/pi05_capture_rocm.sh and scripts/pi05_batch_capture_rocm.sh for capt
 run 3-5 additional real audit_sampled traces
 extend the storage/runtime benchmark artifact
 decide whether audit_sampled needs role trimming or event-windowed capture before any larger run
+decide whether audit_windowed should be whole-episode or selected-policy-call capture
 then prune this roadmap again
 ```
 
@@ -285,6 +288,45 @@ Next action before causal work:
 capture one real prompt-target-swap pair or build the prompt mutation hook needed to do so.
 verify both traces share matched scene fields and differ only in changed_fields.
 do not start activation patching until no-intervention replay is validated.
+```
+
+### 2026-05-19 Adjacent-Layer Capture Planning Note
+
+Validated by:
+
+```text
+doc update:
+  - audit_windowed is tracked as the adjacent-layer capture tier for transcoders.
+  - no code profile was added.
+  - no README profile list was changed, because audit_windowed is not implemented.
+```
+
+Captured decision:
+
+```text
+audit_sampled supports first same-layer skip-transcoder pilots.
+audit_windowed is needed for stronger "what did layer L write and what did L+1 consume" questions.
+audit_windowed must not be implemented until audit_sampled has a 3-5 trace storage/runtime benchmark.
+```
+
+Still not validated:
+
+```text
+real audit_windowed trace size
+whether adjacent windows are feasible for whole episodes
+whether audit_windowed should instead capture selected policy calls around events
+whether rotating windows are useful for dataset-scale coverage
+```
+
+Next action before implementation:
+
+```text
+finish audit_sampled benchmark.
+estimate audit_windowed cost from captured tensor family sizes.
+choose one of:
+  whole-episode static windows
+  selected-policy-call static windows
+  defer and use audit_sampled for first same-layer transcoders
 ```
 
 ## Core Product Identity
@@ -1079,6 +1121,10 @@ Purpose: circuit-useful adjacent layer windows.
 
 Do not implement before `audit_sampled` is benchmarked unless there is a specific need.
 
+This profile exists for transcoder and downstream-use questions, not for ordinary inspection.
+It should reuse the `audit_sampled` circuit-boundary tensor families and change only layer
+coverage/windowing, unless the benchmark proves that role trimming is required.
+
 Proposed windows:
 
 ```text
@@ -1094,6 +1140,33 @@ A layer window lets us inspect what layer L writes and what layer L+1 consumes.
 ```
 
 This is more circuit-useful than isolated layers, but more expensive and more complex to present.
+
+Transcoder relevance:
+
+```text
+audit_sampled can support same-layer pilots:
+  expert L8 residual_pre_mlp -> expert L8 mlp_output
+  expert L8 residual_pre_attention -> expert L8 attn_output/o_proj
+  action_head input -> action_head output
+
+audit_windowed supports adjacent-layer questions:
+  did L8 write a feature that L9 consumed?
+  was the feature preserved, transformed, routed, or erased?
+  does the write direction line up with the next layer's read/use?
+```
+
+Acceptance criteria before implementation is crossed off:
+
+```text
+1. audit_sampled 3-5 trace benchmark exists.
+2. expected audit_windowed size/runtime is estimated from real family-size data.
+3. profile name and layer windows are tested distinctly from audit_sampled.
+4. internals_sampled and audit_full remain unchanged.
+5. per-layer VLM K/V -> Expert attention architecture edges still pair only equal layer indices.
+6. docs state whether audit_windowed captures whole episodes or selected policy-call windows.
+7. at least one real audit_windowed smoke trace validates successfully.
+8. roadmap is updated with measured size/runtime and stale assumptions removed.
+```
 
 Potential future variant:
 
