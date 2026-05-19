@@ -37,9 +37,9 @@ VLA Lens is not missing "full capture." It already has major ontology and full-c
 
 ## Hard Sprint Boundary
 
-This roadmap is broad strategy, but the next implementation session is intentionally narrow.
+This roadmap is broad strategy, but each implementation session should stay narrow.
 
-The next coding sprint is only allowed to do Phase 1:
+The original Phase 1 coding sprint was only allowed to do:
 
 ```text
 1. Add canonical `audit_sampled`.
@@ -51,12 +51,22 @@ The next coding sprint is only allowed to do Phase 1:
 
 Everything else in this document is sequencing context, not permission to implement it during the next sprint.
 
-Explicitly out of scope for the next sprint:
+That boundary is now completed. The current narrow follow-up is metadata-only
+paired counterfactual capture:
+
+```text
+1. Preserve old single-trace plans.
+2. Allow paired rows with trace variants.
+3. Store pair metadata in manifests.
+4. Expose pair groups through the server.
+5. Add a minimal UI navigation affordance.
+```
+
+Explicitly still out of scope for this follow-up:
 
 ```text
 Probe Grid v0
 object-grounded attention dashboards
-counterfactual capture
 policy-call replay
 activation patching
 steering
@@ -67,18 +77,8 @@ CLT / attribution graph work
 new UI shell or broad visual redesign
 ```
 
-Reason:
-
-```text
-The first falsifiable target is not "build the interpretability stack."
-It is:
-  audit_sampled semantics
-  architecture-edge metadata
-  tests
-  storage/runtime benchmark
-```
-
-If those do not pass, downstream causal tooling will rest on a sloppy capture contract.
+Reason: paired metadata is the prerequisite for future clean/corrupt patching,
+but it should not pretend that replay or intervention tooling exists yet.
 
 ## Living Document Protocol
 
@@ -224,6 +224,67 @@ run 3-5 additional real audit_sampled traces
 extend the storage/runtime benchmark artifact
 decide whether audit_sampled needs role trimming or event-windowed capture before any larger run
 then prune this roadmap again
+```
+
+### 2026-05-19 Metadata-Only Paired Capture Pass
+
+Validated by:
+
+```text
+tests:
+  - uv run pytest tests/pi05_batch_capture_test.py tests/vla_lens_trace_mvp_test.py::test_dataset_payload_groups_counterfactual_pairs -q
+    result: 5 passed
+
+  - uv run pytest tests/pi05_capture_success_test.py::test_counterfactual_capture_args_make_variant_trace_id_and_metadata -q
+    result: 1 passed
+
+  - uv run ruff check src/vla_lens/pi05/batch_capture.py src/vla_lens/pi05/capture.py src/vla_lens/server.py tests/pi05_batch_capture_test.py tests/vla_lens_trace_mvp_test.py
+    result: all checks passed
+
+  - uv run ruff check scripts src tests
+    result: all checks passed
+
+  - uv run pytest tests/pi05_batch_capture_test.py tests/vla_lens_trace_mvp_test.py -q
+    result: 71 passed
+
+  - uv run pytest -q
+    result: 104 passed
+
+frontend:
+  - cd frontend && npm run build
+    result: TypeScript and Vite build passed
+```
+
+Validated facts:
+
+```text
+paired counterfactual capture is implemented as capture_design metadata, not a capture profile.
+old six-column episode plans still parse.
+paired episode plans can contain two rows with the same benchmark/task/seed/profile.
+counterfactual_role or trace_variant gives each side a distinct trace_id suffix.
+the batch runner auto-links exactly two members in a counterfactual_group_id with paired_trace_id.
+capture CLI accepts and stores pair metadata in manifest.metadata and capture_request.
+/api/dataset includes counterfactual_pairs.
+/api/counterfactual-pairs exposes the same grouping with count.
+the episode navigation bar shows a compact pair switcher when the active trace belongs to a group.
+```
+
+Still not validated:
+
+```text
+real PI0.5 prompt-target-swap pair capture
+true prompt mutation support inside the LIBERO/PI0.5 capture path
+side-by-side synchronized video/tensor comparison
+policy-call replay for paired traces
+activation patching across paired traces
+```
+
+Next action before causal work:
+
+```text
+capture one real prompt-target-swap pair or build the prompt mutation hook needed to do so.
+verify both traces share matched scene fields and differ only in changed_fields.
+do not start activation patching until no-intervention replay is validated.
 ```
 
 ## Core Product Identity
@@ -1585,12 +1646,48 @@ interventional visual masking / ISS-style object-region perturbations
 
 This is more important than adding a large number of random traces.
 
+Implementation status:
+
+```text
+metadata-only paired capture contract is now an allowed near-term increment.
+This does not mean activation patching is implemented.
+It means traces can be captured, named, loaded, and grouped as clean/corrupt units.
+```
+
+Design rule:
+
+```text
+paired counterfactual capture is not a tensor profile.
+It is a capture_design layer above the tensor profile.
+
+Valid examples:
+  capture_design = paired_counterfactual
+  capture_profile = mechanistic_sampled
+
+  capture_design = paired_counterfactual
+  capture_profile = audit_sampled
+
+Invalid framing:
+  capture_profile = paired
+  capture_profile = clean_corrupt
+```
+
+Why:
+
+```text
+The pair relationship is an experimental design/provenance fact.
+The profile still controls which tensors are stored.
+```
+
 Required metadata:
 
 ```text
 counterfactual_group_id
 counterfactual_role: clean / corrupt / intervention / control
 counterfactual_type
+trace_variant
+paired_trace_id
+pair_index
 matched_fields
 changed_fields
 ```
@@ -1652,6 +1749,17 @@ Hard validity rule:
 
 ```text
 No activation patching experiment is valid unless both traces share a counterfactual_group_id and changed_fields is non-empty and specific.
+```
+
+MVP acceptance for metadata-only paired capture:
+
+```text
+batch episode_plan.csv can contain two rows with the same benchmark/task/seed/profile.
+trace_variant or counterfactual_role makes the trace IDs distinct.
+the capture CLI stores counterfactual metadata in manifest.metadata.
+/api/dataset exposes counterfactual_pairs.
+the UI can navigate between paired members without guessing from trace names.
+old traces and old episode plans still load.
 ```
 
 Why:

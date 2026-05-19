@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 from collections import defaultdict
 from collections.abc import Iterator, Mapping
@@ -434,6 +435,31 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--dataset-id",
         help="Dataset identifier stored in every trace manifest metadata.",
     )
+    parser.add_argument(
+        "--capture-design",
+        choices=("single_trace", "paired_counterfactual"),
+        default="single_trace",
+        help="Higher-level capture design. This does not change tensor families.",
+    )
+    parser.add_argument(
+        "--trace-variant",
+        help="Stable variant suffix for paired traces, for example clean or corrupt.",
+    )
+    parser.add_argument("--counterfactual-group-id")
+    parser.add_argument("--counterfactual-role")
+    parser.add_argument("--counterfactual-type")
+    parser.add_argument("--pair-index", type=int)
+    parser.add_argument("--paired-trace-id")
+    parser.add_argument(
+        "--changed-fields",
+        help="Comma-separated or JSON list of fields changed within a counterfactual group.",
+    )
+    parser.add_argument(
+        "--matched-fields",
+        help="Comma-separated or JSON list of fields intentionally matched within a group.",
+    )
+    parser.add_argument("--target-object-id")
+    parser.add_argument("--counterfactual-target-object-id")
     parser.add_argument("--obs-size", type=int, default=256)
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--device", default="cuda")
@@ -496,7 +522,7 @@ def _run_capture(args: argparse.Namespace) -> None:
 
     try:
         for seed in _episode_seeds(args):
-            trace_id = f"pi05_{args.capture_profile}_{args.benchmark}_task{args.task_id}_seed{seed}"
+            trace_id = _trace_id_for_seed(args, seed)
             buffer = EpisodeBuffer(
                 trace_id=trace_id,
                 task_id=args.task_id,
@@ -564,6 +590,22 @@ def _episode_seeds(args: argparse.Namespace) -> list[int]:
     if len(set(seeds)) != len(seeds):
         raise ValueError(f"--seed-list contains duplicate seeds: {seed_list}")
     return seeds
+
+
+def _trace_id_for_seed(args: argparse.Namespace, seed: int) -> str:
+    base = f"pi05_{args.capture_profile}_{args.benchmark}_task{args.task_id}_seed{seed}"
+    suffix = _trace_variant_suffix(
+        str(args.trace_variant or "") or str(args.counterfactual_role or "")
+    )
+    return f"{base}_{suffix}" if suffix else base
+
+
+def _trace_variant_suffix(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    return text.strip("_")
 
 
 def _resolve_capture_plan(args: argparse.Namespace) -> CapturePlan:
@@ -1540,6 +1582,91 @@ def _rope_metadata_array(model: Any) -> np.ndarray:
     )
 
 
+def _capture_design_metadata(args: argparse.Namespace) -> dict[str, Any]:
+    capture_design = str(args.capture_design or "single_trace")
+    trace_variant = _trace_variant_suffix(
+        str(args.trace_variant or "") or str(args.counterfactual_role or "")
+    )
+    counterfactual = _counterfactual_metadata(args)
+    metadata: dict[str, Any] = {"capture_design": capture_design}
+    if trace_variant:
+        metadata["trace_variant"] = trace_variant
+    if counterfactual:
+        metadata["counterfactual"] = counterfactual
+        metadata.update(
+            {
+                "counterfactual_group_id": counterfactual.get("group_id", ""),
+                "counterfactual_role": counterfactual.get("role", ""),
+                "counterfactual_type": counterfactual.get("type", ""),
+                "pair_index": counterfactual.get("pair_index"),
+                "paired_trace_id": counterfactual.get("paired_trace_id", ""),
+                "changed_fields": counterfactual.get("changed_fields", []),
+                "matched_fields": counterfactual.get("matched_fields", []),
+                "target_object_id": counterfactual.get("target_object_id", ""),
+                "counterfactual_target_object_id": counterfactual.get(
+                    "counterfactual_target_object_id",
+                    "",
+                ),
+            }
+        )
+    return metadata
+
+
+def _capture_design_request_metadata(args: argparse.Namespace) -> dict[str, Any]:
+    metadata = _capture_design_metadata(args)
+    metadata.pop("capture_design", None)
+    return metadata
+
+
+def _counterfactual_metadata(args: argparse.Namespace) -> dict[str, Any]:
+    group_id = str(args.counterfactual_group_id or "").strip()
+    role = _trace_variant_suffix(str(args.counterfactual_role or ""))
+    counterfactual_type = str(args.counterfactual_type or "").strip()
+    paired_trace_id = str(args.paired_trace_id or "").strip()
+    changed_fields = _parse_list_argument(args.changed_fields)
+    matched_fields = _parse_list_argument(args.matched_fields)
+    target_object_id = str(args.target_object_id or "").strip()
+    counterfactual_target_object_id = str(args.counterfactual_target_object_id or "").strip()
+    if not any(
+        (
+            group_id,
+            role,
+            counterfactual_type,
+            paired_trace_id,
+            changed_fields,
+            matched_fields,
+            target_object_id,
+            counterfactual_target_object_id,
+        )
+    ):
+        return {}
+    return {
+        "group_id": group_id,
+        "role": role,
+        "type": counterfactual_type,
+        "pair_index": args.pair_index,
+        "paired_trace_id": paired_trace_id,
+        "changed_fields": list(changed_fields),
+        "matched_fields": list(matched_fields),
+        "target_object_id": target_object_id,
+        "counterfactual_target_object_id": counterfactual_target_object_id,
+    }
+
+
+def _parse_list_argument(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    text = str(value).strip()
+    if not text:
+        return ()
+    if text.startswith("["):
+        parsed = json.loads(text)
+        if not isinstance(parsed, list):
+            raise ValueError(f"Expected list argument, got {value!r}")
+        return tuple(str(item).strip() for item in parsed if str(item).strip())
+    return tuple(item.strip() for item in text.split(",") if item.strip())
+
+
 def _write_episode(
     buffer: EpisodeBuffer,
     args: argparse.Namespace,
@@ -1590,6 +1717,7 @@ def _write_episode(
     dataset_id = _capture_dataset_id(args)
     if dataset_id:
         metadata["dataset_id"] = dataset_id
+    metadata.update(_capture_design_metadata(args))
     manifest = TraceManifest(
         trace_id=buffer.trace_id,
         episode_id=buffer.trace_id,
@@ -1631,6 +1759,8 @@ def _write_episode(
         capture_request={
             "requested_profile": args.capture_profile,
             "model_id": args.model_id,
+            "capture_design": str(args.capture_design or "single_trace"),
+            **_capture_design_request_metadata(args),
             **({"dataset_id": dataset_id} if dataset_id else {}),
         },
         capture_plan=capture_plan,
@@ -1644,6 +1774,8 @@ def _write_episode(
                 "device": str(policy.config.device),
                 "profile": canonical_profile(plan.profile),
                 "requested_profile": args.capture_profile,
+                "capture_design": str(args.capture_design or "single_trace"),
+                **_capture_design_request_metadata(args),
                 **({"dataset_id": dataset_id} if dataset_id else {}),
             },
         ),

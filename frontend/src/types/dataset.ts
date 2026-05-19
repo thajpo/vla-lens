@@ -20,7 +20,28 @@ export type DatasetPayload = {
     total: number;
     counts: Record<string, number>;
   };
+  counterfactual_pairs?: CounterfactualPair[];
   workbench?: unknown;
+};
+
+export type CounterfactualPairMember = {
+  trace_id: string;
+  episode_id?: string;
+  role?: string;
+  pair_index?: number | null;
+  paired_trace_id?: string;
+  target_object_id?: string;
+  counterfactual_target_object_id?: string;
+  outcome?: string | null;
+  prompt?: string | null;
+};
+
+export type CounterfactualPair = {
+  group_id: string;
+  type?: string;
+  changed_fields?: string[];
+  matched_fields?: string[];
+  members: CounterfactualPairMember[];
 };
 
 export type EpisodeArtifactRecord = Record<string, unknown> & {

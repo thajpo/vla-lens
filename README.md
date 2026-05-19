@@ -24,7 +24,9 @@ HF model + environment + capture profile
 - Browse datasets and open individual robot episodes.
 - Inspect frames, prompts, actions, model data, feature activations, image-token overlays,
   expert/action-token activations, and generation/action-flow traces.
-- Choose PI0.5 capture profiles for rollout, features, mechanistic_sampled, mechanistic_all, internals_sampled, audit_full, or custom interpretability budgets.
+- Choose PI0.5 capture profiles for rollout, features, mechanistic_sampled,
+  mechanistic_all, internals_sampled, audit_sampled, audit_full, or custom
+  interpretability budgets.
 - Run a dataset analyzer that recommends defensible next analyses with concrete evidence.
 - Generate compressed episode videos from recorded policy decisions.
 - Train probe suites from YAML specs and save them as `LensArtifact`s.
@@ -193,6 +195,24 @@ Use `dataset_id` for capture-run provenance. It is stored in
 `manifest.metadata.dataset_id` and in generated `episode_plan.csv` /
 `probe_splits.csv` files so datasets can stay flat-ish while still being easy to
 filter and audit.
+
+Use `capture_design=paired_counterfactual` when two traces should be analyzed as
+one clean/corrupt unit. This is a design layer over profiles, not a new tensor
+profile: each side can still use `mechanistic_sampled`, `audit_sampled`, or any
+other capture profile. Add `trace_variant` or `counterfactual_role` so the two
+traces do not overwrite each other:
+
+```csv
+dataset_id,benchmark,task_id,seed,split,capture_profile,counterfactual_group_id,counterfactual_role,counterfactual_type,changed_fields,matched_fields,target_object_id
+pi05-pairs-v0,libero_goal,1,42,train,mechanistic_sampled,pair-0001,clean,prompt_target_swap,prompt.target_object,"benchmark,task_id,seed,initial_object_poses,camera_config",mug
+pi05-pairs-v0,libero_goal,1,42,train,mechanistic_sampled,pair-0001,corrupt,prompt_target_swap,prompt.target_object,"benchmark,task_id,seed,initial_object_poses,camera_config",bowl
+```
+
+The batch runner writes trace IDs like
+`pi05_mechanistic_sampled_libero_goal_task1_seed42_clean` and
+`pi05_mechanistic_sampled_libero_goal_task1_seed42_corrupt`, stores the
+counterfactual metadata in each manifest, and the dashboard exposes pair groups
+through `/api/dataset` and `/api/counterfactual-pairs`.
 
 Every newly written `.vlatrace` also stores fast provenance fingerprints in
 `tables/fingerprints.json`, `manifest.metadata.fingerprints`, and

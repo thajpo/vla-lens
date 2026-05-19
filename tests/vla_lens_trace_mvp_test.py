@@ -89,6 +89,7 @@ def _make_minimal_trace(
     extra_episode_arrays: dict[str, ArraySpec] | None = None,
     scene_state: pd.DataFrame | None = None,
     camera_state: pd.DataFrame | None = None,
+    metadata: dict[str, object] | None = None,
 ) -> TraceBundle:
     length = 2
     manifest = TraceManifest(
@@ -101,7 +102,7 @@ def _make_minimal_trace(
         robot_id="minimal-robot",
         outcome="unknown",
         length=length,
-        metadata={"capture_profile": profile},
+        metadata={"capture_profile": profile, **(metadata or {})},
     )
     timesteps = {
         "timestep": [0, 1],
@@ -218,6 +219,77 @@ def test_dataset_payload_uses_workbench_contract_not_legacy_schema(tmp_path):
         workflow["workflow_id"] == "target_object_encoding"
         for workflow in payload["workbench"]["workflow_presets"]
     )
+
+
+def test_dataset_payload_groups_counterfactual_pairs(tmp_path):
+    clean = _make_minimal_trace(
+        tmp_path / "pi05_mechanistic_sampled_libero_goal_task1_seed42_clean.vlatrace",
+        metadata={
+            "capture_design": "paired_counterfactual",
+            "trace_variant": "clean",
+            "counterfactual_group_id": "group-1",
+            "counterfactual_role": "clean",
+            "counterfactual_type": "prompt_target_swap",
+            "pair_index": 0,
+            "paired_trace_id": "pi05_mechanistic_sampled_libero_goal_task1_seed42_corrupt",
+            "changed_fields": ["prompt.target_object"],
+            "matched_fields": ["benchmark", "task_id", "seed"],
+            "target_object_id": "mug",
+        },
+    )
+    corrupt = _make_minimal_trace(
+        tmp_path / "pi05_mechanistic_sampled_libero_goal_task1_seed42_corrupt.vlatrace",
+        metadata={
+            "capture_design": "paired_counterfactual",
+            "trace_variant": "corrupt",
+            "counterfactual": {
+                "group_id": "group-1",
+                "role": "corrupt",
+                "type": "prompt_target_swap",
+                "pair_index": 1,
+                "paired_trace_id": clean.manifest.trace_id,
+                "changed_fields": ["prompt.target_object"],
+                "matched_fields": ["benchmark", "task_id", "seed"],
+                "target_object_id": "bowl",
+            },
+        },
+    )
+    dataset = TraceDataset(tmp_path, [clean, corrupt])
+
+    payload = _dataset_payload(dataset)
+
+    assert payload["counterfactual_pairs"] == [
+        {
+            "group_id": "group-1",
+            "type": "prompt_target_swap",
+            "changed_fields": ["prompt.target_object"],
+            "matched_fields": ["benchmark", "task_id", "seed"],
+            "members": [
+                {
+                    "trace_id": clean.manifest.trace_id,
+                    "episode_id": clean.manifest.episode_id,
+                    "role": "clean",
+                    "pair_index": 0,
+                    "paired_trace_id": corrupt.manifest.trace_id,
+                    "target_object_id": "mug",
+                    "counterfactual_target_object_id": "",
+                    "outcome": "unknown",
+                    "prompt": "minimal",
+                },
+                {
+                    "trace_id": corrupt.manifest.trace_id,
+                    "episode_id": corrupt.manifest.episode_id,
+                    "role": "corrupt",
+                    "pair_index": 1,
+                    "paired_trace_id": clean.manifest.trace_id,
+                    "target_object_id": "bowl",
+                    "counterfactual_target_object_id": "",
+                    "outcome": "unknown",
+                    "prompt": "minimal",
+                },
+            ],
+        }
+    ]
 
 
 def test_workbench_manifest_exposes_axis_native_handles(tmp_path):

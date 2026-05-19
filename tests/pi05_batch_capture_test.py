@@ -105,3 +105,68 @@ def test_batch_capture_can_group_noncontiguous_seed_list(tmp_path):
     assert commands[0].start_seed == 1000
     assert "--seed-list" in commands[0].command
     assert "1000,2000,3000" in commands[0].command
+
+
+def test_batch_capture_reads_paired_counterfactual_plan(tmp_path):
+    plan = tmp_path / "episodes.csv"
+    plan.write_text(
+        "\n".join(
+            [
+                ",".join(
+                    [
+                        "dataset_id",
+                        "benchmark",
+                        "task_id",
+                        "seed",
+                        "split",
+                        "capture_profile",
+                        "counterfactual_group_id",
+                        "counterfactual_role",
+                        "counterfactual_type",
+                        "changed_fields",
+                        "matched_fields",
+                        "target_object_id",
+                    ]
+                ),
+                (
+                    "dataset-a,libero_goal,1,42,train,mechanistic_sampled,"
+                    "group-1,clean,prompt_target_swap,prompt.target_object,"
+                    '"benchmark,task_id,seed",mug'
+                ),
+                (
+                    "dataset-a,libero_goal,1,42,train,mechanistic_sampled,"
+                    "group-1,corrupt,prompt_target_swap,prompt.target_object,"
+                    '"benchmark,task_id,seed",bowl'
+                ),
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    rows = _read_episode_plan(plan)
+    commands = _capture_commands(_config(tmp_path), tmp_path, rows)
+    _write_plan_files(tmp_path, config=_config(tmp_path), rows=rows)
+
+    assert [row.expected_trace_id for row in rows] == [
+        "pi05_mechanistic_sampled_libero_goal_task1_seed42_clean",
+        "pi05_mechanistic_sampled_libero_goal_task1_seed42_corrupt",
+    ]
+    assert rows[0].paired_trace_id == rows[1].expected_trace_id
+    assert rows[1].paired_trace_id == rows[0].expected_trace_id
+    assert rows[0].capture_design == "paired_counterfactual"
+    assert len(commands) == 2
+    clean_command = commands[0].command
+    assert "--capture-design" in clean_command
+    assert "paired_counterfactual" in clean_command
+    assert "--trace-variant" in clean_command
+    assert "clean" in clean_command
+    assert "--paired-trace-id" in clean_command
+    assert rows[1].expected_trace_id in clean_command
+
+    with (tmp_path / "episode_plan.csv").open(newline="", encoding="utf-8") as handle:
+        plan_rows = list(csv.DictReader(handle))
+    assert plan_rows[0]["trace_variant"] == "clean"
+    assert plan_rows[0]["counterfactual_role"] == "clean"
+    assert plan_rows[0]["expected_trace_path"].endswith(
+        "pi05_mechanistic_sampled_libero_goal_task1_seed42_clean.vlatrace"
+    )

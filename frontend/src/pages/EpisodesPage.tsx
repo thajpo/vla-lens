@@ -52,6 +52,7 @@ import type {
   ActivationSliceResponse,
   ArchitectureMetadata,
   AttentionMapResponse,
+  CounterfactualPair,
   DatasetEpisode,
   EpisodeAnnotation,
   EpisodeMetric,
@@ -241,6 +242,13 @@ export function EpisodesPage({
     setSelectedExpertToken(null);
     onTraceChange?.(traceId);
   };
+  const activeCounterfactualPair = useMemo(
+    () =>
+      (dataset.data?.counterfactual_pairs ?? []).find((pair) =>
+        pair.members.some((member) => member.trace_id === activeTraceId),
+      ),
+    [activeTraceId, dataset.data?.counterfactual_pairs],
+  );
   const episodeDetail = useQuery({
     queryKey: ["episode", activeTraceId],
     queryFn: () => fetchEpisode(activeTraceId),
@@ -626,11 +634,13 @@ export function EpisodesPage({
             episode={episodeDetail.data ?? selectedEpisode}
             episodeIndex={selectedEpisodeIndex}
             episodeCount={episodes.length}
+            counterfactualPair={activeCounterfactualPair}
             hasNext={Boolean(nextEpisode)}
             hasPrevious={Boolean(previousEpisode)}
             isSavingAnnotation={saveAnnotation.isPending}
             onNext={() => navigateEpisode(nextEpisode?.trace_id)}
             onPrevious={() => navigateEpisode(previousEpisode?.trace_id)}
+            onNavigateTrace={navigateEpisode}
             onSaveAnnotation={(annotation) => saveAnnotation.mutate(annotation)}
           />
           <section className="stage">
@@ -3574,6 +3584,7 @@ function policyCallActive(call: PolicyCall | undefined, timestep: number, fallba
 
 function EpisodeNavigationBar({
   annotation,
+  counterfactualPair,
   episode,
   episodeCount,
   episodeIndex,
@@ -3581,10 +3592,12 @@ function EpisodeNavigationBar({
   hasPrevious,
   isSavingAnnotation,
   onNext,
+  onNavigateTrace,
   onPrevious,
   onSaveAnnotation,
 }: {
   annotation?: EpisodeAnnotation;
+  counterfactualPair?: CounterfactualPair;
   episode: DatasetEpisode;
   episodeCount: number;
   episodeIndex: number;
@@ -3592,6 +3605,7 @@ function EpisodeNavigationBar({
   hasPrevious: boolean;
   isSavingAnnotation: boolean;
   onNext: () => void;
+  onNavigateTrace: (traceId: string | undefined) => void;
   onPrevious: () => void;
   onSaveAnnotation: (annotation: Pick<EpisodeAnnotation, "trace_id" | "starred" | "notes">) => void;
 }) {
@@ -3648,6 +3662,13 @@ function EpisodeNavigationBar({
             </span>
           ))}
         </div>
+        {counterfactualPair ? (
+          <CounterfactualPairStrip
+            activeTraceId={episode.trace_id}
+            pair={counterfactualPair}
+            onNavigateTrace={onNavigateTrace}
+          />
+        ) : null}
       </div>
       <div className="episode-annotation-tools">
         <button
@@ -3684,6 +3705,41 @@ function EpisodeNavigationBar({
         </button>
       </div>
     </section>
+  );
+}
+
+function CounterfactualPairStrip({
+  activeTraceId,
+  onNavigateTrace,
+  pair,
+}: {
+  activeTraceId: string;
+  onNavigateTrace: (traceId: string | undefined) => void;
+  pair: CounterfactualPair;
+}) {
+  const pairType = pair.type ? pair.type.replaceAll("_", " ") : "paired traces";
+  return (
+    <div className="counterfactual-pair-strip" aria-label="Counterfactual pair">
+      <span className="counterfactual-pair-label">{pairType}</span>
+      {pair.members.map((member) => {
+        const role = member.role || "trace";
+        const isActive = member.trace_id === activeTraceId;
+        const target = member.target_object_id || member.counterfactual_target_object_id || "";
+        return (
+          <button
+            className={isActive ? "active" : ""}
+            disabled={isActive}
+            key={member.trace_id}
+            title={member.prompt || member.trace_id}
+            type="button"
+            onClick={() => onNavigateTrace(member.trace_id)}
+          >
+            <span>{role}</span>
+            {target ? <small>{target}</small> : null}
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

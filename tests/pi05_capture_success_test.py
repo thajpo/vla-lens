@@ -8,10 +8,13 @@ from vla_lens.pi05.capture import (
     CaptureCall,
     CapturePlan,
     EpisodeBuffer,
+    _capture_design_metadata,
     _declared_pi05_sites,
     _episode_success,
     _model_arrays,
+    _trace_id_for_seed,
     canonical_profile,
+    parse_args,
     profile_dimensions,
 )
 
@@ -28,6 +31,47 @@ def test_episode_success_uses_any_late_success_info() -> None:
     buffer.rewards = [0.0, 0.0, 1.0]
 
     assert _episode_success(buffer) is True
+
+
+def test_counterfactual_capture_args_make_variant_trace_id_and_metadata() -> None:
+    args = parse_args(
+        [
+            "--capture-profile",
+            "mechanistic_sampled",
+            "--benchmark",
+            "libero_goal",
+            "--task-id",
+            "1",
+            "--capture-design",
+            "paired_counterfactual",
+            "--counterfactual-group-id",
+            "group-1",
+            "--counterfactual-role",
+            "Clean Trace",
+            "--counterfactual-type",
+            "prompt_target_swap",
+            "--paired-trace-id",
+            "pi05_mechanistic_sampled_libero_goal_task1_seed42_corrupt",
+            "--changed-fields",
+            '["prompt.target_object"]',
+            "--matched-fields",
+            "benchmark,task_id,seed",
+            "--target-object-id",
+            "mug",
+        ]
+    )
+
+    assert _trace_id_for_seed(args, 42) == (
+        "pi05_mechanistic_sampled_libero_goal_task1_seed42_clean_trace"
+    )
+    metadata = _capture_design_metadata(args)
+    assert metadata["capture_design"] == "paired_counterfactual"
+    assert metadata["trace_variant"] == "clean_trace"
+    assert metadata["counterfactual_group_id"] == "group-1"
+    assert metadata["counterfactual_role"] == "clean_trace"
+    assert metadata["changed_fields"] == ["prompt.target_object"]
+    assert metadata["matched_fields"] == ["benchmark", "task_id", "seed"]
+    assert metadata["counterfactual"]["target_object_id"] == "mug"
 
 
 def test_episode_success_false_when_success_signal_never_passes() -> None:

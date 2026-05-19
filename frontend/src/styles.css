@@ -1501,6 +1501,7 @@ body {
   align-content: center;
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 10px;
   min-width: 0;
   padding: 8px 14px;
@@ -1547,6 +1548,66 @@ body {
   margin-right: 10px;
   min-height: 20px;
   padding: 0 7px;
+}
+
+.counterfactual-pair-strip {
+  align-items: center;
+  border-left: 1px solid var(--line);
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 4px;
+  margin-left: 2px;
+  min-width: 0;
+  padding-left: 10px;
+}
+
+.counterfactual-pair-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  margin-right: 2px;
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.counterfactual-pair-strip button {
+  align-items: center;
+  background: var(--soft);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  color: var(--ink);
+  display: inline-flex;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 800;
+  gap: 5px;
+  min-height: 24px;
+  padding: 0 8px;
+}
+
+.counterfactual-pair-strip button:not(:disabled):hover {
+  background: var(--soft-2);
+  border-color: var(--line-strong);
+}
+
+.counterfactual-pair-strip button.active {
+  background: #eef2ff;
+  border-color: #818cf8;
+  color: #312e81;
+}
+
+.counterfactual-pair-strip button small {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 700;
+  max-width: 88px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .episode-annotation-tools {

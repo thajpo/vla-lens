@@ -10,10 +10,11 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import shutil
 import subprocess
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from itertools import groupby
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
@@ -28,8 +29,39 @@ PLAN_COLUMNS = (
     "seed",
     "split",
     "capture_profile",
+    "capture_design",
+    "trace_variant",
+    "counterfactual_group_id",
+    "counterfactual_role",
+    "counterfactual_type",
+    "pair_index",
+    "paired_trace_id",
+    "changed_fields",
+    "matched_fields",
+    "target_object_id",
+    "counterfactual_target_object_id",
     "expected_trace_id",
     "expected_trace_path",
+)
+PROBE_SPLIT_COLUMNS = (
+    "dataset_id",
+    "trace_id",
+    "benchmark",
+    "task_id",
+    "seed",
+    "split",
+    "capture_profile",
+    "capture_design",
+    "trace_variant",
+    "counterfactual_group_id",
+    "counterfactual_role",
+    "counterfactual_type",
+    "pair_index",
+    "paired_trace_id",
+    "changed_fields",
+    "matched_fields",
+    "target_object_id",
+    "counterfactual_target_object_id",
 )
 
 
@@ -41,10 +73,27 @@ class EpisodePlanRow:
     seed: int
     split: str
     capture_profile: str
+    capture_design: str = "single_trace"
+    trace_variant: str = ""
+    counterfactual_group_id: str = ""
+    counterfactual_role: str = ""
+    counterfactual_type: str = ""
+    pair_index: int | None = None
+    paired_trace_id: str = ""
+    changed_fields: tuple[str, ...] = ()
+    matched_fields: tuple[str, ...] = ()
+    target_object_id: str = ""
+    counterfactual_target_object_id: str = ""
 
     @property
     def expected_trace_id(self) -> str:
-        return f"pi05_{self.capture_profile}_{self.benchmark}_task{self.task_id}_seed{self.seed}"
+        base = f"pi05_{self.capture_profile}_{self.benchmark}_task{self.task_id}_seed{self.seed}"
+        suffix = self.trace_suffix
+        return f"{base}_{suffix}" if suffix else base
+
+    @property
+    def trace_suffix(self) -> str:
+        return _trace_variant_suffix(self.trace_variant or self.counterfactual_role)
 
 
 @dataclass(frozen=True, slots=True)
@@ -105,6 +154,7 @@ def main(argv: list[str] | None = None) -> None:
         if args.episode_plan is not None
         else _episode_rows_from_config(config)
     )
+    rows = _infer_counterfactual_pair_links(rows)
     if not rows:
         raise SystemExit("episode plan is empty")
 
@@ -218,18 +268,37 @@ def _read_episode_plan(path: Path) -> list[EpisodePlanRow]:
         } - set(reader.fieldnames or [])
         if missing:
             raise ValueError(f"{path} is missing required columns: {sorted(missing)}")
-        rows = [
-            EpisodePlanRow(
-                dataset_id=str(record["dataset_id"]).strip(),
-                benchmark=str(record["benchmark"]).strip(),
-                task_id=int(record["task_id"]),
-                seed=int(record["seed"]),
-                split=str(record["split"]).strip(),
-                capture_profile=str(record["capture_profile"]).strip(),
-            )
-            for record in reader
-        ]
-    return rows
+        rows = [_episode_plan_row_from_record(record) for record in reader]
+    return _infer_counterfactual_pair_links(rows)
+
+
+def _episode_plan_row_from_record(record: Mapping[str, Any]) -> EpisodePlanRow:
+    counterfactual_group_id = str(record.get("counterfactual_group_id") or "").strip()
+    counterfactual_role = str(record.get("counterfactual_role") or "").strip()
+    capture_design = str(record.get("capture_design") or "").strip()
+    if not capture_design:
+        capture_design = "paired_counterfactual" if counterfactual_group_id else "single_trace"
+    return EpisodePlanRow(
+        dataset_id=str(record["dataset_id"]).strip(),
+        benchmark=str(record["benchmark"]).strip(),
+        task_id=int(record["task_id"]),
+        seed=int(record["seed"]),
+        split=str(record["split"]).strip(),
+        capture_profile=str(record["capture_profile"]).strip(),
+        capture_design=capture_design,
+        trace_variant=str(record.get("trace_variant") or "").strip(),
+        counterfactual_group_id=counterfactual_group_id,
+        counterfactual_role=counterfactual_role,
+        counterfactual_type=str(record.get("counterfactual_type") or "").strip(),
+        pair_index=_optional_int(record.get("pair_index")),
+        paired_trace_id=str(record.get("paired_trace_id") or "").strip(),
+        changed_fields=_parse_list_field(record.get("changed_fields")),
+        matched_fields=_parse_list_field(record.get("matched_fields")),
+        target_object_id=str(record.get("target_object_id") or "").strip(),
+        counterfactual_target_object_id=str(
+            record.get("counterfactual_target_object_id") or ""
+        ).strip(),
+    )
 
 
 def _capture_commands(
@@ -244,14 +313,18 @@ def _capture_commands(
 
     sorted_rows = sorted(
         rows,
-        key=lambda row: (row.dataset_id, row.capture_profile, row.benchmark, row.task_id, row.seed),
+        key=lambda row: (*_capture_command_group_key(row), row.seed),
     )
-    for group_key, group_iter in groupby(
+    for _group_key, group_iter in groupby(
         sorted_rows,
-        key=lambda row: (row.dataset_id, row.capture_profile, row.benchmark, row.task_id),
+        key=_capture_command_group_key,
     ):
         group_rows = list(group_iter)
-        dataset_id, profile, benchmark, task_id = group_key
+        first_row = group_rows[0]
+        dataset_id = first_row.dataset_id
+        profile = first_row.capture_profile
+        benchmark = first_row.benchmark
+        task_id = first_row.task_id
         if config.get("group_seed_list"):
             seed_groups = [sorted({int(row.seed) for row in group_rows})]
         else:
@@ -290,6 +363,7 @@ def _capture_commands(
                 str(task_root),
                 "--dataset-id",
                 dataset_id,
+                *_counterfactual_command_args(seed_rows[0]),
             )
             if config.get("group_seed_list"):
                 command = (
@@ -313,6 +387,55 @@ def _capture_commands(
     return commands
 
 
+def _capture_command_group_key(row: EpisodePlanRow) -> tuple[Any, ...]:
+    return (
+        row.dataset_id,
+        row.capture_profile,
+        row.benchmark,
+        row.task_id,
+        row.capture_design,
+        row.trace_variant,
+        row.counterfactual_group_id,
+        row.counterfactual_role,
+        row.counterfactual_type,
+        row.pair_index if row.pair_index is not None else -1,
+        row.paired_trace_id,
+        row.changed_fields,
+        row.matched_fields,
+        row.target_object_id,
+        row.counterfactual_target_object_id,
+    )
+
+
+def _counterfactual_command_args(row: EpisodePlanRow) -> tuple[str, ...]:
+    args: list[str] = []
+    if row.capture_design and row.capture_design != "single_trace":
+        args.extend(["--capture-design", row.capture_design])
+    if row.trace_variant:
+        args.extend(["--trace-variant", row.trace_variant])
+    elif row.counterfactual_role:
+        args.extend(["--trace-variant", row.counterfactual_role])
+    if row.counterfactual_group_id:
+        args.extend(["--counterfactual-group-id", row.counterfactual_group_id])
+    if row.counterfactual_role:
+        args.extend(["--counterfactual-role", row.counterfactual_role])
+    if row.counterfactual_type:
+        args.extend(["--counterfactual-type", row.counterfactual_type])
+    if row.pair_index is not None:
+        args.extend(["--pair-index", str(row.pair_index)])
+    if row.paired_trace_id:
+        args.extend(["--paired-trace-id", row.paired_trace_id])
+    if row.changed_fields:
+        args.extend(["--changed-fields", ",".join(row.changed_fields)])
+    if row.matched_fields:
+        args.extend(["--matched-fields", ",".join(row.matched_fields)])
+    if row.target_object_id:
+        args.extend(["--target-object-id", row.target_object_id])
+    if row.counterfactual_target_object_id:
+        args.extend(["--counterfactual-target-object-id", row.counterfactual_target_object_id])
+    return tuple(args)
+
+
 def _write_plan_files(
     output_root: Path,
     *,
@@ -323,19 +446,7 @@ def _write_plan_files(
     with (output_root / "capture_config.resolved.json").open("w", encoding="utf-8") as handle:
         json.dump(_jsonable(config), handle, indent=2, sort_keys=True)
 
-    plan_rows = [
-        {
-            "dataset_id": row.dataset_id,
-            "benchmark": row.benchmark,
-            "task_id": row.task_id,
-            "seed": row.seed,
-            "split": row.split,
-            "capture_profile": row.capture_profile,
-            "expected_trace_id": row.expected_trace_id,
-            "expected_trace_path": str(_expected_trace_path(output_root, row)),
-        }
-        for row in rows
-    ]
+    plan_rows = [_episode_plan_record(output_root, row) for row in rows]
     _write_csv(output_root / "episode_plan.csv", plan_rows, fieldnames=PLAN_COLUMNS)
     _write_csv(
         output_root / "probe_splits.csv",
@@ -347,10 +458,22 @@ def _write_plan_files(
                 "task_id": row.task_id,
                 "seed": row.seed,
                 "split": row.split,
+                "capture_profile": row.capture_profile,
+                "capture_design": row.capture_design,
+                "trace_variant": row.trace_variant,
+                "counterfactual_group_id": row.counterfactual_group_id,
+                "counterfactual_role": row.counterfactual_role,
+                "counterfactual_type": row.counterfactual_type,
+                "pair_index": row.pair_index if row.pair_index is not None else "",
+                "paired_trace_id": row.paired_trace_id,
+                "changed_fields": _list_cell(row.changed_fields),
+                "matched_fields": _list_cell(row.matched_fields),
+                "target_object_id": row.target_object_id,
+                "counterfactual_target_object_id": row.counterfactual_target_object_id,
             }
             for row in rows
         ],
-        fieldnames=("dataset_id", "trace_id", "benchmark", "task_id", "seed", "split"),
+        fieldnames=PROBE_SPLIT_COLUMNS,
     )
     with (output_root / "episode_plan.json").open("w", encoding="utf-8") as handle:
         json.dump(plan_rows, handle, indent=2)
@@ -366,6 +489,30 @@ def _write_csv(
         writer = csv.DictWriter(handle, fieldnames=list(fieldnames))
         writer.writeheader()
         writer.writerows(rows)
+
+
+def _episode_plan_record(output_root: Path, row: EpisodePlanRow) -> dict[str, Any]:
+    return {
+        "dataset_id": row.dataset_id,
+        "benchmark": row.benchmark,
+        "task_id": row.task_id,
+        "seed": row.seed,
+        "split": row.split,
+        "capture_profile": row.capture_profile,
+        "capture_design": row.capture_design,
+        "trace_variant": row.trace_variant,
+        "counterfactual_group_id": row.counterfactual_group_id,
+        "counterfactual_role": row.counterfactual_role,
+        "counterfactual_type": row.counterfactual_type,
+        "pair_index": row.pair_index if row.pair_index is not None else "",
+        "paired_trace_id": row.paired_trace_id,
+        "changed_fields": _list_cell(row.changed_fields),
+        "matched_fields": _list_cell(row.matched_fields),
+        "target_object_id": row.target_object_id,
+        "counterfactual_target_object_id": row.counterfactual_target_object_id,
+        "expected_trace_id": row.expected_trace_id,
+        "expected_trace_path": str(_expected_trace_path(output_root, row)),
+    }
 
 
 def _trace_root(output_root: Path, row: EpisodePlanRow) -> Path:
@@ -394,6 +541,82 @@ def _contiguous_seed_groups(seeds: Sequence[int]) -> list[list[int]]:
         else:
             groups.append([seed])
     return groups
+
+
+def _infer_counterfactual_pair_links(rows: Sequence[EpisodePlanRow]) -> list[EpisodePlanRow]:
+    normalized = [_normalize_pair_row(row) for row in rows]
+    groups: dict[str, list[int]] = {}
+    for index, row in enumerate(normalized):
+        if row.counterfactual_group_id:
+            groups.setdefault(row.counterfactual_group_id, []).append(index)
+
+    result = list(normalized)
+    for indices in groups.values():
+        if len(indices) == 2:
+            left, right = indices
+            if not result[left].paired_trace_id:
+                result[left] = replace(
+                    result[left],
+                    paired_trace_id=result[right].expected_trace_id,
+                )
+            if not result[right].paired_trace_id:
+                result[right] = replace(
+                    result[right],
+                    paired_trace_id=result[left].expected_trace_id,
+                )
+        for pair_index, row_index in enumerate(indices):
+            if result[row_index].pair_index is None:
+                result[row_index] = replace(result[row_index], pair_index=pair_index)
+    return result
+
+
+def _normalize_pair_row(row: EpisodePlanRow) -> EpisodePlanRow:
+    capture_design = (row.capture_design or "").strip()
+    if not capture_design:
+        capture_design = "single_trace"
+    if row.counterfactual_group_id and capture_design == "single_trace":
+        capture_design = "paired_counterfactual"
+    if capture_design not in {"single_trace", "paired_counterfactual"}:
+        raise ValueError(f"Unknown capture_design: {capture_design!r}")
+    return replace(
+        row,
+        capture_design=capture_design,
+        trace_variant=_trace_variant_suffix(row.trace_variant or row.counterfactual_role),
+        counterfactual_role=_trace_variant_suffix(row.counterfactual_role),
+    )
+
+
+def _trace_variant_suffix(value: str) -> str:
+    text = str(value or "").strip().lower()
+    if not text:
+        return ""
+    text = re.sub(r"[^a-z0-9]+", "_", text)
+    return text.strip("_")
+
+
+def _optional_int(value: Any) -> int | None:
+    text = str(value or "").strip()
+    return int(text) if text else None
+
+
+def _parse_list_field(value: Any) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    text = str(value).strip()
+    if not text:
+        return ()
+    if text.startswith("["):
+        parsed = json.loads(text)
+        if not isinstance(parsed, list):
+            raise ValueError(f"Expected list field, got {value!r}")
+        return tuple(str(item).strip() for item in parsed if str(item).strip())
+    return tuple(item.strip() for item in text.split(",") if item.strip())
+
+
+def _list_cell(values: Sequence[str]) -> str:
+    return json.dumps(list(values))
 
 
 def _preflight_storage(

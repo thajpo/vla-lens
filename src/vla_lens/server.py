@@ -115,6 +115,10 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
                 )
             elif path == "/api/dataset":
                 self._send_json(self._cached_payload("dataset", _dataset_payload))
+            elif path == "/api/counterfactual-pairs":
+                self._send_json(
+                    self._cached_payload("counterfactual-pairs", _counterfactual_pairs_response)
+                )
             elif path == "/api/workbench":
                 self._send_json(self._cached_payload("workbench", _workbench_payload))
             elif path == "/api/workbench/validate":
@@ -396,8 +400,104 @@ def _dataset_payload(dataset: TraceDataset) -> dict[str, Any]:
         "episodes": [_manifest_payload(bundle) for bundle in dataset.bundles],
         "activation_sites": int(len(dataset.model_site_index)),
         "artifacts": _artifact_summary(dataset),
+        "counterfactual_pairs": _counterfactual_pairs_payload(dataset),
         "workbench": workbench,
     }
+
+
+def _counterfactual_pairs_response(dataset: TraceDataset) -> dict[str, Any]:
+    pairs = _counterfactual_pairs_payload(dataset)
+    return {"pairs": pairs, "count": len(pairs)}
+
+
+def _counterfactual_pairs_payload(dataset: TraceDataset) -> list[dict[str, Any]]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    group_metadata: dict[str, dict[str, Any]] = {}
+    for bundle in dataset.bundles:
+        metadata = dict(bundle.manifest.metadata or {})
+        counterfactual = _counterfactual_metadata_from_manifest(metadata)
+        group_id = str(counterfactual.get("group_id") or "").strip()
+        if not group_id:
+            continue
+        member = {
+            "trace_id": bundle.manifest.trace_id,
+            "episode_id": bundle.manifest.episode_id,
+            "role": str(counterfactual.get("role") or ""),
+            "pair_index": _json_scalar(counterfactual.get("pair_index")),
+            "paired_trace_id": str(counterfactual.get("paired_trace_id") or ""),
+            "target_object_id": str(counterfactual.get("target_object_id") or ""),
+            "counterfactual_target_object_id": str(
+                counterfactual.get("counterfactual_target_object_id") or ""
+            ),
+            "outcome": bundle.manifest.outcome,
+            "prompt": bundle.manifest.prompt,
+        }
+        grouped.setdefault(group_id, []).append(member)
+        group_metadata.setdefault(
+            group_id,
+            {
+                "group_id": group_id,
+                "type": str(counterfactual.get("type") or ""),
+                "changed_fields": _string_list(counterfactual.get("changed_fields")),
+                "matched_fields": _string_list(counterfactual.get("matched_fields")),
+            },
+        )
+    pairs: list[dict[str, Any]] = []
+    for group_id, members in grouped.items():
+        members.sort(key=_counterfactual_member_sort_key)
+        pairs.append({**group_metadata[group_id], "members": members})
+    pairs.sort(key=lambda pair: str(pair.get("group_id") or ""))
+    return pairs
+
+
+def _counterfactual_metadata_from_manifest(metadata: Mapping[str, Any]) -> dict[str, Any]:
+    nested = metadata.get("counterfactual")
+    counterfactual = dict(nested) if isinstance(nested, Mapping) else {}
+    aliases = {
+        "counterfactual_group_id": "group_id",
+        "counterfactual_role": "role",
+        "counterfactual_type": "type",
+        "paired_trace_id": "paired_trace_id",
+        "pair_index": "pair_index",
+        "changed_fields": "changed_fields",
+        "matched_fields": "matched_fields",
+        "target_object_id": "target_object_id",
+        "counterfactual_target_object_id": "counterfactual_target_object_id",
+    }
+    for source, target in aliases.items():
+        if target not in counterfactual and source in metadata:
+            counterfactual[target] = metadata[source]
+    return counterfactual
+
+
+def _counterfactual_member_sort_key(member: Mapping[str, Any]) -> tuple[int, int, str]:
+    role_order = {"clean": 0, "control": 1, "corrupt": 2, "intervention": 3}
+    role = str(member.get("role") or "")
+    try:
+        pair_index = int(member.get("pair_index"))
+    except (TypeError, ValueError):
+        pair_index = 10_000
+    return (pair_index, role_order.get(role, 100), str(member.get("trace_id") or ""))
+
+
+def _string_list(value: Any) -> list[str]:
+    if isinstance(value, list):
+        return [str(item) for item in value if str(item)]
+    if isinstance(value, tuple):
+        return [str(item) for item in value if str(item)]
+    if value is None:
+        return []
+    text = str(value).strip()
+    if not text:
+        return []
+    if text.startswith("["):
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, list):
+            return [str(item) for item in parsed if str(item)]
+    return [item.strip() for item in text.split(",") if item.strip()]
 
 
 def _workbench_payload(dataset: TraceDataset) -> dict[str, Any]:
