@@ -1157,7 +1157,7 @@ def _activation_sites_payload(bundle: TraceBundle) -> dict[str, Any]:
     return {
         "sites": rows,
         "runtime_collections": _activation_runtime_collections(rows),
-        "architecture": {},
+        "architecture": _activation_architecture(rows),
     }
 
 
@@ -1189,6 +1189,174 @@ def _activation_runtime_collections(sites: list[dict[str, Any]]) -> list[dict[st
             "members": kv_members,
         }
     ]
+
+
+def _activation_architecture(sites: list[dict[str, Any]]) -> dict[str, Any]:
+    if not any(str(site.get("name") or "").startswith("pi05.") for site in sites):
+        return {}
+
+    vlm_layers = sorted(_captured_layers(sites, stack="vlm"))
+    expert_layers = sorted(_captured_layers(sites, stack="expert"))
+    nodes = [
+        {
+            "id": "pi05.vlm.prefix",
+            "label": "Inputs",
+            "kind": "inputs",
+            "stage": "prefix",
+            "captured": any(
+                str(site.get("name") or "").startswith("pi05.vlm.prefix") for site in sites
+            ),
+        }
+    ]
+    nodes.extend(
+        {
+            "id": f"pi05.vlm.layers.{layer}",
+            "label": f"VLM L{layer}",
+            "kind": "vlm_layer",
+            "stage": "prefix",
+            "layer": layer,
+            "captured": True,
+        }
+        for layer in vlm_layers
+    )
+    nodes.append(
+        {
+            "id": "pi05.expert.by_step.input_embeddings",
+            "label": "x_t",
+            "kind": "denoise_state",
+            "stage": "action_denoiser",
+            "captured": any(
+                str(site.get("name") or "") == "pi05.expert.by_step.input_embeddings"
+                for site in sites
+            ),
+        }
+    )
+    nodes.extend(
+        {
+            "id": f"pi05.expert.layers.{layer}",
+            "label": f"Expert L{layer}",
+            "kind": "expert_layer",
+            "stage": "action_denoiser",
+            "layer": layer,
+            "captured": True,
+        }
+        for layer in expert_layers
+    )
+    nodes.extend(
+        [
+            {
+                "id": "pi05.action_head",
+                "label": "Head",
+                "kind": "action_head",
+                "stage": "output",
+                "captured": any(
+                    str(site.get("name") or "").startswith("pi05.action_head")
+                    and str(site.get("role") or "") != "action_head_output"
+                    for site in sites
+                ),
+            },
+            {
+                "id": "pi05.action_output",
+                "label": "Action",
+                "kind": "action_output",
+                "stage": "output",
+                "captured": any(
+                    str(site.get("role") or "") == "action_head_output" for site in sites
+                ),
+            },
+        ]
+    )
+    edges = _activation_architecture_edges(sites)
+    return {"nodes": nodes, "edges": edges} if nodes or edges else {}
+
+
+def _activation_architecture_edges(sites: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    vlm_kv = _vlm_kv_sites_by_layer(sites)
+    expert_layers = _captured_layers(sites, stack="expert")
+    attention_by_layer = {
+        int(site["layer"]): site
+        for site in sites
+        if _site_layer(site) is not None
+        and ".expert.layers." in str(site.get("name") or "")
+        and (
+            str(site.get("role") or "") == "attention_probs"
+            or str(site.get("tensor_type") or "") == "attention"
+        )
+    }
+    edges = []
+    for layer in sorted(set(vlm_kv) & expert_layers):
+        source_sites = vlm_kv[layer]
+        if not {"key", "value"}.issubset(source_sites):
+            continue
+        attention_site = attention_by_layer.get(layer)
+        query_token_space = (
+            attention_site.get("query_token_space_id") if attention_site else "pi05.action_suffix"
+        )
+        key_token_space = (
+            attention_site.get("key_token_space_id") if attention_site else "pi05.expert_context"
+        )
+        edges.append(
+            {
+                "id": f"pi05.vlm.layers.{layer}.kv_to_expert.layers.{layer}",
+                "kind": "per_layer_kv_conditioning",
+                "source": f"pi05.vlm.layers.{layer}",
+                "target": f"pi05.expert.layers.{layer}",
+                "layer": layer,
+                "source_sites": [source_sites["key"], source_sites["value"]],
+                "target_site_family": (
+                    attention_site.get("name")
+                    if attention_site
+                    else f"pi05.expert.layers.{layer}.by_step.attention"
+                ),
+                "source_token_space": "pi05.prefix",
+                "query_token_space": query_token_space,
+                "key_token_space": key_token_space,
+                "runtime_collection": "pi05.vlm.past_key_values",
+                "materialized": False,
+            }
+        )
+    return edges
+
+
+def _vlm_kv_sites_by_layer(sites: list[dict[str, Any]]) -> dict[int, dict[str, str]]:
+    out: dict[int, dict[str, str]] = {}
+    for site in sites:
+        layer = _site_layer(site)
+        name = str(site.get("name") or "")
+        if layer is None or ".vlm.layers." not in name or ".kv_cache." not in name:
+            continue
+        role = str(site.get("role") or "")
+        if role.endswith("key") or name.endswith(".key"):
+            component = "key"
+        elif role.endswith("value") or name.endswith(".value"):
+            component = "value"
+        else:
+            continue
+        out.setdefault(layer, {})[component] = name
+    return out
+
+
+def _captured_layers(sites: list[dict[str, Any]], *, stack: str) -> set[int]:
+    marker = f".{stack}.layers."
+    layers = set()
+    for site in sites:
+        name = str(site.get("name") or "")
+        layer = _site_layer(site)
+        if layer is not None and marker in name:
+            layers.add(layer)
+    return layers
+
+
+def _site_layer(site: dict[str, Any]) -> int | None:
+    layer = site.get("layer")
+    try:
+        if layer is None:
+            return None
+        if isinstance(layer, float) and not np.isfinite(layer):
+            return None
+        return int(layer)
+    except (TypeError, ValueError, OverflowError):
+        return None
 
 
 def _json_list(value: Any) -> list[Any]:

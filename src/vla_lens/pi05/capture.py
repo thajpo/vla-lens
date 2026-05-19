@@ -59,6 +59,7 @@ CANONICAL_PROFILES = (
     "mechanistic_sampled",
     "mechanistic_all",
     "internals_sampled",
+    "audit_sampled",
     "audit_full",
     "custom",
 )
@@ -69,6 +70,7 @@ PROFILE_LAYERS = {
     "mechanistic_sampled": LANDMARK_5_LAYERS,
     "mechanistic_all": ALL_PI05_LAYERS,
     "internals_sampled": LANDMARK_5_LAYERS,
+    "audit_sampled": LANDMARK_5_LAYERS,
     "audit_full": ALL_PI05_LAYERS,
     "custom": LANDMARK_5_LAYERS,
 }
@@ -128,6 +130,7 @@ class CapturePlan:
             "mechanistic_sampled",
             "mechanistic_all",
             "internals_sampled",
+            "audit_sampled",
             "audit_full",
         }
 
@@ -136,8 +139,16 @@ class CapturePlan:
         return canonical_profile(self.profile) == "audit_full"
 
     @property
+    def capture_audit_sampled_sites(self) -> bool:
+        return canonical_profile(self.profile) == "audit_sampled"
+
+    @property
     def capture_internals_sites(self) -> bool:
-        return canonical_profile(self.profile) in {"internals_sampled", "audit_full"}
+        return canonical_profile(self.profile) in {
+            "internals_sampled",
+            "audit_sampled",
+            "audit_full",
+        }
 
     def to_metadata(self) -> dict[str, Any]:
         payload = asdict(self)
@@ -244,7 +255,11 @@ def profile_dimensions(profile: str) -> dict[str, Any]:
             "action_head": "io",
             "internals": "full_raw"
             if profile == "audit_full"
-            else ("selected_ops" if profile == "internals_sampled" else "none"),
+            else (
+                "sampled_audit"
+                if profile == "audit_sampled"
+                else ("selected_ops" if profile == "internals_sampled" else "none")
+            ),
             "state_setup": "full_raw" if profile == "audit_full" else "none",
         },
     }
@@ -291,7 +306,11 @@ def _plan_dimensions(plan: CapturePlan) -> dict[str, Any]:
             "action_head": "io" if plan.capture_bridge_sites else "none",
             "internals": "full_raw"
             if plan.capture_audit_full_sites
-            else ("selected_ops" if profile == "internals_sampled" else "none"),
+            else (
+                "sampled_audit"
+                if profile == "audit_sampled"
+                else ("selected_ops" if profile == "internals_sampled" else "none")
+            ),
             "state_setup": "full_raw" if plan.capture_audit_full_sites else "none",
         },
     }
@@ -563,6 +582,7 @@ def _resolve_capture_plan(args: argparse.Namespace) -> CapturePlan:
             "mechanistic_sampled",
             "mechanistic_all",
             "internals_sampled",
+            "audit_sampled",
             "custom",
         }:
             return "tokens"
@@ -580,6 +600,7 @@ def _resolve_capture_plan(args: argparse.Namespace) -> CapturePlan:
                 "mechanistic_sampled",
                 "mechanistic_all",
                 "internals_sampled",
+                "audit_sampled",
                 "audit_full",
             }
             else "none"
@@ -807,13 +828,13 @@ def _predict_action_chunk(
             post_mask_logits = (
                 pre_mask_scores if attention_mask is None else pre_mask_scores + attention_mask
             )
-            attn_weights = torch.nn.functional.softmax(
+            attention_probs = torch.nn.functional.softmax(
                 post_mask_logits,
                 dim=-1,
                 dtype=torch.float32,
             ).to(query.dtype)
             attn_weights = torch.nn.functional.dropout(
-                attn_weights,
+                attention_probs,
                 p=float(dropout),
                 training=module.training,
             )
@@ -846,7 +867,7 @@ def _predict_action_chunk(
                         value=value,
                         pre_mask_scores=pre_mask_scores,
                         post_mask_logits=post_mask_logits,
-                        attention_probs=attn_weights,
+                        attention_probs=attention_probs,
                         attn_output=out[0],
                     )
                 vlm_attention_by_layer[layer] = _attention_to_numpy(
@@ -874,7 +895,7 @@ def _predict_action_chunk(
                         value=value,
                         pre_mask_scores=pre_mask_scores,
                         post_mask_logits=post_mask_logits,
-                        attention_probs=attn_weights,
+                        attention_probs=attention_probs,
                         attn_output=out[0],
                     )
                 expert_attention_by_layer[layer].append(
@@ -2168,6 +2189,16 @@ def _declared_pi05_sites(plan: CapturePlan) -> list[str]:
                 expert_layers=plan.expert_layers,
             )
         )
+    declared_raw_sites: list[str] = []
+    if profile == "audit_sampled":
+        declared_raw_sites = [
+            declaration.name
+            for declaration in pi05_full_site_declarations(
+                vlm_layers=plan.vlm_layers,
+                expert_layers=plan.expert_layers,
+            )
+            if _is_audit_sampled_site(declaration)
+        ]
     sites = ["pi05.vlm.prefix.image_hidden_tokens"]
     for layer in plan.vlm_layers:
         if plan.vlm_hidden != "none":
@@ -2194,7 +2225,7 @@ def _declared_pi05_sites(plan: CapturePlan) -> list[str]:
                 "pi05.action_head.output",
             ]
         )
-    return sites
+    return list(dict.fromkeys([*sites, *declared_raw_sites]))
 
 
 def _pi05_true_full_missing_sites(buffer: EpisodeBuffer, plan: CapturePlan) -> list[str]:
@@ -2578,6 +2609,8 @@ def _full_model_site_specs(
     for name, declaration in declarations.items():
         if profile == "internals_sampled" and not _is_selected_internal_site(declaration):
             continue
+        if profile == "audit_sampled" and not _is_audit_sampled_site(declaration):
+            continue
         stacked = _stack_full_site_calls(buffer.calls, name)
         if stacked is None:
             continue
@@ -2585,6 +2618,9 @@ def _full_model_site_specs(
             declaration.spec(
                 stacked,
                 metadata={
+                    "capture_profile": profile,
+                    "included_in_profile": profile,
+                    "required_for_audit_sampled": profile == "audit_sampled",
                     "numeric_lossy": str(stacked.dtype) != "float32"
                     and np.issubdtype(stacked.dtype, np.floating),
                     "semantic_lossy": False,
@@ -2611,6 +2647,45 @@ def _is_selected_internal_site(declaration: Any) -> bool:
         "kv_cache_value",
     }
     return str(declaration.role) in selected_roles
+
+
+def _is_audit_sampled_site(declaration: Any) -> bool:
+    role = str(declaration.role)
+    name = str(declaration.name)
+    segment = str(declaration.segment)
+    if role == "input_embeddings":
+        return name == "pi05.expert.by_step.input_embeddings"
+    if role in {"action_head_input", "action_head_output"}:
+        return True
+    if role in {"kv_cache_key", "kv_cache_value"}:
+        return segment == "vlm_prefix"
+    return role in _AUDIT_SAMPLED_RAW_ROLES
+
+
+_AUDIT_SAMPLED_RAW_ROLES = {
+    "residual_pre_attention",
+    "attention_norm_output",
+    "q",
+    "k",
+    "v",
+    "pre_mask_scores",
+    "post_mask_logits",
+    "attention_probs",
+    "attn_output_pre_o_proj",
+    "o_proj",
+    "residual_post_attention",
+    "residual_pre_mlp",
+    "mlp_norm_output",
+    "mlp_gate",
+    "mlp_up",
+    "mlp_intermediate",
+    "mlp_down",
+    "mlp_output",
+    "residual_post_mlp",
+    "adarms_gate",
+    "adarms_scale",
+    "adarms_shift",
+}
 
 
 def _stack_full_site_calls(calls: list[CaptureCall], site_name: str) -> np.ndarray | None:

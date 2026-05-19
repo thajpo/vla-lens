@@ -50,6 +50,7 @@ import {
 import type {
   ActivationSite,
   ActivationSliceResponse,
+  ArchitectureMetadata,
   AttentionMapResponse,
   DatasetEpisode,
   EpisodeAnnotation,
@@ -285,6 +286,7 @@ export function EpisodesPage({
   const maxTimestep = Math.max(0, Number(selectedEpisode?.length ?? episodeDetail.data?.length ?? 1) - 1);
   const metrics = episodeMetrics.data?.metrics ?? [];
   const sites = activationSites.data?.sites ?? [];
+  const architecture = activationSites.data?.architecture;
   const defaultSite = preferredPipelineSite(sites);
   const selectedSite = sites.find((site) => site.name === selectedSiteName) ?? defaultSite;
   const inspectorContext = inspectorContextForSite(selectedSite);
@@ -721,6 +723,7 @@ export function EpisodesPage({
             </div>
             <div className="body">
               <ActivationSitePanel
+                architecture={architecture}
                 sites={sites}
                 activationSlice={activationSlice.data}
                 feature={clampedFeature}
@@ -1925,6 +1928,7 @@ function ActivationSitePanel({
   activationSliceFetching,
   activationSlicePlaceholder,
   activationClipPercent,
+  architecture,
   attentionHead,
   attentionQueryToken,
   cameraOverlay,
@@ -1957,6 +1961,7 @@ function ActivationSitePanel({
   activationSliceFetching: boolean;
   activationSlicePlaceholder: boolean;
   activationClipPercent: number;
+  architecture?: ArchitectureMetadata;
   attentionHead: number | null;
   attentionQueryToken: number | null;
   cameraOverlay?: CameraOverlayPayload;
@@ -2029,6 +2034,7 @@ function ActivationSitePanel({
   return (
     <section className="episode-tool-panel">
       <ModelPipelineMap
+        architecture={architecture}
         feature={feature}
         axisControls={attentionAxisControls ?? channelFeatureControl}
         inspectionMode={inspectionMode}
@@ -2422,6 +2428,7 @@ function PromptAttentionChips({
 
 function ModelPipelineMap({
   axisControls,
+  architecture,
   feature,
   inspectionMode,
   onInspectionModeChange,
@@ -2431,6 +2438,7 @@ function ModelPipelineMap({
   topChannelPanel,
 }: {
   axisControls?: ReactNode;
+  architecture?: ArchitectureMetadata;
   feature: number;
   inspectionMode: InspectionMode;
   onInspectionModeChange: (mode: InspectionMode) => void;
@@ -2490,6 +2498,7 @@ function ModelPipelineMap({
           }
         }}
         selectedSiteName={selectedSiteName}
+        architecture={architecture}
         stages={stages}
       />
       {axisControls ? <div className="pipeline-channel-row">{axisControls}</div> : null}
@@ -2513,6 +2522,7 @@ function ModelPipelineMap({
             }
           }}
           selectedSiteName={selectedSiteName}
+          architecture={architecture}
           stages={stages}
         />
       ) : null}
@@ -2739,6 +2749,7 @@ function PipelineLegend() {
 }
 
 function PipelineMapModal({
+  architecture,
   feature,
   inspectionMode,
   overlayControls,
@@ -2747,6 +2758,7 @@ function PipelineMapModal({
   selectedSiteName,
   stages,
 }: {
+  architecture?: ArchitectureMetadata;
   feature: number;
   inspectionMode: InspectionMode;
   overlayControls?: ReactNode;
@@ -2790,6 +2802,7 @@ function PipelineMapModal({
           </button>
         </header>
         <PipelineMap2D
+          architecture={architecture}
           className="large"
           feature={feature}
           inspectionMode={inspectionMode}
@@ -2804,6 +2817,7 @@ function PipelineMapModal({
 }
 
 function PipelineMap2D({
+  architecture,
   className = "",
   cornerAction,
   feature,
@@ -2812,6 +2826,7 @@ function PipelineMap2D({
   selectedSiteName,
   stages,
 }: {
+  architecture?: ArchitectureMetadata;
   className?: string;
   cornerAction?: ReactNode;
   feature: number;
@@ -2820,7 +2835,7 @@ function PipelineMap2D({
   selectedSiteName: string;
   stages: PipelineStage[];
 }) {
-  const layout = useMemo(() => pipelineDiagramLayout(stages), [stages]);
+  const layout = useMemo(() => pipelineDiagramLayout(stages, architecture), [architecture, stages]);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const isLargeMap = className.includes("large");
   const maxFitScale = isLargeMap ? 1.35 : 1;
@@ -4053,7 +4068,10 @@ function modelPipelineStages(sites: ActivationSite[]): PipelineStage[] {
   return stages;
 }
 
-function pipelineDiagramLayout(stages: PipelineStage[]): PipelineDiagramLayout {
+function pipelineDiagramLayout(
+  stages: PipelineStage[],
+  architecture?: ArchitectureMetadata,
+): PipelineDiagramLayout {
   const stage = (id: string) => stages.find((entry) => entry.id === id)?.nodes ?? [];
   const prefixNodes = stage("prefix");
   const vlmNodes = stage("vlm");
@@ -4146,7 +4164,13 @@ function pipelineDiagramLayout(stages: PipelineStage[]): PipelineDiagramLayout {
     });
   }
   if (vlmNodes.length && expertNodes.length) {
-    const pairEndpoints = uniqueDiagramNodes([firstVlm, lastVlm]);
+    const kvLayers = perLayerKvEdgeLayers(architecture);
+    const kvEndpointLayers = kvLayers.length
+      ? uniqueNumbers([kvLayers[0], kvLayers[kvLayers.length - 1]])
+      : [];
+    const pairEndpoints = kvEndpointLayers.length
+      ? kvEndpointLayers.map((layer) => byId(`vlm-${layer}`)).filter(isDiagramNode)
+      : uniqueDiagramNodes([firstVlm, lastVlm]);
     pairEndpoints.forEach((vlm) => {
       const expert = byId(vlm.node.id.replace("vlm", "expert"));
       if (!expert) {
@@ -4169,7 +4193,11 @@ function pipelineDiagramLayout(stages: PipelineStage[]): PipelineDiagramLayout {
         y: kvBusY - 16,
       });
     }
-    [4, 8, 12].forEach((layer, index) => {
+    const dotLayers = kvLayers.length
+      ? kvLayers.filter((layer) => !kvEndpointLayers.includes(layer))
+      : [4, 8, 12];
+    const dotLabelIndex = Math.floor(dotLayers.length / 2);
+    dotLayers.forEach((layer, index) => {
       const vlm = byId(`vlm-${layer}`);
       if (!vlm) {
         return;
@@ -4177,7 +4205,7 @@ function pipelineDiagramLayout(stages: PipelineStage[]): PipelineDiagramLayout {
       ports.push({
         className: "kv-dot",
         id: `kv-dot-${layer}`,
-        label: index === 1 ? "..." : undefined,
+        label: index === dotLabelIndex ? "..." : undefined,
         radius: 2.6,
         textAnchor: "middle",
         x: centerX(vlm),
@@ -4236,6 +4264,22 @@ function pipelineDiagramLayout(stages: PipelineStage[]): PipelineDiagramLayout {
     ports,
     width: Math.max(1080, outputX + 190),
   };
+}
+
+function perLayerKvEdgeLayers(architecture?: ArchitectureMetadata): number[] {
+  const layers = architecture?.edges
+    ?.filter((edge) => edge.kind === "per_layer_kv_conditioning")
+    .map((edge) => Number(edge.layer))
+    .filter((layer) => Number.isInteger(layer)) ?? [];
+  return uniqueNumbers(layers).sort((left, right) => left - right);
+}
+
+function uniqueNumbers(values: number[]): number[] {
+  return Array.from(new Set(values));
+}
+
+function isDiagramNode(value: PipelineDiagramNode | undefined): value is PipelineDiagramNode {
+  return Boolean(value);
 }
 
 function uniqueDiagramNodes(

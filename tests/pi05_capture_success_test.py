@@ -68,13 +68,22 @@ def test_profile_aliases_resolve_to_canonical_capture_profiles() -> None:
 def test_sampled_profiles_use_same_vlm_and_expert_layer_pairs() -> None:
     expected_layers = (0, 4, 8, 12, 17)
 
-    for profile in ("mechanistic_sampled", "internals_sampled"):
+    for profile in ("mechanistic_sampled", "internals_sampled", "audit_sampled"):
         assert PROFILE_VLM_LAYERS[profile] == expected_layers
         assert PROFILE_EXPERT_LAYERS[profile] == expected_layers
         assert profile_dimensions(profile)["layer_coverage"] == {
             "vlm": "sampled_5",
             "expert": "sampled_5",
         }
+
+
+def test_audit_sampled_profile_dimensions_are_distinct_from_internals_sampled() -> None:
+    audit = profile_dimensions("audit_sampled")
+    internals = profile_dimensions("internals_sampled")
+
+    assert audit["families"]["internals"] == "sampled_audit"
+    assert internals["families"]["internals"] == "selected_ops"
+    assert audit["families"]["state_setup"] == "none"
 
 
 def test_custom_plan_metadata_reflects_resolved_families() -> None:
@@ -126,6 +135,40 @@ def test_mechanistic_sampled_declares_bridge_and_action_head_sites() -> None:
     assert "pi05.action_head.input" in sites
     assert "pi05.action_head.output" in sites
     assert plan.to_metadata()["captures_bridge_sites"] is True
+
+
+def test_audit_sampled_declares_circuit_boundaries_without_state_setup() -> None:
+    plan = CapturePlan(
+        profile="audit_sampled",
+        vlm_layers=(0,),
+        expert_layers=(0,),
+        vlm_hidden="tokens",
+        vlm_attention="full",
+        expert_hidden="tokens",
+        expert_attention="full",
+        storage_dtype="float16",
+    )
+
+    sites = set(_declared_pi05_sites(plan))
+
+    assert "pi05.vlm.layers.0.residual_pre_attention" in sites
+    assert "pi05.vlm.layers.0.attention.pre_mask_scores" in sites
+    assert "pi05.vlm.layers.0.attention.post_mask_logits" in sites
+    assert "pi05.vlm.layers.0.attention.attn_output_pre_o_proj" in sites
+    assert "pi05.vlm.layers.0.mlp.output" in sites
+    assert "pi05.expert.layers.0.attention_adarms.scale" in sites
+    assert "pi05.expert.layers.0.mlp_adarms.shift" in sites
+    assert "pi05.expert.layers.0.residual_post_mlp" in sites
+    assert "pi05.vlm.layers.0.kv_cache.key" in sites
+    assert "pi05.vlm.layers.0.kv_cache.value" in sites
+    assert "pi05.expert.by_step.input_embeddings" in sites
+    assert "pi05.action_head.input" in sites
+    assert "pi05.action_head.output" in sites
+
+    assert "pi05.inputs.attention_mask" not in sites
+    assert "pi05.inputs.rope.cos" not in sites
+    assert "pi05.expert.by_step.position_ids" not in sites
+    assert "pi05.expert.layers.0.kv_cache.key" not in sites
 
 
 def test_mechanistic_sampled_materializes_bridge_and_action_head_model_sites() -> None:
@@ -192,6 +235,70 @@ def test_mechanistic_sampled_materializes_bridge_and_action_head_model_sites() -
     ]
     assert specs["pi05.action_head.output"].materialization == "raw"
     assert specs["pi05.action_head.output"].exactness == "exact"
+
+
+def test_audit_sampled_materializes_boundary_sites_with_coordinate_metadata() -> None:
+    plan = CapturePlan(
+        profile="audit_sampled",
+        vlm_layers=(0,),
+        expert_layers=(0,),
+        vlm_hidden="tokens",
+        vlm_attention="full",
+        expert_hidden="tokens",
+        expert_attention="full",
+        storage_dtype="float16",
+    )
+    buffer = EpisodeBuffer(
+        trace_id="trace",
+        task_id=0,
+        task_name="task",
+        prompt="task",
+        seed=0,
+    )
+    buffer.calls = [
+        CaptureCall(
+            call_index=0,
+            env_timestep=0,
+            final_action_chunk=np.zeros((2, 7), dtype=np.float16),
+            denoising_actions=np.zeros((3, 2, 7), dtype=np.float16),
+            suffix_hidden=np.zeros((3, 2, 7), dtype=np.float16),
+            full_site_arrays={
+                "pi05.vlm.layers.0.residual_pre_attention": np.zeros((5, 8), dtype=np.float16),
+                "pi05.vlm.layers.0.attention.q": np.zeros((1, 5, 4), dtype=np.float16),
+                "pi05.vlm.layers.0.attention.post_mask_logits": np.zeros(
+                    (1, 5, 5), dtype=np.float16
+                ),
+                "pi05.vlm.layers.0.attention.attn_output_pre_o_proj": np.zeros(
+                    (5, 8), dtype=np.float16
+                ),
+                "pi05.vlm.layers.0.mlp.output": np.zeros((5, 8), dtype=np.float16),
+                "pi05.inputs.rope.cos": np.zeros((5, 4), dtype=np.float16),
+                "pi05.expert.layers.0.attention_adarms.scale": np.zeros(
+                    (3, 2, 8), dtype=np.float16
+                ),
+                "pi05.expert.layers.0.residual_post_mlp": np.zeros((3, 2, 8), dtype=np.float16),
+                "pi05.expert.layers.0.kv_cache.key": np.zeros((3, 1, 2, 4), dtype=np.float16),
+            },
+        )
+    ]
+
+    specs = {spec.name: spec for spec in _model_arrays(buffer, plan)}
+
+    assert "pi05.vlm.layers.0.residual_pre_attention" in specs
+    assert "pi05.vlm.layers.0.attention.post_mask_logits" in specs
+    assert "pi05.vlm.layers.0.attention.attn_output_pre_o_proj" in specs
+    assert "pi05.vlm.layers.0.mlp.output" in specs
+    assert "pi05.expert.layers.0.attention_adarms.scale" in specs
+    assert "pi05.inputs.rope.cos" not in specs
+    assert "pi05.expert.layers.0.kv_cache.key" not in specs
+
+    logits = specs["pi05.vlm.layers.0.attention.post_mask_logits"]
+    assert logits.metadata["capture_profile"] == "audit_sampled"
+    assert logits.metadata["required_for_audit_sampled"] is True
+    assert logits.metadata["coordinate_system_version"] == "pi05_attention_v1"
+    assert logits.metadata["q_state"] == "post_rope"
+    assert logits.metadata["k_state"] == "post_rope_pre_repeat_kv"
+    assert logits.metadata["formula"] == "pre_mask_scores + additive_attention_mask"
 
 
 def test_token_profiles_do_not_store_redundant_hidden_mean_or_attention_key_mass() -> None:

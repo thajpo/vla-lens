@@ -62,11 +62,52 @@ http://127.0.0.1:8765/
 Capture PI0.5 episodes directly into VLA-lens traces:
 
 ```bash
-uv run vla-pi05-batch-capture --config configs/pi05_light_5_test.yaml --run
+scripts/pi05_batch_capture_rocm.sh --config configs/pi05_light_5_test.yaml --run
 ```
 
 The `.vlatrace` bundle is the canonical VLA-lens episode record used by the
 backend and webapp.
+
+### PI0.5 ROCm Capture Environment
+
+PI0.5/LeRobot/LIBERO capture uses a dedicated environment. This is intentional.
+
+Use this split:
+
+```text
+Normal repo/dev/test/server work:
+  .venv
+  uv run ...
+
+PI0.5 ROCm capture work:
+  .venv-pi05-rocm
+  scripts/pi05_capture_rocm.sh ...
+  scripts/pi05_batch_capture_rocm.sh ...
+```
+
+Do not run PI0.5 capture with plain `uv run vla-pi05-capture` or
+`uv run vla-pi05-batch-capture` on this workstation. `uv run` may sync the
+normal repo lock into `.venv`, restoring dependencies that break the
+LeRobot/LIBERO capture stack. In particular, capture currently needs ROCm Torch,
+OpenPI-patched Transformers, `hf-libero`, and `robosuite==1.4.0`, while the
+normal repo lock is for development/server/test work.
+
+Set up the capture environment once:
+
+```bash
+scripts/setup_pi05_rocm_env.sh
+```
+
+The first setup downloads the ROCm Torch wheel, which is several GiB. The
+capture wrappers validate the environment before running so a missing or
+half-built `.venv-pi05-rocm` fails loudly.
+
+More detail: [`docs/pi05-rocm-capture-env.md`](docs/pi05-rocm-capture-env.md).
+
+Testing follows the same split. Normal repo tests run with `uv run pytest` in
+`.venv` and should not require Torch/LeRobot/GPU. Real PI0.5 capture smokes run
+through `scripts/pi05_capture_rocm.sh` or `scripts/pi05_batch_capture_rocm.sh`
+after `scripts/check_pi05_rocm_env.sh` passes.
 
 The batch runner is the normal run surface. It writes an `episode_plan.csv`
 containing one row per intended episode:
@@ -87,7 +128,7 @@ uv run python scripts/run_capture_profile_smoke.py \
   --model-id lerobot/pi05_libero_finetuned \
   --episodes 2 \
   --delete-existing \
-  --capture-command 'uv run vla-pi05-capture --model-id {model_id} --episodes {episodes} --start-seed {start_seed} --capture-profile {profile} --dataset-id {dataset_id} --vlatrace-out-root {traces_root}'
+  --capture-command 'scripts/pi05_capture_rocm.sh --model-id {model_id} --episodes {episodes} --start-seed {start_seed} --capture-profile {profile} --dataset-id {dataset_id} --vlatrace-out-root {traces_root}'
 ```
 
 The smoke script owns the profile roots and trace validation. The runner
@@ -134,12 +175,16 @@ uv run python scripts/save_vla_lens_action_generation.py runs/pi05_high10_vlatra
 Refresh the dashboard and open the Artifacts page to inspect saved results.
 
 PI0.5 capture profiles are named `rollout`, `features`,
-`mechanistic_sampled`, `mechanistic_all`, `internals_sampled`, `audit_full`,
-and `custom`. In short: use `vla-pi05-batch-capture` for dataset-scale work.
+`mechanistic_sampled`, `mechanistic_all`, `internals_sampled`,
+`audit_sampled`, `audit_full`, and `custom`. In short: use
+`scripts/pi05_batch_capture_rocm.sh` for PI0.5 dataset-scale work on this ROCm
+workstation.
 `mechanistic_sampled` is the cheap default; `mechanistic_all` is the best
-serious single-trace inspector profile; `audit_full` adds raw forward internals
-and is intentionally expensive. Legacy aliases still work for one compatibility
-cycle: `representation`, `mechanistic_light`, `mechanistic_heavy`, and `full`.
+serious single-trace inspector profile; `audit_sampled` adds sampled-layer
+circuit-boundary internals and is already large; `audit_full` adds all-layer raw
+forward internals and is intentionally expensive. Legacy aliases still work for
+one compatibility cycle: `representation`, `mechanistic_light`,
+`mechanistic_heavy`, and `full`.
 Sampled PI0.5 model profiles capture the same VLM and expert layer indices
 (`0, 4, 8, 12, 17`) so inspected prefix K/V pairs line up as
 `VLM L_i -> Expert L_i`.

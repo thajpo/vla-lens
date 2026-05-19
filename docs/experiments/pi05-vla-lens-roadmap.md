@@ -2,6 +2,8 @@
 
 Status: living planning contract from the May 18, 2026 capture-profile and inspector design discussion.
 
+Last implementation update: Phase 1 code contract is implemented, unit/type validated, and one real `audit_sampled` PI0.5/LIBERO smoke trace has been captured and validated. The next scale-up gate is a 3-5 trace benchmark across varied episode lengths.
+
 Audience: future agents, GPT Pro review, and implementation sessions before changing code.
 
 Purpose: preserve the high-resolution product/research direction so future implementation does not drift into already-solved work, vague "more tensors" capture, or UI diagrams that misrepresent PI0.5.
@@ -115,6 +117,115 @@ Validated by:
     - what was deleted or deferred
 ```
 
+## Current Validation Log
+
+### 2026-05-18/19 Phase 1 Implementation Pass
+
+Validated by:
+
+```text
+tests:
+  - uv run pytest -q
+    result: 101 passed
+
+  - uv run pytest tests/pi05_capture_success_test.py tests/pi05_token_metadata_test.py tests/pi05_full_capture_test.py tests/vla_lens_trace_mvp_test.py -q
+    result: 89 passed
+
+  - uv run ruff check scripts/run_capture_profile_smoke.py src/vla_lens/capture/adapters.py src/vla_lens/capture/records.py src/vla_lens/pi05/capture.py src/vla_lens/pi05/full_capture.py src/vla_lens/server.py src/vla_lens/validation.py tests/pi05_capture_success_test.py tests/pi05_full_capture_test.py tests/vla_lens_trace_mvp_test.py
+    result: all checks passed
+
+frontend:
+  - cd frontend && npm run build
+    result: TypeScript and Vite build passed
+
+capture environment:
+  - uv pip install torch torchvision --index-url https://download.pytorch.org/whl/rocm7.2
+    result: preserved ROCm torch stack instead of pulling CUDA wheels
+
+  - uv pip install lerobot --no-deps
+    result: installed lerobot 0.4.4 into the venv without replacing ROCm torch
+
+  - installed LeRobot's non-torch runtime dependencies manually
+    result: PI0.5 import path resolved after adding the OpenPI transformers replacement patch and peft
+
+environment hardening:
+  - AGENTS.md
+    result: added explicit split-env rule for future agents
+
+  - docs/pi05-rocm-capture-env.md
+    result: documented why plain uv run is unsafe for PI0.5 ROCm capture
+
+  - scripts/setup_pi05_rocm_env.sh
+    result: added reproducible setup script for .venv-pi05-rocm
+
+  - scripts/pi05_capture_rocm.sh and scripts/pi05_batch_capture_rocm.sh
+    result: added wrapper entrypoints that avoid accidental uv sync for capture
+
+smoke trace:
+  - /usr/bin/time -v .venv/bin/vla-pi05-capture --episodes 1 --start-seed 1002 --benchmark libero_object --task-id 0 --capture-profile audit_sampled --vlatrace-out-root "/media/j/New Volume/vla-lens/pi05-audit-sampled-smoke" --delete-existing
+    result: success
+    trace: /media/j/New Volume/vla-lens/pi05-audit-sampled-smoke/pi05_audit_sampled_libero_object_task0_seed1002.vlatrace
+    episode: pi05_audit_sampled_libero_object_task0_seed1002
+    steps: 138
+    policy calls: 3
+    success: true
+    wall clock: 1:21.41
+    max CPU RSS: 16,717,972 KB
+
+smoke validation:
+  - PYTHONPATH=src .venv/bin/python validation script
+    result: validate_trace_dataset(dataset).valid == true
+    model_sites: 244
+    runtime_collections: 1
+    architecture.nodes: 14
+    architecture.edges: 5
+
+benchmark artifact:
+  - docs/experiments/pi05-audit-sampled-smoke-2026-05-19.md
+    result: single-trace storage/runtime note written
+```
+
+Validated facts:
+
+```text
+audit_sampled is now a canonical profile in code.
+audit_sampled uses sampled VLM/Expert layers [0, 4, 8, 12, 17].
+audit_sampled is distinct from internals_sampled.
+internals_sampled keeps selected-op semantics.
+audit_full remains the all-layer raw/debug profile.
+audit_sampled persists circuit-boundary internals but excludes stored state-setup tensors by default.
+Q/K/V/logit/probability declarations carry PI0.5 attention coordinate metadata.
+/api/activation-sites returns architecture.nodes and architecture.edges for PI0.5 traces.
+per_layer_kv_conditioning edges pair equal-index VLM and Expert layers.
+non-PI0.5 activation payloads keep empty architecture metadata.
+the existing PI0.5 diagram consumes architecture.edges for same-index K/V connectors.
+one real audit_sampled trace can be captured with the direct venv entrypoint.
+the one-trace audit_sampled smoke is much larger than mechanistic_sampled: 2.18 GiB file bytes / 2.4G du size.
+the smoke trace's model arrays dominate storage: 2.18 GiB of 2.18 GiB total file bytes.
+MLP internals dominate the smoke trace's model storage, followed by attention tensors.
+```
+
+Still not validated:
+
+```text
+3-5 trace audit_sampled benchmark across varied episode lengths
+audit_sampled runtime slowdown vs no capture and mechanistic_sampled
+audit_sampled peak GPU memory overhead
+audit_sampled trace write time split from rollout time
+attention_probs numeric reconstruction on a real captured trace
+```
+
+Next action before any scale-up:
+
+```text
+run scripts/setup_pi05_rocm_env.sh to create .venv-pi05-rocm
+use scripts/pi05_capture_rocm.sh and scripts/pi05_batch_capture_rocm.sh for capture, not plain uv run
+run 3-5 additional real audit_sampled traces
+extend the storage/runtime benchmark artifact
+decide whether audit_sampled needs role trimming or event-windowed capture before any larger run
+then prune this roadmap again
+```
+
 ## Core Product Identity
 
 VLA Lens should be an episode-grounded causal interpretability workbench for VLAs.
@@ -165,6 +276,7 @@ features
 mechanistic_sampled
 mechanistic_all
 internals_sampled
+audit_sampled
 audit_full
 custom
 ```
@@ -193,6 +305,7 @@ features               [0, 4, 8, 12, 17]
 mechanistic_sampled    [0, 4, 8, 12, 17]
 mechanistic_all        [0..17]
 internals_sampled      [0, 4, 8, 12, 17]
+audit_sampled          [0, 4, 8, 12, 17]
 audit_full             [0..17]
 custom                 [0, 4, 8, 12, 17]
 ```
@@ -242,6 +355,184 @@ members:         exact per-layer key/value sites
 ```
 
 This is implemented in capture metadata and reconstructed by `/api/activation-sites`.
+
+### `audit_sampled` v0 Code Contract
+
+The code-level `audit_sampled` contract is now implemented and one real smoke trace has been captured. It is not yet benchmarked broadly enough for scale-up decisions.
+
+Ground-truth behavior:
+
+```text
+profile name:
+  audit_sampled
+
+layer coverage:
+  VLM:    [0, 4, 8, 12, 17]
+  Expert: [0, 4, 8, 12, 17]
+
+profile dimensions:
+  families.internals = sampled_audit
+  families.state_setup = none
+
+required persisted families:
+  normal representation/attention/cache/action-head bridge sites
+  selected residual boundaries
+  attention norm output
+  q/k/v
+  pre_mask_scores
+  post_mask_logits
+  attention_probs
+  attn_output_pre_o_proj
+  o_proj
+  residual_post_attention
+  residual_pre_mlp
+  mlp_norm_output
+  MLP gate/up/intermediate/down/output
+  residual_post_mlp
+  expert AdaRMS scale/shift/gate
+  VLM per-layer K/V
+  expert input embeddings
+  action_head input/output
+
+excluded from persisted audit_sampled v0:
+  input attention masks
+  causal masks
+  position IDs
+  RoPE cos/sin/metadata
+  Expert per-layer K/V cache
+```
+
+Attention coordinate metadata is now attached to full-capture declarations:
+
+```text
+q:
+  post-RoPE
+  after attention norm and linear projection
+  before head scaling
+
+k:
+  post-RoPE
+  pre-repeat_kv
+  before head scaling
+
+v:
+  not RoPE-rotated
+  pre-repeat_kv
+
+pre_mask_scores:
+  q @ repeat_kv(k).T * scaling
+
+post_mask_logits:
+  pre_mask_scores + additive_attention_mask
+
+attention_probs:
+  softmax(post_mask_logits, dim=-1, dtype=float32), cast to query dtype before dropout
+
+attn_output_pre_o_proj:
+  attention_probs_after_dropout @ repeat_kv(v)
+```
+
+Important caveat:
+
+```text
+The code captures enough named tensors for this contract, and a real smoke trace validates materialization and schema loading.
+It still has not verified numeric attention_probs reconstruction against q/k/logits/mask state.
+```
+
+### PI0.5 Capture Environment With ROCm Torch
+
+PI0.5 capture should use a dedicated ROCm capture environment, not the normal repo `.venv`.
+
+Ground-truth environment state from the May 19, 2026 smoke trace:
+
+```text
+torch:        2.11.0+rocm7.2
+torchvision:  0.26.0+rocm7.2
+lerobot:      0.4.4
+transformers: 4.53.2 with OpenPI transformers_replace files copied into site-packages
+peft:         0.19.1
+hf-libero:    0.1.3
+robosuite:    1.4.0
+```
+
+Important operational detail:
+
+```text
+Use after setup:
+  scripts/pi05_capture_rocm.sh ...
+  scripts/pi05_batch_capture_rocm.sh ...
+
+Do not use for capture:
+  uv run vla-pi05-capture ...
+  uv run vla-pi05-batch-capture ...
+```
+
+Reason:
+
+```text
+uv run syncs from pyproject/uv.lock and can restore robosuite 1.5.2.
+LIBERO capture currently needs robosuite 1.4.0 because LeRobot's LIBERO path imports robosuite.environments.manipulation.single_arm_env.SingleArmEnv.
+LeRobot's package metadata wants torch<2.11 and torchvision<0.26, but this workstation intentionally uses ROCm torch 2.11.0+rocm7.2.
+```
+
+The near-term contract is documented in `AGENTS.md` and `docs/pi05-rocm-capture-env.md`.
+
+Testing split:
+
+```text
+Normal repo tests:
+  uv run pytest
+  uv run ruff check scripts src tests
+  cd frontend && npm run build
+
+Capture integration smokes:
+  scripts/check_pi05_rocm_env.sh
+  scripts/pi05_capture_rocm.sh ...
+  scripts/pi05_batch_capture_rocm.sh ...
+```
+
+Normal tests should cover profile planning, declarations, schema, server payloads, trace validation, frontend type/build behavior, and pure analysis code without requiring Torch/LeRobot/GPU. Real PI0.5 model execution belongs in the explicit capture smoke path.
+
+This is acceptable for local capture smoke work, but it is not a permanent dependency strategy. Future work should formalize a capture extra, dedicated lock, or container that preserves ROCm torch and the OpenPI transformers replacement patch.
+
+### Activation-Site Architecture Metadata
+
+`/api/activation-sites` now exposes PI0.5 architecture metadata when PI0.5 sites exist.
+
+Ground-truth behavior:
+
+```text
+architecture.nodes:
+  PI0.5 input node
+  captured VLM layer nodes
+  expert input / x_t node
+  captured Expert layer nodes
+  action head/output nodes
+
+architecture.edges:
+  kind = per_layer_kv_conditioning
+  source = pi05.vlm.layers.{i}
+  target = pi05.expert.layers.{i}
+  layer = i
+  source_sites = exact key/value cache site names
+  source_token_space = pi05.prefix
+  query_token_space = pi05.action_suffix
+  key_token_space = pi05.expert_context
+  runtime_collection = pi05.vlm.past_key_values
+  materialized = false
+```
+
+For sampled traces, expected edges are:
+
+```text
+VLM L0  -> Expert L0
+VLM L4  -> Expert L4
+VLM L8  -> Expert L8
+VLM L12 -> Expert L12
+VLM L17 -> Expert L17
+```
+
+Old or non-PI0.5 traces keep empty architecture metadata.
 
 ### Expert Context Token Space
 
@@ -789,6 +1080,66 @@ max size:         579.6 MiB
 ```
 
 Earlier estimates around 328 MB/episode came from a smaller early sample and should not be treated as canonical.
+
+Single-trace `audit_sampled` smoke from May 19, 2026:
+
+```text
+trace:
+  /media/j/New Volume/vla-lens/pi05-audit-sampled-smoke/pi05_audit_sampled_libero_object_task0_seed1002.vlatrace
+
+task:
+  libero_object task 0 seed 1002
+
+episode:
+  steps: 138
+  policy calls: 3
+  success: true
+
+storage:
+  du size:          2.4G
+  file bytes:       2.18 GiB
+  model arrays:     2.18 GiB
+  media:            4.44 MiB
+  tables:           0.22 MiB
+  action/context/episode arrays outside model: <1 MiB combined
+
+runtime:
+  wall clock:        1:21.41
+  max CPU RSS:       16,717,972 KB
+
+model-site count:
+  total:             244
+  attention:         90
+  normalization:     50
+  mlp:               50
+  residual:          30
+  representation:    12
+  cache:             10
+  action_head:       2
+
+model bytes by family:
+  mlp:               1.17 GiB
+  attention:         706.05 MiB
+  residual:          161.39 MiB
+  normalization:     95.78 MiB
+  representation:    61.39 MiB
+  cache:             9.54 MiB
+  action_head:       2.26 MiB
+
+model bytes by stack:
+  VLM:               1.68 GiB
+  Expert:            512.43 MiB
+  Action head:       2.26 MiB
+```
+
+Interpretation:
+
+```text
+audit_sampled v0 is not a modest "mech-light plus a few internals" profile.
+The selected VLM MLP gate/up/intermediate tensors are currently the dominant storage cost.
+The first smoke trace is roughly 8x the earlier mechanistic_sampled average from the 67-trace external-drive snapshot.
+Do not scale audit_sampled until 3-5 traces confirm whether this episode is representative and whether selected roles should be trimmed or windowed.
+```
 
 Important storage implications:
 

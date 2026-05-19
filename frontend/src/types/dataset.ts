@@ -139,10 +139,39 @@ export type RuntimeCollection = {
   }[];
 };
 
+export type ArchitectureNode = {
+  id: string;
+  label: string;
+  kind: string;
+  stage?: string;
+  layer?: number | null;
+  captured?: boolean;
+};
+
+export type ArchitectureEdge = {
+  id: string;
+  kind: string;
+  source: string;
+  target: string;
+  layer?: number | null;
+  source_sites?: string[];
+  target_site_family?: string;
+  source_token_space?: string;
+  query_token_space?: string;
+  key_token_space?: string;
+  runtime_collection?: string;
+  materialized?: boolean;
+};
+
+export type ArchitectureMetadata = {
+  nodes?: ArchitectureNode[];
+  edges?: ArchitectureEdge[];
+};
+
 export type ActivationSitesResponse = {
   sites: ActivationSite[];
   runtime_collections?: RuntimeCollection[];
-  architecture?: Record<string, unknown>;
+  architecture?: ArchitectureMetadata;
 };
 
 export type ActivationFeatureRow = {

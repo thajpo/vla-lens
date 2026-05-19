@@ -20,7 +20,7 @@ from string import Formatter
 from vla_lens import TraceDataset, validate_trace_dataset
 
 PROFILE_ORDER = ("rollout", "features", "mechanistic_sampled", "mechanistic_all")
-ALLOWED_PROFILES = (*PROFILE_ORDER, "internals_sampled", "audit_full", "custom")
+ALLOWED_PROFILES = (*PROFILE_ORDER, "internals_sampled", "audit_sampled", "audit_full", "custom")
 
 
 @dataclass(frozen=True)

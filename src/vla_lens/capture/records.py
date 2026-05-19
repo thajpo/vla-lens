@@ -104,6 +104,7 @@ class ModelDescriptor:
         "mechanistic_sampled",
         "mechanistic_all",
         "internals_sampled",
+        "audit_sampled",
         "audit_full",
         "custom",
     )

@@ -74,6 +74,41 @@ def test_pi05_full_declarations_have_segment_and_axis_metadata():
     assert spec.metadata["site_role"] == "pre_mask_scores"
     assert spec.metadata["site_segment"] == "vlm_prefix"
     assert spec.metadata["site_axes"] == ("policy_call", "head", "query_token", "key_token")
+    assert spec.metadata["coordinate_system_version"] == "pi05_attention_v1"
+    assert spec.metadata["q_state"] == "post_rope"
+    assert spec.metadata["k_state"] == "post_rope_pre_repeat_kv"
+    assert spec.metadata["formula"] == "q @ repeat_kv(k).transpose(-2, -1) * scaling"
+    assert spec.metadata["attention_coordinate_version"] == "pi05_attention_v1"
+    assert spec.metadata["attention_probs_verification"].startswith("softmax(post_mask_logits")
+
+
+def test_pi05_attention_declarations_define_qkv_and_probability_semantics():
+    declarations = {
+        item.name: item
+        for item in pi05_full_site_declarations(vlm_layers=(0,), expert_layers=(0,))
+    }
+    q = make_raw_model_site_spec(
+        declarations["pi05.vlm.layers.0.attention.q"],
+        np.zeros((1, 2, 3), dtype=np.float32),
+    )
+    probs = make_raw_model_site_spec(
+        declarations["pi05.expert.layers.0.attention.attention_probs"],
+        np.zeros((1, 1, 2, 3, 4), dtype=np.float32),
+    )
+    pre_o = make_raw_model_site_spec(
+        declarations["pi05.expert.layers.0.attention.attn_output_pre_o_proj"],
+        np.zeros((1, 1, 3, 8), dtype=np.float32),
+    )
+
+    assert q.metadata["rope_state"] == "post_rope"
+    assert q.metadata["gqa_expansion"] == "not_applicable_to_query"
+    assert q.metadata["head_scaling"].startswith("not_applied")
+    assert probs.query_token_space_id == "pi05.action_suffix"
+    assert probs.key_token_space_id == "pi05.expert_context"
+    assert probs.metadata["formula"] == "softmax(post_mask_logits)"
+    assert probs.metadata["softmax_state"] == "after_softmax_before_dropout"
+    assert pre_o.metadata["formula"] == "attention_probs_after_dropout @ repeat_kv(v)"
+    assert pre_o.metadata["projection_state"] == "before_o_proj"
 
 
 def test_expert_sites_are_generation_step_aligned():

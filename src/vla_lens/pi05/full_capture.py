@@ -53,6 +53,9 @@ class SiteCaptureDeclaration:
             "required_for_true_full": True,
             **dict(self.metadata),
         }
+        attention_coordinate_version = _attention_coordinate_version(self.role)
+        if attention_coordinate_version is not None:
+            merged_metadata["attention_coordinate_version"] = attention_coordinate_version
         if metadata:
             merged_metadata.update(metadata)
         return ModelSiteSpec(
@@ -471,6 +474,7 @@ def _transformer_layer_declarations(
                 segment=segment,
                 token_kind=token_kind,
                 token_space_id=token_space,
+                metadata=_qkv_coordinate_metadata("q", stack=stack),
             ),
             _declaration(
                 name=f"{module}.attention.k",
@@ -483,6 +487,7 @@ def _transformer_layer_declarations(
                 segment=segment,
                 token_kind=token_kind,
                 token_space_id=token_space,
+                metadata=_qkv_coordinate_metadata("k", stack=stack),
             ),
             _declaration(
                 name=f"{module}.attention.v",
@@ -495,6 +500,7 @@ def _transformer_layer_declarations(
                 segment=segment,
                 token_kind=token_kind,
                 token_space_id=token_space,
+                metadata=_qkv_coordinate_metadata("v", stack=stack),
             ),
             _declaration(
                 name=f"{module}.attention.pre_mask_scores",
@@ -508,6 +514,7 @@ def _transformer_layer_declarations(
                 token_kind=token_kind,
                 query_token_space_id=token_space,
                 key_token_space_id=key_token_space,
+                metadata=_attention_coordinate_metadata("pre_mask_scores", stack=stack),
             ),
             _declaration(
                 name=f"{module}.attention.post_mask_logits",
@@ -521,6 +528,7 @@ def _transformer_layer_declarations(
                 token_kind=token_kind,
                 query_token_space_id=token_space,
                 key_token_space_id=key_token_space,
+                metadata=_attention_coordinate_metadata("post_mask_logits", stack=stack),
             ),
             _declaration(
                 name=f"{module}.attention.attention_probs",
@@ -534,6 +542,7 @@ def _transformer_layer_declarations(
                 token_kind=token_kind,
                 query_token_space_id=token_space,
                 key_token_space_id=key_token_space,
+                metadata=_attention_coordinate_metadata("attention_probs", stack=stack),
             ),
             _declaration(
                 name=f"{module}.attention.attn_output_pre_o_proj",
@@ -546,6 +555,7 @@ def _transformer_layer_declarations(
                 segment=segment,
                 token_kind=token_kind,
                 token_space_id=token_space,
+                metadata=_attention_coordinate_metadata("attn_output_pre_o_proj", stack=stack),
             ),
             _declaration(
                 name=f"{module}.attention.o_proj",
@@ -558,6 +568,7 @@ def _transformer_layer_declarations(
                 segment=segment,
                 token_kind=token_kind,
                 token_space_id=token_space,
+                metadata=_attention_coordinate_metadata("o_proj", stack=stack),
             ),
             _declaration(
                 name=f"{module}.residual_post_attention",
@@ -769,6 +780,7 @@ def _declaration(
     token_space_id: str | None = None,
     query_token_space_id: str | None = None,
     key_token_space_id: str | None = None,
+    metadata: Mapping[str, Any] | None = None,
 ) -> SiteCaptureDeclaration:
     return SiteCaptureDeclaration(
         name=name,
@@ -783,7 +795,109 @@ def _declaration(
         token_space_id=token_space_id,
         query_token_space_id=query_token_space_id,
         key_token_space_id=key_token_space_id,
+        metadata={} if metadata is None else dict(metadata),
     )
+
+
+def _qkv_coordinate_metadata(role: str, *, stack: str) -> dict[str, Any]:
+    base = {
+        "coordinate_system_version": "pi05_attention_v1",
+        "attention_backend": "transformers.gemma.eager_attention_forward",
+        "source_stack": stack,
+        "input_stage": "after_attention_norm_and_linear_projection",
+        "head_scaling": (
+            "not_applied_to_q_or_k_tensor; scaling is applied when computing pre_mask_scores"
+        ),
+        "attention_probs_verification": (
+            "softmax(post_mask_logits, dim=-1, dtype=float32), cast to query dtype before dropout"
+        ),
+    }
+    if role == "q":
+        return {
+            **base,
+            "rope_state": "post_rope",
+            "gqa_expansion": "not_applicable_to_query",
+            "used_for_pre_mask_scores": "q @ repeat_kv(k).T * scaling",
+        }
+    if role == "k":
+        return {
+            **base,
+            "rope_state": "post_rope",
+            "gqa_expansion": "pre_repeat_kv; repeat_kv(k) is used for scores",
+            "used_for_pre_mask_scores": "q @ repeat_kv(k).T * scaling",
+        }
+    if role == "v":
+        return {
+            **base,
+            "rope_state": "not_rope_rotated",
+            "gqa_expansion": "pre_repeat_kv; repeat_kv(v) is mixed by attention_probs",
+            "used_for_attention_output": "attention_probs @ repeat_kv(v)",
+        }
+    return base
+
+
+def _attention_coordinate_metadata(role: str, *, stack: str) -> dict[str, Any]:
+    base = {
+        "coordinate_system_version": "pi05_attention_v1",
+        "attention_backend": "transformers.gemma.eager_attention_forward",
+        "source_stack": stack,
+        "q_state": "post_rope",
+        "k_state": "post_rope_pre_repeat_kv",
+        "v_state": "pre_repeat_kv_not_rope_rotated",
+        "mask_semantics": "additive_attention_mask",
+        "attention_probs_verification": (
+            "softmax(post_mask_logits, dim=-1, dtype=float32), cast to query dtype before dropout"
+        ),
+    }
+    if role == "pre_mask_scores":
+        return {
+            **base,
+            "formula": "q @ repeat_kv(k).transpose(-2, -1) * scaling",
+            "mask_state": "before_mask",
+            "softmax_state": "before_softmax",
+        }
+    if role == "post_mask_logits":
+        return {
+            **base,
+            "formula": "pre_mask_scores + additive_attention_mask",
+            "mask_state": "after_mask",
+            "softmax_state": "before_softmax",
+        }
+    if role == "attention_probs":
+        return {
+            **base,
+            "formula": "softmax(post_mask_logits)",
+            "mask_state": "after_mask",
+            "softmax_state": "after_softmax_before_dropout",
+        }
+    if role == "attn_output_pre_o_proj":
+        return {
+            **base,
+            "formula": "attention_probs_after_dropout @ repeat_kv(v)",
+            "projection_state": "before_o_proj",
+        }
+    if role == "o_proj":
+        return {
+            **base,
+            "formula": "o_proj(attn_output_pre_o_proj)",
+            "projection_state": "after_o_proj_before_residual_add",
+        }
+    return base
+
+
+def _attention_coordinate_version(role: str) -> str | None:
+    if role in {
+        "q",
+        "k",
+        "v",
+        "pre_mask_scores",
+        "post_mask_logits",
+        "attention_probs",
+        "attn_output_pre_o_proj",
+        "o_proj",
+    }:
+        return "pi05_attention_v1"
+    return None
 
 
 def _view_kind(family: str, role: str) -> str:
