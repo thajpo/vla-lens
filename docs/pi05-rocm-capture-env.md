@@ -39,18 +39,23 @@ OpenPI transformers_replace patch
 ROCm torch wheels
 ```
 
-LeRobot metadata also declares:
+LeRobot package metadata may declare Torch constraints that do not match the
+working ROCm capture stack. Install LeRobot without dependency resolution in
+the dedicated capture venv; do not let it replace Torch.
 
 ```text
-torch<2.11
-torchvision<0.26
+known-good local capture stack, May 20, 2026:
+  torch==2.12.0+rocm7.2
+  torchvision==0.27.0+rocm7.2
+  lerobot==0.4.4
+  hf-libero==0.1.3
+  robosuite==1.4.0
 ```
 
-but this workstation intentionally uses:
+Do not infer the current environment from this document alone. Verify it with:
 
-```text
-torch==2.11.0+rocm7.2
-torchvision==0.26.0+rocm7.2
+```bash
+scripts/check_pi05_rocm_env.sh
 ```
 
 So a casual command like this is dangerous:

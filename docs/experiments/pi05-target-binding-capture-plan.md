@@ -85,12 +85,15 @@ This replaces the broad `100 tasks x 15 episodes` plan. The new plan focuses on 
 
 ## Run Command
 
+Status: historical capture plan. If revived, generate a current
+`episode_plan.csv` with one row per episode and verify the disk budget before
+running.
+
 ```bash
-uv run vla-pi05-batch-capture \
+scripts/pi05_batch_capture_rocm.sh \
+  --episode-plan artifacts/pi05_analysis/target_binding_capture_plan/episode_plan.csv \
   --output-root "/media/j/New Volume/vla-lens-artifacts/pi05_target_binding_captures" \
-  --allocation-csv artifacts/pi05_analysis/target_binding_capture_plan/episode_allocation.csv \
-  --seeds 1000 \
-  --max-episodes 1420
+  --run
 ```
 
 ## Why This Is Better

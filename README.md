@@ -17,6 +17,9 @@ HF model + environment + capture profile
 → linked visual workbench and reproducible analyses
 ```
 
+Current docs entrypoint: [docs/README.md](docs/README.md). Current operational
+state and known-good commands: [docs/current-state.md](docs/current-state.md).
+
 ## What You Can Do
 
 - Run PI0.5 in LIBERO and receive a reusable `.vlatrace` interpretability package.

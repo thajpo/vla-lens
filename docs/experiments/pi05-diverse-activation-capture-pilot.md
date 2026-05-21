@@ -49,14 +49,15 @@ Interpretation:
 
 ## Pilot Command
 
+Status: historical pilot. The old flag-based batch CLI has been replaced by
+config or explicit `episode_plan.csv` inputs. If this pilot is revived, encode
+the benchmark/task/seed matrix in a config file and run through the ROCm wrapper.
+
 ```bash
-uv run vla-pi05-batch-capture \
+scripts/pi05_batch_capture_rocm.sh \
+  --config configs/pi05_diverse_activation_pilot.yaml \
   --output-root "/media/j/New Volume/vla-lens-artifacts/pi05_diverse_captures" \
-  --benchmarks libero_spatial,libero_object,libero_goal,libero_10,libero_90 \
-  --tasks-per-benchmark 4 \
-  --layouts 1 \
-  --seeds 1000 \
-  --max-episodes 20
+  --run
 ```
 
 ## Pilot Result
@@ -103,13 +104,10 @@ The simplest 1000-episode run is:
 Command:
 
 ```bash
-uv run vla-pi05-batch-capture \
+scripts/pi05_batch_capture_rocm.sh \
+  --config configs/pi05_diverse_1000.yaml \
   --output-root "/media/j/New Volume/vla-lens-artifacts/pi05_diverse_captures" \
-  --benchmarks libero_spatial,libero_object,libero_goal,libero_10,libero_90 \
-  --tasks-per-benchmark 10 \
-  --layouts 10 \
-  --seeds 1000,2000 \
-  --max-episodes 1000
+  --run
 ```
 
 Expected storage from pilot average:

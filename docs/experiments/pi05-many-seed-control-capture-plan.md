@@ -37,13 +37,15 @@ This is not a broad data run. It is designed to test whether our target-binding 
 
 ## Run Command
 
-Do not run this until the current analysis says this exact control set is worth spending the disk/time budget.
+Status: historical capture plan. Do not run this until the current analysis says
+this exact control set is worth spending the disk/time budget. If revived,
+convert the allocation file to the current `episode_plan.csv` schema first.
 
 ```bash
-uv run vla-pi05-batch-capture \
+scripts/pi05_batch_capture_rocm.sh \
+  --episode-plan artifacts/pi05_analysis/many_seed_control_capture_plan/episode_plan.csv \
   --output-root "/media/j/New Volume/vla-lens-artifacts/pi05_many_seed_control_captures" \
-  --allocation-csv artifacts/pi05_analysis/many_seed_control_capture_plan/episode_allocation.csv \
-  --max-episodes 400
+  --run
 ```
 
 ## Why This Is Stricter

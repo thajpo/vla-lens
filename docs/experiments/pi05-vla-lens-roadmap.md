@@ -169,7 +169,7 @@ environment hardening:
     result: added wrapper entrypoints that avoid accidental uv sync for capture
 
 smoke trace:
-  - /usr/bin/time -v .venv/bin/vla-pi05-capture --episodes 1 --start-seed 1002 --benchmark libero_object --task-id 0 --capture-profile audit_sampled --vlatrace-out-root "/media/j/New Volume/vla-lens/pi05-audit-sampled-smoke" --delete-existing
+  - historical direct-entrypoint smoke: /usr/bin/time -v .venv/bin/vla-pi05-capture --episodes 1 --start-seed 1002 --benchmark libero_object --task-id 0 --capture-profile audit_sampled --vlatrace-out-root "/media/j/New Volume/vla-lens/pi05-audit-sampled-smoke" --delete-existing
     result: success
     trace: /media/j/New Volume/vla-lens/pi05-audit-sampled-smoke/pi05_audit_sampled_libero_object_task0_seed1002.vlatrace
     episode: pi05_audit_sampled_libero_object_task0_seed1002
@@ -630,11 +630,11 @@ It still has not verified numeric attention_probs reconstruction against q/k/log
 
 PI0.5 capture should use a dedicated ROCm capture environment, not the normal repo `.venv`.
 
-Ground-truth environment state from the May 19, 2026 smoke trace:
+Known-good capture environment from the May 20, 2026 wrapper smokes:
 
 ```text
-torch:        2.11.0+rocm7.2
-torchvision:  0.26.0+rocm7.2
+torch:        2.12.0+rocm7.2
+torchvision:  0.27.0+rocm7.2
 lerobot:      0.4.4
 transformers: 4.53.2 with OpenPI transformers_replace files copied into site-packages
 peft:         0.19.1
@@ -659,7 +659,7 @@ Reason:
 ```text
 uv run syncs from pyproject/uv.lock and can restore robosuite 1.5.2.
 LIBERO capture currently needs robosuite 1.4.0 because LeRobot's LIBERO path imports robosuite.environments.manipulation.single_arm_env.SingleArmEnv.
-LeRobot's package metadata wants torch<2.11 and torchvision<0.26, but this workstation intentionally uses ROCm torch 2.11.0+rocm7.2.
+LeRobot's package metadata may want incompatible Torch/TorchVision versions, but this workstation intentionally uses the known-good ROCm capture stack checked by `scripts/check_pi05_rocm_env.sh`.
 ```
 
 The near-term contract is documented in `AGENTS.md` and `docs/pi05-rocm-capture-env.md`.
@@ -1203,8 +1203,9 @@ Acceptance criteria:
 
 Purpose: circuit-useful adjacent layer windows.
 
-The code profile exists. Do not use it for dataset-scale capture before `audit_sampled`
-and one real `audit_windowed` smoke are benchmarked.
+The code profile exists and a real whole-episode smoke has validated. Do not
+use it for dataset-scale capture without a concrete circuit/transcoder question
+and an accepted storage budget.
 
 This profile exists for transcoder and downstream-use questions, not for ordinary inspection.
 It should reuse the `audit_sampled` circuit-boundary tensor families and change only layer

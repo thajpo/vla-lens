@@ -274,17 +274,11 @@ checked before capture.
 
 ## Environment
 
-```text
-torch:        2.11.0+rocm7.2
-torchvision:  0.26.0+rocm7.2
-lerobot:      0.4.4
-transformers: 4.53.2 with OpenPI transformers_replace patch copied into site-packages
-peft:         0.19.1
-hf-libero:    0.1.3
-robosuite:    1.4.0
-```
-
-LeRobot was installed into the venv without allowing it to replace the ROCm torch stack.
+Historical note: the original May 19 direct-entrypoint smoke used the then-local
+ROCm capture environment. The current known-good capture stack is maintained in
+[../current-state.md](../current-state.md) and
+[../pi05-rocm-capture-env.md](../pi05-rocm-capture-env.md); verify the live
+machine state with `scripts/check_pi05_rocm_env.sh` before any new PI0.5 capture.
 
 ## Trace
 
@@ -495,7 +489,11 @@ pi05.vlm.layers.0.mlp.intermediate   70.17 MB  [3, 968, 16384]
 
 `audit_sampled` is materially heavier than the old `mechanistic_sampled` run. In this smoke trace, the dominant cost is not K/V cache and not media; it is selected VLM MLP gate/up/intermediate activations, with attention tensors second.
 
-This means `audit_sampled` should remain an audit/debug profile until 3-5 more traces establish the size distribution and runtime slowdown. The next benchmark should vary episode length and policy-call count, then decide whether to:
+The May 20 wrapper benchmark confirmed this basic shape across three
+`audit_sampled` traces: the profile is consistently GiB-scale and dominated by
+MLP internals plus attention tensors. Treat `audit_sampled` as an audit profile,
+not a normal dataset-scale profile. Future larger captures should decide whether
+to:
 
 ```text
 keep audit_sampled v0 as-is for small audit subsets,
@@ -506,54 +504,62 @@ or move circuit-boundary internals to event-windowed capture.
 
 ## Follow-up Status: `audit_windowed`
 
-Date: May 19, 2026
+Date: May 20, 2026
 
-`audit_windowed` has been added as the whole-episode adjacent-layer capture profile for transcoder/circuit work. It reuses the `audit_sampled` raw role set and changes layer coverage to:
+`audit_windowed` has been added and real-capture validated as the whole-episode
+adjacent-layer capture profile for transcoder/circuit work. It reuses the
+`audit_sampled` raw role set and changes layer coverage to:
 
 ```text
 VLM:    [0,1], [4,5], [8,9], [12,13], [16,17]
 Expert: [0,1], [4,5], [8,9], [12,13], [16,17]
 ```
 
-The profile is unit validated but not real-capture validated yet.
-
-Attempted capture environment check:
+Validated smoke command:
 
 ```bash
-bash scripts/check_pi05_rocm_env.sh
 scripts/pi05_capture_rocm.sh --model-id lerobot/pi05_libero_finetuned --episodes 1 --start-seed 1002 --benchmark libero_object --task-id 0 --capture-profile audit_windowed --vlatrace-out-root "/media/j/New Volume/vla-lens/pi05-audit-windowed-smoke" --delete-existing
 ```
 
 Result:
 
 ```text
-blocked: /home/j/Projects/vla-lens/.venv-pi05-rocm/bin/python is missing
-blocked: /home/j/Projects/vla-lens/.venv-pi05-rocm/bin/vla-pi05-capture is missing
+trace:
+  pi05_audit_windowed_libero_object_task0_seed1002
+
+steps:
+  144
+
+policy calls:
+  3
+
+success:
+  true
+
+size:
+  4,465.4 MiB
+
+model sites:
+  484
+
+runtime collection members:
+  20
+
+architecture edges:
+  10
 ```
 
-Because the dedicated ROCm capture environment is missing, the requested 3-trace `audit_sampled` benchmark and one-trace `audit_windowed` smoke could not be run in this pass.
-
-Naive projection from the one real `audit_sampled` trace:
+The trace validates cleanly:
 
 ```text
-audit_sampled layers:
-  5 VLM + 5 Expert sampled layers
-
-audit_windowed layers:
-  10 VLM + 10 Expert windowed layers
-
-audit_sampled observed size:
-  2.18 GiB file bytes for 3 policy calls
-
-rough audit_windowed projection for a similar episode:
-  about 4 GiB, because nearly all bytes are model arrays and most model arrays are per-layer
+validate_trace_dataset(...).valid == true
+warnings == []
 ```
 
-This projection is not a substitute for a real smoke. The next validation step is:
+Measured interpretation:
 
 ```text
-1. Rebuild .venv-pi05-rocm with scripts/setup_pi05_rocm_env.sh.
-2. Run 3 audit_sampled traces through scripts/pi05_capture_rocm.sh.
-3. Run 1 audit_windowed trace through scripts/pi05_capture_rocm.sh.
-4. Update this note with measured storage/runtime and architecture-edge counts.
+audit_windowed is roughly 2x comparable audit_sampled for this object smoke.
+It is valid and useful for targeted adjacent-layer circuit/transcoder captures,
+but it should not be used as the default dataset-scale profile.
 ```
