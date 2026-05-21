@@ -192,6 +192,8 @@ compatibility cycle: `representation`, `mechanistic_light`,
 Sampled PI0.5 model profiles capture the same VLM and expert layer indices
 (`0, 4, 8, 12, 17`) so inspected prefix K/V pairs line up as
 `VLM L_i -> Expert L_i`.
+For a profile-by-profile interpretability guide, see
+[docs/pi05-capture-profiles.md](docs/pi05-capture-profiles.md).
 
 Use `dataset_id` for capture-run provenance. It is stored in
 `manifest.metadata.dataset_id` and in generated `episode_plan.csv` /
