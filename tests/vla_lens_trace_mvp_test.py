@@ -42,6 +42,7 @@ from vla_lens import (
 )
 from vla_lens.action_generation import save_action_generation_artifact
 from vla_lens.analyzer import diagnostics_status, run_dataset_diagnostics
+from vla_lens.pi05.capture import AUDIT_WINDOWED_LAYERS
 from vla_lens.probes import dump_probe_spec, train_probe_artifact_from_spec
 from vla_lens.server import (
     _activation_sites_payload,
@@ -892,6 +893,36 @@ def test_validation_accepts_complete_exact_raw_full_sites(tmp_path):
     assert result.valid
 
 
+def test_validation_accepts_audit_windowed_profile(tmp_path):
+    bundle = _make_minimal_trace(
+        tmp_path / "audit_windowed_validation.vlatrace",
+        profile="audit_windowed",
+        model_sites=[
+            TraceModelSiteSpec(
+                name="pi05.vlm.layers.0.prefix.hidden_tokens",
+                array=np.zeros((1, 2, 3), dtype=np.float32),
+                axes=["policy_call", "token", "channel"],
+                module="pi05.vlm.layers.0",
+                layer=0,
+                tensor_type="hidden_tokens",
+            ),
+            TraceModelSiteSpec(
+                name="pi05.vlm.layers.0.prefix.attention",
+                array=np.zeros((1, 1, 2, 2), dtype=np.float32),
+                axes=["policy_call", "head", "query_token", "key_token"],
+                module="pi05.vlm.layers.0.attention",
+                layer=0,
+                tensor_type="attention",
+            ),
+        ],
+    )
+
+    result = validate_trace_bundle(bundle)
+
+    assert result.valid
+    assert not any(warning["code"] == "unknown_capture_profile" for warning in result.warnings)
+
+
 def test_activation_sites_payload_includes_runtime_kv_collection(tmp_path):
     bundle = _make_minimal_trace(
         tmp_path / "kv_collection.vlatrace",
@@ -1000,6 +1031,69 @@ def test_activation_sites_payload_includes_per_layer_kv_architecture_edges(tmp_p
     ]
     assert any(node["id"] == "pi05.vlm.layers.4" for node in payload["architecture"]["nodes"])
     assert any(node["id"] == "pi05.expert.layers.4" for node in payload["architecture"]["nodes"])
+
+
+def test_activation_sites_payload_includes_audit_windowed_kv_edges(tmp_path):
+    model_sites = []
+    for layer in AUDIT_WINDOWED_LAYERS:
+        model_sites.extend(
+            [
+                TraceModelSiteSpec(
+                    name=f"pi05.vlm.layers.{layer}.kv_cache.key",
+                    array=np.zeros((1, 1, 2, 3), dtype=np.float32),
+                    axes=["policy_call", "kv_head", "cached_token", "head_channel"],
+                    module=f"pi05.vlm.layers.{layer}.attention",
+                    layer=layer,
+                    tensor_type="kv_cache",
+                    token_kind="prefix",
+                    family="cache",
+                    role="kv_cache_key",
+                    token_space_id="pi05.prefix",
+                ),
+                TraceModelSiteSpec(
+                    name=f"pi05.vlm.layers.{layer}.kv_cache.value",
+                    array=np.zeros((1, 1, 2, 3), dtype=np.float32),
+                    axes=["policy_call", "kv_head", "cached_token", "head_channel"],
+                    module=f"pi05.vlm.layers.{layer}.attention",
+                    layer=layer,
+                    tensor_type="kv_cache",
+                    token_kind="prefix",
+                    family="cache",
+                    role="kv_cache_value",
+                    token_space_id="pi05.prefix",
+                ),
+                TraceModelSiteSpec(
+                    name=f"pi05.expert.layers.{layer}.by_step.attention",
+                    array=np.zeros((1, 1, 1, 2, 4), dtype=np.float32),
+                    axes=["policy_call", "generation_step", "head", "query_token", "key_token"],
+                    module=f"pi05.expert.layers.{layer}.attention",
+                    layer=layer,
+                    tensor_type="attention",
+                    token_kind="action",
+                    family="attention",
+                    role="attention_probs",
+                    segment="action_expert",
+                    query_token_space_id="pi05.action_suffix",
+                    key_token_space_id="pi05.expert_context",
+                ),
+            ]
+        )
+    bundle = _make_minimal_trace(
+        tmp_path / "audit_windowed_kv_architecture.vlatrace",
+        model_sites=model_sites,
+    )
+
+    payload = _activation_sites_payload(bundle)
+
+    members = payload["runtime_collections"][0]["members"]
+    edges = payload["architecture"]["edges"]
+    assert len(members) == 20
+    assert {int(member["layer"]) for member in members} == set(AUDIT_WINDOWED_LAYERS)
+    assert [edge["layer"] for edge in edges] == list(AUDIT_WINDOWED_LAYERS)
+    assert len(edges) == 10
+    assert all(edge["kind"] == "per_layer_kv_conditioning" for edge in edges)
+    assert all(edge["source"].endswith(str(edge["layer"])) for edge in edges)
+    assert all(edge["target"].endswith(str(edge["layer"])) for edge in edges)
 
 
 def test_activation_sites_payload_keeps_empty_architecture_for_non_pi05_sites(tmp_path):

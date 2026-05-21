@@ -47,6 +47,7 @@ from vla_lens.traces import ArraySpec, ModelSiteSpec, TraceDataset, TraceManifes
 from vla_lens.validation import validate_trace_dataset
 
 LANDMARK_5_LAYERS = (0, 4, 8, 12, 17)
+AUDIT_WINDOWED_LAYERS = (0, 1, 4, 5, 8, 9, 12, 13, 16, 17)
 ALL_PI05_LAYERS = tuple(range(18))
 PROFILE_ALIASES = {
     "representation": "features",
@@ -61,6 +62,7 @@ CANONICAL_PROFILES = (
     "mechanistic_all",
     "internals_sampled",
     "audit_sampled",
+    "audit_windowed",
     "audit_full",
     "custom",
 )
@@ -72,6 +74,7 @@ PROFILE_LAYERS = {
     "mechanistic_all": ALL_PI05_LAYERS,
     "internals_sampled": LANDMARK_5_LAYERS,
     "audit_sampled": LANDMARK_5_LAYERS,
+    "audit_windowed": AUDIT_WINDOWED_LAYERS,
     "audit_full": ALL_PI05_LAYERS,
     "custom": LANDMARK_5_LAYERS,
 }
@@ -132,6 +135,7 @@ class CapturePlan:
             "mechanistic_all",
             "internals_sampled",
             "audit_sampled",
+            "audit_windowed",
             "audit_full",
         }
 
@@ -144,10 +148,15 @@ class CapturePlan:
         return canonical_profile(self.profile) == "audit_sampled"
 
     @property
+    def capture_windowed_audit_sites(self) -> bool:
+        return canonical_profile(self.profile) == "audit_windowed"
+
+    @property
     def capture_internals_sites(self) -> bool:
         return canonical_profile(self.profile) in {
             "internals_sampled",
             "audit_sampled",
+            "audit_windowed",
             "audit_full",
         }
 
@@ -231,6 +240,8 @@ def profile_dimensions(profile: str) -> dict[str, Any]:
         }
     if profile == "mechanistic_all":
         layer_coverage = {"vlm": "all", "expert": "all"}
+    elif profile == "audit_windowed":
+        layer_coverage = {"vlm": "audit_windows_10", "expert": "audit_windows_10"}
     elif profile == "audit_full":
         layer_coverage = {"vlm": "all", "expert": "all"}
     elif profile == "custom":
@@ -257,8 +268,8 @@ def profile_dimensions(profile: str) -> dict[str, Any]:
             "internals": "full_raw"
             if profile == "audit_full"
             else (
-                "sampled_audit"
-                if profile == "audit_sampled"
+                _sampled_audit_internals_label(profile)
+                if profile in {"audit_sampled", "audit_windowed"}
                 else ("selected_ops" if profile == "internals_sampled" else "none")
             ),
             "state_setup": "full_raw" if profile == "audit_full" else "none",
@@ -274,6 +285,8 @@ def _plan_dimensions(plan: CapturePlan) -> dict[str, Any]:
             return "none"
         if layers == ALL_PI05_LAYERS:
             return "all"
+        if layers == AUDIT_WINDOWED_LAYERS:
+            return "audit_windows_10"
         if layers == LANDMARK_5_LAYERS:
             return "landmark_5" if profile == "features" else "sampled_5"
         return [int(layer) for layer in layers]
@@ -308,13 +321,17 @@ def _plan_dimensions(plan: CapturePlan) -> dict[str, Any]:
             "internals": "full_raw"
             if plan.capture_audit_full_sites
             else (
-                "sampled_audit"
-                if profile == "audit_sampled"
+                _sampled_audit_internals_label(profile)
+                if profile in {"audit_sampled", "audit_windowed"}
                 else ("selected_ops" if profile == "internals_sampled" else "none")
             ),
             "state_setup": "full_raw" if plan.capture_audit_full_sites else "none",
         },
     }
+
+
+def _sampled_audit_internals_label(profile: str) -> str:
+    return "windowed_audit" if profile == "audit_windowed" else "sampled_audit"
 
 
 @dataclass
@@ -625,6 +642,7 @@ def _resolve_capture_plan(args: argparse.Namespace) -> CapturePlan:
             "mechanistic_all",
             "internals_sampled",
             "audit_sampled",
+            "audit_windowed",
             "custom",
         }:
             return "tokens"
@@ -643,6 +661,7 @@ def _resolve_capture_plan(args: argparse.Namespace) -> CapturePlan:
                 "mechanistic_all",
                 "internals_sampled",
                 "audit_sampled",
+                "audit_windowed",
                 "audit_full",
             }
             else "none"
@@ -2322,7 +2341,7 @@ def _declared_pi05_sites(plan: CapturePlan) -> list[str]:
             )
         )
     declared_raw_sites: list[str] = []
-    if profile == "audit_sampled":
+    if profile in {"audit_sampled", "audit_windowed"}:
         declared_raw_sites = [
             declaration.name
             for declaration in pi05_full_site_declarations(
@@ -2741,7 +2760,9 @@ def _full_model_site_specs(
     for name, declaration in declarations.items():
         if profile == "internals_sampled" and not _is_selected_internal_site(declaration):
             continue
-        if profile == "audit_sampled" and not _is_audit_sampled_site(declaration):
+        if profile in {"audit_sampled", "audit_windowed"} and not _is_audit_sampled_site(
+            declaration
+        ):
             continue
         stacked = _stack_full_site_calls(buffer.calls, name)
         if stacked is None:
@@ -2753,6 +2774,7 @@ def _full_model_site_specs(
                     "capture_profile": profile,
                     "included_in_profile": profile,
                     "required_for_audit_sampled": profile == "audit_sampled",
+                    "required_for_audit_windowed": profile == "audit_windowed",
                     "numeric_lossy": str(stacked.dtype) != "float32"
                     and np.issubdtype(stacked.dtype, np.floating),
                     "semantic_lossy": False,

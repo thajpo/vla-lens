@@ -76,6 +76,10 @@ CAPTURE_PROFILE_REQUIREMENTS: dict[str, dict[str, tuple[str, ...]]] = {
         "episode_arrays": ("executed_actions", "action_chunks", "generation_actions"),
         "model_tensors": ("hidden_tokens", "attention"),
     },
+    "audit_windowed": {
+        "episode_arrays": ("executed_actions", "action_chunks", "generation_actions"),
+        "model_tensors": ("hidden_tokens", "attention"),
+    },
     "full": {
         "episode_arrays": ("executed_actions", "action_chunks", "generation_actions"),
         "model_tensors": (),

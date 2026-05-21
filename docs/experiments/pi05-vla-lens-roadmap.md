@@ -2,9 +2,9 @@
 
 Status: living planning contract from the May 18, 2026 capture-profile and inspector design discussion.
 
-Last implementation update: Phase 1 code contract is implemented, unit/type validated, and one real `audit_sampled` PI0.5/LIBERO smoke trace has been captured and validated. The next scale-up gate is a 3-5 trace benchmark across varied episode lengths.
+Last implementation update: Phase 1 code contract is implemented, unit/type validated, and real PI0.5/LIBERO wrapper smokes have been captured and validated.
 
-Current planning update: adjacent-layer capture for transcoders is tracked as `audit_windowed`, a future capture tier. It is not implemented yet and must stay gated on the `audit_sampled` benchmark.
+Current implementation update: `audit_windowed` is now a validated whole-episode adjacent-layer capture profile. The May 20, 2026 benchmark captured three `audit_sampled` traces and one `audit_windowed` trace through `scripts/pi05_capture_rocm.sh`.
 
 Audience: future agents, GPT Pro review, and implementation sessions before changing code.
 
@@ -35,7 +35,7 @@ The rule is: work, test, validate, then prune. This file should become sharper a
 
 ## One-Sentence Direction
 
-VLA Lens is not missing "full capture." It already has major ontology and full-capture machinery. The missing product/research tier is `audit_sampled`: circuit-useful internals at sampled layers, plus explicit architecture-edge metadata so the UI can truthfully show how VLM prefix K/V conditions expert/action layers.
+VLA Lens is not missing "full capture." It already has major ontology and full-capture machinery. The current capture stack now has `audit_sampled` for sampled circuit boundaries and `audit_windowed` for adjacent-layer transcoder windows; the remaining risk is using these expensive audit profiles without a concrete circuit/transcoder question.
 
 ## Hard Sprint Boundary
 
@@ -53,18 +53,22 @@ The original Phase 1 coding sprint was only allowed to do:
 
 Everything else in this document is sequencing context, not permission to implement it during the next sprint.
 
-That boundary is now completed. The current narrow follow-up is metadata-only
-paired counterfactual capture:
+That boundary is completed. The metadata-only paired counterfactual follow-up
+is also completed.
+
+The current narrow follow-up after validating `audit_windowed` is not more raw
+capture. It is choosing one specific circuit/transcoder pilot question and then
+collecting only the traces that question needs:
 
 ```text
-1. Preserve old single-trace plans.
-2. Allow paired rows with trace variants.
-3. Store pair metadata in manifests.
-4. Expose pair groups through the server.
-5. Add a minimal UI navigation affordance.
+1. Pick the exact target site/component.
+2. Pick the concept or action variable to test.
+3. Decide whether existing audit_windowed smoke data is enough.
+4. If not, capture a small targeted audit_windowed set.
+5. Validate the analysis path before scaling capture.
 ```
 
-Explicitly still out of scope for this follow-up:
+Explicitly still out of scope for the next narrow follow-up:
 
 ```text
 Probe Grid v0
@@ -79,8 +83,9 @@ CLT / attribution graph work
 new UI shell or broad visual redesign
 ```
 
-Reason: paired metadata is the prerequisite for future clean/corrupt patching,
-but it should not pretend that replay or intervention tooling exists yet.
+Reason: `audit_windowed` is now proven feasible but expensive. Capturing more
+without a concrete analysis question would only generate storage pressure and
+roadmap drift.
 
 ## Living Document Protocol
 
@@ -202,6 +207,7 @@ per_layer_kv_conditioning edges pair equal-index VLM and Expert layers.
 non-PI0.5 activation payloads keep empty architecture metadata.
 the existing PI0.5 diagram consumes architecture.edges for same-index K/V connectors.
 one real audit_sampled trace can be captured with the direct venv entrypoint.
+three real audit_sampled traces can be captured with the dedicated ROCm wrapper.
 the one-trace audit_sampled smoke is much larger than mechanistic_sampled: 2.18 GiB file bytes / 2.4G du size.
 the smoke trace's model arrays dominate storage: 2.18 GiB of 2.18 GiB total file bytes.
 MLP internals dominate the smoke trace's model storage, followed by attention tensors.
@@ -210,7 +216,6 @@ MLP internals dominate the smoke trace's model storage, followed by attention te
 Still not validated:
 
 ```text
-3-5 trace audit_sampled benchmark across varied episode lengths
 audit_sampled runtime slowdown vs no capture and mechanistic_sampled
 audit_sampled peak GPU memory overhead
 audit_sampled trace write time split from rollout time
@@ -220,13 +225,91 @@ attention_probs numeric reconstruction on a real captured trace
 Next action before any scale-up:
 
 ```text
-run scripts/setup_pi05_rocm_env.sh to create .venv-pi05-rocm
 use scripts/pi05_capture_rocm.sh and scripts/pi05_batch_capture_rocm.sh for capture, not plain uv run
-run 3-5 additional real audit_sampled traces
-extend the storage/runtime benchmark artifact
 decide whether audit_sampled needs role trimming or event-windowed capture before any larger run
-estimate whole-episode audit_windowed cost from audit_sampled family-size data
+use the May 20 wrapper benchmark as the current baseline for audit_sampled and audit_windowed costs
 then prune this roadmap again
+```
+
+### 2026-05-20 `audit_windowed` Whole-Episode Validation Pass
+
+Validated by:
+
+```text
+unit tests:
+  - canonical audit_windowed profile identity
+  - static adjacent layer windows
+  - windowed profile dimensions
+  - declared raw-site inclusion/exclusion
+  - model-site metadata flag required_for_audit_windowed
+  - 10 per-layer K/V architecture edges on a synthetic windowed trace
+
+capture environment check:
+  - scripts/setup_pi05_rocm_env.sh
+    result: rebuilt .venv-pi05-rocm with ROCm torch 2.12.0+rocm7.2
+
+  - bash scripts/check_pi05_rocm_env.sh
+    result: PI0.5 ROCm capture environment OK
+
+3-trace audit_sampled benchmark:
+  - scripts/pi05_capture_rocm.sh --benchmark libero_object --task-id 0 --start-seed 1002 --capture-profile audit_sampled
+    result: success, 143 steps, 3 policy calls, 2,233.6 MiB, 5 architecture edges
+
+  - scripts/pi05_capture_rocm.sh --benchmark libero_spatial --task-id 0 --start-seed 1002 --capture-profile audit_sampled
+    result: success, 76 steps, 2 policy calls, 1,510.5 MiB, 5 architecture edges
+
+  - scripts/pi05_capture_rocm.sh --benchmark libero_goal --task-id 0 --start-seed 1002 --capture-profile audit_sampled
+    result: success, 123 steps, 3 policy calls, 2,229.2 MiB, 5 architecture edges
+
+whole-episode audit_windowed smoke:
+  - scripts/pi05_capture_rocm.sh --benchmark libero_object --task-id 0 --start-seed 1002 --capture-profile audit_windowed
+    result: success, 144 steps, 3 policy calls, 4,465.4 MiB, 10 architecture edges
+
+trace validation:
+  - validate_trace_dataset("/media/j/New Volume/vla-lens/pi05-audit-sampled-benchmark").valid == true
+  - validate_trace_dataset("/media/j/New Volume/vla-lens/pi05-audit-windowed-smoke").valid == true
+  - validation warnings == []
+
+benchmark artifact:
+  - docs/experiments/pi05-audit-sampled-smoke-2026-05-19.md
+    result: updated with wrapper benchmark and audit_windowed smoke results
+```
+
+Validated facts:
+
+```text
+audit_windowed is a canonical profile in code.
+audit_windowed uses whole-episode static adjacent windows:
+  [0,1], [4,5], [8,9], [12,13], [16,17]
+audit_windowed reuses audit_sampled raw role filtering.
+audit_windowed excludes state-setup tensors and expert K/V cache.
+audit_windowed is distinct from audit_sampled, internals_sampled, and audit_full.
+audit_windowed real trace has 484 model sites.
+audit_windowed real trace has 20 VLM K/V runtime collection members.
+audit_windowed real trace has 10 equal-index per_layer_kv_conditioning architecture edges.
+audit_windowed object smoke cost is about 2x comparable audit_sampled object cost:
+  4,465.4 MiB vs 2,233.6 MiB.
+audit_windowed peak CPU RSS was 21,068,688 KB on the object smoke.
+audit_windowed is feasible for targeted whole-episode circuit/transcoder captures.
+```
+
+Still not validated:
+
+```text
+runtime slowdown vs no capture and mechanistic_sampled
+peak GPU memory overhead
+trace write time split from rollout time
+attention_probs numeric reconstruction on a real captured trace
+transcoder training against audit_windowed traces
+```
+
+Next action before scaling audit_windowed:
+
+```text
+do not use audit_windowed as a default dataset-scale profile.
+use audit_windowed for targeted whole-episode adjacent-window captures.
+if cost becomes too high, trim explicit tensor roles rather than changing the profile to selected-policy-call capture.
+capture a small set of audit_windowed traces only after choosing the specific transcoder/circuit question.
 ```
 
 ### 2026-05-19 Metadata-Only Paired Capture Pass
@@ -295,10 +378,11 @@ do not start activation patching until no-intervention replay is validated.
 Validated by:
 
 ```text
-doc update:
+code and docs:
   - audit_windowed is tracked as the adjacent-layer capture tier for transcoders.
-  - no code profile was added.
-  - no README profile list was changed, because audit_windowed is not implemented.
+  - follow-up implementation added the code profile.
+  - README profile list now includes audit_windowed.
+  - real whole-episode audit_windowed smoke validates.
 ```
 
 Captured decision:
@@ -307,22 +391,22 @@ Captured decision:
 audit_sampled supports first same-layer skip-transcoder pilots.
 audit_windowed is needed for stronger "what did layer L write and what did L+1 consume" questions.
 audit_windowed should be whole-episode static adjacent-window capture, not selected-policy-call capture.
-audit_windowed must not be implemented until audit_sampled has a 3-5 trace storage/runtime benchmark.
+audit_windowed code exists and real whole-episode capture works.
+audit_windowed scale-up remains gated on a concrete transcoder/circuit question because storage is about 4.36 GiB per comparable 3-call object trace.
 ```
 
 Still not validated:
 
 ```text
-real audit_windowed trace size
-whether adjacent windows are feasible for whole episodes
 whether rotating windows are useful for dataset-scale coverage
+whether the current window roles are sufficient for the first transcoder pilot
 ```
 
 Next action before implementation:
 
 ```text
-finish audit_sampled benchmark.
-estimate audit_windowed cost from captured tensor family sizes.
+pick one concrete transcoder pilot site/question before collecting more audit_windowed traces.
+keep whole-episode semantics unless the roadmap is explicitly changed and validated.
 if whole-episode audit_windowed cost is too high, trim tensor roles rather than silently changing it to selected policy calls.
 ```
 
@@ -377,6 +461,7 @@ mechanistic_sampled
 mechanistic_all
 internals_sampled
 audit_sampled
+audit_windowed
 audit_full
 custom
 ```
@@ -394,6 +479,7 @@ Current layer presets:
 
 ```text
 LANDMARK_5_LAYERS = [0, 4, 8, 12, 17]
+AUDIT_WINDOWED_LAYERS = [0, 1, 4, 5, 8, 9, 12, 13, 16, 17]
 ALL_PI05_LAYERS   = [0, 1, 2, ..., 17]
 ```
 
@@ -406,6 +492,7 @@ mechanistic_sampled    [0, 4, 8, 12, 17]
 mechanistic_all        [0..17]
 internals_sampled      [0, 4, 8, 12, 17]
 audit_sampled          [0, 4, 8, 12, 17]
+audit_windowed         [0, 1, 4, 5, 8, 9, 12, 13, 16, 17]
 audit_full             [0..17]
 custom                 [0, 4, 8, 12, 17]
 ```
@@ -1116,7 +1203,8 @@ Acceptance criteria:
 
 Purpose: circuit-useful adjacent layer windows.
 
-Do not implement before `audit_sampled` is benchmarked unless there is a specific need.
+The code profile exists. Do not use it for dataset-scale capture before `audit_sampled`
+and one real `audit_windowed` smoke are benchmarked.
 
 This profile exists for transcoder and downstream-use questions, not for ordinary inspection.
 It should reuse the `audit_sampled` circuit-boundary tensor families and change only layer
@@ -1160,17 +1248,18 @@ audit_windowed supports adjacent-layer questions:
   does the write direction line up with the next layer's read/use?
 ```
 
-Acceptance criteria before implementation is crossed off:
+Acceptance criteria before `audit_windowed` is considered fully validated:
 
 ```text
-1. audit_sampled 3-5 trace benchmark exists.
-2. expected audit_windowed size/runtime is estimated from real family-size data.
-3. profile name and layer windows are tested distinctly from audit_sampled.
-4. internals_sampled and audit_full remain unchanged.
-5. per-layer VLM K/V -> Expert attention architecture edges still pair only equal layer indices.
-6. audit_windowed captures whole episodes.
-7. at least one real audit_windowed smoke trace validates successfully.
-8. roadmap is updated with measured size/runtime and stale assumptions removed.
+complete as of May 20, 2026:
+  audit_sampled 3-trace benchmark exists.
+  audit_windowed size/runtime is measured from a real whole-episode smoke.
+  profile name and layer windows are tested distinctly from audit_sampled.
+  internals_sampled and audit_full remain unchanged.
+  per-layer VLM K/V -> Expert attention architecture edges still pair only equal layer indices.
+  audit_windowed captures whole episodes.
+  one real audit_windowed smoke trace validates successfully.
+  roadmap is updated with measured size/runtime and stale assumptions removed.
 ```
 
 Potential future variant:
@@ -1271,13 +1360,117 @@ model bytes by stack:
   Action head:       2.26 MiB
 ```
 
+Wrapper benchmark from May 20, 2026:
+
+```text
+trace root:
+  /media/j/New Volume/vla-lens/pi05-audit-sampled-benchmark
+
+environment:
+  .venv-pi05-rocm
+  torch 2.12.0+rocm7.2
+  lerobot 0.4.4
+  robosuite 1.4.0
+
+validation:
+  validate_trace_dataset(...).valid == true
+  warnings == []
+
+audit_sampled / libero_object / task 0 / seed 1002:
+  steps:             143
+  policy calls:      3
+  success:           true
+  wall clock:        1:19.24
+  max CPU RSS:       16,518,340 KB
+  total size:        2,233.6 MiB
+  model sites:       244
+  K/V members:       10
+  architecture edges: 5
+
+audit_sampled / libero_spatial / task 0 / seed 1002:
+  steps:             76
+  policy calls:      2
+  success:           true
+  wall clock:        1:07.91
+  max CPU RSS:       16,518,160 KB
+  total size:        1,510.5 MiB
+  model sites:       244
+  K/V members:       10
+  architecture edges: 5
+
+audit_sampled / libero_goal / task 0 / seed 1002:
+  steps:             123
+  policy calls:      3
+  success:           true
+  wall clock:        1:13.44
+  max CPU RSS:       16,519,772 KB
+  total size:        2,229.2 MiB
+  model sites:       244
+  K/V members:       10
+  architecture edges: 5
+```
+
+Whole-episode `audit_windowed` smoke from May 20, 2026:
+
+```text
+trace:
+  /media/j/New Volume/vla-lens/pi05-audit-windowed-smoke/pi05_audit_windowed_libero_object_task0_seed1002.vlatrace
+
+task:
+  libero_object task 0 seed 1002
+
+episode:
+  steps:             144
+  policy calls:      3
+  success:           true
+
+runtime:
+  wall clock:        2:11.44
+  max CPU RSS:       21,068,688 KB
+
+storage:
+  total size:        4,465.4 MiB
+  model arrays:      4,460.2 MiB
+  episode arrays:    4.9 MiB
+
+model-site count:
+  total:             484
+  attention:         180
+  normalization:     100
+  mlp:               100
+  residual:          60
+  representation:    22
+  cache:             20
+  action_head:       2
+
+model bytes by family:
+  mlp:               2,400.7 MiB
+  attention:         1,403.3 MiB
+  residual:          324.6 MiB
+  normalization:     194.1 MiB
+  representation:    115.7 MiB
+  cache:             19.6 MiB
+  action_head:       2.3 MiB
+
+runtime collection:
+  pi05.vlm.past_key_values
+  members: 20
+
+architecture:
+  per_layer_kv_conditioning edges: 10
+  edge layers: [0, 1, 4, 5, 8, 9, 12, 13, 16, 17]
+```
+
 Interpretation:
 
 ```text
 audit_sampled v0 is not a modest "mech-light plus a few internals" profile.
 The selected VLM MLP gate/up/intermediate tensors are currently the dominant storage cost.
 The first smoke trace is roughly 8x the earlier mechanistic_sampled average from the 67-trace external-drive snapshot.
-Do not scale audit_sampled until 3-5 traces confirm whether this episode is representative and whether selected roles should be trimmed or windowed.
+The May 20 wrapper benchmark confirms audit_sampled is consistently GiB-scale
+for these smoke tasks. Do not scale audit_sampled broadly until the specific
+analysis needs justify this storage cost or selected roles are deliberately
+trimmed.
 ```
 
 Important storage implications:
@@ -1292,10 +1485,11 @@ Episode length and number of policy calls strongly affect size.
 
 Do not trust guessed `audit_sampled` sizes. Benchmark before scale-up.
 
-Benchmark protocol for `audit_sampled`:
+Benchmark protocol for future `audit_sampled` scale-up:
 
 ```text
-Run 3-5 traces across varied episode lengths.
+Run another 3-5 traces only when the candidate dataset differs materially from
+the May 20 object/spatial/goal smoke set.
 
 Measure:
   total trace size

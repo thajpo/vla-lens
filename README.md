@@ -25,8 +25,8 @@ HF model + environment + capture profile
 - Inspect frames, prompts, actions, model data, feature activations, image-token overlays,
   expert/action-token activations, and generation/action-flow traces.
 - Choose PI0.5 capture profiles for rollout, features, mechanistic_sampled,
-  mechanistic_all, internals_sampled, audit_sampled, audit_full, or custom
-  interpretability budgets.
+  mechanistic_all, internals_sampled, audit_sampled, audit_windowed,
+  audit_full, or custom interpretability budgets.
 - Run a dataset analyzer that recommends defensible next analyses with concrete evidence.
 - Generate compressed episode videos from recorded policy decisions.
 - Train probe suites from YAML specs and save them as `LensArtifact`s.
@@ -178,14 +178,16 @@ Refresh the dashboard and open the Artifacts page to inspect saved results.
 
 PI0.5 capture profiles are named `rollout`, `features`,
 `mechanistic_sampled`, `mechanistic_all`, `internals_sampled`,
-`audit_sampled`, `audit_full`, and `custom`. In short: use
+`audit_sampled`, `audit_windowed`, `audit_full`, and `custom`. In short: use
 `scripts/pi05_batch_capture_rocm.sh` for PI0.5 dataset-scale work on this ROCm
 workstation.
 `mechanistic_sampled` is the cheap default; `mechanistic_all` is the best
 serious single-trace inspector profile; `audit_sampled` adds sampled-layer
-circuit-boundary internals and is already large; `audit_full` adds all-layer raw
-forward internals and is intentionally expensive. Legacy aliases still work for
-one compatibility cycle: `representation`, `mechanistic_light`,
+circuit-boundary internals and is already large; `audit_windowed` captures
+whole-episode adjacent layer windows (`0,1`, `4,5`, `8,9`, `12,13`,
+`16,17`) for transcoder/circuit work; `audit_full` adds all-layer raw forward
+internals and is intentionally expensive. Legacy aliases still work for one
+compatibility cycle: `representation`, `mechanistic_light`,
 `mechanistic_heavy`, and `full`.
 Sampled PI0.5 model profiles capture the same VLM and expert layer indices
 (`0, 4, 8, 12, 17`) so inspected prefix K/V pairs line up as
