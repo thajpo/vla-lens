@@ -11,6 +11,7 @@ from collections.abc import Iterator, Mapping
 from dataclasses import asdict, dataclass, field
 from functools import lru_cache
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import numpy as np
@@ -381,6 +382,21 @@ class EpisodeBuffer:
     success: bool = False
 
 
+@dataclass
+class PI05CaptureRuntime:
+    torch: Any
+    policy_cfg: Any
+    policy: Any
+    preprocessor: Any
+    postprocessor: Any
+    make_env: Any
+    make_env_config: Any
+    make_env_pre_post_processors: Any
+    add_envs_task: Any
+    preprocess_observation: Any
+    get_benchmark: Any
+
+
 def main(argv: list[str] | None = None) -> None:
     args = parse_args(argv)
     if args.delete_existing and args.vlatrace_out_root.exists():
@@ -486,6 +502,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 
 def _run_capture(args: argparse.Namespace) -> None:
+    plan = _resolve_capture_plan(args)
+    print(f"capture plan: {plan.to_metadata()}", flush=True)
+    runtime = load_pi05_capture_runtime(args)
+    run_pi05_capture_task(args, runtime=runtime, plan=plan)
+
+
+def load_pi05_capture_runtime(args: argparse.Namespace) -> PI05CaptureRuntime:
     import torch
     from lerobot.configs.policies import PreTrainedConfig
     from lerobot.envs.factory import make_env, make_env_config, make_env_pre_post_processors
@@ -493,13 +516,6 @@ def _run_capture(args: argparse.Namespace) -> None:
     from lerobot.policies.factory import make_pre_post_processors
     from lerobot.policies.pi05 import PI05Policy
     from libero.libero.benchmark import get_benchmark
-
-    plan = _resolve_capture_plan(args)
-    print(f"capture plan: {plan.to_metadata()}", flush=True)
-
-    benchmark = get_benchmark(args.benchmark)(task_order_index=0)
-    task = benchmark.get_task(args.task_id)
-    task_name = str(task.name)
 
     policy_cfg = PreTrainedConfig.from_pretrained(
         args.model_id,
@@ -521,7 +537,33 @@ def _run_capture(args: argparse.Namespace) -> None:
             "rename_observations_processor": {"rename_map": {}},
         },
     )
-    env_cfg = make_env_config(
+    return PI05CaptureRuntime(
+        torch=torch,
+        policy_cfg=policy_cfg,
+        policy=policy,
+        preprocessor=preprocessor,
+        postprocessor=postprocessor,
+        make_env=make_env,
+        make_env_config=make_env_config,
+        make_env_pre_post_processors=make_env_pre_post_processors,
+        add_envs_task=add_envs_task,
+        preprocess_observation=preprocess_observation,
+        get_benchmark=get_benchmark,
+    )
+
+
+def run_pi05_capture_task(
+    args: argparse.Namespace,
+    *,
+    runtime: PI05CaptureRuntime,
+    plan: CapturePlan | None = None,
+) -> None:
+    plan = plan or _resolve_capture_plan(args)
+    benchmark = runtime.get_benchmark(args.benchmark)(task_order_index=0)
+    task = benchmark.get_task(args.task_id)
+    task_name = str(task.name)
+
+    env_cfg = runtime.make_env_config(
         "libero",
         task=args.benchmark,
         task_ids=[args.task_id],
@@ -530,12 +572,13 @@ def _run_capture(args: argparse.Namespace) -> None:
         camera_name="agentview_image,robot0_eye_in_hand_image",
         control_mode="relative",
     )
-    envs = make_env(env_cfg, n_envs=1, use_async_envs=False)
+    envs = runtime.make_env(env_cfg, n_envs=1, use_async_envs=False)
     env = envs[args.benchmark][args.task_id]
-    env_preprocessor, env_postprocessor = make_env_pre_post_processors(
+    env_preprocessor, env_postprocessor = runtime.make_env_pre_post_processors(
         env_cfg=env_cfg,
-        policy_cfg=policy_cfg,
+        policy_cfg=runtime.policy_cfg,
     )
+    policy = runtime.policy
 
     try:
         for seed in _episode_seeds(args):
@@ -567,14 +610,16 @@ def _run_capture(args: argparse.Namespace) -> None:
                 try:
                     action_numpy = next(action_iter)
                 except StopIteration:
-                    obs = preprocess_observation(observation)
-                    obs = add_envs_task(env, obs)
+                    obs = runtime.preprocess_observation(observation)
+                    obs = runtime.add_envs_task(env, obs)
                     obs = env_preprocessor(obs)
-                    obs = preprocessor(obs)
+                    obs = runtime.preprocessor(obs)
                     call = _predict_action_chunk(policy, obs, len(buffer.calls), step, plan)
                     _attach_token_metadata(call, obs, buffer)
                     buffer.calls.append(call)
-                    actions = postprocessor(torch.as_tensor(call.final_action_chunk))
+                    actions = runtime.postprocessor(
+                        runtime.torch.as_tensor(call.final_action_chunk)
+                    )
                     action_transition = env_postprocessor({"action": actions})
                     action_chunk = action_transition["action"].detach().cpu().numpy()
                     action_iter = iter(action_chunk)
@@ -595,6 +640,12 @@ def _run_capture(args: argparse.Namespace) -> None:
             print(f"{trace_id} steps={step} calls={len(buffer.calls)} success={buffer.success}")
     finally:
         env.close()
+
+
+def namespace_for_capture_args(**overrides: Any) -> argparse.Namespace:
+    defaults = vars(parse_args([]))
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
 
 
 def _episode_seeds(args: argparse.Namespace) -> list[int]:

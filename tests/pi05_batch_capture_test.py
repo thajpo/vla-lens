@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import csv
+from pathlib import Path
 
 from vla_lens.pi05.batch_capture import (
     _capture_commands,
@@ -8,6 +9,7 @@ from vla_lens.pi05.batch_capture import (
     _read_episode_plan,
     _write_plan_files,
 )
+from vla_lens.pi05.plan_capture import RECYCLE_EXIT_CODE, capture_args_from_command, parse_args
 
 
 def _config(tmp_path):
@@ -105,6 +107,61 @@ def test_batch_capture_can_group_noncontiguous_seed_list(tmp_path):
     assert commands[0].start_seed == 1000
     assert "--seed-list" in commands[0].command
     assert "1000,2000,3000" in commands[0].command
+
+
+def test_plan_capture_reuses_batch_capture_command_args(tmp_path):
+    plan = tmp_path / "episodes.csv"
+    plan.write_text(
+        "\n".join(
+            [
+                "dataset_id,benchmark,task_id,seed,split,capture_profile",
+                "dataset-a,libero_goal,1,1000,train,mechanistic_sampled",
+                "dataset-a,libero_goal,1,2000,test,mechanistic_sampled",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    config = {**_config(tmp_path), "group_seed_list": True}
+    rows = _read_episode_plan(plan)
+    command = _capture_commands(config, tmp_path, rows)[0]
+    args = capture_args_from_command(command.command)
+
+    assert args.model_id == "lerobot/pi05_libero_finetuned"
+    assert args.benchmark == "libero_goal"
+    assert args.task_id == 1
+    assert args.episodes == 2
+    assert args.seed_list == "1000,2000"
+    assert args.capture_profile == "mechanistic_sampled"
+    assert str(args.vlatrace_out_root).endswith(
+        "traces/dataset-a/mechanistic_sampled/libero_goal/task_01"
+    )
+
+
+def test_plan_capture_accepts_recycle_limit():
+    args = parse_args(
+        [
+            "--episode-plan",
+            "episodes.csv",
+            "--max-executed-commands",
+            "100",
+        ]
+    )
+
+    assert args.max_executed_commands == 100
+    assert RECYCLE_EXIT_CODE == 75
+
+
+def test_rocm_plan_supervisor_restarts_only_for_recycle_exit():
+    script_path = (
+        Path(__file__).resolve().parents[1] / "scripts/pi05_supervise_plan_capture_rocm.sh"
+    )
+    script = script_path.read_text(encoding="utf-8")
+
+    assert 'RECYCLE_EXIT_CODE="${PI05_CAPTURE_RECYCLE_EXIT_CODE:-75}"' in script
+    assert 'if [[ "$status" != "$RECYCLE_EXIT_CODE" ]]; then' in script
+    assert "not restarting" in script
+    assert 'exit "$status"' in script
 
 
 def test_batch_capture_reads_paired_counterfactual_plan(tmp_path):
