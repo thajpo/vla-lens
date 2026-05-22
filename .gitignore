@@ -12,7 +12,6 @@ outputs/
 artifacts/
 
 *.pyc
-vq/
 
 # OS
 .DS_Store
@@ -28,11 +27,6 @@ stats.txt
 check_*.py
 decode.py
 test_*.py
-
-# Third-party data and model weights
-third_party/LIBERO/
-third_party/openvla-mini/prismatic/conf/_choice_registry.py
-third_party/openvla-mini/prismatic/util/qwen_compat.py
 
 # HuggingFace cache (snapshots downloaded at runtime)
 ~/.cache/huggingface/

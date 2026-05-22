@@ -52,5 +52,4 @@ norecursedirs = [
     ".venv",
     "artifacts",
     "runs",
-    "third_party",
 ]
