@@ -1,0 +1,9 @@
+name: PI0.5 broad 1000 robust probe campaign
+specs:
+  - configs/probes/pi05_broad_1000_target_moved_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_target_lifted_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_target_contacted_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_first_moved_is_target_filtered_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_first_lifted_is_target_filtered_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_outcome_action_head_input_robust.yaml
+  - configs/probes/pi05_broad_1000_target_parse_status_vlm_prefix_hidden.yaml

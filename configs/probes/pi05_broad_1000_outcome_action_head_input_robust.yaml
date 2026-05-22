@@ -1,0 +1,30 @@
+name: PI0.5 broad 1000 outcome robust - action head input
+target:
+  kind: outcome
+features:
+  name: pi05.action_head.input
+  module: pi05.action_head
+  tensor_type: action_head
+  token_kind: action
+  timesteps: all
+  policy_calls: [0, 1, 2, 3, 4, 5, 6]
+  generation_step: final
+  reduction: mean
+  dtype: float32
+split:
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+  eval_values: [val_heldout_task, test_heldout_task]
+baseline:
+  - majority_class
+  - benchmark
+  - task_id
+  - scene_family
+  - task_verb
+  - primary_target_object
+probe:
+  models: [linear, mlp]
+sweep: policy_call_index

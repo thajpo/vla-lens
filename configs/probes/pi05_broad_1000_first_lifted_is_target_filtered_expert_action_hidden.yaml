@@ -1,0 +1,37 @@
+name: PI0.5 broad 1000 first lifted is target filtered - expert action hidden
+target:
+  kind: first_lifted_is_target
+  missing_policy: drop
+row_filter:
+  - column: first_lifted_object
+    op: notna
+  - column: ambiguous_first_lifted
+    op: "=="
+    value: false
+features:
+  module: pi05.expert.layers.*
+  tensor_type: hidden_tokens
+  token_kind: action
+  layers: [0, 4, 8, 12, 17]
+  timesteps: all
+  policy_calls: [0, 1, 2, 3, 4, 5, 6]
+  generation_step: final
+  reduction: mean
+  dtype: float32
+split:
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+  eval_values: [val_heldout_task, test_heldout_task]
+baseline:
+  - majority_class
+  - benchmark
+  - task_id
+  - scene_family
+  - task_verb
+  - primary_target_object
+probe:
+  models: [linear, mlp]
+sweep: [layer, policy_call_index]
