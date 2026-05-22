@@ -2032,6 +2032,19 @@ def workflow_presets(dataset: TraceDataset) -> list[dict[str, Any]]:
 
     return [
         {
+            "workflow_id": "probe_suite",
+            "label": "Probe Suites",
+            "enabled": available("artifacts"),
+            "panels": ["heatmap", "inspector", "confusion_matrix", "examples.table"],
+            "primary_axes": ["layer", "policy_call", "metric", "analysis_run"],
+            "outputs": ["weights", "bias", "normalizer_feature_mean", "normalizer_feature_scale"],
+            "run_spec": {
+                "label": {"level": "row", "source": "probe_artifact_target"},
+                "split": {"unit": "episode", "kind": "artifact_defined"},
+                "metrics": ["balanced_accuracy", "macro_f1", "delta_vs_metadata_baseline"],
+            },
+        },
+        {
             "workflow_id": "target_object_encoding",
             "label": "Target Object Encoding",
             "enabled": available("model_sites") and available("episode_labels"),

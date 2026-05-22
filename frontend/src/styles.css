@@ -260,6 +260,70 @@ input {
   grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
 }
 
+.probe-suite-page {
+  display: grid;
+  gap: 16px;
+  padding: 18px;
+}
+
+.probe-suite-grid {
+  display: grid;
+  gap: 16px;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.8fr);
+}
+
+.probe-suite-grid.lower {
+  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.5fr);
+}
+
+.probe-controls {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  padding: 12px;
+}
+
+.probe-controls label,
+.inline-select {
+  color: #475569;
+  display: grid;
+  font-size: 12px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.inline-select {
+  min-width: 320px;
+}
+
+.probe-detail-list {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 12px;
+}
+
+.probe-detail-list div {
+  display: grid;
+  gap: 4px;
+}
+
+.probe-detail-list dt {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.probe-detail-list dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.table-scroll {
+  overflow: auto;
+}
+
 .summary-card {
   background: #ffffff;
   border: 1px solid #dbe3ed;
@@ -1278,6 +1342,15 @@ input {
 
 .heatmap-cell.selected {
   box-shadow: 0 0 0 2px #0f172a inset;
+}
+
+.heatmap-cell.readonly {
+  cursor: default;
+  display: flex;
+}
+
+.probe-heatmap {
+  min-width: 640px;
 }
 
 .panel-grid.two-col {
@@ -2375,6 +2448,218 @@ body {
 .metric-tile .episode-line-plot {
   height: 154px;
   padding: 0;
+}
+
+.interaction-summary {
+  display: grid;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 18px;
+}
+
+.interaction-summary > header > span {
+  color: var(--faint);
+  font-size: 9px;
+  font-weight: 800;
+  max-width: 42%;
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.interaction-summary-grid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 1.4fr 1fr 92px;
+  min-width: 0;
+}
+
+.interaction-field {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.interaction-field span,
+.interaction-event-chip span,
+.interaction-quality-badge,
+.interaction-object-row span,
+.interaction-object-details summary span,
+.interaction-object-details summary small {
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.interaction-field span {
+  color: var(--muted);
+}
+
+.interaction-field strong {
+  color: var(--ink);
+  font-size: 12px;
+  font-weight: 850;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.interaction-field.tone-ok {
+  border-color: rgba(42, 127, 94, 0.45);
+}
+
+.interaction-field.tone-warn {
+  border-color: rgba(177, 103, 35, 0.55);
+}
+
+.interaction-event-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.interaction-event-chip {
+  align-items: center;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  display: grid;
+  gap: 4px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  min-height: 54px;
+  min-width: 0;
+  padding: 7px;
+}
+
+.interaction-event-chip svg {
+  color: var(--muted);
+  grid-row: 1 / span 2;
+}
+
+.interaction-event-chip span {
+  color: var(--muted);
+}
+
+.interaction-event-chip strong {
+  font-size: 11px;
+  font-weight: 850;
+  grid-column: 2 / span 2;
+  min-width: 0;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.interaction-event-chip em {
+  color: var(--faint);
+  font-size: 10px;
+  font-style: normal;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+}
+
+.interaction-event-chip.target {
+  border-color: rgba(47, 111, 127, 0.45);
+}
+
+.interaction-event-chip:not(:disabled):hover {
+  background: var(--soft-2);
+  border-color: var(--line-strong);
+}
+
+.interaction-event-chip:disabled {
+  color: var(--faint);
+  cursor: default;
+}
+
+.interaction-quality-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.interaction-quality-badge {
+  background: rgba(177, 103, 35, 0.1);
+  border: 1px solid rgba(177, 103, 35, 0.3);
+  color: #8a551f;
+  padding: 4px 7px;
+}
+
+.interaction-quality-badge.ok {
+  background: rgba(42, 127, 94, 0.1);
+  border-color: rgba(42, 127, 94, 0.25);
+  color: #2a6f52;
+}
+
+.interaction-object-details {
+  border: 1px solid var(--line);
+  background: var(--paper);
+}
+
+.interaction-object-details summary {
+  align-items: center;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0 9px;
+}
+
+.interaction-object-details summary span {
+  color: var(--ink);
+}
+
+.interaction-object-details summary small {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.interaction-object-details[open] summary {
+  border-bottom: 1px solid var(--line);
+}
+
+.interaction-object-table {
+  display: grid;
+}
+
+.interaction-object-row {
+  align-items: center;
+  border-bottom: 1px solid var(--line);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: minmax(0, 1.8fr) 72px 92px 52px;
+  min-width: 0;
+  padding: 7px 9px;
+}
+
+.interaction-object-row:last-child {
+  border-bottom: 0;
+}
+
+.interaction-object-row strong {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 850;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.interaction-object-row span {
+  color: var(--muted);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .metric-dialog-backdrop {
@@ -3743,6 +4028,8 @@ body {
 @media (max-width: 1100px) {
   .workbench-shell,
   .workflow-grid,
+  .probe-suite-grid,
+  .probe-suite-grid.lower,
   .panel-grid.two-col,
   .dataset-browser-controls,
   .dataset-browser-metrics,
@@ -3753,6 +4040,15 @@ body {
   .dataset-browser-header {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .probe-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .inline-select {
+    min-width: 0;
+    width: 100%;
   }
 
   .top-bar {
@@ -3780,8 +4076,14 @@ body {
   }
 
   .metric-tile-grid,
+  .interaction-summary-grid,
+  .interaction-event-row,
   .metric-dialog-grid {
     grid-template-columns: 1fr;
+  }
+
+  .interaction-object-row {
+    grid-template-columns: minmax(0, 1fr) 64px;
   }
 
   .playback-command-row {

@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search } from "lucide-react";
-import { cachedDatasetSnapshot, fetchDataset, fetchDatasetDiagnostics } from "../api/dataset";
+import { fetchDataset, fetchDatasetDiagnostics } from "../api/dataset";
 import { fetchWorkbench } from "../api/workbench";
 import { AppShell, type AppPage } from "../components/layout/AppShell";
 import { LeftRail } from "../components/layout/LeftRail";
+import { ProbeSuitePreset } from "../components/workflows/ProbeSuitePreset";
 import { TargetObjectEncodingPreset } from "../components/workflows/TargetObjectEncodingPreset";
 import { EpisodesPage } from "./EpisodesPage";
 import { useWorkbenchStore } from "../store/workbenchStore";
@@ -35,8 +36,7 @@ export function WorkbenchPage() {
 
   const manifest = workbench.data;
   const workflows = manifest?.workflow_presets ?? [];
-  const runs =
-    manifest?.analysis_runs.filter((run) => run.workflow === "target_object_encoding") ?? [];
+  const runs = manifest?.analysis_runs.filter((run) => run.workflow === activeWorkflowId) ?? [];
   const selectedArray = manifest?.lens_arrays.find(
     (array) => array.array_id === `artifact.${activeRunId || runs[0]?.run_id}.${activeMetric}`,
   );
@@ -65,6 +65,12 @@ export function WorkbenchPage() {
         <EpisodesPage
           initialTraceId={episodeTraceId}
           onTraceChange={handleEpisodeTraceChange}
+        />
+      ) : null}
+      {activePage === "probes" ? (
+        <ProbeSuitePreset
+          activeRunId={activeRunId}
+          onRunChange={setActiveRunId}
         />
       ) : null}
       {needsWorkbench && workbench.isLoading ? (
@@ -123,7 +129,7 @@ function initialPage(): { page: AppPage; traceId: string } {
   if (page.startsWith("dataset/")) {
     return { page: "episode", traceId: decodeURIComponent(page.slice("dataset/".length)) };
   }
-  if (page === "dataset" || page === "workbench" || page === "artifacts") {
+  if (page === "dataset" || page === "probes" || page === "workbench" || page === "artifacts") {
     return { page, traceId: "" };
   }
   if (page === "episode" || page === "episodes") {
@@ -186,6 +192,11 @@ function ActivePage({
       />
       {activeWorkflowId === "target_object_encoding" ? (
         <TargetObjectEncodingPreset manifest={manifest} />
+      ) : activeWorkflowId === "probe_suite" ? (
+        <ProbeSuitePreset
+          activeRunId={activeRunId}
+          onRunChange={onRunChange}
+        />
       ) : (
         <div className="workflow-empty">
           <h1>{activeWorkflowId}</h1>
@@ -204,7 +215,6 @@ function DatasetBrowser({
   const dataset = useQuery({
     queryKey: ["dataset"],
     queryFn: fetchDataset,
-    initialData: cachedDatasetSnapshot,
     staleTime: 30_000,
   });
   const diagnostics = useQuery({

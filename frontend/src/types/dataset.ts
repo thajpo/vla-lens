@@ -51,6 +51,38 @@ export type EpisodeArtifactRecord = Record<string, unknown> & {
   group_id?: string;
 };
 
+export type ArtifactRecord = EpisodeArtifactRecord & {
+  scope?: string;
+  artifact_scope?: string;
+  metrics?: Record<string, unknown>;
+  display?: Record<string, unknown>;
+  method?: Record<string, unknown>;
+  selector?: Record<string, unknown>;
+  arrays?: Record<string, string>;
+  created_utc?: string;
+  source_trace_ids?: string[];
+};
+
+export type ArtifactListResponse = {
+  artifacts: ArtifactRecord[];
+  counts: Record<string, number>;
+  total: number;
+};
+
+export type ArtifactArrayPreview = {
+  name: string;
+  path: string;
+  shape: number[];
+  dtype: string;
+  summary: Record<string, unknown>;
+  preview?: unknown;
+};
+
+export type ArtifactDetailResponse = {
+  artifact: ArtifactRecord;
+  arrays: ArtifactArrayPreview[];
+};
+
 export type EpisodeArrayRecord = Record<string, unknown> & {
   name?: string;
   relative_path?: string;
@@ -116,6 +148,47 @@ export type EpisodeMetric = {
 export type EpisodeMetricsResponse = {
   domains: { key: string; label: string }[];
   metrics: EpisodeMetric[];
+};
+
+export type EpisodeInteractionLabel = {
+  primary_target_object: string;
+  target_objects: string[];
+  target_parse_status: string;
+  first_moved_object: string;
+  first_moved_timestep: number | null;
+  first_moved_is_target: boolean;
+  first_lifted_object: string;
+  first_lifted_timestep: number | null;
+  first_lifted_is_target: boolean;
+  first_contacted_object: string;
+  first_contact_timestep: number | null;
+  scene_family?: string;
+  task_verb?: string;
+};
+
+export type EpisodeObjectMetric = {
+  object_name: string;
+  object_base_name: string;
+  object_kind: string;
+  is_target_object: boolean;
+  moved: boolean;
+  lifted: boolean;
+  contacted: boolean;
+  movement_onset_timestep: number | null;
+  lift_onset_timestep: number | null;
+  contact_onset_timestep: number | null;
+  max_displacement: number | null;
+  max_z_delta: number | null;
+};
+
+export type EpisodeInteractionsResponse = {
+  available: boolean;
+  reason?: string;
+  trace_id: string;
+  artifact_id?: string;
+  episode?: EpisodeInteractionLabel;
+  quality?: Record<string, boolean>;
+  objects: EpisodeObjectMetric[];
 };
 
 export type ActivationSite = {

@@ -1,6 +1,8 @@
 import { getJson, postJson } from "./client";
 import type {
   ActivationSitesResponse,
+  ArtifactDetailResponse,
+  ArtifactListResponse,
   AttentionMapResponse,
   ExpertTokenActivationsResponse,
   ExpertTokenDetailsResponse,
@@ -9,6 +11,7 @@ import type {
   EpisodeAnnotation,
   EpisodeAnnotationResponse,
   EpisodeDetail,
+  EpisodeInteractionsResponse,
   EpisodeMetricsResponse,
   ActivationSliceResponse,
   ImageTokenMapResponse,
@@ -57,6 +60,14 @@ export function fetchDatasetDiagnostics(): Promise<DatasetDiagnostics> {
   return getJson<DatasetDiagnostics>("/api/dataset-diagnostics");
 }
 
+export function fetchArtifacts(): Promise<ArtifactListResponse> {
+  return getJson<ArtifactListResponse>("/api/artifacts");
+}
+
+export function fetchArtifact(artifactId: string): Promise<ArtifactDetailResponse> {
+  return getJson<ArtifactDetailResponse>(`/api/artifacts/${encodeURIComponent(artifactId)}`);
+}
+
 export function fetchEpisode(traceId: string): Promise<EpisodeDetail> {
   return getJson<EpisodeDetail>(`/api/episodes/${encodeURIComponent(traceId)}`);
 }
@@ -90,6 +101,12 @@ export function fetchGenerationCommitment(traceId: string): Promise<MatrixSeries
 export function fetchEpisodeMetrics(traceId: string): Promise<EpisodeMetricsResponse> {
   return getJson<EpisodeMetricsResponse>(
     `/api/episode-metrics?trace_id=${encodeURIComponent(traceId)}`,
+  );
+}
+
+export function fetchEpisodeInteractions(traceId: string): Promise<EpisodeInteractionsResponse> {
+  return getJson<EpisodeInteractionsResponse>(
+    `/api/episode-interactions?trace_id=${encodeURIComponent(traceId)}`,
   );
 }
 
