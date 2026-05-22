@@ -19,6 +19,7 @@ from typing import Any, Mapping
 
 import imageio.v2 as imageio
 import numpy as np
+import pandas as pd
 
 from vla_lens.action_generation import save_action_generation_artifact
 from vla_lens.analyzer import diagnostics_status, run_dataset_diagnostics
@@ -114,7 +115,12 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
                     }
                 )
             elif path == "/api/dataset":
-                self._send_json(self._cached_payload("dataset", _dataset_payload))
+                self._send_json(
+                    self._cached_payload(
+                        "dataset",
+                        lambda dataset: _dataset_payload(dataset, include_workbench=False),
+                    )
+                )
             elif path == "/api/counterfactual-pairs":
                 self._send_json(
                     self._cached_payload("counterfactual-pairs", _counterfactual_pairs_response)
@@ -176,6 +182,8 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(_generation_commitment_payload(self._bundle_from_query(query)))
             elif path == "/api/episode-metrics":
                 self._send_json(_episode_metrics_payload(self._bundle_from_query(query)))
+            elif path == "/api/episode-interactions":
+                self._send_json(_episode_interactions_payload(self.dataset, query))
             elif path == "/api/activation-sites":
                 self._send_json(_activation_sites_payload(self._bundle_from_query(query)))
             elif path == "/api/activation-slice":
@@ -393,16 +401,29 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
             return renderer
 
 
-def _dataset_payload(dataset: TraceDataset) -> dict[str, Any]:
-    workbench = workbench_manifest(dataset)
-    return {
+def _dataset_payload(dataset: TraceDataset, *, include_workbench: bool = True) -> dict[str, Any]:
+    payload: dict[str, Any] = {
         "root": str(dataset.root),
         "episodes": [_manifest_payload(bundle) for bundle in dataset.bundles],
-        "activation_sites": int(len(dataset.model_site_index)),
-        "artifacts": _artifact_summary(dataset),
         "counterfactual_pairs": _counterfactual_pairs_payload(dataset),
-        "workbench": workbench,
     }
+    if include_workbench:
+        workbench = workbench_manifest(dataset)
+        payload.update(
+            {
+                "activation_sites": int(len(dataset.model_site_index)),
+                "artifacts": _artifact_summary(dataset),
+                "workbench": workbench,
+            }
+        )
+    else:
+        payload.update(
+            {
+                "activation_sites": 0,
+                "artifacts": {"total": 0, "counts": {}},
+            }
+        )
+    return payload
 
 
 def _counterfactual_pairs_response(dataset: TraceDataset) -> dict[str, Any]:
@@ -1215,6 +1236,180 @@ def _episode_metrics_payload(bundle: TraceBundle) -> dict[str, Any]:
         ],
         "metrics": metrics,
     }
+
+
+def _episode_interactions_payload(
+    dataset: TraceDataset,
+    query: dict[str, list[str]],
+) -> dict[str, Any]:
+    trace_id = query.get("trace_id", [""])[0]
+    if not trace_id:
+        return {
+            "available": False,
+            "reason": "Missing trace_id.",
+            "trace_id": "",
+            "objects": [],
+        }
+    artifact = _latest_interaction_metrics_artifact(dataset)
+    if artifact is None:
+        return {
+            "available": False,
+            "reason": "No pi05_interaction_metrics artifact found.",
+            "trace_id": trace_id,
+            "objects": [],
+        }
+
+    episode_table = _interaction_metrics_table(dataset, artifact, "episode_labels")
+    object_table = _interaction_metrics_table(dataset, artifact, "object_metrics")
+    if episode_table.empty or "trace_id" not in episode_table:
+        return {
+            "available": False,
+            "reason": "Interaction metrics artifact has no episode label table.",
+            "trace_id": trace_id,
+            "artifact_id": artifact.artifact_id,
+            "objects": [],
+        }
+    episode_rows = episode_table[episode_table["trace_id"].astype(str) == trace_id]
+    if episode_rows.empty:
+        return {
+            "available": False,
+            "reason": "Trace is not present in the interaction metrics artifact.",
+            "trace_id": trace_id,
+            "artifact_id": artifact.artifact_id,
+            "objects": [],
+        }
+
+    episode_row = episode_rows.iloc[0].to_dict()
+    object_rows = (
+        object_table[object_table["trace_id"].astype(str) == trace_id]
+        if not object_table.empty and "trace_id" in object_table
+        else pd.DataFrame()
+    )
+    objects = [_interaction_object_payload(row) for row in object_rows.to_dict("records")]
+    objects = sorted(
+        objects,
+        key=lambda item: (
+            not bool(item["is_target_object"]),
+            not (bool(item["moved"]) or bool(item["lifted"]) or bool(item["contacted"])),
+            str(item["object_name"]),
+        ),
+    )
+    return {
+        "available": True,
+        "trace_id": trace_id,
+        "artifact_id": artifact.artifact_id,
+        "episode": _interaction_episode_payload(episode_row),
+        "quality": _interaction_quality_payload(episode_row),
+        "objects": objects,
+    }
+
+
+def _latest_interaction_metrics_artifact(dataset: TraceDataset) -> LensArtifact | None:
+    table = dataset.artifact_index
+    if table.empty or "artifact_type" not in table:
+        return None
+    matches = table[table["artifact_type"].astype(str) == "pi05_interaction_metrics"]
+    if matches.empty:
+        return None
+    if "created_utc" in matches:
+        matches = matches.sort_values("created_utc", ascending=False, na_position="last")
+    try:
+        return dataset.load_artifact(str(matches.iloc[0]["artifact_id"]))
+    except (FileNotFoundError, KeyError, ValueError):
+        return None
+
+
+def _interaction_metrics_table(
+    dataset: TraceDataset,
+    artifact: LensArtifact,
+    key: str,
+) -> pd.DataFrame:
+    outputs = artifact.method.get("outputs") if isinstance(artifact.method, Mapping) else None
+    relative_path = outputs.get(key) if isinstance(outputs, Mapping) else None
+    if not relative_path:
+        return pd.DataFrame()
+    path = dataset.root / str(relative_path)
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_parquet(path)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _interaction_episode_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    target_objects = _json_parse(row.get("target_objects"))
+    if not isinstance(target_objects, list):
+        target_objects = []
+    parsed_targets = [_optional_text(value) for value in target_objects]
+    return {
+        "primary_target_object": _optional_text(row.get("primary_target_object")),
+        "target_objects": [value for value in parsed_targets if value],
+        "target_parse_status": _optional_text(row.get("target_parse_status")),
+        "first_moved_object": _optional_text(row.get("first_moved_object")),
+        "first_moved_timestep": _optional_int(row.get("first_moved_timestep")),
+        "first_moved_is_target": _optional_bool(row.get("first_moved_is_target")),
+        "first_lifted_object": _optional_text(row.get("first_lifted_object")),
+        "first_lifted_timestep": _optional_int(row.get("first_lifted_timestep")),
+        "first_lifted_is_target": _optional_bool(row.get("first_lifted_is_target")),
+        "first_contacted_object": _optional_text(row.get("first_contacted_object")),
+        "first_contact_timestep": _optional_int(row.get("first_contact_timestep")),
+        "scene_family": _optional_text(row.get("scene_family")),
+        "task_verb": _optional_text(row.get("task_verb")),
+    }
+
+
+def _interaction_quality_payload(row: Mapping[str, Any]) -> dict[str, bool]:
+    keys = [
+        "target_parse_failed",
+        "multi_target_task",
+        "no_object_moved",
+        "ambiguous_first_moved",
+        "no_object_lifted",
+        "ambiguous_first_lifted",
+    ]
+    return {key: _optional_bool(row.get(key)) for key in keys}
+
+
+def _interaction_object_payload(row: Mapping[str, Any]) -> dict[str, Any]:
+    return {
+        "object_name": _optional_text(row.get("object_name")),
+        "object_base_name": _optional_text(row.get("object_base_name")),
+        "object_kind": _optional_text(row.get("object_kind")),
+        "is_target_object": _optional_bool(row.get("is_target_object")),
+        "moved": _optional_bool(row.get("moved")),
+        "lifted": _optional_bool(row.get("lifted")),
+        "contacted": _optional_bool(row.get("contacted")),
+        "movement_onset_timestep": _optional_int(row.get("movement_onset_timestep")),
+        "lift_onset_timestep": _optional_int(row.get("lift_onset_timestep")),
+        "contact_onset_timestep": _optional_int(row.get("contact_onset_timestep")),
+        "max_displacement": _optional_float(row.get("max_displacement")),
+        "max_z_delta": _optional_float(row.get("max_z_delta")),
+    }
+
+
+def _optional_text(value: Any) -> str:
+    if value is None or pd.isna(value):
+        return ""
+    return str(value)
+
+
+def _optional_int(value: Any) -> int | None:
+    if value is None or pd.isna(value):
+        return None
+    return int(value)
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None or pd.isna(value):
+        return None
+    return float(value)
+
+
+def _optional_bool(value: Any) -> bool:
+    if value is None or pd.isna(value):
+        return False
+    return bool(value)
 
 
 def _activation_sites_payload(bundle: TraceBundle) -> dict[str, Any]:

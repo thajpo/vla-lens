@@ -31,6 +31,10 @@ from vla_lens.capture import (
     merge_episode_and_model_trace,
     write_trace_record,
 )
+from vla_lens.pi05.interaction_metrics import (
+    InteractionMetricsArtifact,
+    save_pi05_interaction_metrics_artifact,
+)
 from vla_lens.selectors import ActivationQuery, FeatureMatrix, FeatureView
 from vla_lens.synthetic import create_synthetic_trace_dataset
 from vla_lens.target_object import (
@@ -126,6 +130,7 @@ __all__ = [
     "GraphNodeRef",
     "ImageFrameSpec",
     "InterventionRunSpec",
+    "InteractionMetricsArtifact",
     "LensArraySpec",
     "LensArtifact",
     "MediaSpec",
@@ -178,6 +183,7 @@ __all__ = [
     "save_cohort",
     "save_analysis_run",
     "save_intervention_run",
+    "save_pi05_interaction_metrics_artifact",
     "save_workspace",
     "slice_lens_array",
     "spatial_overlay_contracts",

@@ -11,7 +11,16 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 from sklearn.dummy import DummyClassifier
 from sklearn.linear_model import LogisticRegression, Ridge
-from sklearn.metrics import accuracy_score, mean_absolute_error, r2_score
+from sklearn.metrics import (
+    accuracy_score,
+    balanced_accuracy_score,
+    f1_score,
+    log_loss,
+    mean_absolute_error,
+    r2_score,
+    recall_score,
+)
+from sklearn.neural_network import MLPClassifier, MLPRegressor
 from sklearn.pipeline import make_pipeline
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
@@ -26,6 +35,9 @@ class ProbeResult:
     n_train: int
     n_test: int
     metadata_baseline: str
+    model: str = "linear"
+    split_value: str = "test"
+    primary_metric: str = "score"
     details: dict[str, Any] = field(default_factory=dict)
     prediction_records: list[dict[str, Any]] = field(default_factory=list)
     model_state: dict[str, Any] = field(default_factory=dict)
@@ -40,6 +52,9 @@ class ProbeResult:
             "n_train": self.n_train,
             "n_test": self.n_test,
             "metadata_baseline": self.metadata_baseline,
+            "model": self.model,
+            "split_value": self.split_value,
+            "primary_metric": self.primary_metric,
             "details": self.details,
             "prediction_records": self.prediction_records,
             "model_state": self.model_state,
@@ -53,40 +68,58 @@ def run_probe_suite(
     split_column: str = "split",
     train_value: str = "train",
     test_value: str = "test",
+    eval_values: list[str] | None = None,
     metadata_baseline_columns: list[str] | None = None,
     target_kinds: dict[str, str] | None = None,
+    probe_models: list[str] | None = None,
 ) -> pd.DataFrame:
     """Fit simple probes and compare them with categorical metadata baselines."""
     metadata_baseline_columns = metadata_baseline_columns or []
+    eval_values = eval_values or [test_value]
+    probe_models = probe_models or ["linear"]
     target_kinds = target_kinds or {}
     split = rows[split_column].astype(str).to_numpy()
     train_mask = split == train_value
-    test_mask = split == test_value
     results: list[ProbeResult] = []
 
     for target in targets:
         y = rows[target].to_numpy()
         target_kind = target_kinds.get(target)
         for feature_name, X in features.items():
-            if target_kind == "classification" or (target_kind is None and _is_classification(y)):
-                result = _classification_result(
-                    rows,
-                    X,
-                    y,
-                    train_mask,
-                    test_mask,
-                    feature_name,
-                    target,
-                    metadata_baseline_columns,
-                )
-            elif target_kind == "regression" or target_kind is None:
-                result = _regression_result(
-                    rows, X, y.astype(np.float32), train_mask, test_mask, feature_name, target
-                )
-            else:
-                raise ValueError(f"Unknown target kind for {target!r}: {target_kind!r}")
-            if result is not None:
-                results.append(result)
+            for eval_value in eval_values:
+                eval_mask = split == eval_value
+                for model_name in probe_models:
+                    if target_kind == "classification" or (
+                        target_kind is None and _is_classification(y)
+                    ):
+                        result = _classification_result(
+                            rows,
+                            X,
+                            y,
+                            train_mask,
+                            eval_mask,
+                            feature_name,
+                            target,
+                            metadata_baseline_columns,
+                            eval_value=eval_value,
+                            model_name=model_name,
+                        )
+                    elif target_kind == "regression" or target_kind is None:
+                        result = _regression_result(
+                            rows,
+                            X,
+                            y.astype(np.float32),
+                            train_mask,
+                            eval_mask,
+                            feature_name,
+                            target,
+                            eval_value=eval_value,
+                            model_name=model_name,
+                        )
+                    else:
+                        raise ValueError(f"Unknown target kind for {target!r}: {target_kind!r}")
+                    if result is not None:
+                        results.append(result)
     return pd.DataFrame.from_records([result.to_record() for result in results])
 
 
@@ -95,43 +128,50 @@ def _classification_result(
     X: np.ndarray,
     y: np.ndarray,
     train_mask: np.ndarray,
-    test_mask: np.ndarray,
+    eval_mask: np.ndarray,
     feature_name: str,
     target: str,
     metadata_columns: list[str],
+    eval_value: str,
+    model_name: str,
 ) -> ProbeResult | None:
     y_train = y[train_mask]
-    y_test = y[test_mask]
-    if len(y_test) == 0 or len(np.unique(y_train)) < 2:
+    y_eval = y[eval_mask]
+    if len(y_eval) == 0 or len(np.unique(y_train)) < 2:
         return None
-    probe = make_pipeline(StandardScaler(), LogisticRegression(max_iter=1000))
+    probe = _classification_probe(model_name)
     probe.fit(X[train_mask], y_train)
-    y_pred = probe.predict(X[test_mask])
-    score = float(accuracy_score(y_test, y_pred))
-    confidence = _prediction_confidence(probe, X[test_mask])
+    y_pred = probe.predict(X[eval_mask])
+    score = float(balanced_accuracy_score(y_eval, y_pred))
+    accuracy = float(accuracy_score(y_eval, y_pred))
+    macro_f1 = float(f1_score(y_eval, y_pred, average="macro", zero_division=0))
+    per_class_recall = _per_class_recall(y_eval, y_pred)
+    confidence = _prediction_confidence(probe, X[eval_mask])
+    proba = _prediction_proba(probe, X[eval_mask])
+    label_log_loss = _safe_log_loss(y_eval, proba, _probe_classes(probe))
 
-    baseline_score = _dummy_classifier_score(y_train, y_test)
+    baseline_score = _dummy_classifier_score(y_train, y_eval)
     baseline_name = "majority"
+    baseline_details = [{"baseline": baseline_name, "score": baseline_score}]
     if metadata_columns:
-        metadata_score = _metadata_classifier_score(
-            rows,
-            y,
-            train_mask,
-            test_mask,
-            metadata_columns,
-        )
-        if metadata_score > baseline_score:
-            baseline_score = metadata_score
-            baseline_name = "+".join(metadata_columns)
+        for columns in [[column] for column in metadata_columns] + [metadata_columns]:
+            metadata_score = _metadata_classifier_score(rows, y, train_mask, eval_mask, columns)
+            if metadata_score is None:
+                continue
+            name = "+".join(columns)
+            baseline_details.append({"baseline": name, "score": metadata_score})
+            if metadata_score > baseline_score:
+                baseline_score = metadata_score
+                baseline_name = name
 
-    test_rows = rows.loc[test_mask].reset_index(drop=True)
+    eval_rows = rows.loc[eval_mask].reset_index(drop=True)
     prediction_records = _prediction_records(
-        test_rows,
-        y_test,
+        eval_rows,
+        y_eval,
         y_pred,
         confidence,
         target=target,
-        split_value="test",
+        split_value=eval_value,
     )
     return ProbeResult(
         feature=feature_name,
@@ -140,20 +180,36 @@ def _classification_result(
         score=score,
         baseline_score=baseline_score,
         n_train=int(train_mask.sum()),
-        n_test=int(test_mask.sum()),
+        n_test=int(eval_mask.sum()),
         metadata_baseline=baseline_name,
+        model=model_name,
+        split_value=eval_value,
+        primary_metric="balanced_accuracy",
         details={
-            "confusion_matrix": _confusion_records(y_test, y_pred),
+            "model": model_name,
+            "split": eval_value,
+            "primary_metric": "balanced_accuracy",
+            "balanced_accuracy": score,
+            "accuracy": accuracy,
+            "macro_f1": macro_f1,
+            "log_loss": label_log_loss,
+            "per_class_recall": per_class_recall,
+            "metadata_baselines": baseline_details,
+            "confusion_matrix": _confusion_records(y_eval, y_pred),
             "test_predictions": prediction_records[:50],
             "test_episode_summary": _episode_prediction_summary(
-                test_rows,
-                y_test,
+                eval_rows,
+                y_eval,
                 y_pred,
                 confidence,
             ),
         },
         prediction_records=prediction_records,
-        model_state=_linear_model_state(probe, probe_type="classification"),
+        model_state=_linear_model_state(
+            probe,
+            probe_type="classification",
+            model_name=model_name,
+        ),
     )
 
 
@@ -162,29 +218,32 @@ def _regression_result(
     X: np.ndarray,
     y: np.ndarray,
     train_mask: np.ndarray,
-    test_mask: np.ndarray,
+    eval_mask: np.ndarray,
     feature_name: str,
     target: str,
+    eval_value: str,
+    model_name: str,
 ) -> ProbeResult | None:
     y_train = y[train_mask]
-    y_test = y[test_mask]
-    if len(y_test) == 0:
+    y_eval = y[eval_mask]
+    if len(y_eval) == 0:
         return None
-    probe = make_pipeline(StandardScaler(), Ridge(alpha=1.0))
+    probe = _regression_probe(model_name)
     probe.fit(X[train_mask], y_train)
-    pred = probe.predict(X[test_mask])
-    score = float(r2_score(y_test, pred))
-    baseline = np.full_like(y_test, float(np.mean(y_train)), dtype=np.float32)
-    baseline_score = float(r2_score(y_test, baseline))
-    if not np.isfinite(score):
-        score = -float(mean_absolute_error(y_test, pred))
-        baseline_score = -float(mean_absolute_error(y_test, baseline))
+    pred = np.asarray(probe.predict(X[eval_mask]), dtype=np.float32)
+    r2 = float(r2_score(y_eval, pred))
+    mae = float(mean_absolute_error(y_eval, pred))
+    baseline = np.full_like(y_eval, float(np.mean(y_train)), dtype=np.float32)
+    baseline_r2 = float(r2_score(y_eval, baseline))
+    baseline_mae = float(mean_absolute_error(y_eval, baseline))
+    score = -mae
+    baseline_score = -baseline_mae
     prediction_records = _regression_prediction_records(
-        rows.loc[test_mask].reset_index(drop=True),
-        y_test,
+        rows.loc[eval_mask].reset_index(drop=True),
+        y_eval,
         pred,
         target=target,
-        split_value="test",
+        split_value=eval_value,
     )
     return ProbeResult(
         feature=feature_name,
@@ -193,14 +252,59 @@ def _regression_result(
         score=score,
         baseline_score=baseline_score,
         n_train=int(train_mask.sum()),
-        n_test=int(test_mask.sum()),
+        n_test=int(eval_mask.sum()),
         metadata_baseline="train_mean",
+        model=model_name,
+        split_value=eval_value,
+        primary_metric="negative_mae",
         details={
+            "model": model_name,
+            "split": eval_value,
+            "primary_metric": "negative_mae",
+            "r2": r2 if np.isfinite(r2) else None,
+            "mae": mae,
+            "baseline_r2": baseline_r2 if np.isfinite(baseline_r2) else None,
+            "baseline_mae": baseline_mae,
             "test_predictions": prediction_records[:50],
         },
         prediction_records=prediction_records,
-        model_state=_linear_model_state(probe, probe_type="regression"),
+        model_state=_linear_model_state(probe, probe_type="regression", model_name=model_name),
     )
+
+
+def _classification_probe(model_name: str) -> Any:
+    if model_name == "linear":
+        return make_pipeline(
+            StandardScaler(),
+            LogisticRegression(max_iter=1000, class_weight="balanced"),
+        )
+    if model_name == "mlp":
+        return make_pipeline(
+            StandardScaler(),
+            MLPClassifier(
+                hidden_layer_sizes=(64,),
+                alpha=1e-4,
+                max_iter=300,
+                random_state=0,
+            ),
+        )
+    raise ValueError(f"Unknown classification probe model: {model_name!r}")
+
+
+def _regression_probe(model_name: str) -> Any:
+    if model_name == "linear":
+        return make_pipeline(StandardScaler(), Ridge(alpha=1.0))
+    if model_name == "mlp":
+        return make_pipeline(
+            StandardScaler(),
+            MLPRegressor(
+                hidden_layer_sizes=(64,),
+                alpha=1e-4,
+                max_iter=300,
+                random_state=0,
+            ),
+        )
+    raise ValueError(f"Unknown regression probe model: {model_name!r}")
 
 
 def _is_classification(y: np.ndarray) -> bool:
@@ -212,7 +316,7 @@ def _is_classification(y: np.ndarray) -> bool:
 def _dummy_classifier_score(y_train: np.ndarray, y_test: np.ndarray) -> float:
     dummy = DummyClassifier(strategy="most_frequent")
     dummy.fit(np.zeros((len(y_train), 1)), y_train)
-    return float(accuracy_score(y_test, dummy.predict(np.zeros((len(y_test), 1)))))
+    return float(balanced_accuracy_score(y_test, dummy.predict(np.zeros((len(y_test), 1)))))
 
 
 def _metadata_classifier_score(
@@ -221,20 +325,22 @@ def _metadata_classifier_score(
     train_mask: np.ndarray,
     test_mask: np.ndarray,
     columns: list[str],
-) -> float:
+) -> float | None:
     train_meta = rows.loc[train_mask, columns].astype(str)
-    test_meta = rows.loc[test_mask, columns].astype(str)
+    eval_meta = rows.loc[test_mask, columns].astype(str)
     y_train = y[train_mask]
     y_test = y[test_mask]
+    if len(y_test) == 0 or len(np.unique(y_train)) < 2:
+        return None
     model = make_pipeline(
         ColumnTransformer(
             [("categorical", OneHotEncoder(handle_unknown="ignore"), columns)],
             remainder="drop",
         ),
-        LogisticRegression(max_iter=1000),
+        LogisticRegression(max_iter=1000, class_weight="balanced"),
     )
     model.fit(train_meta, y_train)
-    return float(accuracy_score(y_test, model.predict(test_meta)))
+    return float(balanced_accuracy_score(y_test, model.predict(eval_meta)))
 
 
 def _prediction_confidence(probe: Any, X: np.ndarray) -> np.ndarray:
@@ -249,6 +355,42 @@ def _prediction_confidence(probe: Any, X: np.ndarray) -> np.ndarray:
             return np.abs(margin)
         return np.max(margin, axis=1) - np.partition(margin, -2, axis=1)[:, -2]
     return np.full(X.shape[0], np.nan, dtype=np.float32)
+
+
+def _prediction_proba(probe: Any, X: np.ndarray) -> np.ndarray | None:
+    if X.shape[0] == 0 or not hasattr(probe, "predict_proba"):
+        return None
+    return np.asarray(probe.predict_proba(X), dtype=np.float32)
+
+
+def _probe_classes(probe: Any) -> list[Any]:
+    estimator = probe.steps[-1][1] if getattr(probe, "steps", None) else probe
+    return list(getattr(estimator, "classes_", []))
+
+
+def _safe_log_loss(
+    y_true: np.ndarray,
+    proba: np.ndarray | None,
+    labels: list[Any],
+) -> float | None:
+    if proba is None or proba.size == 0 or not labels:
+        return None
+    try:
+        return float(log_loss(y_true, proba, labels=labels))
+    except ValueError:
+        return None
+
+
+def _per_class_recall(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
+    labels = sorted(str(value) for value in pd.Series(y_true).dropna().unique())
+    recalls = recall_score(
+        pd.Series(y_true).astype(str),
+        pd.Series(y_pred).astype(str),
+        labels=labels,
+        average=None,
+        zero_division=0,
+    )
+    return {label: float(value) for label, value in zip(labels, recalls, strict=False)}
 
 
 def _confusion_records(y_true: np.ndarray, y_pred: np.ndarray) -> list[dict[str, Any]]:
@@ -363,7 +505,7 @@ def _prediction_join_keys(
 ) -> dict[str, Any]:
     trace_id = str(row.get("trace_id", ""))
     policy_call = _optional_int(row.get("policy_call_index", row.get("policy_call")))
-    generation_step = _optional_int(row.get("generation_step"))
+    generation_step = _optional_axis_value(row.get("generation_step"))
     token_index = _optional_int(row.get("token_index"))
     token_space_id = _optional_str(row.get("token_space_id"))
     model_site_id = _optional_str(row.get("model_site_id", row.get("activation")))
@@ -393,11 +535,12 @@ def _prediction_join_keys(
     }
 
 
-def _linear_model_state(probe: Any, *, probe_type: str) -> dict[str, Any]:
+def _linear_model_state(probe: Any, *, probe_type: str, model_name: str) -> dict[str, Any]:
     scaler = probe.steps[0][1] if getattr(probe, "steps", None) else None
     estimator = probe.steps[-1][1] if getattr(probe, "steps", None) else probe
     state: dict[str, Any] = {
         "probe_type": probe_type,
+        "model": model_name,
         "weights_space": "normalized_feature_space",
     }
     if scaler is not None:
@@ -422,6 +565,15 @@ def _optional_int(value: Any) -> int | None:
     if value is None or pd.isna(value):
         return None
     return int(value)
+
+
+def _optional_axis_value(value: Any) -> int | str | None:
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return str(value)
 
 
 def _optional_float(value: Any) -> float | None:

@@ -13,13 +13,16 @@ import numpy as np
 import pandas as pd
 import sklearn
 import yaml
+from sklearn.metrics import balanced_accuracy_score, f1_score
 
 from vla_lens.artifacts import LensArtifact, make_artifact_id
 from vla_lens.probes.suite import run_probe_suite
 from vla_lens.selectors import ActivationQuery
 from vla_lens.traces import TraceBundle, TraceDataset
+from vla_lens.workbench import AnalysisRunSpec, save_analysis_run
 
-PROBE_ARTIFACT_SCHEMA_VERSION = 1
+PROBE_ARTIFACT_SCHEMA_VERSION = 3
+INTERACTION_METRICS_ARTIFACT_TYPE = "pi05_interaction_metrics"
 
 
 @dataclass(frozen=True, slots=True)
@@ -58,7 +61,11 @@ def train_probe_artifact(
     train_value: str = "train",
     test_value: str = "test",
     metadata_baseline_columns: Sequence[str] = (),
-    sweep: str = "layer",
+    sweep: str | Sequence[str] = "layer",
+    row_filter: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
+    eval_values: Sequence[str] | None = None,
+    selection_value: str | None = None,
+    probe_models: Sequence[str] = ("linear",),
 ) -> SavedProbeSuite:
     """Train simple probes from an activation selector and save a ``LensArtifact``."""
     feature_matrix = dataset.select_model_sites(selector).materialize(cache=True)
@@ -69,6 +76,13 @@ def train_probe_artifact(
     target_spec = _normalize_target_spec(target)
     target_name = _target_name(target_spec)
     rows = _resolve_probe_target(dataset, rows, target_spec)
+    X, rows, filter_summary = _apply_row_filters(X, rows, row_filter)
+    X, rows, missing_summary = _apply_missing_policy(
+        X,
+        rows,
+        target_name,
+        policy=str(target_spec.get("missing_policy") or "error"),
+    )
     rows = _ensure_split(
         rows,
         split_column,
@@ -95,6 +109,8 @@ def train_probe_artifact(
         ],
         sweep=sweep,
         target_kind=str(_probe_target(target_name, rows, target_spec=target_spec)["kind"]),
+        eval_values=list(eval_values or [test_value]),
+        probe_models=list(probe_models),
     )
     if results.empty:
         raise ValueError(
@@ -104,10 +120,16 @@ def train_probe_artifact(
 
     artifact_id = make_artifact_id(name, "probe_suite")
     prediction_records = _prediction_frame(results)
-    model_arrays, model_state_summary = _best_model_arrays(results)
+    model_arrays, model_state_summary = _best_model_arrays(
+        results,
+        selection_value=selection_value or test_value,
+    )
     outputs = {
         "metrics": str(Path("artifacts") / artifact_id / "metrics.json"),
         "predictions": str(Path("artifacts") / artifact_id / "predictions.parquet"),
+        "per_split_metrics": str(Path("artifacts") / artifact_id / "per_split_metrics.parquet"),
+        "per_group_metrics": str(Path("artifacts") / artifact_id / "per_group_metrics.parquet"),
+        "null_metrics": str(Path("artifacts") / artifact_id / "null_metrics.parquet"),
         "weights": str(Path("artifacts") / artifact_id / "weights.zarr")
         if "weights" in model_arrays
         else None,
@@ -135,6 +157,8 @@ def train_probe_artifact(
             split_column=split_column,
             train_value=train_value,
             test_value=test_value,
+            eval_values=list(eval_values or [test_value]),
+            selection_value=selection_value or test_value,
         ),
         "normalization": {
             "method": "standardize",
@@ -150,20 +174,25 @@ def train_probe_artifact(
             "library": "sklearn",
             "library_version": sklearn.__version__,
             "hyperparams": _probe_hyperparams(results),
+            "models": list(probe_models),
+            "primary_model": "linear",
+            "secondary_models": [model for model in probe_models if model != "linear"],
             "trained_on_split": train_value,
             "weights_space": "normalized_feature_space",
             "best_model_state": model_state_summary,
         },
         "evaluation": {
             "primary_split": test_value,
+            "selection_split": selection_value or test_value,
+            "eval_splits": list(eval_values or [test_value]),
             "primary_metric": _primary_metric(results),
             "grain": "row",
             "aggregation": "over_rows",
             "metric_definitions": _metric_definitions(results),
         },
         "prediction_retention": {
-            "mode": "row_level_test",
-            "splits": [test_value],
+            "mode": "row_level_eval",
+            "splits": list(eval_values or [test_value]),
             "row_count": int(len(prediction_records)),
         },
         "outputs": {key: value for key, value in outputs.items() if value is not None},
@@ -171,15 +200,40 @@ def train_probe_artifact(
         "split_column": split_column,
         "train_value": train_value,
         "test_value": test_value,
+        "eval_values": list(eval_values or [test_value]),
+        "selection_value": selection_value or test_value,
         "metadata_baseline_columns": [
             column for column in metadata_baseline_columns if column in rows.columns
         ],
         "sweep": sweep,
+        "row_filter": filter_summary,
+        "missing_target": missing_summary,
     }
-    metrics = _probe_metrics(results, rows, target=target_name)
+    metrics = _probe_metrics(
+        results,
+        rows,
+        target=target_name,
+        selection_value=selection_value or test_value,
+    )
     metrics["probe_artifact_schema_version"] = PROBE_ARTIFACT_SCHEMA_VERSION
     metrics["prediction_row_count"] = int(len(prediction_records))
     metrics["feature_matrix_fingerprint"] = _array_fingerprint(X)
+    per_split_metrics = _per_split_metrics(prediction_records)
+    per_group_metrics = _per_group_metrics(
+        prediction_records,
+        rows,
+        group_columns=["benchmark", "task_id", "scene_family", "target_parse_status"],
+    )
+    null_metrics = _null_metrics(prediction_records)
+    if not null_metrics.empty:
+        metrics["null_score_mean"] = float(null_metrics["score"].mean())
+        metrics["null_score_std"] = float(null_metrics["score"].std(ddof=0))
+        best_score = metrics.get("best_score")
+        if best_score is not None:
+            metrics["null_p_value"] = float(
+                (1 + (null_metrics["score"] >= float(best_score)).sum())
+                / (len(null_metrics) + 1)
+            )
     artifact = LensArtifact(
         artifact_id=artifact_id,
         artifact_type="probe_suite",
@@ -192,7 +246,10 @@ def train_probe_artifact(
         display={
             "kind": "probe_suite",
             "results": _records(results),
-            "best_result_details": _best_result_details(results),
+            "best_result_details": _best_result_details(
+                results,
+                selection_value=selection_value or test_value,
+            ),
             "target": target_name,
             "split_summary": _split_summary(rows, split_column),
             "target_distribution": _value_counts(rows[target_name]),
@@ -216,6 +273,8 @@ def train_probe_artifact(
                     column for column in metadata_baseline_columns if column in rows.columns
                 ],
             ),
+            "row_filter": filter_summary,
+            "missing_target": missing_summary,
         },
         tags=("probe", target_name),
         source_trace_ids=tuple(sorted(str(value) for value in rows["trace_id"].dropna().unique())),
@@ -224,9 +283,22 @@ def train_probe_artifact(
     artifact_dir = _artifact_dir(dataset, saved)
     artifact_dir.mkdir(parents=True, exist_ok=True)
     prediction_records.to_parquet(artifact_dir / "predictions.parquet", index=False)
+    per_split_metrics.to_parquet(artifact_dir / "per_split_metrics.parquet", index=False)
+    per_group_metrics.to_parquet(artifact_dir / "per_group_metrics.parquet", index=False)
+    null_metrics.to_parquet(artifact_dir / "null_metrics.parquet", index=False)
     (artifact_dir / "metrics.json").write_text(
         json.dumps(metrics, indent=2, sort_keys=True),
         encoding="utf-8",
+    )
+    save_analysis_run(
+        dataset,
+        AnalysisRunSpec(
+            run_id=saved.artifact_id,
+            workflow="probe_suite",
+            inputs=saved.selector,
+            outputs=tuple(saved.arrays),
+            provenance={"artifact_id": saved.artifact_id},
+        ),
     )
     return SavedProbeSuite(artifact=saved, results=results, rows=rows)
 
@@ -246,20 +318,32 @@ def train_probe_artifact_from_spec(
         tensor_type=features.get("tensor_type"),
         token_kind=features.get("token_kind"),
         timesteps=features.get("timesteps", "all"),
+        policy_calls=features.get("policy_calls", "all"),
         generation_step=features.get("generation_step"),
         reduce_tokens=features.get("reduction", "mean"),
+        dtype=str(features.get("dtype", "float32")),
     )
+    split = normalized["split"]
     return train_probe_artifact(
         dataset,
         name=str(normalized["name"]),
         selector=selector,
         target=normalized["target"],
-        split_kind=str(normalized["split"]["kind"]),
-        split_column=str(normalized["split"].get("column", "split")),
-        train_value=str(normalized["split"].get("train_value", "train")),
-        test_value=str(normalized["split"].get("test_value", "test")),
+        split_kind=str(split["kind"]),
+        split_column=str(split.get("column", "split")),
+        train_value=str(split.get("train_value", "train")),
+        test_value=str(split.get("test_value", "test")),
         metadata_baseline_columns=baseline_columns(normalized.get("baseline", [])),
-        sweep=str(normalized.get("sweep", "layer")),
+        sweep=normalized.get("sweep", "layer"),
+        row_filter=normalized.get("row_filter"),
+        eval_values=[
+            str(value)
+            for value in split.get("eval_values", [split.get("test_value", "test")])
+        ],
+        selection_value=str(split.get("selection_value", split.get("test_value", "test"))),
+        probe_models=[
+            str(value) for value in normalized.get("probe", {}).get("models", ["linear"])
+        ],
     )
 
 
@@ -272,9 +356,20 @@ def normalize_probe_spec(spec: Mapping[str, Any] | None = None) -> dict[str, Any
     features = merged.setdefault("features", {})
     if "reduce_tokens" in features and "reduction" not in features:
         features["reduction"] = features.pop("reduce_tokens")
+    if "policy_calls" not in features:
+        features["policy_calls"] = "all"
+    if "dtype" not in features:
+        features["dtype"] = "float32"
     split = merged.get("split")
     if isinstance(split, str):
         merged["split"] = {"kind": split}
+    merged.setdefault("probe", {"models": ["linear"]})
+    if isinstance(merged.get("probe"), str):
+        merged["probe"] = {"models": [merged["probe"]]}
+    if isinstance(merged.get("probe"), Mapping):
+        probe = merged["probe"]
+        if isinstance(probe.get("models"), str):
+            probe["models"] = [probe["models"]]
     merged.setdefault("baseline", [])
     return merged
 
@@ -324,6 +419,8 @@ def _attach_episode_metadata(rows: pd.DataFrame, dataset: TraceDataset) -> pd.Da
     episode_index = dataset.episode_index.copy()
     if episode_index.empty:
         return rows.copy()
+    episode_index = _merge_probe_split_sidecar(episode_index, dataset)
+    episode_index = _merge_interaction_metrics(episode_index, dataset)
     duplicate_columns = [
         column
         for column in episode_index.columns
@@ -331,6 +428,219 @@ def _attach_episode_metadata(rows: pd.DataFrame, dataset: TraceDataset) -> pd.Da
     ]
     episode_index = episode_index.drop(columns=duplicate_columns)
     return rows.merge(episode_index, on="trace_id", how="left")
+
+
+def _merge_probe_split_sidecar(
+    episode_index: pd.DataFrame,
+    dataset: TraceDataset,
+) -> pd.DataFrame:
+    """Attach capture-plan split metadata when a PI0.5 sidecar is present."""
+    split_path = dataset.root / "probe_splits.csv"
+    if not split_path.exists() or "trace_id" not in episode_index:
+        return episode_index
+    split_frame = pd.read_csv(split_path)
+    if split_frame.empty or "trace_id" not in split_frame:
+        return episode_index
+
+    split_frame = split_frame.drop_duplicates(subset=["trace_id"], keep="last")
+    wanted = [
+        column
+        for column in [
+            "trace_id",
+            "benchmark",
+            "split",
+            "seed",
+            "capture_profile",
+            "capture_design",
+            "trace_variant",
+            "counterfactual_group_id",
+            "counterfactual_role",
+            "counterfactual_type",
+            "pair_index",
+            "paired_trace_id",
+            "changed_fields",
+            "matched_fields",
+            "target_object_id",
+            "counterfactual_target_object_id",
+        ]
+        if column in split_frame
+    ]
+    split_frame = split_frame[wanted].copy()
+    duplicate_columns = [
+        column
+        for column in split_frame.columns
+        if column in episode_index.columns and column != "trace_id"
+    ]
+    if duplicate_columns:
+        split_frame = split_frame.rename(
+            columns={column: f"split_sidecar_{column}" for column in duplicate_columns}
+        )
+    merged = episode_index.merge(split_frame, on="trace_id", how="left")
+    if "benchmark" not in merged and "env_id" in merged:
+        merged["benchmark"] = merged["env_id"]
+    return merged
+
+
+def _merge_interaction_metrics(
+    episode_index: pd.DataFrame,
+    dataset: TraceDataset,
+) -> pd.DataFrame:
+    labels = _latest_interaction_labels(dataset)
+    if labels.empty or "trace_id" not in labels or "trace_id" not in episode_index:
+        return episode_index
+    labels = labels.drop_duplicates(subset=["trace_id"], keep="last")
+    labels = _add_derived_interaction_label_columns(labels, dataset)
+    merged = episode_index.merge(labels, on="trace_id", how="left", suffixes=("", "__derived"))
+    for column in list(merged.columns):
+        if not column.endswith("__derived"):
+            continue
+        base = column.removesuffix("__derived")
+        derived = merged.pop(column)
+        if base in merged:
+            missing = merged[base].isna() | (merged[base].astype(str) == "")
+            merged.loc[missing, base] = derived.loc[missing]
+            conflict = (
+                (~missing)
+                & derived.notna()
+                & (derived.astype(str) != merged[base].astype(str))
+            )
+            if bool(conflict.any()):
+                merged[f"derived_{base}"] = derived
+        else:
+            merged[base] = derived
+    return merged
+
+
+def _add_derived_interaction_label_columns(
+    labels: pd.DataFrame,
+    dataset: TraceDataset,
+) -> pd.DataFrame:
+    labels = labels.copy()
+    for column in [
+        "primary_target_object",
+        "first_moved_object",
+        "first_lifted_object",
+        "first_contacted_object",
+    ]:
+        if column in labels:
+            labels[f"{column}_base"] = labels[column].map(_base_object_name)
+    if {"first_contacted_object", "target_objects"}.issubset(labels.columns):
+        labels["first_contacted_is_target"] = [
+            _object_in_targets(obj, targets)
+            for obj, targets in zip(
+                labels["first_contacted_object"],
+                labels["target_objects"],
+                strict=False,
+            )
+        ]
+    object_metrics = _latest_interaction_object_metrics(dataset)
+    if not object_metrics.empty and "trace_id" in object_metrics:
+        target_rows = object_metrics.loc[
+            object_metrics.get("is_target_object", pd.Series(False, index=object_metrics.index))
+            .fillna(False)
+            .astype(bool)
+        ]
+        if not target_rows.empty:
+            flags = (
+                target_rows.groupby("trace_id", dropna=False)[["moved", "lifted", "contacted"]]
+                .any()
+                .rename(
+                    columns={
+                        "moved": "target_moved",
+                        "lifted": "target_lifted",
+                        "contacted": "target_contacted",
+                    }
+                )
+                .reset_index()
+            )
+            labels = labels.merge(flags, on="trace_id", how="left")
+    for column in [
+        "target_moved",
+        "target_lifted",
+        "target_contacted",
+        "first_contacted_is_target",
+    ]:
+        if column in labels:
+            labels[column] = labels[column].where(labels[column].notna(), False).astype(bool)
+    return labels
+
+
+def _latest_interaction_object_metrics(dataset: TraceDataset) -> pd.DataFrame:
+    artifact = _latest_interaction_artifact(dataset)
+    if artifact is None:
+        return pd.DataFrame()
+    outputs = dict(artifact.method.get("outputs") or {})
+    path = outputs.get("object_metrics")
+    if not path:
+        return pd.DataFrame()
+    table_path = dataset.root / str(path)
+    if not table_path.exists():
+        return pd.DataFrame()
+    return pd.read_parquet(table_path)
+
+
+def _latest_interaction_labels(dataset: TraceDataset) -> pd.DataFrame:
+    artifact = _latest_interaction_artifact(dataset)
+    if artifact is None:
+        return pd.DataFrame()
+    outputs = dict(artifact.method.get("outputs") or {})
+    path = outputs.get("episode_labels")
+    if not path:
+        return pd.DataFrame()
+    table_path = dataset.root / str(path)
+    if table_path.exists():
+        return pd.read_parquet(table_path)
+    return pd.DataFrame()
+
+
+def _latest_interaction_artifact(dataset: TraceDataset) -> LensArtifact | None:
+    table = dataset.artifact_index
+    if table.empty or "artifact_type" not in table:
+        return None
+    matches = table.loc[
+        table["artifact_type"].astype(str) == INTERACTION_METRICS_ARTIFACT_TYPE
+    ].copy()
+    if matches.empty:
+        return None
+    matches = matches.sort_values("created_utc", ascending=False, na_position="last")
+    for artifact_id in matches["artifact_id"].astype(str):
+        try:
+            return dataset.load_artifact(artifact_id)
+        except (FileNotFoundError, KeyError):
+            continue
+    return None
+
+
+def _base_object_name(value: Any) -> str:
+    if value is None or isinstance(value, (list, tuple, dict, set)):
+        text = ""
+    else:
+        try:
+            text = "" if pd.isna(value) else str(value)
+        except (TypeError, ValueError):
+            text = str(value)
+    parts = text.rsplit("_", 1)
+    if len(parts) == 2 and parts[1].isdigit():
+        return parts[0]
+    return text
+
+
+def _object_in_targets(obj: Any, target_objects: Any) -> bool:
+    obj_base = _base_object_name(obj)
+    targets = _json_load_list(target_objects)
+    return bool(obj_base) and any(obj_base == _base_object_name(target) for target in targets)
+
+
+def _json_load_list(value: Any) -> list[Any]:
+    if isinstance(value, list):
+        return value
+    if not isinstance(value, str) or not value:
+        return []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return []
+    return parsed if isinstance(parsed, list) else []
 
 
 def _ensure_split(
@@ -356,6 +666,137 @@ def _ensure_split(
         train_value,
     )
     return rows
+
+
+def _apply_row_filters(
+    X: np.ndarray,
+    rows: pd.DataFrame,
+    row_filter: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None,
+) -> tuple[np.ndarray, pd.DataFrame, dict[str, Any]]:
+    filters = _normalize_row_filters(row_filter)
+    if not filters:
+        return X, rows, {"filters": [], "input_rows": int(len(rows)), "output_rows": int(len(rows))}
+    mask = pd.Series(True, index=rows.index)
+    applied: list[dict[str, Any]] = []
+    for spec in filters:
+        column = str(spec.get("column") or "")
+        if column not in rows:
+            raise KeyError(f"Row filter column {column!r} is not present in probe rows")
+        before = int(mask.sum())
+        next_mask = _row_filter_mask(rows[column], spec)
+        mask &= next_mask
+        applied.append(
+            {
+                **dict(spec),
+                "input_rows": before,
+                "output_rows": int(mask.sum()),
+            }
+        )
+    kept = mask.to_numpy(dtype=bool)
+    return (
+        X[kept],
+        rows.loc[mask].reset_index(drop=True),
+        {"filters": applied, "input_rows": int(len(rows)), "output_rows": int(kept.sum())},
+    )
+
+
+def _normalize_row_filters(
+    row_filter: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None,
+) -> list[Mapping[str, Any]]:
+    if row_filter is None:
+        return []
+    if isinstance(row_filter, Mapping):
+        if "all" in row_filter and isinstance(row_filter["all"], Sequence):
+            return [dict(item) for item in row_filter["all"]]
+        return [dict(row_filter)]
+    return [dict(item) for item in row_filter]
+
+
+def _row_filter_mask(values: pd.Series, spec: Mapping[str, Any]) -> pd.Series:
+    op = str(spec.get("op") or spec.get("operator") or "==")
+    if op in {"notna", "present"}:
+        return values.notna() & (values.astype(str) != "")
+    if op in {"isna", "missing"}:
+        return values.isna() | (values.astype(str) == "")
+    if op == "truthy":
+        return values.fillna(False).astype(bool)
+    if op == "falsy":
+        return ~values.fillna(False).astype(bool)
+    expected = spec.get("value")
+    if op in {"==", "="}:
+        return values.map(_coerce_filter_value) == _coerce_filter_value(expected)
+    if op in {"!=", "ne"}:
+        return values.map(_coerce_filter_value) != _coerce_filter_value(expected)
+    if op == "in":
+        allowed = {_coerce_filter_value(item) for item in _filter_values(spec, expected)}
+        return values.map(_coerce_filter_value).isin(allowed)
+    if op in {"notin", "not_in"}:
+        blocked = {_coerce_filter_value(item) for item in _filter_values(spec, expected)}
+        return ~values.map(_coerce_filter_value).isin(blocked)
+    if op in {">", ">=", "<", "<="}:
+        numeric = pd.to_numeric(values, errors="coerce")
+        threshold = float(expected)
+        if op == ">":
+            return numeric > threshold
+        if op == ">=":
+            return numeric >= threshold
+        if op == "<":
+            return numeric < threshold
+        return numeric <= threshold
+    raise ValueError(f"Unknown row filter operator: {op!r}")
+
+
+def _filter_values(spec: Mapping[str, Any], fallback: Any) -> list[Any]:
+    values = spec.get("values", fallback)
+    if values is None:
+        return []
+    if isinstance(values, str) or not isinstance(values, Sequence):
+        return [values]
+    return list(values)
+
+
+def _coerce_filter_value(value: Any) -> Any:
+    if isinstance(value, str):
+        lowered = value.lower()
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+        if lowered in {"none", "null", "nan"}:
+            return None
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _apply_missing_policy(
+    X: np.ndarray,
+    rows: pd.DataFrame,
+    target_name: str,
+    *,
+    policy: str,
+) -> tuple[np.ndarray, pd.DataFrame, dict[str, Any]]:
+    missing = rows[target_name].isna() | (rows[target_name].astype(str) == "")
+    missing_count = int(missing.sum())
+    summary = {
+        "policy": policy,
+        "missing_rows": missing_count,
+        "input_rows": int(len(rows)),
+        "output_rows": int(len(rows) - missing_count if policy == "drop" else len(rows)),
+    }
+    if missing_count == 0:
+        return X, rows, summary
+    if policy == "drop":
+        kept = (~missing).to_numpy(dtype=bool)
+        return X[kept], rows.loc[~missing].reset_index(drop=True), summary
+    if policy == "skip_probe":
+        raise ValueError(
+            f"Probe skipped because target {target_name!r} has {missing_count} missing rows"
+        )
+    raise ValueError(
+        f"Target {target_name!r} has {missing_count} missing rows; "
+        "set target.missing_policy to 'drop' or 'skip_probe' for sparse targets."
+    )
 
 
 def _test_traces(rows: pd.DataFrame, traces: list[str], split_kind: str) -> set[str]:
@@ -407,10 +848,13 @@ def _run_sweep(
     train_value: str,
     test_value: str,
     metadata_baseline_columns: list[str],
-    sweep: str,
+    sweep: str | Sequence[str],
     target_kind: str,
+    eval_values: list[str],
+    probe_models: list[str],
 ) -> pd.DataFrame:
-    if sweep == "none":
+    sweep_columns = _normalize_sweep_columns(sweep)
+    if not sweep_columns:
         return run_probe_suite(
             rows,
             {"selected model_sites": X},
@@ -418,33 +862,68 @@ def _run_sweep(
             split_column=split_column,
             train_value=train_value,
             test_value=test_value,
+            eval_values=eval_values,
             metadata_baseline_columns=metadata_baseline_columns,
             target_kinds={target: target_kind},
+            probe_models=probe_models,
         )
 
-    if sweep not in rows:
-        raise KeyError(f"Sweep column '{sweep}' is not present in selected rows")
+    missing = [column for column in sweep_columns if column not in rows]
+    if missing:
+        raise KeyError(f"Sweep column(s) {missing!r} are not present in selected rows")
     frames: list[pd.DataFrame] = []
-    for value, group in rows.groupby(sweep, dropna=False, sort=True):
+    group_key = sweep_columns[0] if len(sweep_columns) == 1 else sweep_columns
+    for values, group in rows.groupby(group_key, dropna=False, sort=True):
+        value_tuple = values if isinstance(values, tuple) else (values,)
+        sweep_value = (
+            _json_scalar(value_tuple[0])
+            if len(sweep_columns) == 1
+            else {
+                column: _json_scalar(value)
+                for column, value in zip(sweep_columns, value_tuple, strict=False)
+            }
+        )
         index = group.index.to_numpy()
         result = run_probe_suite(
             group.reset_index(drop=True),
-            {f"{sweep} {value}": X[index]},
+            {_feature_name_for_sweep(sweep_columns, value_tuple): X[index]},
             [target],
             split_column=split_column,
             train_value=train_value,
             test_value=test_value,
+            eval_values=eval_values,
             metadata_baseline_columns=metadata_baseline_columns,
             target_kinds={target: target_kind},
+            probe_models=probe_models,
         )
         if result.empty:
             continue
-        result.insert(0, "sweep", sweep)
-        result.insert(1, "sweep_value", _json_scalar(value))
+        result.insert(0, "sweep", ",".join(sweep_columns))
+        result.insert(1, "sweep_value", sweep_value)
+        for column, value in zip(sweep_columns, value_tuple, strict=False):
+            result[f"sweep_{column}"] = _json_scalar(value)
         frames.append(result)
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True)
+
+
+def _normalize_sweep_columns(sweep: str | Sequence[str]) -> list[str]:
+    if isinstance(sweep, str):
+        if sweep in {"", "none", "null"}:
+            return []
+        return [sweep]
+    return [str(column) for column in sweep if str(column) not in {"", "none", "null"}]
+
+
+def _feature_name_for_sweep(columns: Sequence[str], values: Sequence[Any]) -> str:
+    if len(columns) == 1:
+        return f"{columns[0]} {values[0]}"
+    parts = [
+        f"{column}={_json_scalar(value)}"
+        for column, value in zip(columns, values, strict=False)
+    ]
+    return ", ".join(parts)
 
 
 def _normalize_target_spec(target: str | Mapping[str, Any]) -> dict[str, Any]:
@@ -660,26 +1139,40 @@ def _array_target_value(
     remaining_axes = list(axes)
     if "timestep" in remaining_axes:
         axis = remaining_axes.index("timestep")
-        value = np.take(value, min(timestep, value.shape[axis] - 1), axis=axis)
+        value = np.take(value, _axis_index(int(value.shape[axis]), timestep), axis=axis)
         remaining_axes.pop(axis)
     if "policy_call" in remaining_axes:
-        policy_call_value = target_spec.get(
+        policy_call_value = _target_axis_value(
+            target_spec,
             "policy_call_index",
-            row.get("policy_call_index", row.get("policy_call")),
+            fallback=target_spec.get(
+                "policy_call",
+                row.get("policy_call_index", row.get("policy_call")),
+            ),
         )
-        if policy_call_value is None or pd.isna(policy_call_value):
+        if _is_missing_scalar(policy_call_value):
+            policy_call_value = _target_axis_value(
+                target_spec,
+                "policy_call",
+                fallback=row.get("policy_call_index", row.get("policy_call")),
+            )
+        if _is_missing_scalar(policy_call_value):
             policy_call_value = 0
         policy_call = int(policy_call_value)
         axis = remaining_axes.index("policy_call")
-        value = np.take(value, min(policy_call, value.shape[axis] - 1), axis=axis)
+        value = np.take(value, _axis_index(int(value.shape[axis]), policy_call), axis=axis)
         remaining_axes.pop(axis)
     if "generation_step" in remaining_axes:
-        generation_step_value = target_spec.get("generation_step", row.get("generation_step"))
-        if generation_step_value is None or pd.isna(generation_step_value):
+        generation_step_value = _target_axis_value(
+            target_spec,
+            "generation_step",
+            fallback=row.get("generation_step"),
+        )
+        if _is_missing_scalar(generation_step_value):
             generation_step_value = 0
         axis = remaining_axes.index("generation_step")
-        step = int(generation_step_value)
-        value = np.take(value, min(step, value.shape[axis] - 1), axis=axis)
+        step = _generation_step_index(int(value.shape[axis]), generation_step_value)
+        value = np.take(value, step, axis=axis)
         remaining_axes.pop(axis)
     selector = dict(target_spec.get("selector") or {})
     selector.update(
@@ -695,7 +1188,7 @@ def _array_target_value(
             continue
         axis = remaining_axes.index(canonical)
         index = _axis_selector_index(bundle, array_id, canonical, selected)
-        value = np.take(value, min(index, value.shape[axis] - 1), axis=axis)
+        value = np.take(value, _axis_index(int(value.shape[axis]), index), axis=axis)
         remaining_axes.pop(axis)
     flat = np.asarray(value).reshape(-1)
     if flat.size != 1:
@@ -704,6 +1197,40 @@ def _array_target_value(
             "select a component/dim/object so the current probe suite gets a scalar y."
         )
     return flat[0].item()
+
+
+def _target_axis_value(
+    target_spec: Mapping[str, Any],
+    key: str,
+    *,
+    fallback: Any,
+) -> Any:
+    alignment = (
+        target_spec.get("alignment") if isinstance(target_spec.get("alignment"), Mapping) else {}
+    )
+    return alignment.get(key, target_spec.get(key, fallback))
+
+
+def _is_missing_scalar(value: Any) -> bool:
+    if value is None:
+        return True
+    try:
+        missing = pd.isna(value)
+    except (TypeError, ValueError):
+        return False
+    return bool(missing) if isinstance(missing, (bool, np.bool_)) else False
+
+
+def _axis_index(count: int, index: int) -> int:
+    if index < 0:
+        return max(0, count + index)
+    return min(index, max(0, count - 1))
+
+
+def _generation_step_index(count: int, generation_step: Any) -> int:
+    if str(generation_step) == "final":
+        return max(0, count - 1)
+    return _axis_index(count, int(generation_step))
 
 
 def _array_axes(bundle: TraceBundle, array_id: str) -> list[str]:
@@ -987,7 +1514,10 @@ def _probe_split(
     split_column: str,
     train_value: str,
     test_value: str,
+    eval_values: Sequence[str],
+    selection_value: str,
 ) -> dict[str, Any]:
+    eval_values = list(dict.fromkeys(str(value) for value in eval_values))
     out: dict[str, Any] = {
         "method": "grouped" if split_kind != "random_row" else "random_row",
         "kind": split_kind,
@@ -995,11 +1525,13 @@ def _probe_split(
         "column": split_column,
         "train_value": train_value,
         "test_value": test_value,
+        "eval_values": eval_values,
+        "selection_value": selection_value,
         "leakage_risk": "high" if split_kind == "random_row" else "controlled_by_group",
     }
     if split_column in rows and "trace_id" in rows:
         split_rows = rows[[split_column, "trace_id"]].drop_duplicates()
-        for value in [train_value, test_value]:
+        for value in dict.fromkeys([train_value, test_value, selection_value, *eval_values]):
             trace_rows = split_rows.loc[
                 split_rows[split_column].astype(str) == value,
                 "trace_id",
@@ -1016,17 +1548,23 @@ def _prediction_frame(results: pd.DataFrame) -> pd.DataFrame:
             row["result_index"] = int(result_index)
             row["feature"] = str(result.get("feature"))
             row["probe_type"] = str(result.get("probe_type"))
+            row["model"] = str(result.get("model", "linear"))
+            row["eval_split"] = str(result.get("split_value", row.get("split")))
+            row["primary_metric"] = str(result.get("primary_metric", "score"))
             row["sweep"] = _json_scalar(result.get("sweep"))
             row["sweep_value"] = _json_scalar(result.get("sweep_value"))
             records.append(row)
     return pd.DataFrame.from_records(records)
 
 
-def _best_model_arrays(results: pd.DataFrame) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+def _best_model_arrays(
+    results: pd.DataFrame,
+    *,
+    selection_value: str | None,
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
     if results.empty or "model_state" not in results:
         return {}, {}
-    delta = results["score"] - results["baseline_score"]
-    best_idx = int(delta.idxmax())
+    best_idx = _best_result_index(results, selection_value=selection_value, prefer_model="linear")
     state = results.loc[best_idx].get("model_state")
     if not isinstance(state, Mapping):
         return {}, {}
@@ -1038,12 +1576,34 @@ def _best_model_arrays(results: pd.DataFrame) -> tuple[dict[str, np.ndarray], di
     summary = {
         "feature": str(results.loc[best_idx].get("feature")),
         "sweep_value": _json_scalar(results.loc[best_idx].get("sweep_value")),
+        "model": str(results.loc[best_idx].get("model", state.get("model", "linear"))),
+        "split_value": str(results.loc[best_idx].get("split_value", selection_value)),
+        "primary_metric": str(results.loc[best_idx].get("primary_metric", "score")),
         "probe_type": state.get("probe_type"),
         "weights_space": state.get("weights_space"),
         "classes": list(state.get("classes") or []),
         "array_shapes": {key: [int(item) for item in value.shape] for key, value in arrays.items()},
     }
     return arrays, summary
+
+
+def _best_result_index(
+    results: pd.DataFrame,
+    *,
+    selection_value: str | None = None,
+    prefer_model: str | None = "linear",
+) -> int:
+    candidates = results
+    if prefer_model and "model" in candidates:
+        model_rows = candidates.loc[candidates["model"].astype(str) == prefer_model]
+        if not model_rows.empty:
+            candidates = model_rows
+    if selection_value and "split_value" in candidates:
+        split_rows = candidates.loc[candidates["split_value"].astype(str) == str(selection_value)]
+        if not split_rows.empty:
+            candidates = split_rows
+    delta = candidates["score"] - candidates["baseline_score"]
+    return int(delta.idxmax())
 
 
 def _primary_probe_type(results: pd.DataFrame) -> str:
@@ -1055,40 +1615,80 @@ def _primary_probe_type(results: pd.DataFrame) -> str:
 
 def _probe_hyperparams(results: pd.DataFrame) -> dict[str, Any]:
     probe_type = _primary_probe_type(results)
+    models = sorted(str(value) for value in results.get("model", pd.Series(["linear"])).unique())
     if probe_type == "classification":
-        return {"model": "LogisticRegression", "max_iter": 1000}
+        params: dict[str, Any] = {}
+        if "linear" in models:
+            params["linear"] = {
+                "model": "LogisticRegression",
+                "max_iter": 1000,
+                "class_weight": "balanced",
+            }
+        if "mlp" in models:
+            params["mlp"] = {
+                "model": "MLPClassifier",
+                "hidden_layer_sizes": [64],
+                "alpha": 1e-4,
+                "max_iter": 300,
+                "random_state": 0,
+            }
+        return params
     if probe_type == "regression":
-        return {"model": "Ridge", "alpha": 1.0}
+        params = {}
+        if "linear" in models:
+            params["linear"] = {"model": "Ridge", "alpha": 1.0}
+        if "mlp" in models:
+            params["mlp"] = {
+                "model": "MLPRegressor",
+                "hidden_layer_sizes": [64],
+                "alpha": 1e-4,
+                "max_iter": 300,
+                "random_state": 0,
+            }
+        return params
     return {}
 
 
 def _primary_metric(results: pd.DataFrame) -> str:
+    if "primary_metric" in results:
+        values = sorted(str(value) for value in results["primary_metric"].dropna().unique())
+        if values:
+            return values[0] if len(values) == 1 else "mixed"
     probe_type = _primary_probe_type(results)
-    return "accuracy" if probe_type == "classification" else "r2"
+    return "balanced_accuracy" if probe_type == "classification" else "negative_mae"
 
 
 def _metric_definitions(results: pd.DataFrame) -> dict[str, str]:
     probe_type = _primary_probe_type(results)
     if probe_type == "classification":
         return {
-            "score": "accuracy_score over retained test rows",
+            "score": "balanced_accuracy_score over retained evaluation rows",
             "baseline_score": "max of majority-class baseline and configured metadata baselines",
             "delta": "score - baseline_score",
+            "accuracy": "raw fraction of correct predictions",
+            "macro_f1": "unweighted mean F1 over classes",
+            "log_loss": "cross-entropy over model probabilities when available",
         }
     return {
         "score": (
-            "sklearn.metrics.r2_score over retained test rows; "
-            "negative MAE fallback when R2 is not finite"
+            "negative mean absolute error over retained evaluation rows; higher is better"
         ),
-        "baseline_score": "train-target-mean baseline with the same metric as score",
+        "baseline_score": "negative MAE for the train-target-mean baseline",
         "delta": "score - baseline_score",
+        "r2": "sklearn.metrics.r2_score, stored as a secondary diagnostic",
         "error": "prediction_value - target_value",
     }
 
 
-def _probe_metrics(results: pd.DataFrame, rows: pd.DataFrame, *, target: str) -> Mapping[str, Any]:
+def _probe_metrics(
+    results: pd.DataFrame,
+    rows: pd.DataFrame,
+    *,
+    target: str,
+    selection_value: str | None,
+) -> Mapping[str, Any]:
+    best_idx = _best_result_index(results, selection_value=selection_value, prefer_model="linear")
     delta = results["score"] - results["baseline_score"]
-    best_idx = int(delta.idxmax())
     best = results.loc[best_idx]
     return {
         "target": target,
@@ -1100,21 +1700,29 @@ def _probe_metrics(results: pd.DataFrame, rows: pd.DataFrame, *, target: str) ->
         "best_delta": float(delta.loc[best_idx]),
         "best_feature": str(best["feature"]),
         "best_sweep_value": _json_scalar(best.get("sweep_value")),
+        "best_model": str(best.get("model", "linear")),
+        "best_eval_split": str(best.get("split_value", selection_value)),
+        "best_primary_metric": str(best.get("primary_metric", "score")),
         "target_distribution": _value_counts(rows[target]),
     }
 
 
-def _best_result_details(results: pd.DataFrame) -> Mapping[str, Any]:
+def _best_result_details(
+    results: pd.DataFrame,
+    *,
+    selection_value: str | None = None,
+) -> Mapping[str, Any]:
     if results.empty or "details" not in results:
         return {}
-    delta = results["score"] - results["baseline_score"]
-    best_idx = int(delta.idxmax())
+    best_idx = _best_result_index(results, selection_value=selection_value, prefer_model="linear")
     details = results.loc[best_idx].get("details")
     if not isinstance(details, Mapping):
         return {}
     return {
         "feature": str(results.loc[best_idx].get("feature")),
         "sweep_value": _json_scalar(results.loc[best_idx].get("sweep_value")),
+        "model": str(results.loc[best_idx].get("model", "linear")),
+        "eval_split": str(results.loc[best_idx].get("split_value", selection_value)),
         "details": dict(details),
     }
 
@@ -1127,6 +1735,92 @@ def _split_summary(rows: pd.DataFrame, split_column: str) -> dict[str, Any]:
         by_split = rows[[split_column, "trace_id"]].drop_duplicates()
         out["episodes"] = _value_counts(by_split[split_column])
     return out
+
+
+def _per_split_metrics(predictions: pd.DataFrame) -> pd.DataFrame:
+    if predictions.empty or "split" not in predictions:
+        return pd.DataFrame()
+    records: list[dict[str, Any]] = []
+    for split, group in predictions.groupby("split", dropna=False, sort=True):
+        records.append({"split": str(split), **_prediction_metric_record(group)})
+    return pd.DataFrame.from_records(records)
+
+
+def _per_group_metrics(
+    predictions: pd.DataFrame,
+    rows: pd.DataFrame,
+    *,
+    group_columns: Sequence[str],
+) -> pd.DataFrame:
+    if predictions.empty or "trace_id" not in predictions:
+        return pd.DataFrame()
+    episode_rows = rows[["trace_id", *[c for c in group_columns if c in rows]]].drop_duplicates(
+        subset=["trace_id"]
+    )
+    joined = predictions.merge(episode_rows, on="trace_id", how="left")
+    records: list[dict[str, Any]] = []
+    for column in group_columns:
+        if column not in joined:
+            continue
+        for value, group in joined.groupby(column, dropna=False, sort=True):
+            records.append(
+                {
+                    "group_column": column,
+                    "group_value": str(value),
+                    **_prediction_metric_record(group),
+                }
+            )
+    return pd.DataFrame.from_records(records)
+
+
+def _null_metrics(predictions: pd.DataFrame, *, runs: int = 20) -> pd.DataFrame:
+    if predictions.empty or "target_kind" not in predictions:
+        return pd.DataFrame()
+    if str(predictions["target_kind"].dropna().iloc[0]) != "classification":
+        return pd.DataFrame()
+    actual = predictions["actual"].astype(str).to_numpy()
+    predicted = predictions["predicted"].astype(str).to_numpy()
+    if len(actual) == 0:
+        return pd.DataFrame()
+    rng = np.random.default_rng(0)
+    records = []
+    for run in range(runs):
+        shuffled = actual.copy()
+        rng.shuffle(shuffled)
+        records.append(
+            {
+                "null_kind": "label_shuffle_predictions_fixed",
+                "run": run,
+                "score": float(balanced_accuracy_score(shuffled, predicted)),
+                "metric": "balanced_accuracy",
+                "row_count": int(len(actual)),
+            }
+        )
+    return pd.DataFrame.from_records(records)
+
+
+def _prediction_metric_record(group: pd.DataFrame) -> dict[str, Any]:
+    if group.empty:
+        return {"row_count": 0, "score": np.nan, "metric": "unknown"}
+    kind = str(group.get("target_kind", pd.Series(["classification"])).dropna().iloc[0])
+    if kind == "classification" and "correct" in group:
+        actual = group["actual"].astype(str)
+        predicted = group["predicted"].astype(str)
+        return {
+            "row_count": int(len(group)),
+            "score": float(balanced_accuracy_score(actual, predicted)),
+            "accuracy": float(group["correct"].astype(bool).mean()),
+            "macro_f1": float(f1_score(actual, predicted, average="macro", zero_division=0)),
+            "metric": "balanced_accuracy",
+        }
+    if "error" in group:
+        error = pd.to_numeric(group["error"], errors="coerce")
+        return {
+            "row_count": int(len(group)),
+            "score": float(-error.abs().mean()),
+            "metric": "negative_mae",
+        }
+    return {"row_count": int(len(group)), "score": np.nan, "metric": kind}
 
 
 def _value_counts(values: pd.Series) -> dict[str, int]:

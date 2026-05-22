@@ -8,6 +8,7 @@ import vla_lens.workbench as workbench_module
 from vla_lens import (
     FULL_REQUIRED_MODEL_SITE_ROLES,
     ActivationQuery,
+    ActivationSpec,
     AnalysisRunSpec,
     ArraySpec,
     InterventionRunSpec,
@@ -32,6 +33,7 @@ from vla_lens import (
     save_analysis_run,
     save_cohort,
     save_intervention_run,
+    save_pi05_interaction_metrics_artifact,
     save_workspace,
     spatial_overlay_contracts,
     table_catalog,
@@ -54,6 +56,7 @@ from vla_lens.server import (
     _create_target_object_probe_payload,
     _dataset_diagnostics_payload,
     _dataset_payload,
+    _episode_interactions_payload,
     _episode_metrics_payload,
     _episode_video_path,
     _expert_token_details_payload,
@@ -1471,6 +1474,81 @@ def test_activation_query_materializes_and_caches(tmp_path):
     assert (dataset.cache_dir() / "features").exists()
 
 
+def test_activation_selector_slices_generation_step_axis(tmp_path):
+    root = tmp_path / "generation_selector"
+    array = np.arange(2 * 3 * 4 * 5, dtype=np.float32).reshape(2, 3, 4, 5)
+    TraceBundle.create(
+        root / "trace.vlatrace",
+        manifest=TraceManifest(
+            trace_id="trace",
+            episode_id="trace",
+            task_id="0",
+            prompt="test",
+            model_id="synthetic",
+            env_id="unit",
+            robot_id="none",
+            outcome="success",
+            length=2,
+        ),
+        timesteps=pd.DataFrame(
+            {"timestep": [0, 1], "policy_call_index": [0, 1], "horizon_index": [0, 0]}
+        ),
+        policy_calls=pd.DataFrame(
+            {
+                "policy_call_index": [0, 1],
+                "episode_id": ["trace", "trace"],
+                "observation_timestep": [0, 1],
+            }
+        ),
+        generation_steps=pd.DataFrame(
+            {
+                "policy_call_index": [0, 0, 0, 1, 1, 1],
+                "generation_step": [0, 1, 2, 0, 1, 2],
+            }
+        ),
+        streams=pd.DataFrame(
+            {"stream_id": ["action"], "name": ["action"], "modality": ["action"]}
+        ),
+        token_spaces=pd.DataFrame(
+            {"token_space_id": ["action"], "stream_id": ["action"], "token_count": [4]}
+        ),
+        tokens=pd.DataFrame(
+            {
+                "token_space_id": ["action"] * 4,
+                "token_index": [0, 1, 2, 3],
+                "token_kind": ["action"] * 4,
+            }
+        ),
+        model_arrays=[
+            ActivationSpec(
+                name="pi05.expert.layers.0.hidden",
+                array=array,
+                axes=["policy_call", "generation_step", "token", "channel"],
+                module="pi05.expert.layers.0",
+                layer=0,
+                tensor_type="hidden_tokens",
+                token_kind="action",
+                token_space_id="action",
+            )
+        ],
+    )
+    dataset = TraceDataset.open(root)
+
+    query = ActivationQuery(
+        module="pi05.expert.layers.*",
+        tensor_type="hidden_tokens",
+        token_kind="action",
+        policy_calls=[0, 1],
+        generation_step="final",
+        reduce_tokens="mean",
+    )
+    X, rows = dataset.select_model_sites(query).to_matrix(cache=False)
+
+    assert X.shape == (2, 5)
+    assert rows["generation_step"].tolist() == ["final", "final"]
+    assert np.allclose(X, array[:, -1, :, :].mean(axis=1))
+
+
 def test_trace_dataset_can_open_single_bundle(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=6)
     bundle_path = dataset.bundles[0].path
@@ -1509,7 +1587,7 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
     assert saved.artifact.display["best_result_details"]
     assert saved.artifact.display["data_quality"]
     method = saved.artifact.method
-    assert method["probe_artifact_schema_version"] == 1
+    assert method["probe_artifact_schema_version"] == 3
     for key in [
         "lineage",
         "source",
@@ -1525,7 +1603,7 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
     ]:
         assert key in method
     assert method["split"]["group_key"] == "trace_id"
-    assert method["prediction_retention"]["mode"] == "row_level_test"
+    assert method["prediction_retention"]["mode"] == "row_level_eval"
     assert method["source"]["source_episodes"]
     assert method["source"]["source_episodes"][0]["trace_fingerprint"].startswith("sha256:")
     assert method["source"]["source_collection_fingerprint"].startswith("sha256:")
@@ -1545,6 +1623,9 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
         "model_site_id",
         "target_name",
         "prediction_value",
+        "model",
+        "eval_split",
+        "primary_metric",
     }.issubset(predictions.columns)
     assert len(predictions) == saved.artifact.metrics["prediction_row_count"]
     assert "weights" in saved.artifact.arrays
@@ -1557,6 +1638,176 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
     assert artifact.name == "Outcome smoke probe"
     assert artifact.scope == "dataset"
     assert saved.artifact.artifact_id in set(reopened.artifact_index["artifact_id"])
+
+
+def test_probe_workflow_uses_probe_split_sidecar(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    pd.DataFrame(
+        {
+            "dataset_id": ["demo"] * len(trace_ids),
+            "trace_id": trace_ids,
+            "benchmark": [
+                "libero_object",
+                "libero_object",
+                "libero_goal",
+                "libero_goal",
+                "libero_10",
+                "libero_10",
+            ],
+            "task_id": [0, 0, 1, 1, 2, 2],
+            "seed": [1000, 1001, 1002, 1003, 1004, 1005],
+            "split": [
+                "train",
+                "train",
+                "train",
+                "train",
+                "val_heldout_task",
+                "test_heldout_task",
+            ],
+            "capture_profile": ["mechanistic_sampled"] * len(trace_ids),
+        }
+    ).to_csv(dataset.root / "probe_splits.csv", index=False)
+    save_pi05_interaction_metrics_artifact(dataset)
+    spec = dump_probe_spec(
+        {
+            "name": "Sidecar split probe",
+            "target": {"kind": "task_id"},
+            "features": {
+                "module": "action_head.layers.*.resid",
+                "tensor_type": "resid",
+                "token_kind": "action",
+                "reduction": "mean",
+            },
+            "split": {
+                "kind": "random_episode",
+                "column": "split_sidecar_split",
+                "selection_value": "val_heldout_task",
+                "test_value": "test_heldout_task",
+                "eval_values": ["val_heldout_task", "test_heldout_task"],
+            },
+            "baseline": ["benchmark"],
+            "probe": {"models": ["linear", "mlp"]},
+            "sweep": "layer",
+        }
+    )
+    import yaml
+
+    saved = train_probe_artifact_from_spec(dataset, yaml.safe_load(spec))
+
+    assert set(saved.rows["split_sidecar_split"]) == {
+        "train",
+        "val_heldout_task",
+        "test_heldout_task",
+    }
+    assert saved.artifact.display["split_summary"]["episodes"]["test_heldout_task"] > 0
+    assert saved.artifact.method["split"]["test_heldout_task_traces"]
+    assert saved.artifact.method["split"]["selection_value"] == "val_heldout_task"
+    assert saved.artifact.method["probe"]["models"] == ["linear", "mlp"]
+    assert set(saved.results["split_value"]) == {"val_heldout_task", "test_heldout_task"}
+    assert set(saved.results["model"]) == {"linear", "mlp"}
+    assert "benchmark" in saved.artifact.method["metadata_baseline_columns"]
+    assert "benchmark" in saved.artifact.display["source_columns"]
+    assert "first_moved_object" in saved.artifact.display["source_columns"]
+
+
+def test_pi05_interaction_metrics_derives_object_labels(tmp_path):
+    root = tmp_path / "interaction"
+    bundle_path = root / "red_cube_trace.vlatrace"
+    timesteps = 8
+    positions = np.zeros((timesteps, 2, 3), dtype=np.float32)
+    positions[:, 0] = np.array([0.0, 0.0, 0.02], dtype=np.float32)
+    positions[:, 1] = np.array([0.2, 0.0, 0.02], dtype=np.float32)
+    positions[2:, 0, 0] += 0.05
+    positions[3:, 0, 2] += 0.06
+    eef = np.repeat(np.array([[0.05, 0.0, 0.08]], dtype=np.float32), timesteps, axis=0)
+    manifest = TraceManifest(
+        trace_id="red_cube_trace",
+        episode_id="red_cube_trace",
+        task_id="0",
+        prompt="pick up the red cube",
+        model_id="pi05",
+        env_id="libero_object",
+        robot_id="panda",
+        outcome="success",
+        length=timesteps,
+        metadata={"task_name": "LIVING_ROOM_SCENE1_pick_up_the_red_cube", "seed": 1},
+    )
+    TraceBundle.create(
+        bundle_path,
+        manifest=manifest,
+        timesteps=pd.DataFrame({"timestep": np.arange(timesteps)}),
+        policy_calls=pd.DataFrame(
+            {
+                "policy_call_index": [0],
+                "episode_id": ["red_cube_trace"],
+                "observation_timestep": [0],
+            }
+        ),
+        generation_steps=pd.DataFrame({"policy_call_index": [0], "generation_step": [0]}),
+        streams=pd.DataFrame({"stream_id": ["action"], "name": ["action"], "modality": ["action"]}),
+        token_spaces=pd.DataFrame(
+            {"token_space_id": ["action"], "stream_id": ["action"], "token_count": [1]}
+        ),
+        tokens=pd.DataFrame({"token_space_id": ["action"], "token_index": [0]}),
+        scene_state=pd.DataFrame(
+            {
+                "object_index": [0, 1],
+                "object_name": ["red_cube_1", "blue_cube_1"],
+                "object_kind": ["object", "object"],
+            }
+        ),
+        episode_arrays={
+            "scene_object_pos": ArraySpec(positions, ["timestep", "object", "xyz"]),
+            "eef_pos": ArraySpec(eef, ["timestep", "xyz"]),
+            "executed_actions": ArraySpec(
+                np.zeros((timesteps, 1), dtype=np.float32),
+                ["timestep", "action_dim"],
+            ),
+            "action_chunks": ArraySpec(
+                np.zeros((1, timesteps, 1), dtype=np.float32),
+                ["policy_call", "horizon", "action_dim"],
+            ),
+            "generation_actions": ArraySpec(
+                np.zeros((1, 1, timesteps, 1), dtype=np.float32),
+                ["policy_call", "generation_step", "horizon", "action_dim"],
+            ),
+        },
+    )
+    dataset = TraceDataset.open(root)
+
+    saved = save_pi05_interaction_metrics_artifact(dataset)
+    row = saved.episode_labels.iloc[0]
+
+    assert saved.artifact.artifact_type == "pi05_interaction_metrics"
+    assert row["primary_target_object"] == "red_cube_1"
+    assert row["first_moved_object"] == "red_cube_1"
+    assert row["first_lifted_object"] == "red_cube_1"
+    assert bool(row["first_moved_is_target"])
+    assert (dataset.root / saved.artifact.method["outputs"]["episode_labels"]).exists()
+    assert list_analysis_runs(dataset)[0].workflow == "pi05_interaction_metrics"
+    red_object = saved.object_metrics.loc[
+        saved.object_metrics["object_name"] == "red_cube_1"
+    ].iloc[0]
+    assert np.isclose(red_object["max_xy_displacement"], 0.05)
+    assert red_object["max_displacement"] > red_object["max_xy_displacement"]
+
+    payload = _episode_interactions_payload(dataset, {"trace_id": ["red_cube_trace"]})
+    assert payload["available"]
+    assert payload["artifact_id"] == saved.artifact.artifact_id
+    assert payload["episode"]["primary_target_object"] == "red_cube_1"
+    assert payload["episode"]["first_moved_timestep"] == 2
+    assert payload["episode"]["first_lifted_timestep"] == 3
+    assert payload["episode"]["target_objects"] == ["red_cube_1"]
+    assert payload["quality"]["target_parse_failed"] is False
+    assert payload["objects"][0]["object_name"] == "red_cube_1"
+    assert payload["objects"][0]["is_target_object"] is True
+
+    stale_episode_path = dataset.root / saved.artifact.method["outputs"]["episode_labels"]
+    stale_episode_path.write_text("not a parquet file", encoding="utf-8")
+    stale_payload = _episode_interactions_payload(dataset, {"trace_id": ["red_cube_trace"]})
+    assert stale_payload["available"] is False
+    assert stale_payload["reason"] == "Interaction metrics artifact has no episode label table."
 
 
 def test_probe_workflow_resolves_trace_context_targets(tmp_path):
@@ -1651,6 +1902,60 @@ def test_probe_workflow_resolves_trace_context_targets(tmp_path):
         0,
     ]
     assert np.isclose(first_row["chunk_action_0"], expected)
+
+    final_generation_probe = train_probe_artifact_from_spec(
+        dataset,
+        {
+            "name": "Final generation action probe",
+            "target": {
+                "name": "final_generation_action",
+                "kind": "regression",
+                "source": "array",
+                "array_id": "generation_actions",
+                "alignment": {"generation_step": "final"},
+                "selector": {"horizon": -1, "action_dim": -1},
+            },
+            "features": selector.to_dict(),
+            "split": {"kind": "random_episode"},
+            "sweep": "layer",
+        },
+    )
+    first_row = final_generation_probe.rows.iloc[0]
+    first_bundle = dataset.bundle(str(first_row["trace_id"]))
+    expected = first_bundle.generation_actions()[
+        int(first_row["policy_call_index"]),
+        -1,
+        -1,
+        -1,
+    ]
+    assert np.isclose(first_row["final_generation_action"], expected)
+
+    negative_generation_probe = train_probe_artifact_from_spec(
+        dataset,
+        {
+            "name": "Negative generation action probe",
+            "target": {
+                "name": "negative_generation_action",
+                "kind": "regression",
+                "source": "array",
+                "array_id": "generation_actions",
+                "generation_step": -1,
+                "selector": {"horizon": 0, "action_dim": 0},
+            },
+            "features": selector.to_dict(),
+            "split": {"kind": "random_episode"},
+            "sweep": "layer",
+        },
+    )
+    first_row = negative_generation_probe.rows.iloc[0]
+    first_bundle = dataset.bundle(str(first_row["trace_id"]))
+    expected = first_bundle.generation_actions()[
+        int(first_row["policy_call_index"]),
+        -1,
+        0,
+        0,
+    ]
+    assert np.isclose(first_row["negative_generation_action"], expected)
 
     for bundle in dataset.bundles:
         final_success = pd.DataFrame.from_records(

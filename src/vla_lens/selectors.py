@@ -136,6 +136,7 @@ class FeatureView:
                     sample_axis=sample_axis,
                     sample_index=sample_index,
                     token_indices=token_indices,
+                    generation_step=self.selector.generation_step,
                 )
                 vector = _reduce_value(value, remaining_axes, self.selector.reduce_tokens)
                 vector = vector.astype(self.selector.dtype, copy=False).reshape(-1)
@@ -207,8 +208,11 @@ class FeatureView:
             token_column = index["token_kind"]
             index = index.loc[token_column.isna() | (token_column.astype(str) == token_kind)]
         if self.selector.generation_step is not None and "generation_step" in index:
+            axes_column = index.get("axes", pd.Series("", index=index.index)).astype(str)
+            has_generation_axis = axes_column.str.contains('"generation_step"', regex=False)
             index = index.loc[
-                index["generation_step"].map(_matches_value(self.selector.generation_step))
+                has_generation_axis
+                | index["generation_step"].map(_matches_value(self.selector.generation_step))
             ]
         return index.reset_index(drop=True)
 
@@ -220,6 +224,7 @@ def _select_value(
     sample_axis: str | None,
     sample_index: int | None,
     token_indices: np.ndarray | None,
+    generation_step: int | str | None,
 ) -> tuple[np.ndarray, list[str]]:
     value = array
     remaining_axes = list(axes)
@@ -229,11 +234,26 @@ def _select_value(
         value = np.take(value, int(sample_index), axis=axis)
         remaining_axes.pop(axis)
 
+    if generation_step is not None and "generation_step" in remaining_axes:
+        axis = remaining_axes.index("generation_step")
+        index = _generation_step_index(int(value.shape[axis]), generation_step)
+        value = np.take(value, index, axis=axis)
+        remaining_axes.pop(axis)
+
     if token_indices is not None and "token" in remaining_axes:
         axis = remaining_axes.index("token")
         value = np.take(value, token_indices, axis=axis)
 
     return np.asarray(value), remaining_axes
+
+
+def _generation_step_index(count: int, generation_step: int | str) -> int:
+    if str(generation_step) == "final":
+        return max(0, count - 1)
+    index = int(generation_step)
+    if index < 0:
+        return max(0, count + index)
+    return min(index, max(0, count - 1))
 
 
 def _reduce_value(
@@ -272,7 +292,11 @@ def _resolve_samples(
     if "policy_call" in axes:
         count = int(array.shape[axes.index("policy_call")])
         if policy_calls != "all":
-            return [("policy_call", item) for item in _axis_indices(count, policy_calls)]
+            return [
+                ("policy_call", item)
+                for item in _axis_indices(count, policy_calls)
+                if 0 <= item < count
+            ]
         if timesteps != "all":
             indices = _policy_calls_for_timesteps(bundle, timesteps)
             return [("policy_call", item) for item in indices if 0 <= item < count]
