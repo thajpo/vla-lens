@@ -12,9 +12,13 @@ experiment notes when deciding what to run or implement.
 - [pi05-rocm-capture-env.md](pi05-rocm-capture-env.md): how the dedicated ROCm
   PI0.5/LeRobot/LIBERO environment works and why normal `uv run` capture is
   unsafe.
-- [experiments/pi05-vla-lens-roadmap.md](experiments/pi05-vla-lens-roadmap.md):
-  living research/product roadmap. The top sections are current; deeper sections
-  may preserve historical implementation prompts for context.
+- [pi05_broad_1000_probe_experiments.md](pi05_broad_1000_probe_experiments.md):
+  consolidated probe experiment registry, useful legacy ideas, null results,
+  and replication priorities.
+- [vla-lens-architecture-workflows.md](vla-lens-architecture-workflows.md):
+  architecture and workflow contracts.
+- [library/pi05-lens.md](library/pi05-lens.md): PI0.5 library notes and
+  reusable analysis primitives.
 
 ## Status Labels
 
@@ -52,10 +56,7 @@ vla-pi05-capture` or `uv run vla-pi05-batch-capture` on this workstation.
 
 ## Historical Experiment Notes
 
-Most files under [experiments/](experiments/) are snapshots from specific
-analysis moments. They can contain old paths, old hypotheses, or old commands.
-Treat them as evidence/history unless they are explicitly referenced from
-[current-state.md](current-state.md) or the top of the living roadmap.
-
-Old CogACT-era planning files have been moved to
-[archive/legacy-cogact/](archive/legacy-cogact/).
+Old per-experiment markdown files and CogACT-era planning docs were removed
+after their useful probe-design ideas were consolidated into
+[pi05_broad_1000_probe_experiments.md](pi05_broad_1000_probe_experiments.md).
+The [experiments/](experiments/) directory now contains only a small index.
