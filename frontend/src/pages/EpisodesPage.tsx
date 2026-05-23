@@ -44,6 +44,7 @@ import {
   fetchExpertTokenDetails,
   fetchImageTokenMap,
   fetchObjectCameraOverlay,
+  fetchObservationalComparisons,
   fetchPatchFeatures,
   fetchPolicyCalls,
   fetchPromptAttention,
@@ -69,6 +70,8 @@ import type {
   ImagePatchAttention,
   ImageTokenMapResponse,
   ObjectCameraOverlayObject,
+  ObservationalComparisonCandidate,
+  ObservationalComparisonsResponse,
   PatchFeaturesResponse,
   PolicyCall,
   PromptAttentionResponse,
@@ -84,7 +87,14 @@ type EpisodesPageProps = {
   initialSiteName?: string;
   manifest?: WorkbenchManifest;
   initialTraceId?: string;
-  onTraceChange?: (traceId: string) => void;
+  onTraceChange?: (traceId: string, context?: EpisodeTraceChangeContext) => void;
+};
+
+type EpisodeTraceChangeContext = {
+  fromCohort?: boolean;
+  policyCall?: number | null;
+  probeId?: string;
+  siteName?: string;
 };
 
 type InspectorContext = "vlm" | "expert" | "attention" | "other";
@@ -377,6 +387,25 @@ export function EpisodesPage({
     : (policyCalls.data?.calls ?? []).find(
         (item) => Number(item.index) === Number(selectedProbePolicyCall),
       );
+  const observationalComparisons = useQuery({
+    queryKey: ["observational-comparisons", activeTraceId, activeSelectedProbeArtifactId],
+    queryFn: () => fetchObservationalComparisons(activeTraceId, activeSelectedProbeArtifactId),
+    enabled: Boolean(activeTraceId),
+    placeholderData: keepPreviousData,
+  });
+  const openComparisonCandidate = (traceId: string) => {
+    setIsPlayingFrames(false);
+    setTimestep(0);
+    setSelectedPatch(null);
+    setSelectedExpertToken(null);
+    setSelectedPromptTokenIndex(null);
+    onTraceChange?.(traceId, {
+      fromCohort: true,
+      policyCall: selectedProbePolicyCall,
+      probeId: activeSelectedProbeArtifactId,
+      siteName: selectedProbeSite?.name ?? selectedProbeRef?.modelSiteId ?? "",
+    });
+  };
   const architecture = activationSites.data?.architecture;
   const defaultSite = preferredPipelineSite(sites);
   const selectedSite = sites.find((site) => site.name === selectedSiteName) ?? defaultSite;
@@ -965,13 +994,17 @@ export function EpisodesPage({
                         </>
                       ) : (
                         <EpisodeProbePanel
+                          comparisons={observationalComparisons.data}
                           probes={episodeProbes.data}
                           selectedProbe={selectedProbe}
                           selectedProbeRef={selectedProbeRef}
                           isError={episodeProbes.isError}
                           isLoading={episodeProbes.isLoading}
+                          isComparisonError={observationalComparisons.isError}
+                          isComparisonLoading={observationalComparisons.isFetching}
                           canInspectProbe={Boolean(selectedProbeSite)}
                           canJumpToProbeCall={Boolean(selectedProbeCall)}
+                          onOpenComparison={openComparisonCandidate}
                           onInspectProbe={inspectProbeSite}
                           onJumpToProbeCall={jumpToProbeCall}
                           onJumpToPolicyCall={jumpToPolicyCall}
@@ -1960,9 +1993,13 @@ function formatDistance(value: number | null): string {
 function EpisodeProbePanel({
   canInspectProbe,
   canJumpToProbeCall,
+  comparisons,
+  isComparisonError,
+  isComparisonLoading,
   isError,
   isLoading,
   onInspectProbe,
+  onOpenComparison,
   onJumpToProbeCall,
   onJumpToPolicyCall,
   onProbeChange,
@@ -1972,9 +2009,13 @@ function EpisodeProbePanel({
 }: {
   canInspectProbe: boolean;
   canJumpToProbeCall: boolean;
+  comparisons?: ObservationalComparisonsResponse;
+  isComparisonError: boolean;
+  isComparisonLoading: boolean;
   isError: boolean;
   isLoading: boolean;
   onInspectProbe: () => void;
+  onOpenComparison: (traceId: string) => void;
   onJumpToProbeCall: () => void;
   onJumpToPolicyCall: (policyCallIndex: number) => void;
   onProbeChange: (artifactId: string) => void;
@@ -2080,6 +2121,13 @@ function EpisodeProbePanel({
           value={episodeMembership.label}
         />
       </section>
+
+      <ObservationalComparisonPanel
+        comparisons={comparisons}
+        isError={isComparisonError}
+        isLoading={isComparisonLoading}
+        onOpenComparison={onOpenComparison}
+      />
 
       {temporalRows.length ? (
         <EpisodeProbeTimeline
@@ -2205,6 +2253,100 @@ function ProbeAuditPill({
       <small>{detail}</small>
     </div>
   );
+}
+
+function ObservationalComparisonPanel({
+  comparisons,
+  isError,
+  isLoading,
+  onOpenComparison,
+}: {
+  comparisons?: ObservationalComparisonsResponse;
+  isError: boolean;
+  isLoading: boolean;
+  onOpenComparison: (traceId: string) => void;
+}) {
+  const candidates = comparisons?.candidates ?? [];
+  const visible = candidates.slice(0, 4);
+  if (isLoading && !comparisons) {
+    return <div className="empty-state compact">Finding comparable episodes.</div>;
+  }
+  if (isError && !comparisons) {
+    return <div className="empty-state compact">Comparison candidates unavailable.</div>;
+  }
+  if (!visible.length) {
+    return <div className="empty-state compact">No comparable episodes found yet.</div>;
+  }
+  return (
+    <section className="observational-comparison-panel" aria-label="Observational comparison candidates">
+      <header>
+        <div>
+          <span>Compare Episodes</span>
+          <strong>{comparisons?.probe_name || "Nearest traces"}</strong>
+        </div>
+        <small>observational · not causal</small>
+      </header>
+      <div className="observational-comparison-list">
+        {visible.map((candidate) => (
+          <button
+            className={[
+              "observational-comparison-row",
+              comparisonCandidateTone(candidate),
+            ].filter(Boolean).join(" ")}
+            key={candidate.trace_id}
+            type="button"
+            onClick={() => onOpenComparison(candidate.trace_id)}
+          >
+            <span>{comparisonOutcomeLabel(candidate)}</span>
+            <strong>{candidate.episode.task_id || candidate.trace_id}</strong>
+            <small>{comparisonReasonLine(candidate)}</small>
+            <em>{comparisonProbeLine(candidate)}</em>
+          </button>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function comparisonCandidateTone(candidate: ObservationalComparisonCandidate): string {
+  const split = String(candidate.metrics.candidate_split_category ?? candidate.probe?.split_category ?? "");
+  if (split === "train") {
+    return "train";
+  }
+  const correct = candidate.metrics.candidate_probe_correct ?? candidate.probe?.correct;
+  if (correct === false) {
+    return "incorrect";
+  }
+  if (correct === true) {
+    return "correct";
+  }
+  return "unscored";
+}
+
+function comparisonOutcomeLabel(candidate: ObservationalComparisonCandidate): string {
+  const source = candidate.metrics.source_outcome || "source";
+  const next = candidate.metrics.candidate_outcome || candidate.episode.outcome || "candidate";
+  return candidate.metrics.different_outcome ? `${source} -> ${next}` : String(next);
+}
+
+function comparisonReasonLine(candidate: ObservationalComparisonCandidate): string {
+  const reasons = candidate.reasons.filter((reason) => reason !== "probe scored").slice(0, 3);
+  const lengthDelta = candidate.metrics.length_delta;
+  if (typeof lengthDelta === "number" && lengthDelta !== 0) {
+    reasons.push(`${lengthDelta > 0 ? "+" : ""}${lengthDelta} frames`);
+  }
+  return reasons.join(" · ") || "nearest existing trace";
+}
+
+function comparisonProbeLine(candidate: ObservationalComparisonCandidate): string {
+  const split = candidate.metrics.candidate_split_category ?? candidate.probe?.split_category ?? "unknown";
+  const correct = candidate.metrics.candidate_probe_correct ?? candidate.probe?.correct;
+  const confidence = candidate.metrics.candidate_confidence ?? candidate.probe?.confidence;
+  return [
+    split === "train" ? "trained here" : `${split} split`,
+    formatProbeCorrect(correct),
+    confidence === null || confidence === undefined ? "" : `conf ${formatMaybeNumber(confidence)}`,
+  ].filter(Boolean).join(" · ");
 }
 
 function EpisodeProbeTimeline({

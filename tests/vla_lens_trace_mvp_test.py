@@ -65,6 +65,7 @@ from vla_lens.server import (
     _lens_array_slice_payload,
     _lens_arrays_payload,
     _object_camera_overlay_payload,
+    _observational_comparisons_payload,
     _probe_index_payload,
     _prompt_attention_payload,
     _resolve_selection_payload,
@@ -1698,6 +1699,57 @@ def test_probe_episode_payloads_link_artifacts_to_dataset_traces(tmp_path):
     )
 
 
+def test_observational_comparisons_rank_real_probe_candidates(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    pd.DataFrame(
+        {
+            "trace_id": trace_ids,
+            "split": ["train", "train", "validation", "validation", "test", "test"],
+        }
+    ).to_csv(dataset.root / "probe_splits.csv", index=False)
+    spec = dump_probe_spec(
+        {
+            "name": "Comparison outcome probe",
+            "target": {"kind": "outcome"},
+            "features": {
+                "module": "action_head.layers.*.resid",
+                "tensor_type": "resid",
+                "token_kind": "action",
+                "reduction": "mean",
+            },
+            "split": {"kind": "random_episode"},
+            "baseline": ["majority_class"],
+            "probe": {"models": ["linear"]},
+            "sweep": "layer",
+        }
+    )
+    import yaml
+
+    saved = train_probe_artifact_from_spec(dataset, yaml.safe_load(spec))
+    reopened = TraceDataset.open(dataset.root)
+
+    payload = _observational_comparisons_payload(
+        reopened,
+        {
+            "trace_id": [trace_ids[0]],
+            "probe_id": [saved.artifact.artifact_id],
+            "limit": ["4"],
+        },
+    )
+
+    assert payload["artifact_type"] == "observational_counterfactual_comparison"
+    assert payload["comparison_kind"] == "nearest_neighbor_existing_trace"
+    assert payload["causal"] is False
+    assert payload["source"]["episode"]["trace_id"] == trace_ids[0]
+    assert payload["source"]["probe"]["split_category"] == "train"
+    assert payload["candidates"]
+    assert all(candidate["trace_id"] != trace_ids[0] for candidate in payload["candidates"])
+    assert all(candidate["contract"]["causal"] is False for candidate in payload["candidates"])
+    assert payload["candidates"][0]["probe"]["split_category"] in {"test", "validation"}
+    assert "training-set probe record" not in payload["candidates"][0]["reasons"]
+
+
 def test_probe_workflow_uses_probe_split_sidecar(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
     trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
@@ -1766,7 +1818,9 @@ def test_probe_workflow_uses_probe_split_sidecar(tmp_path):
     assert set(saved.results["model"]) == {"linear", "mlp"}
     reopened = TraceDataset.open(dataset.root)
     index_payload = _probe_index_payload(reopened)
-    probe_index = next(probe for probe in index_payload["probes"] if probe["name"] == "Sidecar split probe")
+    probe_index = next(
+        probe for probe in index_payload["probes"] if probe["name"] == "Sidecar split probe"
+    )
     assert probe_index["by_trace"][trace_ids[4]]["split_category"] == "validation"
     assert probe_index["by_trace"][trace_ids[5]]["split_category"] == "test"
     assert "benchmark" in saved.artifact.method["metadata_baseline_columns"]

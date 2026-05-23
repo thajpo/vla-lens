@@ -82,6 +82,63 @@ export type CounterfactualPair = {
   members: CounterfactualPairMember[];
 };
 
+export type ObservationalComparisonEpisode = Pick<
+  DatasetEpisode,
+  "trace_id" | "episode_id" | "task_id" | "prompt" | "model_id" | "env_id" | "outcome" | "length"
+> & {
+  metadata?: Record<string, unknown>;
+};
+
+export type ObservationalComparisonCandidate = {
+  trace_id: string;
+  score: number;
+  reasons: string[];
+  episode: ObservationalComparisonEpisode;
+  probe?: ProbeEpisodeIndex | null;
+  metrics: {
+    same_task?: boolean;
+    same_prompt?: boolean;
+    same_target_object?: boolean;
+    different_outcome?: boolean;
+    length_delta?: number;
+    source_outcome?: string | null;
+    candidate_outcome?: string | null;
+    source_probe_correct?: boolean | null;
+    candidate_probe_correct?: boolean | null;
+    source_split_category?: string | null;
+    candidate_split_category?: string | null;
+    source_confidence?: number | null;
+    candidate_confidence?: number | null;
+    confidence_delta?: number | null;
+  };
+  contract: {
+    source_trace_id: string;
+    comparison_trace_id: string;
+    method: string;
+    causal: boolean;
+    requires_live_intervention?: boolean;
+  };
+};
+
+export type ObservationalComparisonsResponse = {
+  artifact_type: "observational_counterfactual_comparison";
+  artifact_id: string;
+  name: string;
+  causal: boolean;
+  comparison_kind: string;
+  source_trace_id: string;
+  probe_id?: string | null;
+  probe_name?: string | null;
+  source: {
+    episode: ObservationalComparisonEpisode;
+    probe?: ProbeEpisodeIndex | null;
+  };
+  candidates: ObservationalComparisonCandidate[];
+  total_candidates: number;
+  limit: number;
+  notes?: string;
+};
+
 export type EpisodeArtifactRecord = Record<string, unknown> & {
   artifact_id?: string;
   artifact_type?: string;

@@ -18,6 +18,7 @@ import type {
   ImageTokenMapResponse,
   MatrixSeriesResponse,
   ObjectCameraOverlayResponse,
+  ObservationalComparisonsResponse,
   PatchFeaturesResponse,
   PromptAttentionResponse,
   ProbeIndexResponse,
@@ -120,6 +121,23 @@ export function fetchEpisodeProbes(traceId: string): Promise<EpisodeProbesRespon
 
 export function fetchProbeIndex(): Promise<ProbeIndexResponse> {
   return getJson<ProbeIndexResponse>("/api/probe-index");
+}
+
+export function fetchObservationalComparisons(
+  traceId: string,
+  probeId?: string,
+  limit = 6,
+): Promise<ObservationalComparisonsResponse> {
+  const params = new URLSearchParams({
+    trace_id: traceId,
+    limit: String(limit),
+  });
+  if (probeId) {
+    params.set("probe_id", probeId);
+  }
+  return getJson<ObservationalComparisonsResponse>(
+    `/api/observational-comparisons?${params.toString()}`,
+  );
 }
 
 export function fetchActivationSites(traceId: string): Promise<ActivationSitesResponse> {

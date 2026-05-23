@@ -144,8 +144,14 @@ export function WorkbenchPage() {
     window.history.replaceState(null, "", buildEpisodeHash(nextRoute));
   }
 
-  function handleEpisodeTraceChange(traceId: string) {
-    const nextRoute = { ...emptyEpisodeRouteState(), traceId };
+  function handleEpisodeTraceChange(traceId: string, context: EpisodeOpenContext = {}) {
+    const nextRoute = {
+      fromCohort: Boolean(context.fromCohort),
+      policyCall: typeof context.policyCall === "number" ? context.policyCall : undefined,
+      probeId: context.probeId ?? "",
+      siteName: context.siteName ?? "",
+      traceId,
+    };
     setActivePage("episode");
     setEpisodeTraceId(traceId);
     setEpisodeRouteState(nextRoute);
