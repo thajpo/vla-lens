@@ -15,7 +15,7 @@ from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from time import monotonic
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import imageio.v2 as imageio
 import numpy as np
@@ -24,7 +24,15 @@ import pandas as pd
 from vla_lens.action_generation import save_action_generation_artifact
 from vla_lens.analyzer import diagnostics_status, run_dataset_diagnostics
 from vla_lens.artifacts import LensArtifact
-from vla_lens.probes.workflow import train_probe_artifact_from_spec
+from vla_lens.probes.workflow import (
+    _apply_missing_policy,
+    _attach_episode_metadata,
+    _normalize_target_spec,
+    _resolve_probe_target,
+    _target_name,
+    train_probe_artifact_from_spec,
+)
+from vla_lens.selectors import ActivationQuery
 from vla_lens.target_object import save_target_object_encoding_artifact
 from vla_lens.traces import TraceBundle, TraceDataset
 from vla_lens.workbench import (
@@ -184,6 +192,10 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
                 self._send_json(_episode_metrics_payload(self._bundle_from_query(query)))
             elif path == "/api/episode-interactions":
                 self._send_json(_episode_interactions_payload(self.dataset, query))
+            elif path == "/api/episode-probes":
+                self._send_json(_episode_probes_payload(self.dataset, query))
+            elif path == "/api/probe-index":
+                self._send_json(_probe_index_payload(self.dataset))
             elif path == "/api/activation-sites":
                 self._send_json(_activation_sites_payload(self._bundle_from_query(query)))
             elif path == "/api/activation-slice":
@@ -587,18 +599,29 @@ def _dataset_signature(root: Path) -> tuple[int, int]:
     """Cheap cache key for dataset-level metadata endpoints."""
     if (root / TraceBundle.MANIFEST).exists():
         paths = [root / TraceBundle.MANIFEST, root / TraceBundle.ARTIFACT_INDEX]
+        trace_count = 1
     else:
         paths = [
-            candidate
-            for bundle in root.rglob("*.vlatrace")
-            if bundle.is_dir() and (bundle / TraceBundle.MANIFEST).exists()
-            for candidate in (bundle / TraceBundle.MANIFEST, bundle / TraceBundle.ARTIFACT_INDEX)
+            root / TraceBundle.ARTIFACT_INDEX,
+            root / "episode_plan.csv",
+            root / "episode_plan.json",
+            root / "capture_status.jsonl",
         ]
-        paths.append(root / TraceBundle.ARTIFACT_INDEX)
+        trace_count = _dataset_trace_count_hint(root)
     existing = [path for path in paths if path.exists()]
     latest_mtime = max((path.stat().st_mtime_ns for path in existing), default=0)
-    trace_count = sum(1 for path in existing if path.name == TraceBundle.MANIFEST)
     return trace_count, latest_mtime
+
+
+def _dataset_trace_count_hint(root: Path) -> int:
+    episode_plan = root / "episode_plan.csv"
+    if episode_plan.exists():
+        try:
+            with episode_plan.open("r", encoding="utf-8") as handle:
+                return max(0, sum(1 for _line in handle) - 1)
+        except OSError:
+            return 0
+    return 0
 
 
 def _lens_arrays_payload(dataset: TraceDataset) -> dict[str, Any]:
@@ -1337,6 +1360,534 @@ def _interaction_metrics_table(
         return pd.DataFrame()
 
 
+def _episode_probes_payload(
+    dataset: TraceDataset,
+    query: Mapping[str, list[str]],
+) -> dict[str, Any]:
+    trace_id = _query_one(query, "trace_id")
+    probes: list[dict[str, Any]] = []
+    for record in _artifact_records(dataset):
+        if str(record.get("artifact_type")) != "probe_suite":
+            continue
+        artifact_id = str(record.get("artifact_id"))
+        try:
+            artifact = dataset.load_artifact(artifact_id)
+        except (FileNotFoundError, KeyError, ValueError):
+            continue
+        predictions = _probe_prediction_table(dataset, artifact)
+        if predictions.empty or "trace_id" not in predictions:
+            episode_predictions = pd.DataFrame()
+        else:
+            episode_predictions = predictions.loc[predictions["trace_id"].astype(str) == trace_id]
+        if episode_predictions.empty:
+            episode_predictions = _saved_episode_probe_predictions(dataset, artifact, trace_id)
+        if episode_predictions.empty:
+            episode_predictions = _score_and_save_episode_probe(dataset, artifact, trace_id)
+        probes.append(
+            {
+                "artifact_id": artifact.artifact_id,
+                "name": artifact.name,
+                "target": artifact.metrics.get("target") or artifact.display.get("target"),
+                "metrics": _jsonable(artifact.metrics),
+                "best_result": _jsonable(artifact.display.get("best_result_details") or {}),
+                "target_distribution": _jsonable(artifact.display.get("target_distribution") or {}),
+                "episode_summary": _probe_episode_summary(episode_predictions, artifact),
+                "rows": _probe_prediction_rows(episode_predictions),
+                "row_count": int(len(episode_predictions)),
+                "available": bool(len(episode_predictions)),
+            }
+        )
+    return {
+        "trace_id": trace_id,
+        "probes": probes,
+        "available_count": sum(1 for probe in probes if probe["available"]),
+        "total": len(probes),
+    }
+
+
+def _probe_index_payload(dataset: TraceDataset) -> dict[str, Any]:
+    split_sidecar = _probe_split_sidecar(dataset.root)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    probes: list[dict[str, Any]] = []
+    for record in _artifact_records(dataset):
+        if str(record.get("artifact_type")) != "probe_suite":
+            continue
+        artifact_id = str(record.get("artifact_id"))
+        try:
+            artifact = dataset.load_artifact(artifact_id)
+        except (FileNotFoundError, KeyError, ValueError):
+            continue
+        predictions = _probe_prediction_table(dataset, artifact)
+        saved_predictions = _saved_probe_prediction_tables(dataset, artifact)
+        if not saved_predictions.empty:
+            predictions = (
+                saved_predictions
+                if predictions.empty
+                else pd.concat([predictions, saved_predictions], ignore_index=True, sort=False)
+            )
+        by_trace = _probe_index_by_trace(
+            trace_ids,
+            split_sidecar,
+            predictions,
+            artifact,
+        )
+        probes.append(
+            {
+                "artifact_id": artifact.artifact_id,
+                "name": artifact.name,
+                "target": artifact.metrics.get("target") or artifact.display.get("target"),
+                "best_model": artifact.metrics.get("best_model"),
+                "best_feature": artifact.metrics.get("best_feature"),
+                "best_score": artifact.metrics.get("best_score"),
+                "best_delta": artifact.metrics.get("best_delta"),
+                "split_summary": _probe_index_split_summary(by_trace),
+                "prediction_summary": _probe_index_prediction_summary(by_trace),
+                "by_trace": by_trace,
+            }
+        )
+    return {
+        "probes": probes,
+        "total": len(probes),
+        "trace_count": len(trace_ids),
+        "split_source": "probe_splits.csv" if split_sidecar else None,
+    }
+
+
+def _probe_split_sidecar(root: Path) -> dict[str, dict[str, Any]]:
+    path = root / "probe_splits.csv"
+    if not path.exists():
+        return {}
+    try:
+        frame = pd.read_csv(path)
+    except Exception:
+        return {}
+    if frame.empty or "trace_id" not in frame:
+        return {}
+    frame = frame.drop_duplicates(subset=["trace_id"], keep="last")
+    return {
+        str(row.get("trace_id")): {
+            str(key): _json_scalar(value)
+            for key, value in row.items()
+            if key != "trace_id" and not _is_missing_scalar(value)
+        }
+        for row in frame.to_dict("records")
+    }
+
+
+def _saved_probe_prediction_tables(dataset: TraceDataset, artifact: LensArtifact) -> pd.DataFrame:
+    root = dataset.root / "workbench" / "episode_probe_predictions" / artifact.artifact_id
+    if not root.exists():
+        return pd.DataFrame()
+    frames: list[pd.DataFrame] = []
+    for path in sorted(root.glob("*.parquet")):
+        try:
+            frame = pd.read_parquet(path)
+        except Exception:
+            continue
+        if not frame.empty:
+            frames.append(frame)
+    if not frames:
+        return pd.DataFrame()
+    return pd.concat(frames, ignore_index=True, sort=False)
+
+
+def _probe_index_by_trace(
+    trace_ids: Sequence[str],
+    split_sidecar: dict[str, dict[str, Any]],
+    predictions: pd.DataFrame,
+    artifact: LensArtifact,
+) -> dict[str, dict[str, Any]]:
+    prediction_groups: dict[str, pd.DataFrame] = {}
+    if not predictions.empty and "trace_id" in predictions:
+        for trace_id, group in predictions.groupby(predictions["trace_id"].astype(str), sort=False):
+            prediction_groups[str(trace_id)] = group.copy()
+    by_trace: dict[str, dict[str, Any]] = {}
+    for trace_id in trace_ids:
+        sidecar = split_sidecar.get(trace_id, {})
+        rows = prediction_groups.get(trace_id, pd.DataFrame())
+        best_rows = _best_probe_rows(rows, artifact)
+        split = _probe_index_split(sidecar, rows)
+        row_count = int(len(rows))
+        best_row_count = int(len(best_rows))
+        correct_rate = _mean_numeric(best_rows.get("correct", pd.Series(dtype=float)))
+        confidence = _mean_numeric(best_rows.get("confidence", pd.Series(dtype=float)))
+        by_trace[trace_id] = {
+            "trace_id": trace_id,
+            "split": split,
+            "split_category": _probe_split_category(split),
+            "sidecar": _jsonable(sidecar),
+            "available": bool(row_count),
+            "row_count": row_count,
+            "best_row_count": best_row_count,
+            "actual": _json_scalar(
+                _dominant_value(best_rows.get("actual", pd.Series(dtype=object)))
+            ),
+            "predicted": _json_scalar(
+                _dominant_value(best_rows.get("predicted", pd.Series(dtype=object)))
+            ),
+            "confidence": confidence,
+            "correct": None if correct_rate is None else bool(correct_rate >= 0.5),
+            "correct_rate": correct_rate,
+            "eval_split": _dominant_value(best_rows.get("eval_split", pd.Series(dtype=object))),
+            "model": _dominant_value(best_rows.get("model", pd.Series(dtype=object))),
+            "feature": _dominant_value(best_rows.get("feature", pd.Series(dtype=object))),
+        }
+    return by_trace
+
+
+def _best_probe_rows(predictions: pd.DataFrame, artifact: LensArtifact) -> pd.DataFrame:
+    if predictions.empty:
+        return predictions
+    best_model = str(artifact.metrics.get("best_model") or "")
+    best_feature = str(artifact.metrics.get("best_feature") or "")
+    rows = predictions
+    if best_model and "model" in rows:
+        model_rows = rows.loc[rows["model"].astype(str) == best_model]
+        if not model_rows.empty:
+            rows = model_rows
+    if best_feature and "feature" in rows:
+        feature_rows = rows.loc[rows["feature"].astype(str) == best_feature]
+        if not feature_rows.empty:
+            rows = feature_rows
+    return rows
+
+
+def _probe_index_split(sidecar: Mapping[str, Any], rows: pd.DataFrame) -> str:
+    sidecar_split = sidecar.get("split")
+    if not _is_missing_scalar(sidecar_split):
+        return str(sidecar_split)
+    for column in ("split", "eval_split"):
+        if column in rows:
+            value = _dominant_value(rows[column])
+            if not _is_missing_scalar(value):
+                return str(value)
+    return ""
+
+
+def _probe_split_category(split: str) -> str:
+    text = str(split or "").strip().lower().replace("-", "_")
+    if not text:
+        return "unknown"
+    if text in {"train", "training"}:
+        return "train"
+    if text.startswith("test"):
+        return "test"
+    if text.startswith("val") or text in {"valid", "validation"}:
+        return "validation"
+    if "heldout" in text or "held_out" in text:
+        return "validation"
+    return "unknown"
+
+
+def _is_missing_scalar(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, float) and not np.isfinite(value):
+        return True
+    if isinstance(value, str) and value.strip().lower() in {"", "nan", "none", "null"}:
+        return True
+    return False
+
+
+def _probe_index_split_summary(by_trace: Mapping[str, Mapping[str, Any]]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for item in by_trace.values():
+        category = str(item.get("split_category") or "unknown")
+        counts[category] = counts.get(category, 0) + 1
+    return dict(sorted(counts.items()))
+
+
+def _probe_index_prediction_summary(by_trace: Mapping[str, Mapping[str, Any]]) -> dict[str, int]:
+    summary = {"scored": 0, "unscored": 0, "correct": 0, "incorrect": 0, "unknown": 0}
+    for item in by_trace.values():
+        if item.get("available"):
+            summary["scored"] += 1
+        else:
+            summary["unscored"] += 1
+        correct = item.get("correct")
+        if correct is True:
+            summary["correct"] += 1
+        elif correct is False:
+            summary["incorrect"] += 1
+        else:
+            summary["unknown"] += 1
+    return summary
+
+
+def _probe_prediction_table(dataset: TraceDataset, artifact: LensArtifact) -> pd.DataFrame:
+    outputs = artifact.method.get("outputs") if isinstance(artifact.method, Mapping) else None
+    relative_path = outputs.get("predictions") if isinstance(outputs, Mapping) else None
+    if not relative_path:
+        return pd.DataFrame()
+    path = dataset.root / str(relative_path)
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_parquet(path)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _saved_episode_probe_predictions(
+    dataset: TraceDataset,
+    artifact: LensArtifact,
+    trace_id: str,
+) -> pd.DataFrame:
+    path = _episode_probe_prediction_path(dataset, artifact, trace_id)
+    if not path.exists():
+        return pd.DataFrame()
+    try:
+        return pd.read_parquet(path)
+    except Exception:
+        return pd.DataFrame()
+
+
+def _score_and_save_episode_probe(
+    dataset: TraceDataset,
+    artifact: LensArtifact,
+    trace_id: str,
+) -> pd.DataFrame:
+    probe_method = artifact.method.get("probe") if isinstance(artifact.method, Mapping) else None
+    state = probe_method.get("best_model_state") if isinstance(probe_method, Mapping) else None
+    if not isinstance(state, Mapping) or str(state.get("model") or "linear") != "linear":
+        return pd.DataFrame()
+    required_arrays = ["weights", "bias", "feature_mean", "feature_scale"]
+    if any(name not in artifact.arrays for name in required_arrays):
+        return pd.DataFrame()
+    selector_payload = dict(artifact.selector or {})
+    selector_payload["episodes"] = {"trace_id": trace_id}
+    selector = ActivationQuery(**selector_payload)
+    try:
+        feature_matrix = dataset.select_model_sites(selector).materialize(cache=True)
+    except Exception:
+        return pd.DataFrame()
+    X, rows = feature_matrix.X, feature_matrix.rows
+    if rows.empty or X.size == 0:
+        return pd.DataFrame()
+    rows = _filter_rows_for_probe_feature(rows, str(state.get("feature") or ""))
+    if rows.empty:
+        return pd.DataFrame()
+    X = X[rows.index.to_numpy()]
+    rows = rows.reset_index(drop=True)
+    target_spec = _normalize_target_spec(str(artifact.metrics.get("target") or "target"))
+    target_name = _target_name(target_spec)
+    try:
+        rows = _attach_episode_metadata(rows, dataset)
+        rows = _resolve_probe_target(dataset, rows, target_spec)
+        X, rows, _missing = _apply_missing_policy(
+            X,
+            rows,
+            target_name,
+            policy=str(target_spec.get("missing_policy") or "drop"),
+        )
+    except Exception:
+        rows[target_name] = None
+    if rows.empty or X.size == 0:
+        return pd.DataFrame()
+    weights = np.asarray(
+        dataset.load_artifact_array(artifact, "weights", mmap=True),
+        dtype=np.float32,
+    )
+    bias = np.asarray(dataset.load_artifact_array(artifact, "bias", mmap=True), dtype=np.float32)
+    mean = np.asarray(
+        dataset.load_artifact_array(artifact, "feature_mean", mmap=True),
+        dtype=np.float32,
+    )
+    scale = np.asarray(
+        dataset.load_artifact_array(artifact, "feature_scale", mmap=True),
+        dtype=np.float32,
+    )
+    normalized = (X.astype(np.float32, copy=False) - mean) / np.where(scale == 0, 1.0, scale)
+    logits = normalized @ weights.T + bias.reshape(1, -1)
+    classes = [str(item) for item in state.get("classes") or []]
+    predicted, confidence = _linear_probe_predictions(logits, classes)
+    actual = rows[target_name].astype(str) if target_name in rows else pd.Series([None] * len(rows))
+    out = rows.copy()
+    out["artifact_id"] = artifact.artifact_id
+    out["target_name"] = target_name
+    out["target_value"] = actual
+    out["actual"] = actual
+    out["predicted"] = predicted
+    out["prediction_value"] = predicted
+    out["confidence"] = confidence
+    out["correct"] = actual.astype(str).to_numpy() == np.asarray(predicted, dtype=str)
+    out["model"] = str(state.get("model") or "linear")
+    out["feature"] = str(state.get("feature") or artifact.metrics.get("best_feature") or "")
+    out["eval_split"] = "on_demand_episode"
+    out["primary_metric"] = str(
+        state.get("primary_metric") or artifact.metrics.get("best_primary_metric") or ""
+    )
+    out["generation_step"] = out.get("generation_step", selector.generation_step)
+    path = _episode_probe_prediction_path(dataset, artifact, trace_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(path, index=False)
+    return out
+
+
+def _episode_probe_prediction_path(
+    dataset: TraceDataset,
+    artifact: LensArtifact,
+    trace_id: str,
+) -> Path:
+    return (
+        dataset.root
+        / "workbench"
+        / "episode_probe_predictions"
+        / artifact.artifact_id
+        / f"{_safe_filename(trace_id)}.parquet"
+    )
+
+
+def _filter_rows_for_probe_feature(rows: pd.DataFrame, feature: str) -> pd.DataFrame:
+    filtered = rows.copy()
+    for column, value in re.findall(r"([A-Za-z_][A-Za-z0-9_]*)=([A-Za-z0-9_.-]+)", feature):
+        if column not in filtered:
+            continue
+        numeric = pd.to_numeric(filtered[column], errors="coerce")
+        try:
+            target = float(value)
+        except ValueError:
+            filtered = filtered.loc[filtered[column].astype(str) == value]
+        else:
+            filtered = filtered.loc[np.isclose(numeric, target, equal_nan=False)]
+    simple = re.fullmatch(r"([A-Za-z_][A-Za-z0-9_]*) ([A-Za-z0-9_.-]+)", feature)
+    if simple:
+        column, value = simple.groups()
+        if column in filtered:
+            numeric = pd.to_numeric(filtered[column], errors="coerce")
+            try:
+                target = float(value)
+            except ValueError:
+                filtered = filtered.loc[filtered[column].astype(str) == value]
+            else:
+                filtered = filtered.loc[np.isclose(numeric, target, equal_nan=False)]
+    return filtered
+
+
+def _linear_probe_predictions(
+    logits: np.ndarray,
+    classes: Sequence[str],
+) -> tuple[list[str], list[float]]:
+    if logits.ndim != 2 or logits.shape[0] == 0:
+        return [], []
+    if logits.shape[1] == 1:
+        positive = 1.0 / (1.0 + np.exp(-logits[:, 0]))
+        negative = 1.0 - positive
+        if len(classes) >= 2:
+            labels = np.where(positive >= 0.5, classes[1], classes[0])
+        else:
+            labels = np.where(positive >= 0.5, "True", "False")
+        confidence = np.maximum(positive, negative)
+        return [str(item) for item in labels], [float(item) for item in confidence]
+    shifted = logits - logits.max(axis=1, keepdims=True)
+    exp = np.exp(shifted)
+    probs = exp / exp.sum(axis=1, keepdims=True)
+    indices = probs.argmax(axis=1)
+    labels = [classes[index] if index < len(classes) else str(index) for index in indices]
+    confidence = probs.max(axis=1)
+    return labels, [float(item) for item in confidence]
+
+
+def _safe_filename(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9_.-]+", "_", value)
+
+
+def _probe_prediction_rows(predictions: pd.DataFrame) -> list[dict[str, Any]]:
+    if predictions.empty:
+        return []
+    columns = [
+        "trace_id",
+        "episode_id",
+        "task_id",
+        "split",
+        "target_name",
+        "target_value",
+        "actual",
+        "predicted",
+        "prediction_value",
+        "confidence",
+        "correct",
+        "model",
+        "feature",
+        "layer",
+        "policy_call_index",
+        "timestep",
+        "target_timestep",
+        "generation_step",
+        "model_site_id",
+        "token_space_id",
+        "eval_split",
+        "primary_metric",
+    ]
+    available = [column for column in columns if column in predictions.columns]
+    rows = predictions.loc[:, available].copy()
+    if "confidence" in rows:
+        rows = rows.sort_values(
+            ["correct", "confidence"],
+            ascending=[True, False],
+            na_position="last",
+        )
+    return [_jsonable(row) for row in rows.head(500).to_dict("records")]
+
+
+def _probe_episode_summary(
+    predictions: pd.DataFrame,
+    artifact: LensArtifact,
+) -> dict[str, Any]:
+    if predictions.empty:
+        return {}
+    best_model = str(artifact.metrics.get("best_model") or "")
+    best_feature = str(artifact.metrics.get("best_feature") or "")
+    rows = predictions
+    if best_model and "model" in rows:
+        rows = rows.loc[rows["model"].astype(str) == best_model]
+    best_rows = rows
+    if best_feature and "feature" in rows:
+        matching = rows.loc[rows["feature"].astype(str) == best_feature]
+        if not matching.empty:
+            best_rows = matching
+    if best_rows.empty:
+        best_rows = rows if not rows.empty else predictions
+    actual = _dominant_value(best_rows.get("actual", pd.Series(dtype=object)))
+    predicted = _dominant_value(best_rows.get("predicted", pd.Series(dtype=object)))
+    confidence = _mean_numeric(best_rows.get("confidence", pd.Series(dtype=float)))
+    correct = _mean_numeric(best_rows.get("correct", pd.Series(dtype=float)))
+    best_row = _probe_prediction_rows(best_rows.head(1))
+    all_correct = _mean_numeric(rows.get("correct", pd.Series(dtype=float)))
+    all_confidence = _mean_numeric(rows.get("confidence", pd.Series(dtype=float)))
+    return {
+        "actual": _json_scalar(actual),
+        "predicted": _json_scalar(predicted),
+        "confidence": confidence,
+        "correct": None if correct is None else bool(correct >= 0.5),
+        "correct_rate": correct,
+        "all_cell_correct_rate": all_correct,
+        "all_cell_mean_confidence": all_confidence,
+        "best_feature": best_feature,
+        "best_model": best_model,
+        "best_row": best_row[0] if best_row else {},
+    }
+
+
+def _dominant_value(values: pd.Series) -> Any:
+    if values.empty:
+        return None
+    nonnull = values.dropna()
+    if nonnull.empty:
+        return None
+    counts = nonnull.astype(str).value_counts()
+    return counts.index[0] if not counts.empty else nonnull.iloc[0]
+
+
+def _mean_numeric(values: pd.Series) -> float | None:
+    if values.empty:
+        return None
+    numeric = pd.to_numeric(values, errors="coerce").dropna()
+    if numeric.empty:
+        return None
+    return float(numeric.mean())
+
+
 def _interaction_episode_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     target_objects = _json_parse(row.get("target_objects"))
     if not isinstance(target_objects, list):
@@ -1683,9 +2234,9 @@ def _activation_slice_payload(bundle: TraceBundle, query: dict[str, list[str]]) 
         raise KeyError(name)
     record = matches.iloc[0]
     axes = json.loads(str(record.get("axes") or "[]"))
-    array = np.asarray(bundle.model_site(name, mmap=True), dtype=np.float32)
+    array = bundle.model_site(name, mmap=True)
     value, remaining_axes = _take_policy_call_value(array, axes, call)
-    if "generation_step" in remaining_axes:
+    if "generation_step" in axes:
         step = int(generation_step) if generation_step not in {"", None} else 0
         value = _take_axis_value(value, remaining_axes, "generation_step", step)
         remaining_axes = [axis for axis in remaining_axes if axis != "generation_step"]
@@ -1796,15 +2347,19 @@ def _image_token_map_payload(bundle: TraceBundle, query: dict[str, list[str]]) -
             token_kind=_json_scalar(record.get("token_kind")),
             axes=axes,
         )
-    token_matrix = _activation_token_matrix(bundle, name, call, query)
-    feature = max(0, min(feature, token_matrix.shape[1] - 1))
-    image_rows = _image_token_rows_for_site(bundle, record, call, token_matrix.shape[0])
+    feature_values, feature, feature_count = _activation_token_feature_vector(
+        bundle,
+        name,
+        call,
+        query,
+        feature,
+    )
+    image_rows = _image_token_rows_for_site(bundle, record, call, feature_values.shape[0])
     if not image_rows.empty:
         maps, layout = _camera_patch_maps_from_token_rows(
             bundle,
             image_rows,
-            token_matrix,
-            feature,
+            feature_values,
         )
         prefix_rows = _token_rows_for_space(bundle, call, str(record.get("token_space_id") or ""))
         text_tokens = (
@@ -1816,7 +2371,7 @@ def _image_token_map_payload(bundle: TraceBundle, query: dict[str, list[str]]) -
             "available": True,
             "name": name,
             "feature": feature,
-            "feature_count": int(token_matrix.shape[1]),
+            "feature_count": feature_count,
             "call": call,
             "source": "vlatrace",
             "grid_size": layout["grid_size"],
@@ -1844,7 +2399,7 @@ def _image_token_map_payload(bundle: TraceBundle, query: dict[str, list[str]]) -
     layout = _camera_patch_layout_from_record(
         bundle,
         record,
-        token_matrix.shape[0],
+        feature_values.shape[0],
         text_tokens=text_tokens,
     )
     image_tokens = int(layout["image_tokens"])
@@ -1859,7 +2414,7 @@ def _image_token_map_payload(bundle: TraceBundle, query: dict[str, list[str]]) -
             continue
         start = camera_index * patches_per_image
         end = start + patches_per_image
-        values = token_matrix[start:end, feature].reshape(grid_height, grid_width)
+        values = feature_values[start:end].reshape(grid_height, grid_width)
         maps[camera] = {
             "values": _round(values),
             "token_start": start,
@@ -1872,7 +2427,7 @@ def _image_token_map_payload(bundle: TraceBundle, query: dict[str, list[str]]) -
         "available": True,
         "name": name,
         "feature": feature,
-        "feature_count": int(token_matrix.shape[1]),
+        "feature_count": feature_count,
         "call": call,
         "source": "vlatrace",
         "grid_size": grid_height if grid_height == grid_width else None,
@@ -2668,18 +3223,17 @@ def _expert_attention_for_token(
     record = candidates.iloc[0]
     name = str(record["name"])
     axes = json.loads(str(record.get("axes") or "[]"))
-    array = np.asarray(bundle.model_site(name, mmap=True), dtype=np.float32)
-    value, remaining_axes = _take_policy_call_value(array, axes, call)
-    if "generation_step" in remaining_axes:
-        value = _take_axis_value(value, remaining_axes, "generation_step", generation_step)
-        remaining_axes = [axis for axis in remaining_axes if axis != "generation_step"]
+    array = bundle.model_site(name, mmap=True)
+    selections = _policy_call_axis_selection(axes, call)
+    if "generation_step" in axes:
+        selections["generation_step"] = generation_step
+    if "query_token" in axes:
+        selections["query_token"] = token_index
+    value, remaining_axes = _take_axis_values(array, axes, selections)
     value_array = np.asarray(value, dtype=np.float32)
     if "head" in remaining_axes:
         value_array = np.nanmean(value_array, axis=remaining_axes.index("head"))
         remaining_axes = [axis for axis in remaining_axes if axis != "head"]
-    if "query_token" in remaining_axes:
-        value_array = _take_axis_value(value_array, remaining_axes, "query_token", token_index)
-        remaining_axes = [axis for axis in remaining_axes if axis != "query_token"]
     if "key_token" in remaining_axes:
         key_axis = remaining_axes.index("key_token")
         value_array = np.moveaxis(value_array, key_axis, -1)
@@ -2741,11 +3295,19 @@ def _attention_key_mass_from_trace(
     record = matches.iloc[-1]
     name = str(record["name"])
     axes = json.loads(str(record.get("axes") or "[]"))
-    array = np.asarray(bundle.model_site(name, mmap=True), dtype=np.float32)
-    value, remaining_axes = _take_policy_call_value(array, axes, call)
-    if "generation_step" in remaining_axes:
-        value = _take_axis_value(value, remaining_axes, "generation_step", generation_step)
-        remaining_axes = [axis for axis in remaining_axes if axis != "generation_step"]
+    array = bundle.model_site(name, mmap=True)
+    selections = _policy_call_axis_selection(axes, call)
+    if "generation_step" in axes:
+        selections["generation_step"] = generation_step
+    if head is not None:
+        if "head" not in axes:
+            raise ValueError("Selected head is not available for this attention capture.")
+        selections["head"] = head
+    if query_token is not None:
+        if "query_token" not in axes:
+            raise ValueError("Selected looking slot is not available for this attention capture.")
+        selections["query_token"] = query_token
+    value, remaining_axes = _take_axis_values(array, axes, selections)
     value_array = np.asarray(value, dtype=np.float32)
     axis_selection: dict[str, Any] = {
         "head": None,
@@ -2753,30 +3315,22 @@ def _attention_key_mass_from_trace(
         "query_token": None,
         "query_mode": "average",
     }
+    if head is not None:
+        axis_selection["head"] = int(head)
+        axis_selection["head_mode"] = "selected"
+    if query_token is not None:
+        axis_selection["query_token"] = int(query_token)
+        axis_selection["query_mode"] = "selected"
     if "head" in remaining_axes:
         head_axis = remaining_axes.index("head")
-        if head is None:
-            value_array = np.nanmean(value_array, axis=head_axis)
-            axis_selection["head_mode"] = "average"
-        else:
-            value_array = _take_axis_value(value_array, remaining_axes, "head", head)
-            axis_selection["head"] = int(head)
-            axis_selection["head_mode"] = "selected"
+        value_array = np.nanmean(value_array, axis=head_axis)
+        axis_selection["head_mode"] = "average"
         remaining_axes = [axis for axis in remaining_axes if axis != "head"]
-    elif head is not None:
-        raise ValueError("Selected head is not available for this attention capture.")
     if "query_token" in remaining_axes:
         query_axis = remaining_axes.index("query_token")
-        if query_token is None:
-            value_array = np.nanmean(value_array, axis=query_axis)
-            axis_selection["query_mode"] = "average"
-        else:
-            value_array = _take_axis_value(value_array, remaining_axes, "query_token", query_token)
-            axis_selection["query_token"] = int(query_token)
-            axis_selection["query_mode"] = "selected"
+        value_array = np.nanmean(value_array, axis=query_axis)
+        axis_selection["query_mode"] = "average"
         remaining_axes = [axis for axis in remaining_axes if axis != "query_token"]
-    elif query_token is not None:
-        raise ValueError("Selected looking slot is not available for this attention capture.")
     return value_array.reshape(-1), name, axis_selection
 
 
@@ -2928,7 +3482,7 @@ def _activation_token_matrix(
         raise KeyError(name)
     record = matches.iloc[0]
     axes = json.loads(str(record.get("axes") or "[]"))
-    array = np.asarray(bundle.model_site(name, mmap=True), dtype=np.float32)
+    array = bundle.model_site(name, mmap=True)
     value, remaining_axes = _take_policy_call_value(array, axes, call)
     if "generation_step" in remaining_axes:
         generation_step = query.get("generation_step", [""])[0]
@@ -2948,6 +3502,41 @@ def _activation_token_matrix(
     if matrix.ndim != 2:
         raise ValueError(f"Expected token x channel activation for {name!r}, got {matrix.shape}")
     return matrix
+
+
+def _activation_token_feature_vector(
+    bundle: TraceBundle,
+    name: str,
+    call: dict[str, Any],
+    query: dict[str, list[str]],
+    feature: int,
+) -> tuple[np.ndarray, int, int]:
+    matches = bundle.model_sites.loc[bundle.model_sites["name"].astype(str) == name]
+    if matches.empty:
+        raise KeyError(name)
+    record = matches.iloc[0]
+    axes = json.loads(str(record.get("axes") or "[]"))
+    array = bundle.model_site(name, mmap=True)
+    selections = _policy_call_axis_selection(axes, call)
+    if "generation_step" in axes:
+        generation_step = query.get("generation_step", [""])[0]
+        step = int(generation_step) if generation_step not in {"", None} else 0
+        selections["generation_step"] = step
+    if "channel" not in axes:
+        raise ValueError(f"Expected channel axis for {name!r}, got axes={axes!r}")
+    channel_axis = axes.index("channel")
+    feature_count = int(array.shape[channel_axis])
+    feature = max(0, min(int(feature), max(0, feature_count - 1)))
+    selections["channel"] = feature
+    value, remaining_axes = _take_axis_values(array, axes, selections)
+    vector = np.asarray(value, dtype=np.float32)
+    if "token" in remaining_axes:
+        token_axis = remaining_axes.index("token")
+        vector = np.moveaxis(vector, token_axis, 0).reshape(vector.shape[token_axis], -1)
+        vector = vector[:, 0]
+    else:
+        vector = vector.reshape(-1)
+    return vector, feature, feature_count
 
 
 def _camera_patch_layout(
@@ -3047,8 +3636,7 @@ def _image_token_rows_for_site(
 def _camera_patch_maps_from_token_rows(
     bundle: TraceBundle,
     image_rows: Any,
-    token_matrix: np.ndarray,
-    feature: int,
+    feature_values: np.ndarray,
 ) -> tuple[dict[str, Any], dict[str, int | None]]:
     maps: dict[str, Any] = {}
     grid_heights: list[int] = []
@@ -3063,12 +3651,12 @@ def _camera_patch_maps_from_token_rows(
         values = np.full((grid_height, grid_width), np.nan, dtype=np.float32)
         for row in camera_rows.to_dict("records"):
             token_index = int(row.get("token_index", 0))
-            if token_index >= token_matrix.shape[0]:
+            if token_index >= feature_values.shape[0]:
                 continue
             patch_row = int(row.get("patch_row", 0))
             patch_col = int(row.get("patch_col", 0))
             if patch_row < grid_height and patch_col < grid_width:
-                values[patch_row, patch_col] = float(token_matrix[token_index, feature])
+                values[patch_row, patch_col] = float(feature_values[token_index])
         grid_heights.append(grid_height)
         grid_widths.append(grid_width)
         patch_counts.append(int(len(camera_rows)))
@@ -3758,33 +4346,49 @@ def _cache_part(value: str) -> str:
     return "".join(safe).strip("_")[:96] or "item"
 
 
-def _take_axis_value(array: np.ndarray, axes: list[str], axis_name: str, index: int) -> np.ndarray:
+def _take_axis_value(array: Any, axes: list[str], axis_name: str, index: int) -> Any:
     if axis_name not in axes:
         return array
     axis = axes.index(axis_name)
     limit = array.shape[axis]
     clipped = max(0, min(int(index), limit - 1))
-    return np.take(array, clipped, axis=axis)
+    selection: list[Any] = [slice(None)] * len(array.shape)
+    selection[axis] = clipped
+    return array[tuple(selection)]
+
+
+def _take_axis_values(
+    array: Any,
+    axes: list[str],
+    selections: Mapping[str, int],
+) -> tuple[Any, list[str]]:
+    if not selections:
+        return array, list(axes)
+    indexer: list[Any] = [slice(None)] * len(axes)
+    remaining_axes: list[str] = []
+    for axis, axis_name in enumerate(axes):
+        if axis_name in selections:
+            limit = array.shape[axis]
+            indexer[axis] = max(0, min(int(selections[axis_name]), limit - 1))
+        else:
+            remaining_axes.append(axis_name)
+    return array[tuple(indexer)], remaining_axes
+
+
+def _policy_call_axis_selection(axes: list[str], call: dict[str, Any]) -> dict[str, int]:
+    if "policy_call" in axes:
+        return {"policy_call": int(call.get("index", call.get("model_call_index", 0)))}
+    if "timestep" in axes:
+        return {"timestep": int(call["env_timestep"])}
+    return {}
 
 
 def _take_policy_call_value(
-    array: np.ndarray,
+    array: Any,
     axes: list[str],
     call: dict[str, Any],
-) -> tuple[np.ndarray, list[str]]:
-    if "policy_call" in axes:
-        index = int(call.get("index", call.get("model_call_index", 0)))
-        return (
-            _take_axis_value(array, axes, "policy_call", index),
-            [axis for axis in axes if axis != "policy_call"],
-        )
-    if "timestep" in axes:
-        index = int(call["env_timestep"])
-        return (
-            _take_axis_value(array, axes, "timestep", index),
-            [axis for axis in axes if axis != "timestep"],
-        )
-    return array, list(axes)
+) -> tuple[Any, list[str]]:
+    return _take_axis_values(array, axes, _policy_call_axis_selection(axes, call))
 
 
 def _site_family(name: str) -> str:

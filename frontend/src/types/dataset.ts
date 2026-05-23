@@ -24,6 +24,44 @@ export type DatasetPayload = {
   workbench?: unknown;
 };
 
+export type ProbeEpisodeIndex = {
+  trace_id: string;
+  split?: string | null;
+  split_category?: string | null;
+  sidecar?: Record<string, unknown>;
+  available: boolean;
+  row_count: number;
+  best_row_count?: number;
+  actual?: string | boolean | number | null;
+  predicted?: string | boolean | number | null;
+  confidence?: number | null;
+  correct?: boolean | null;
+  correct_rate?: number | null;
+  eval_split?: string | null;
+  model?: string | null;
+  feature?: string | null;
+};
+
+export type ProbeDatasetIndex = {
+  artifact_id: string;
+  name: string;
+  target?: string | null;
+  best_model?: string | null;
+  best_feature?: string | null;
+  best_score?: number | null;
+  best_delta?: number | null;
+  split_summary: Record<string, number>;
+  prediction_summary: Record<string, number>;
+  by_trace: Record<string, ProbeEpisodeIndex>;
+};
+
+export type ProbeIndexResponse = {
+  probes: ProbeDatasetIndex[];
+  total: number;
+  trace_count: number;
+  split_source?: string | null;
+};
+
 export type CounterfactualPairMember = {
   trace_id: string;
   episode_id?: string;
@@ -189,6 +227,62 @@ export type EpisodeInteractionsResponse = {
   episode?: EpisodeInteractionLabel;
   quality?: Record<string, boolean>;
   objects: EpisodeObjectMetric[];
+};
+
+export type EpisodeProbePrediction = {
+  trace_id?: string;
+  episode_id?: string;
+  task_id?: string;
+  split?: string;
+  target_name?: string;
+  target_value?: string | boolean | number | null;
+  actual?: string | boolean | number | null;
+  predicted?: string | boolean | number | null;
+  prediction_value?: string | boolean | number | null;
+  confidence?: number | null;
+  correct?: boolean | null;
+  model?: string;
+  feature?: string;
+  layer?: number | null;
+  policy_call_index?: number | null;
+  timestep?: number | null;
+  target_timestep?: number | null;
+  generation_step?: string | number | null;
+  model_site_id?: string;
+  token_space_id?: string;
+  eval_split?: string;
+  primary_metric?: string;
+};
+
+export type EpisodeProbeSummary = {
+  artifact_id: string;
+  name: string;
+  target?: string | null;
+  metrics: Record<string, unknown>;
+  best_result: Record<string, unknown>;
+  target_distribution: Record<string, unknown>;
+  episode_summary: {
+    actual?: string | boolean | number | null;
+    predicted?: string | boolean | number | null;
+    confidence?: number | null;
+    correct?: boolean | null;
+    correct_rate?: number | null;
+    all_cell_correct_rate?: number | null;
+    all_cell_mean_confidence?: number | null;
+    best_feature?: string;
+    best_model?: string;
+    best_row?: EpisodeProbePrediction;
+  };
+  rows: EpisodeProbePrediction[];
+  row_count: number;
+  available: boolean;
+};
+
+export type EpisodeProbesResponse = {
+  trace_id: string;
+  probes: EpisodeProbeSummary[];
+  available_count: number;
+  total: number;
 };
 
 export type ActivationSite = {

@@ -13,12 +13,14 @@ import type {
   EpisodeDetail,
   EpisodeInteractionsResponse,
   EpisodeMetricsResponse,
+  EpisodeProbesResponse,
   ActivationSliceResponse,
   ImageTokenMapResponse,
   MatrixSeriesResponse,
   ObjectCameraOverlayResponse,
   PatchFeaturesResponse,
   PromptAttentionResponse,
+  ProbeIndexResponse,
   NumericSeriesResponse,
   PolicyCallsResponse,
   SelectedPatch,
@@ -108,6 +110,16 @@ export function fetchEpisodeInteractions(traceId: string): Promise<EpisodeIntera
   return getJson<EpisodeInteractionsResponse>(
     `/api/episode-interactions?trace_id=${encodeURIComponent(traceId)}`,
   );
+}
+
+export function fetchEpisodeProbes(traceId: string): Promise<EpisodeProbesResponse> {
+  return getJson<EpisodeProbesResponse>(
+    `/api/episode-probes?trace_id=${encodeURIComponent(traceId)}`,
+  );
+}
+
+export function fetchProbeIndex(): Promise<ProbeIndexResponse> {
+  return getJson<ProbeIndexResponse>("/api/probe-index");
 }
 
 export function fetchActivationSites(traceId: string): Promise<ActivationSitesResponse> {

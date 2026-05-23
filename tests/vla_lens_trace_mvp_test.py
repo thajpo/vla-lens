@@ -58,12 +58,14 @@ from vla_lens.server import (
     _dataset_payload,
     _episode_interactions_payload,
     _episode_metrics_payload,
+    _episode_probes_payload,
     _episode_video_path,
     _expert_token_details_payload,
     _lens_array_meta_payload,
     _lens_array_slice_payload,
     _lens_arrays_payload,
     _object_camera_overlay_payload,
+    _probe_index_payload,
     _prompt_attention_payload,
     _resolve_selection_payload,
     _run_dataset_diagnostics_payload,
@@ -1640,6 +1642,62 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
     assert saved.artifact.artifact_id in set(reopened.artifact_index["artifact_id"])
 
 
+def test_probe_episode_payloads_link_artifacts_to_dataset_traces(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    pd.DataFrame(
+        {
+            "trace_id": trace_ids,
+            "split": ["train", "train", "validation", "validation", "test", "test"],
+        }
+    ).to_csv(dataset.root / "probe_splits.csv", index=False)
+    spec = dump_probe_spec(
+        {
+            "name": "Episode UI outcome probe",
+            "target": {"kind": "outcome"},
+            "features": {
+                "module": "action_head.layers.*.resid",
+                "tensor_type": "resid",
+                "token_kind": "action",
+                "reduction": "mean",
+            },
+            "split": {"kind": "random_episode"},
+            "baseline": ["majority_class"],
+            "probe": {"models": ["linear"]},
+            "sweep": "layer",
+        }
+    )
+    import yaml
+
+    train_probe_artifact_from_spec(dataset, yaml.safe_load(spec))
+    reopened = TraceDataset.open(dataset.root)
+
+    index_payload = _probe_index_payload(reopened)
+    assert index_payload["total"] >= 1
+    assert index_payload["trace_count"] == len(trace_ids)
+    assert index_payload["split_source"] == "probe_splits.csv"
+    probe_index = next(
+        probe for probe in index_payload["probes"] if probe["name"] == "Episode UI outcome probe"
+    )
+    assert probe_index["by_trace"][trace_ids[0]]["split_category"] == "train"
+    assert probe_index["by_trace"][trace_ids[2]]["split_category"] == "validation"
+    assert probe_index["by_trace"][trace_ids[-1]]["split_category"] == "test"
+
+    episode_payload = _episode_probes_payload(reopened, {"trace_id": [trace_ids[0]]})
+    assert episode_payload["trace_id"] == trace_ids[0]
+    assert episode_payload["total"] >= 1
+    assert episode_payload["available_count"] >= 1
+    episode_probe = next(
+        probe for probe in episode_payload["probes"] if probe["name"] == "Episode UI outcome probe"
+    )
+    assert episode_probe["available"] is True
+    assert episode_probe["row_count"] > 0
+    assert episode_probe["episode_summary"]["best_row"]
+    assert {"actual", "predicted", "confidence", "correct"}.issubset(
+        episode_probe["episode_summary"]
+    )
+
+
 def test_probe_workflow_uses_probe_split_sidecar(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
     trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
@@ -1706,6 +1764,11 @@ def test_probe_workflow_uses_probe_split_sidecar(tmp_path):
     assert saved.artifact.method["probe"]["models"] == ["linear", "mlp"]
     assert set(saved.results["split_value"]) == {"val_heldout_task", "test_heldout_task"}
     assert set(saved.results["model"]) == {"linear", "mlp"}
+    reopened = TraceDataset.open(dataset.root)
+    index_payload = _probe_index_payload(reopened)
+    probe_index = next(probe for probe in index_payload["probes"] if probe["name"] == "Sidecar split probe")
+    assert probe_index["by_trace"][trace_ids[4]]["split_category"] == "validation"
+    assert probe_index["by_trace"][trace_ids[5]]["split_category"] == "test"
     assert "benchmark" in saved.artifact.method["metadata_baseline_columns"]
     assert "benchmark" in saved.artifact.display["source_columns"]
     assert "first_moved_object" in saved.artifact.display["source_columns"]

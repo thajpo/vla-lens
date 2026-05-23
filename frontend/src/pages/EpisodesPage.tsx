@@ -39,6 +39,7 @@ import {
   fetchEpisodeAnnotation,
   fetchEpisodeInteractions,
   fetchEpisodeMetrics,
+  fetchEpisodeProbes,
   fetchExpertTokenActivations,
   fetchExpertTokenDetails,
   fetchImageTokenMap,
@@ -60,6 +61,9 @@ import type {
   EpisodeAnnotation,
   EpisodeInteractionsResponse,
   EpisodeMetric,
+  EpisodeProbePrediction,
+  EpisodeProbeSummary,
+  EpisodeProbesResponse,
   ExpertTokenActivationsResponse,
   ExpertTokenDetailsResponse,
   ImagePatchAttention,
@@ -74,6 +78,10 @@ import type {
 import type { WorkbenchManifest } from "../types/workbench";
 
 type EpisodesPageProps = {
+  cohortReturnHref?: string;
+  initialPolicyCall?: number;
+  initialProbeArtifactId?: string;
+  initialSiteName?: string;
   manifest?: WorkbenchManifest;
   initialTraceId?: string;
   onTraceChange?: (traceId: string) => void;
@@ -82,6 +90,8 @@ type EpisodesPageProps = {
 type InspectorContext = "vlm" | "expert" | "attention" | "other";
 const ACTIVATION_CLIP_OPTIONS = [0, 1, 5, 10, 20] as const;
 const TOP_CHANNEL_COUNT_OPTIONS = [8, 12, 24, 48, 96] as const;
+const EPISODE_PROBE_RESULT_LIMIT = 40;
+const EMPTY_ACTIVATION_SITES: ActivationSite[] = [];
 const DEFAULT_METRIC_X_KEY = "__metric_x__";
 const DEFAULT_METRIC_ORDER = [
   "action_norm",
@@ -101,6 +111,7 @@ type MetricPlotConfig = {
   xKey: string;
   yKey: string;
 };
+type EpisodePlotTab = "episode" | "probes";
 type PipelineFamily = "input" | "vlm" | "handoff" | "expert" | "action" | "other";
 type InspectionMode = "features" | "attention" | "computation" | "saved_state" | "advanced";
 type PipelineSiteChoice = {
@@ -174,9 +185,45 @@ type PipelineDiagramLayout = {
 type CameraOverlayPayload = Pick<
   ImageTokenMapResponse | ExpertTokenDetailsResponse | AttentionMapResponse,
   "available" | "maps" | "note" | "reason"
->;
+> & {
+  attention_site?: string | null;
+  feature?: number;
+  generation_step?: number;
+  head?: number | null;
+  head_mode?: string;
+  kind?: string;
+  name?: string;
+  query_mode?: string;
+  query_token?: number | null;
+  site?: string;
+  token_index?: number;
+};
+type CameraOverlayStatus = {
+  detail?: string;
+  isStale: boolean;
+  isUpdating: boolean;
+  label: string;
+  mode: InspectorContext;
+};
+type ProbeLayerRef = {
+  actual?: string | boolean | number | null;
+  artifactId: string;
+  confidence?: number | null;
+  correct?: boolean | null;
+  layer: number | null;
+  modelSiteId?: string;
+  name: string;
+  policyCall: number | null;
+  predicted?: string | boolean | number | null;
+  target?: string | null;
+};
+type ProbeTone = "correct" | "incorrect" | "unscored";
 
 export function EpisodesPage({
+  cohortReturnHref,
+  initialPolicyCall,
+  initialProbeArtifactId = "",
+  initialSiteName = "",
   manifest,
   initialTraceId = "",
   onTraceChange,
@@ -198,7 +245,7 @@ export function EpisodesPage({
   const [playbackFps, setPlaybackFps] = useState(10);
   const [showObjectOverlay, setShowObjectOverlay] = useState(true);
   const [showAttentionOverlay, setShowAttentionOverlay] = useState(true);
-  const [selectedSiteName, setSelectedSiteName] = useState("");
+  const [selectedSiteName, setSelectedSiteName] = useState(initialSiteName);
   const [inspectionMode, setInspectionMode] = useState<InspectionMode>("features");
   const [attentionHead, setAttentionHead] = useState<number | null>(null);
   const [attentionQueryToken, setAttentionQueryToken] = useState<number | null>(null);
@@ -208,7 +255,11 @@ export function EpisodesPage({
   const [inspectorWidthPct, setInspectorWidthPct] = useState(38);
   const [selectedPatch, setSelectedPatch] = useState<SelectedPatch | null>(null);
   const [selectedExpertToken, setSelectedExpertToken] = useState<number | null>(null);
+  const [selectedPromptTokenIndex, setSelectedPromptTokenIndex] = useState<number | null>(null);
   const [generationStep, setGenerationStep] = useState(0);
+  const [episodePlotTab, setEpisodePlotTab] = useState<EpisodePlotTab>("probes");
+  const [selectedProbeArtifactId, setSelectedProbeArtifactId] = useState(initialProbeArtifactId);
+  const appliedRouteContextRef = useRef("");
 
   const activeTraceId = initialTraceId || episodes[0]?.trace_id || "";
   const handlePatchSelect = (patch: SelectedPatch | null) => {
@@ -243,7 +294,13 @@ export function EpisodesPage({
     setTimestep(0);
     setSelectedPatch(null);
     setSelectedExpertToken(null);
+    setSelectedPromptTokenIndex(null);
     onTraceChange?.(traceId);
+  };
+  const handlePromptTokenSelect = (tokenIndex: number | null) => {
+    setSelectedPromptTokenIndex((current) => (
+      tokenIndex === null || current === tokenIndex ? null : tokenIndex
+    ));
   };
   const activeCounterfactualPair = useMemo(
     () =>
@@ -284,6 +341,11 @@ export function EpisodesPage({
     queryFn: () => fetchEpisodeInteractions(activeTraceId),
     enabled: Boolean(activeTraceId),
   });
+  const episodeProbes = useQuery({
+    queryKey: ["episode-probes", activeTraceId],
+    queryFn: () => fetchEpisodeProbes(activeTraceId),
+    enabled: Boolean(activeTraceId),
+  });
   const generation = useQuery({
     queryKey: ["generation-commitment", activeTraceId],
     queryFn: () => fetchGenerationCommitment(activeTraceId),
@@ -301,7 +363,20 @@ export function EpisodesPage({
   const frameCacheKey = frameVersionKey(episodeDetail.data ?? selectedEpisode, diagnostics.data?.fingerprint);
   const maxTimestep = Math.max(0, Number(selectedEpisode?.length ?? episodeDetail.data?.length ?? 1) - 1);
   const metrics = episodeMetrics.data?.metrics ?? [];
-  const sites = activationSites.data?.sites ?? [];
+  const sites = activationSites.data?.sites ?? EMPTY_ACTIVATION_SITES;
+  const selectedProbe = selectedEpisodeProbe(episodeProbes.data, selectedProbeArtifactId);
+  const activeSelectedProbeArtifactId = selectedProbe?.artifact_id ?? "";
+  const episodeProbeRefs = probeLayerReferences(episodeProbes.data);
+  const selectedProbeRef = episodeProbeRefs.find(
+    (ref) => ref.artifactId === activeSelectedProbeArtifactId,
+  );
+  const selectedProbeSite = siteForProbeRef(sites, selectedProbeRef);
+  const selectedProbePolicyCall = selectedProbeRef?.policyCall;
+  const selectedProbeCall = selectedProbePolicyCall === null || selectedProbePolicyCall === undefined
+    ? undefined
+    : (policyCalls.data?.calls ?? []).find(
+        (item) => Number(item.index) === Number(selectedProbePolicyCall),
+      );
   const architecture = activationSites.data?.architecture;
   const defaultSite = preferredPipelineSite(sites);
   const selectedSite = sites.find((site) => site.name === selectedSiteName) ?? defaultSite;
@@ -314,6 +389,13 @@ export function EpisodesPage({
   const generationStepCount = generationStepCountForSite(selectedSite);
   const activeGenerationStep = Math.max(0, Math.min(generationStep, Math.max(0, generationStepCount - 1)));
   const activeSelectedSiteName = selectedSite?.name ?? selectedSiteName;
+  const effectiveSelectedExpertToken =
+    inspectorContext === "expert" &&
+    inspectionMode === "features" &&
+    expertTokenSiteName &&
+    selectedExpertToken === null
+      ? 0
+      : selectedExpertToken;
   const selectedSiteUsesGenerationStep = siteUsesGenerationStep(selectedSite);
   const activeCall =
     (policyCalls.data?.calls ?? []).find(
@@ -433,7 +515,7 @@ export function EpisodesPage({
       activeCall?.index,
       expertTokenSiteName,
       clampedFeature,
-      selectedExpertToken,
+      effectiveSelectedExpertToken,
       activeGenerationStep,
     ],
     queryFn: () =>
@@ -442,7 +524,7 @@ export function EpisodesPage({
         activeCall?.index ?? 0,
         expertTokenSiteName,
         clampedFeature,
-        selectedExpertToken ?? 0,
+        effectiveSelectedExpertToken ?? 0,
         activeGenerationStep,
       ),
     enabled: Boolean(
@@ -450,7 +532,7 @@ export function EpisodesPage({
         activeTraceId &&
         activeCall &&
         expertTokenSiteName &&
-      selectedExpertToken !== null,
+        effectiveSelectedExpertToken !== null,
     ),
   });
   const attentionMap = useQuery({
@@ -530,13 +612,158 @@ export function EpisodesPage({
     placeholderData: keepPreviousData,
   });
   const cameraOverlay: CameraOverlayPayload | undefined =
-    inspectorContext === "expert" && expertTokenDetails.data?.available
+    inspectorContext === "expert"
       ? expertTokenDetails.data
-      : inspectorContext === "attention" && attentionMap.data?.available
+      : inspectorContext === "attention"
         ? attentionMap.data
-      : imageTokenMap.data;
+        : inspectorContext === "vlm"
+          ? imageTokenMap.data
+          : undefined;
+  const cameraOverlayStatus = overlayStatusForSelection({
+    attentionMapFetching: attentionMap.isFetching,
+    attentionMapPlaceholder: attentionMap.isPlaceholderData,
+    attentionHead,
+    attentionQueryToken,
+    expertTokenDetailsFetching: expertTokenDetails.isFetching,
+    feature: clampedFeature,
+    imageTokenMapFetching: imageTokenMap.isFetching,
+    imageTokenMapPlaceholder: imageTokenMap.isPlaceholderData,
+    inspectorContext,
+    selectedExpertToken: effectiveSelectedExpertToken,
+    selectedSite,
+  });
 
   const currentTimestep = Math.min(timestep, maxTimestep);
+  const handleInspectionModeChange = (mode: InspectionMode) => {
+    setInspectionMode(mode);
+    if (
+      mode === "attention" &&
+      attentionQueryToken === null &&
+      axisCountForSite(attentionSiteForSite(sites, selectedSite) ?? selectedSite, "query_token") > 0
+    ) {
+      setAttentionQueryToken(0);
+    }
+  };
+  const handleSiteChange = (siteName: string) => {
+    const nextSite = sites.find((site) => site.name === siteName);
+    const nextAttentionSite = nextSite ? attentionSiteForSite(sites, nextSite) ?? nextSite : undefined;
+    setSelectedSiteName(siteName);
+    setAttentionHead(null);
+    setAttentionQueryToken(
+      nextAttentionSite && isAttentionSite(nextAttentionSite) && axisCountForSite(nextAttentionSite, "query_token") > 0
+        ? 0
+        : null,
+    );
+    setFeature(0);
+    setSelectedPatch(null);
+    setSelectedExpertToken(null);
+    setSelectedPromptTokenIndex(null);
+    setGenerationStep(0);
+  };
+  const inspectProbeSite = () => {
+    if (!selectedProbeSite) {
+      return;
+    }
+    handleInspectionModeChange("features");
+    handleSiteChange(selectedProbeSite.name);
+  };
+  const jumpToProbeCall = () => {
+    if (selectedProbePolicyCall !== null && selectedProbePolicyCall !== undefined) {
+      jumpToPolicyCall(selectedProbePolicyCall);
+    }
+  };
+  const jumpToPolicyCall = (policyCallIndex: number) => {
+    const call = (policyCalls.data?.calls ?? []).find(
+      (item) => Number(item.index) === Number(policyCallIndex),
+    );
+    if (!call) {
+      return;
+    }
+    setIsPlayingFrames(false);
+    setTimestep(Math.max(0, Math.min(maxTimestep, call.env_timestep ?? call.segment_start)));
+  };
+
+  useEffect(() => {
+    if (!initialProbeArtifactId && typeof initialPolicyCall !== "number" && !initialSiteName) {
+      return;
+    }
+    const routeKey = [
+      activeTraceId,
+      initialProbeArtifactId,
+      initialPolicyCall ?? "",
+      initialSiteName,
+    ].join("|");
+    if (appliedRouteContextRef.current === routeKey) {
+      return;
+    }
+    if (initialProbeArtifactId && activeSelectedProbeArtifactId !== initialProbeArtifactId) {
+      return;
+    }
+    if (initialProbeArtifactId && !selectedProbe) {
+      return;
+    }
+    const targetPolicyCall =
+      typeof initialPolicyCall === "number" ? initialPolicyCall : selectedProbePolicyCall;
+    const targetCallReady =
+      typeof targetPolicyCall !== "number" ||
+      (policyCalls.data?.calls ?? []).some((call) => Number(call.index) === targetPolicyCall);
+    if (!targetCallReady) {
+      return;
+    }
+    if ((initialSiteName || initialProbeArtifactId) && activationSites.isLoading) {
+      return;
+    }
+    const targetSite = initialSiteName
+      ? sites.find((site) => site.name === initialSiteName)
+      : selectedProbeSite;
+    const targetSiteName = targetSite?.name;
+    const targetCallIndex = typeof targetPolicyCall === "number" ? targetPolicyCall : undefined;
+    appliedRouteContextRef.current = routeKey;
+    const frame = window.requestAnimationFrame(() => {
+      if (targetSiteName) {
+        const nextSite = sites.find((site) => site.name === targetSiteName);
+        const nextAttentionSite = nextSite ? attentionSiteForSite(sites, nextSite) ?? nextSite : undefined;
+        setInspectionMode("features");
+        setSelectedSiteName(targetSiteName);
+        setAttentionHead(null);
+        setAttentionQueryToken(
+          nextAttentionSite &&
+            isAttentionSite(nextAttentionSite) &&
+            axisCountForSite(nextAttentionSite, "query_token") > 0
+            ? 0
+            : null,
+        );
+        setFeature(0);
+        setSelectedPatch(null);
+        setSelectedExpertToken(null);
+        setSelectedPromptTokenIndex(null);
+        setGenerationStep(0);
+      }
+      if (typeof targetCallIndex === "number") {
+        const call = (policyCalls.data?.calls ?? []).find(
+          (item) => Number(item.index) === Number(targetCallIndex),
+        );
+        if (call) {
+          setIsPlayingFrames(false);
+          setTimestep(Math.max(0, Math.min(maxTimestep, call.env_timestep ?? call.segment_start)));
+        }
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [
+    activeSelectedProbeArtifactId,
+    activeTraceId,
+    activationSites.isLoading,
+    initialPolicyCall,
+    initialProbeArtifactId,
+    initialSiteName,
+    maxTimestep,
+    policyCalls.data?.calls,
+    selectedProbe,
+    selectedProbePolicyCall,
+    selectedProbeSite,
+    sites,
+  ]);
 
   useEffect(() => {
     if (!isPlayingFrames || maxTimestep <= 0) {
@@ -639,6 +866,7 @@ export function EpisodesPage({
         <>
           <EpisodeNavigationBar
             annotation={episodeAnnotation.data?.annotation}
+            cohortReturnHref={cohortReturnHref}
             episode={episodeDetail.data ?? selectedEpisode}
             episodeIndex={selectedEpisodeIndex}
             episodeCount={episodes.length}
@@ -663,11 +891,14 @@ export function EpisodesPage({
                         prompt={(episodeDetail.data ?? selectedEpisode)?.prompt}
                         promptAttention={promptAttention.data}
                         promptFeatureMap={promptFeatureMap.data}
+                        selectedPromptToken={selectedPromptTokenIndex}
+                        onPromptTokenSelect={handlePromptTokenSelect}
                       />
                       <CameraGrid
                         cacheKey={frameCacheKey}
                         cameras={cameras}
                         imageTokenMap={cameraOverlay}
+                        overlayStatus={cameraOverlayStatus}
                         isPlaying={isPlayingFrames}
                         maxTimestep={maxTimestep}
                         showAttentionOverlay={showAttentionOverlay}
@@ -699,20 +930,54 @@ export function EpisodesPage({
                       />
                     </div>
                     <aside className="viewer-plot-panel">
-                      <MetricPlotPanel
-                        metrics={metrics}
-                        timestep={currentTimestep}
-                        onTimestepChange={setTimestep}
-                      />
-                      <InteractionSummaryPanel
-                        interactions={episodeInteractions.data}
-                        isError={episodeInteractions.isError}
-                        isLoading={episodeInteractions.isLoading}
-                        onTimestepChange={(nextTimestep) => {
-                          setIsPlayingFrames(false);
-                          setTimestep(Math.max(0, Math.min(maxTimestep, nextTimestep)));
-                        }}
-                      />
+                      <div className="episode-plot-tabs" aria-label="Episode plot tabs">
+                        <button
+                          className={episodePlotTab === "probes" ? "active" : ""}
+                          type="button"
+                          onClick={() => setEpisodePlotTab("probes")}
+                        >
+                          Probes
+                        </button>
+                        <button
+                          className={episodePlotTab === "episode" ? "active" : ""}
+                          type="button"
+                          onClick={() => setEpisodePlotTab("episode")}
+                        >
+                          Episode
+                        </button>
+                      </div>
+                      {episodePlotTab === "episode" ? (
+                        <>
+                          <MetricPlotPanel
+                            metrics={metrics}
+                            timestep={currentTimestep}
+                            onTimestepChange={setTimestep}
+                          />
+                          <InteractionSummaryPanel
+                            interactions={episodeInteractions.data}
+                            isError={episodeInteractions.isError}
+                            isLoading={episodeInteractions.isLoading}
+                            onTimestepChange={(nextTimestep) => {
+                              setIsPlayingFrames(false);
+                              setTimestep(Math.max(0, Math.min(maxTimestep, nextTimestep)));
+                            }}
+                          />
+                        </>
+                      ) : (
+                        <EpisodeProbePanel
+                          probes={episodeProbes.data}
+                          selectedProbe={selectedProbe}
+                          selectedProbeRef={selectedProbeRef}
+                          isError={episodeProbes.isError}
+                          isLoading={episodeProbes.isLoading}
+                          canInspectProbe={Boolean(selectedProbeSite)}
+                          canJumpToProbeCall={Boolean(selectedProbeCall)}
+                          onInspectProbe={inspectProbeSite}
+                          onJumpToProbeCall={jumpToProbeCall}
+                          onJumpToPolicyCall={jumpToPolicyCall}
+                          onProbeChange={setSelectedProbeArtifactId}
+                        />
+                      )}
                     </aside>
                   </div>
                 </div>
@@ -755,6 +1020,8 @@ export function EpisodesPage({
                 activationSlice={activationSlice.data}
                 feature={clampedFeature}
                 cameraOverlay={cameraOverlay}
+                episodeProbes={episodeProbes.data}
+                selectedProbeArtifactId={activeSelectedProbeArtifactId}
                 patchFeatures={patchFeatures.data}
                 expertTokenActivations={expertTokenActivations.data}
                 expertTokenDetails={expertTokenDetails.data}
@@ -764,11 +1031,13 @@ export function EpisodesPage({
                 attentionHead={attentionHead}
                 attentionQueryToken={attentionQueryToken}
                 selectedPatch={selectedPatch}
-                selectedExpertToken={selectedExpertToken}
+                selectedExpertToken={effectiveSelectedExpertToken}
+                selectedPromptToken={selectedPromptTokenIndex}
                 onFeatureChange={(nextFeature) => {
                   setFeature(nextFeature);
                   setSelectedPatch(null);
                   setSelectedExpertToken(null);
+                  setSelectedPromptTokenIndex(null);
                 }}
                 generationStep={activeGenerationStep}
                 generationStepCount={generationStepCount}
@@ -778,25 +1047,21 @@ export function EpisodesPage({
                 onGenerationStepChange={(nextStep) => {
                   setGenerationStep(nextStep);
                   setSelectedExpertToken(null);
+                  setSelectedPromptTokenIndex(null);
                 }}
                 onAttentionHeadChange={setAttentionHead}
                 onAttentionQueryTokenChange={setAttentionQueryToken}
                 onExpertTokenChange={setSelectedExpertToken}
+                onPatchSelect={handlePatchSelect}
+                onPromptTokenSelect={handlePromptTokenSelect}
                 onActivationClipPercentChange={setActivationClipPercent}
-                onInspectionModeChange={setInspectionMode}
+                onInspectionModeChange={handleInspectionModeChange}
+                onProbeSelect={setSelectedProbeArtifactId}
                 onTopChannelCountChange={setTopChannelCount}
                 selectedSite={selectedSite}
                 selectedSiteName={activeSelectedSiteName}
                 topChannelCount={topChannelCount}
-                onSiteChange={(siteName) => {
-                  setSelectedSiteName(siteName);
-                  setAttentionHead(null);
-                  setAttentionQueryToken(null);
-                  setFeature(0);
-                  setSelectedPatch(null);
-                  setSelectedExpertToken(null);
-                  setGenerationStep(0);
-                }}
+                onSiteChange={handleSiteChange}
               />
               <InspectorDebugSections
                 artifacts={episodeDetail.data?.artifacts ?? []}
@@ -821,6 +1086,7 @@ function CameraGrid({
   imageTokenMap,
   isPlaying,
   maxTimestep,
+  overlayStatus,
   showAttentionOverlay,
   showObjectOverlay,
   onPatchSelect,
@@ -833,6 +1099,7 @@ function CameraGrid({
   imageTokenMap?: CameraOverlayPayload;
   isPlaying: boolean;
   maxTimestep: number;
+  overlayStatus?: CameraOverlayStatus;
   showAttentionOverlay: boolean;
   showObjectOverlay: boolean;
   onPatchSelect: (patch: SelectedPatch | null) => void;
@@ -884,6 +1151,7 @@ function CameraGrid({
           camera={camera}
           imageTokenMap={imageTokenMap}
           isPlaying={isPlaying}
+          overlayStatus={overlayStatus}
           showAttentionOverlay={showAttentionOverlay}
           showObjectOverlay={showObjectOverlay}
           key={camera}
@@ -902,6 +1170,7 @@ function CameraFrame({
   camera,
   imageTokenMap,
   isPlaying,
+  overlayStatus,
   showAttentionOverlay,
   showObjectOverlay,
   onPatchSelect,
@@ -913,6 +1182,7 @@ function CameraFrame({
   camera: string;
   imageTokenMap?: CameraOverlayPayload;
   isPlaying: boolean;
+  overlayStatus?: CameraOverlayStatus;
   showAttentionOverlay: boolean;
   showObjectOverlay: boolean;
   onPatchSelect: (patch: SelectedPatch | null) => void;
@@ -948,13 +1218,20 @@ function CameraFrame({
     [frameReady, isPlaying, objectOverlay.data?.objects, objectOverlay.data?.timestep, timestep],
   );
   const [hoveredObject, setHoveredObject] = useState<ObjectCameraOverlayObject | null>(null);
+  const [imageHovered, setImageHovered] = useState(false);
 
   const activeHoveredObject = isPlaying || !frameReady ? null : hoveredObject;
+  const showOverlayStatus = Boolean(
+    showAttentionOverlay &&
+      overlayStatus &&
+      (imageHovered || overlayStatus.isUpdating || overlayStatus.isStale || imageTokenMap?.available === false),
+  );
 
   return (
     <figure className="camera-frame">
       <div
         className="camera-image-wrap"
+        onPointerEnter={() => setImageHovered(true)}
         onPointerMove={(event) => {
           if (isPlaying) {
             setHoveredObject(null);
@@ -1002,7 +1279,10 @@ function CameraFrame({
           }
           setHoveredObject(nearestDistance <= 44 ? nearest : null);
         }}
-        onPointerLeave={() => setHoveredObject(null)}
+        onPointerLeave={() => {
+          setImageHovered(false);
+          setHoveredObject(null);
+        }}
       >
         <img
           alt={`${traceId} ${camera} timestep ${timestep}`}
@@ -1020,7 +1300,14 @@ function CameraFrame({
             camera={camera}
             imageTokenMap={imageTokenMap}
             selectedPatch={selectedPatch}
+            stale={Boolean(overlayStatus?.isStale)}
             onPatchSelect={onPatchSelect}
+          />
+        ) : null}
+        {showOverlayStatus && overlayStatus ? (
+          <OverlayStatusBadge
+            available={Boolean(imageTokenMap?.available)}
+            status={overlayStatus}
           />
         ) : null}
       </div>
@@ -1154,11 +1441,13 @@ function ActivationGridOverlay({
   imageTokenMap,
   onPatchSelect,
   selectedPatch,
+  stale,
 }: {
   camera: string;
   imageTokenMap?: CameraOverlayPayload;
   onPatchSelect: (patch: SelectedPatch | null) => void;
   selectedPatch: SelectedPatch | null;
+  stale: boolean;
 }) {
   const cameraMapValues = imageTokenMap?.maps?.[camera]?.values;
   const values = useMemo(() => cameraMapValues ?? [], [cameraMapValues]);
@@ -1249,7 +1538,7 @@ function ActivationGridOverlay({
     }
   }, [camera, imageTokenMap?.available, layoutVersion, selectedPatch, values]);
 
-  if (!imageTokenMap?.available || !values.length) {
+  if (stale || !imageTokenMap?.available || !values.length) {
     return null;
   }
   return (
@@ -1280,6 +1569,28 @@ function ActivationGridOverlay({
         }
       }}
     />
+  );
+}
+
+function OverlayStatusBadge({
+  available,
+  status,
+}: {
+  available: boolean;
+  status: CameraOverlayStatus;
+}) {
+  return (
+    <div
+      className={[
+        "camera-overlay-status",
+        status.isUpdating ? "updating" : "",
+        status.isStale ? "stale" : "",
+        !available ? "unavailable" : "",
+      ].filter(Boolean).join(" ")}
+    >
+      <strong>{status.isUpdating ? "Updating" : status.label}</strong>
+      {status.detail ? <span>{status.detail}</span> : null}
+    </div>
   );
 }
 
@@ -1352,26 +1663,28 @@ function FramePlaybackControls({
             </option>
           ))}
         </select>
-        <button
-          aria-pressed={showObjectOverlay}
-          className={`object-overlay-toggle${showObjectOverlay ? " active" : ""}`}
-          title="Toggle object boxes and hover labels"
-          type="button"
-          onClick={onObjectOverlayToggle}
-        >
-          {showObjectOverlay ? <Eye size={15} /> : <EyeOff size={15} />}
-          <span>Objects</span>
-        </button>
-        <button
-          aria-pressed={showAttentionOverlay}
-          className={`attention-overlay-toggle${showAttentionOverlay ? " active" : ""}`}
-          title="Toggle attention and activation patch overlay"
-          type="button"
-          onClick={onAttentionOverlayToggle}
-        >
-          {showAttentionOverlay ? <Layers3 size={15} /> : <EyeOff size={15} />}
-          <span>Model overlay</span>
-        </button>
+        <div className="viewer-overlay-group" role="group" aria-label="Viewer overlays">
+          <button
+            aria-pressed={showObjectOverlay}
+            className={`object-overlay-toggle${showObjectOverlay ? " active" : ""}`}
+            title="Show object boxes and hover labels"
+            type="button"
+            onClick={onObjectOverlayToggle}
+          >
+            {showObjectOverlay ? <Eye size={15} /> : <EyeOff size={15} />}
+            <span>Objects</span>
+          </button>
+          <button
+            aria-pressed={showAttentionOverlay}
+            className={`attention-overlay-toggle${showAttentionOverlay ? " active" : ""}`}
+            title="Show the selected model activation or attention overlay"
+            type="button"
+            onClick={onAttentionOverlayToggle}
+          >
+            {showAttentionOverlay ? <Layers3 size={15} /> : <EyeOff size={15} />}
+            <span>Model</span>
+          </button>
+        </div>
         <span className="playback-policy-readout">
           {activeCall
             ? `Policy call ${activeCall.index} / t=${activeCall.segment_start}-${activeCall.segment_end}`
@@ -1642,6 +1955,975 @@ function formatEventTimestep(timestep: number | null): string {
 
 function formatDistance(value: number | null): string {
   return value === null ? "-" : value.toFixed(3);
+}
+
+function EpisodeProbePanel({
+  canInspectProbe,
+  canJumpToProbeCall,
+  isError,
+  isLoading,
+  onInspectProbe,
+  onJumpToProbeCall,
+  onJumpToPolicyCall,
+  onProbeChange,
+  probes,
+  selectedProbe,
+  selectedProbeRef,
+}: {
+  canInspectProbe: boolean;
+  canJumpToProbeCall: boolean;
+  isError: boolean;
+  isLoading: boolean;
+  onInspectProbe: () => void;
+  onJumpToProbeCall: () => void;
+  onJumpToPolicyCall: (policyCallIndex: number) => void;
+  onProbeChange: (artifactId: string) => void;
+  probes?: EpisodeProbesResponse;
+  selectedProbe?: EpisodeProbeSummary;
+  selectedProbeRef?: ProbeLayerRef;
+}) {
+  const allProbes = probes?.probes ?? [];
+  const [metric, setMetric] = useState<"confidence" | "correct">("confidence");
+  const rows = selectedProbe?.rows ?? [];
+  const bestModel = String(selectedProbe?.metrics.best_model ?? "");
+  const filteredRows = bestModel ? rows.filter((row) => String(row.model ?? "") === bestModel) : rows;
+  const cells = episodeProbeCells(filteredRows, metric);
+  const usage = episodeProbeUsage(selectedProbe, filteredRows);
+  const temporalRows = episodeProbeTemporalRows(filteredRows);
+  const probeRefs = probeLayerReferences(probes);
+  const bestRow = selectedProbe?.episode_summary.best_row;
+  const bestFeature = selectedProbe?.episode_summary.best_feature || String(selectedProbe?.metrics.best_feature ?? "-");
+  const predicted = selectedProbe?.episode_summary.predicted;
+  const actual = selectedProbe?.episode_summary.actual;
+  const displayedCorrect = probeDisplayedCorrect(predicted, actual, selectedProbe?.episode_summary.correct);
+  const tone = probeToneFromCorrect(displayedCorrect, selectedProbe?.available);
+  const showHeatmap = cells.length > 1;
+  const trajectoryAudit = probeTrajectoryAudit(temporalRows, bestRow);
+  const siteAudit = probeSiteAudit(bestRow, selectedProbeRef, bestFeature);
+  const reliabilityAudit = probeReliabilityAudit(selectedProbe, usage);
+  const episodeMembership = probeEpisodeMembership(selectedProbe, filteredRows);
+  const probeSiteLabel = selectedProbeRef
+    ? [
+        selectedProbeRef.layer === null ? "" : `L${formatLayerNumber(selectedProbeRef.layer)}`,
+        selectedProbeRef.policyCall === null ? "" : `call ${selectedProbeRef.policyCall}`,
+      ].filter(Boolean).join(" / ") || bestFeature
+    : bestFeature;
+
+  if (isLoading) {
+    return <div className="empty-state">Loading probe predictions.</div>;
+  }
+  if (isError) {
+    return <div className="empty-state">Probe predictions could not be loaded.</div>;
+  }
+  if (!allProbes.length) {
+    return <div className="empty-state">No trained probe artifacts found.</div>;
+  }
+
+  return (
+    <div className="episode-probe-panel compact">
+      <section className="episode-probe-header">
+        <div className="episode-probe-selector-head">
+          <span>Interesting Probes</span>
+          <small>
+            top {Math.min(EPISODE_PROBE_RESULT_LIMIT, allProbes.length)}/{allProbes.length} · train episodes last
+          </small>
+        </div>
+        <EpisodeProbeStack
+          probes={allProbes}
+          refs={probeRefs}
+          selectedArtifactId={selectedProbe?.artifact_id ?? ""}
+          onProbeChange={onProbeChange}
+        />
+      </section>
+
+      <section className={["episode-probe-summary", tone].filter(Boolean).join(" ")}>
+        <div className="episode-probe-verdict">
+          <span>{probeQuestionLabel(selectedProbe)}</span>
+          <strong>{formatProbeComparison(predicted, actual)}</strong>
+          <small>
+            {[
+              formatProbeCorrect(displayedCorrect),
+              `conf ${formatMaybeNumber(selectedProbe?.episode_summary.confidence)}`,
+              episodeMembership.label,
+              probeSiteLabel,
+              probeTemporalLabel(temporalRows),
+            ].filter((item) => item && item !== "-").join(" · ")}
+          </small>
+        </div>
+        <div className="episode-probe-actions">
+          <button
+            disabled={!canInspectProbe}
+            title="Select the model layer this probe reads from"
+            type="button"
+            onClick={onInspectProbe}
+          >
+            Inspect
+          </button>
+          <button
+            disabled={!canJumpToProbeCall}
+            title="Move the episode timeline to the policy call this prediction came from"
+            type="button"
+            onClick={onJumpToProbeCall}
+          >
+            Jump
+          </button>
+        </div>
+      </section>
+
+      <section className="episode-probe-audit-strip" aria-label="Probe audit">
+        <ProbeAuditPill label="Signal" value={trajectoryAudit.value} detail={trajectoryAudit.detail} />
+        <ProbeAuditPill label="Site" value={siteAudit.value} detail={siteAudit.detail} />
+        <ProbeAuditPill
+          detail={`${episodeMembership.detail} · ${reliabilityAudit.detail}`}
+          label="Trust"
+          tone={episodeMembership.tone}
+          value={episodeMembership.label}
+        />
+      </section>
+
+      {temporalRows.length ? (
+        <EpisodeProbeTimeline
+          bestRow={bestRow}
+          rows={temporalRows}
+          onJumpToPolicyCall={onJumpToPolicyCall}
+        />
+      ) : null}
+
+      {selectedProbe && !selectedProbe.available ? (
+        <div className="empty-state compact">
+          This trained artifact could not be scored for this episode.
+        </div>
+      ) : null}
+
+      {showHeatmap ? (
+        <section className="episode-probe-plot">
+          <div className="episode-probe-plot-head">
+            <strong>Probe map</strong>
+            <label>
+              Plot
+              <select value={metric} onChange={(event) => setMetric(event.target.value as "confidence" | "correct")}>
+                <option value="confidence">Confidence</option>
+                <option value="correct">Correct</option>
+              </select>
+            </label>
+          </div>
+          <EpisodeProbeHeatmap cells={cells} />
+        </section>
+      ) : null}
+
+      <details className="episode-probe-details">
+        <summary>
+          <span>Probe details</span>
+          <small>{selectedProbe?.row_count ?? 0} rows</small>
+        </summary>
+        <div className="episode-probe-context">
+          <span>Source: {probeSourceLabel(bestRow, selectedProbeRef, bestFeature)}</span>
+          <span>Probe form: {probeModelLabel(bestRow, selectedProbe)}</span>
+          <span>Feature: {probeFeatureLabel(bestRow, bestFeature)}</span>
+          <span>Training: {usage.label} · {usage.detail}</span>
+          <span>Global score: {formatMaybeNumber(episodeProbeNumber(selectedProbe?.metrics.best_score))}</span>
+          <span>Global delta: {formatSignedProbeNumber(episodeProbeNumber(selectedProbe?.metrics.best_delta))}</span>
+        </div>
+        {filteredRows.length ? <EpisodeProbePredictionTable rows={filteredRows.slice(0, 12)} /> : null}
+      </details>
+    </div>
+  );
+}
+
+function EpisodeProbeStack({
+  onProbeChange,
+  probes,
+  refs,
+  selectedArtifactId,
+}: {
+  onProbeChange: (artifactId: string) => void;
+  probes: EpisodeProbeSummary[];
+  refs: ProbeLayerRef[];
+  selectedArtifactId: string;
+}) {
+  const refsByArtifact = new Map(refs.map((ref) => [ref.artifactId, ref]));
+  const sortedProbes = sortEpisodeProbesByInterestingness(probes);
+  const visibleProbes = ensureSelectedProbeVisible(
+    sortedProbes.slice(0, EPISODE_PROBE_RESULT_LIMIT),
+    sortedProbes,
+    selectedArtifactId,
+  );
+  return (
+    <div className="episode-probe-stack" aria-label="Episode probes">
+      {visibleProbes.map((probe) => {
+        const ref = refsByArtifact.get(probe.artifact_id);
+        const predicted = probe.episode_summary.predicted;
+        const actual = probe.episode_summary.actual;
+        const correct = probeDisplayedCorrect(predicted, actual, probe.episode_summary.correct);
+        const tone = probeToneFromCorrect(correct, probe.available);
+        const membership = probeEpisodeMembership(probe, probe.rows);
+        const call = ref?.policyCall;
+        const layer = ref?.layer;
+        return (
+          <button
+            className={[
+              probe.artifact_id === selectedArtifactId ? "active" : "",
+              tone,
+              membership.tone === "train" ? "low-interest" : "",
+            ].filter(Boolean).join(" ")}
+            key={probe.artifact_id}
+            type="button"
+            onClick={() => onProbeChange(probe.artifact_id)}
+          >
+            <span>{probe.target || probe.name}</span>
+            <strong>{formatProbeComparison(predicted, actual)}</strong>
+            <small>
+              {[
+                `conf ${formatMaybeNumber(probe.episode_summary.confidence)}`,
+                membership.label,
+                call === null || call === undefined ? "" : `call ${call}`,
+                layer === null || layer === undefined ? "" : `L${formatLayerNumber(layer)}`,
+              ].filter(Boolean).join(" · ")}
+            </small>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ProbeAuditPill({
+  detail,
+  label,
+  tone,
+  value,
+}: {
+  detail: string;
+  label: string;
+  tone?: EpisodeProbeMembership["tone"] | EpisodeProbeUsage["tone"];
+  value: string;
+}) {
+  return (
+    <div className={["episode-probe-audit-pill", tone ?? ""].filter(Boolean).join(" ")}>
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </div>
+  );
+}
+
+function EpisodeProbeTimeline({
+  bestRow,
+  onJumpToPolicyCall,
+  rows,
+}: {
+  bestRow?: EpisodeProbePrediction;
+  onJumpToPolicyCall: (policyCallIndex: number) => void;
+  rows: EpisodeProbePrediction[];
+}) {
+  return (
+    <section className="episode-probe-timeline" aria-label="Probe prediction by policy call">
+      <div className="episode-probe-plot-head">
+        <strong>Policy-call readout</strong>
+        <small>{rows.length === 1 ? "single source cell" : `${rows.length} scored calls`}</small>
+      </div>
+      <div className="episode-probe-timeline-row">
+        {rows.map((row, index) => {
+          const policyCall = episodeProbeNumber(row.policy_call_index);
+          const bestPolicyCall = episodeProbeNumber(bestRow?.policy_call_index);
+          const isBest =
+            policyCall !== null &&
+            bestPolicyCall === policyCall &&
+            String(bestRow?.model_site_id ?? "") === String(row.model_site_id ?? "");
+          const label = policyCall === null ? `row ${index + 1}` : `call ${policyCall}`;
+          const confidence = episodeProbeNumber(row.confidence);
+          const styleValue = `${(confidence === null ? 0.08 : Math.max(0.08, Math.min(1, confidence))) * 100}%`;
+          return (
+            <button
+              className={[
+                probeRowTone(row),
+                isBest ? "active" : "",
+              ].filter(Boolean).join(" ")}
+              disabled={policyCall === null}
+              key={`${row.model_site_id ?? row.feature ?? "probe"}-${policyCall ?? index}`}
+              style={{ "--probe-confidence": styleValue } as CSSProperties}
+              title={[
+                label,
+                row.timestep === null || row.timestep === undefined ? "" : `t=${row.timestep}`,
+                `predicted ${formatProbeValue(row.predicted ?? row.prediction_value)}`,
+                `actual ${formatProbeValue(row.actual)}`,
+                `confidence ${formatMaybeNumber(row.confidence)}`,
+              ].filter(Boolean).join(" / ")}
+              type="button"
+              onClick={() => {
+                if (policyCall !== null) {
+                  onJumpToPolicyCall(policyCall);
+                }
+              }}
+            >
+              <span>{label}</span>
+              <i />
+              <small>{formatMaybeNumber(row.confidence)}</small>
+            </button>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+type EpisodeProbeUsage = {
+  detail: string;
+  label: string;
+  tone: "heldout" | "scored" | "train" | "unknown";
+};
+
+type EpisodeProbeMembership = {
+  detail: string;
+  label: string;
+  tone: "test" | "train" | "unknown" | "validation";
+};
+
+type ProbeAuditLine = {
+  detail: string;
+  value: string;
+};
+
+function sortEpisodeProbesByInterestingness(probes: EpisodeProbeSummary[]): EpisodeProbeSummary[] {
+  return [...probes].sort((left, right) => {
+    const delta = episodeProbeInterestingness(right) - episodeProbeInterestingness(left);
+    if (delta !== 0) {
+      return delta;
+    }
+    return String(left.target ?? left.name).localeCompare(String(right.target ?? right.name));
+  });
+}
+
+function ensureSelectedProbeVisible(
+  visible: EpisodeProbeSummary[],
+  sorted: EpisodeProbeSummary[],
+  selectedArtifactId: string,
+): EpisodeProbeSummary[] {
+  if (!selectedArtifactId || visible.some((probe) => probe.artifact_id === selectedArtifactId)) {
+    return visible;
+  }
+  const selected = sorted.find((probe) => probe.artifact_id === selectedArtifactId);
+  return selected ? [...visible.slice(0, Math.max(0, EPISODE_PROBE_RESULT_LIMIT - 1)), selected] : visible;
+}
+
+function episodeProbeInterestingness(probe: EpisodeProbeSummary): number {
+  const predicted = probe.episode_summary.predicted;
+  const actual = probe.episode_summary.actual;
+  const correct = probeDisplayedCorrect(predicted, actual, probe.episode_summary.correct);
+  const confidence = episodeProbeNumber(probe.episode_summary.confidence);
+  const membership = probeEpisodeMembership(probe, probe.rows);
+  const temporalRows = episodeProbeTemporalRows(probe.rows);
+  const predictions = uniqueStrings(
+    temporalRows
+      .map((row) => formatProbeValue(row.predicted ?? row.prediction_value))
+      .filter((value) => value !== "-"),
+  );
+  let score = 0;
+  if (!probe.available) score -= 120;
+  if (membership.tone === "train") score -= 260;
+  if (membership.tone === "validation") score += 80;
+  if (membership.tone === "test") score += 110;
+  if (correct === false) score += 360;
+  if (correct === null) score += 80;
+  if (confidence !== null) {
+    score += (1 - Math.abs(confidence - 0.5) * 2) * 110;
+    if (confidence >= 0.95 && correct === true) score -= 40;
+  }
+  if (temporalRows.length > 1) score += Math.min(120, temporalRows.length * 10);
+  if (predictions.length > 1) score += 160;
+  if (String(probe.target ?? "").includes("outcome")) score += 35;
+  return score;
+}
+
+function episodeProbeUsage(
+  probe: EpisodeProbeSummary | undefined,
+  rows: EpisodeProbeSummary["rows"],
+): EpisodeProbeUsage {
+  if (!probe) {
+    return { detail: "-", label: "unknown", tone: "unknown" };
+  }
+  const candidateRows = [
+    probe.episode_summary.best_row,
+    ...rows,
+  ].filter(Boolean) as EpisodeProbeSummary["rows"];
+  const splits = uniqueStrings(
+    candidateRows
+      .map((row) => normalizeProbeSplit(row.split))
+      .filter((value): value is string => Boolean(value)),
+  );
+  const categories = uniqueStrings(
+    splits
+      .map(probeSplitCategory)
+      .filter((value): value is Exclude<EpisodeProbeMembership["tone"], "unknown"> => value !== "unknown"),
+  );
+  const detail = categories.length ? `episode split ${categories.join(", ")}` : "episode split missing";
+  if (candidateRows.some((row) => String(row.eval_split ?? "") === "on_demand_episode")) {
+    return {
+      detail: categories.length ? `scored on demand · ${detail}` : "scored on demand · episode split missing",
+      label: "episode scored",
+      tone: "scored",
+    };
+  }
+  if (categories.includes("train")) {
+    return { detail, label: "train", tone: "train" };
+  }
+  if (categories.includes("test")) {
+    return { detail, label: "test", tone: "heldout" };
+  }
+  if (categories.includes("validation")) {
+    return { detail, label: "validation", tone: "heldout" };
+  }
+  if (!probe.available) {
+    return { detail: "not scored", label: "split missing", tone: "unknown" };
+  }
+  return { detail, label: "split missing", tone: "unknown" };
+}
+
+function probeEpisodeMembership(
+  probe: EpisodeProbeSummary | undefined,
+  rows: EpisodeProbeSummary["rows"],
+): EpisodeProbeMembership {
+  if (!probe) {
+    return { detail: "episode split metadata was not returned", label: "split missing", tone: "unknown" };
+  }
+  const candidateRows = [
+    probe.episode_summary.best_row,
+    ...rows,
+  ].filter(Boolean) as EpisodeProbeSummary["rows"];
+  const splits = uniqueStrings(
+    candidateRows
+      .map((row) => normalizeProbeSplit(row.split))
+      .filter((value): value is string => Boolean(value)),
+  );
+  const categories = uniqueStrings(
+    splits
+      .map(probeSplitCategory)
+      .filter((value): value is Exclude<EpisodeProbeMembership["tone"], "unknown"> => value !== "unknown"),
+  );
+  if (categories.includes("train")) {
+    return {
+      detail: "this episode appears in the probe training split, so treat it as a sanity check",
+      label: "train episode",
+      tone: "train",
+    };
+  }
+  if (categories.includes("test")) {
+    return {
+      detail: "this episode is in the probe test split",
+      label: "test episode",
+      tone: "test",
+    };
+  }
+  if (categories.includes("validation")) {
+    return {
+      detail: "this episode is in the probe validation split",
+      label: "validation episode",
+      tone: "validation",
+    };
+  }
+  return {
+    detail: splits.length ? `unrecognized split ${splits.join(", ")}` : "episode split metadata was not returned",
+    label: "split missing",
+    tone: "unknown",
+  };
+}
+
+function normalizeProbeSplit(value: unknown): string | null {
+  const text = String(value ?? "").trim().toLowerCase();
+  if (!text || text === "nan" || text === "none" || text === "null") {
+    return null;
+  }
+  return text.replaceAll("-", "_");
+}
+
+function probeSplitCategory(split: string | null): EpisodeProbeMembership["tone"] {
+  const text = String(split ?? "").trim().toLowerCase().replaceAll("-", "_");
+  if (!text) {
+    return "unknown";
+  }
+  if (text === "train" || text === "training") {
+    return "train";
+  }
+  if (text === "test" || text.startsWith("test_")) {
+    return "test";
+  }
+  if (
+    text === "val" ||
+    text === "valid" ||
+    text === "validation" ||
+    text.startsWith("val_") ||
+    text.includes("heldout") ||
+    text.includes("held_out")
+  ) {
+    return "validation";
+  }
+  return "unknown";
+}
+
+function probeQuestionLabel(probe: EpisodeProbeSummary | undefined): string {
+  const target = String(probe?.target ?? "").trim();
+  const labels: Record<string, string> = {
+    first_moved_is_target: "Was the first moved object the target?",
+    outcome: "How did this episode end?",
+    target_moved: "Did the target object move?",
+  };
+  if (target && labels[target]) {
+    return labels[target];
+  }
+  if (target) {
+    return labelFromSnake(target);
+  }
+  return probe?.name || "Probe readout";
+}
+
+function probeTrajectoryAudit(
+  rows: EpisodeProbePrediction[],
+  bestRow?: EpisodeProbePrediction,
+): ProbeAuditLine {
+  if (!rows.length) {
+    return {
+      detail: "No per-call prediction rows were returned for this artifact.",
+      value: "not scored",
+    };
+  }
+  const calls = uniqueStrings(
+    rows
+      .map((row) => episodeProbeNumber(row.policy_call_index))
+      .filter((value): value is number => value !== null)
+      .map(String),
+  );
+  const predictions = uniqueStrings(
+    rows
+      .map((row) => formatProbeValue(row.predicted ?? row.prediction_value))
+      .filter((value) => value !== "-"),
+  );
+  const firstConfident = rows.find((row) => {
+    const confidence = episodeProbeNumber(row.confidence);
+    return confidence !== null && confidence >= 0.75;
+  });
+  const bestCall = episodeProbeNumber(bestRow?.policy_call_index);
+  const firstConfidentLabel = firstConfident ? probeCallTimestepLabel(firstConfident) : "";
+  const value = calls.length > 1
+    ? `${calls.length} calls`
+    : bestCall === null
+      ? "single readout"
+      : `call ${bestCall}`;
+  const detail = [
+    firstConfidentLabel ? `first high confidence at ${firstConfidentLabel}` : "no high-confidence call",
+    predictions.length > 1
+      ? `prediction changes across calls: ${predictions.join(" -> ")}`
+      : predictions[0]
+        ? `stable ${predictions[0]}`
+        : "",
+  ].filter(Boolean).join("; ");
+  return {
+    detail: detail || "Single source cell for this episode.",
+    value,
+  };
+}
+
+function probeSiteAudit(
+  row: EpisodeProbePrediction | undefined,
+  ref: ProbeLayerRef | undefined,
+  fallback: string,
+): ProbeAuditLine {
+  const source = probeSourceLabel(row, ref, fallback);
+  const details = [
+    ref?.layer === null || ref?.layer === undefined ? "" : `layer ${formatLayerNumber(ref.layer)}`,
+    ref?.policyCall === null || ref?.policyCall === undefined ? "" : `policy call ${ref.policyCall}`,
+    probeFeatureLabel(row, fallback),
+  ].filter(Boolean);
+  return {
+    detail: details.join(" · ") || "Mapped from the selected probe artifact.",
+    value: source,
+  };
+}
+
+function probeReliabilityAudit(
+  probe: EpisodeProbeSummary | undefined,
+  usage: EpisodeProbeUsage,
+): ProbeAuditLine {
+  if (!probe?.available) {
+    return {
+      detail: "The artifact exists, but this episode has no usable prediction rows.",
+      value: "unscored",
+    };
+  }
+  const score = episodeProbeNumber(probe.metrics.best_score);
+  const delta = episodeProbeNumber(probe.metrics.best_delta);
+  const detail = [
+    usage.detail,
+    score === null ? "" : `global ${formatMaybeNumber(score)}`,
+    delta === null ? "" : `delta ${formatSignedProbeNumber(delta)}`,
+  ].filter(Boolean).join(" · ");
+  return {
+    detail,
+    value: usage.label,
+  };
+}
+
+function probeCallTimestepLabel(row: EpisodeProbePrediction): string {
+  const call = episodeProbeNumber(row.policy_call_index);
+  const timestep = episodeProbeNumber(row.timestep);
+  return [
+    call === null ? "source row" : `call ${call}`,
+    timestep === null ? "" : `t~${timestep}`,
+  ].filter(Boolean).join(" / ");
+}
+
+function probeToneFromCorrect(correct: boolean | null | undefined, available: boolean | undefined): ProbeTone {
+  if (!available) {
+    return "unscored";
+  }
+  return correct === false ? "incorrect" : correct === true ? "correct" : "unscored";
+}
+
+function probeDisplayedCorrect(
+  predicted: unknown,
+  actual: unknown,
+  fallback: boolean | null | undefined,
+): boolean | null {
+  const predictedText = normalizedProbeValue(predicted);
+  const actualText = normalizedProbeValue(actual);
+  if (predictedText && actualText) {
+    return predictedText === actualText;
+  }
+  return fallback === undefined ? null : fallback;
+}
+
+function normalizedProbeValue(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function probeRowTone(row: EpisodeProbePrediction): ProbeTone {
+  if (row.correct === null || row.correct === undefined) {
+    return "unscored";
+  }
+  return row.correct ? "correct" : "incorrect";
+}
+
+function episodeProbeTemporalRows(rows: EpisodeProbePrediction[]): EpisodeProbePrediction[] {
+  return [...rows].sort((a, b) => {
+    const aCall = episodeProbeNumber(a.policy_call_index);
+    const bCall = episodeProbeNumber(b.policy_call_index);
+    if (aCall !== null && bCall !== null && aCall !== bCall) {
+      return aCall - bCall;
+    }
+    const aTimestep = episodeProbeNumber(a.timestep);
+    const bTimestep = episodeProbeNumber(b.timestep);
+    if (aTimestep !== null && bTimestep !== null && aTimestep !== bTimestep) {
+      return aTimestep - bTimestep;
+    }
+    return String(a.model_site_id ?? a.feature ?? "").localeCompare(String(b.model_site_id ?? b.feature ?? ""));
+  });
+}
+
+function probeTemporalLabel(rows: EpisodeProbePrediction[]): string {
+  if (!rows.length) {
+    return "No episode-level prediction rows were returned.";
+  }
+  const calls = uniqueStrings(
+    rows
+      .map((row) => episodeProbeNumber(row.policy_call_index))
+      .filter((value): value is number => value !== null)
+      .map((value) => String(value)),
+  );
+  if (calls.length > 1) {
+    return `${calls.length} calls`;
+  }
+  const row = rows[0];
+  const timestep = episodeProbeNumber(row.timestep);
+  return [
+    calls[0] ? `call ${calls[0]}` : "one source cell",
+    timestep === null ? "" : `t~${timestep}`,
+  ].filter(Boolean).join(" · ");
+}
+
+function probeSourceLabel(
+  row: EpisodeProbePrediction | undefined,
+  ref: ProbeLayerRef | undefined,
+  fallback: string,
+): string {
+  if (row?.model_site_id) {
+    return humanizeModelSite(row.model_site_id);
+  }
+  if (ref?.modelSiteId) {
+    return humanizeModelSite(ref.modelSiteId);
+  }
+  if (ref?.layer !== null && ref?.layer !== undefined) {
+    return `Expert layer ${formatLayerNumber(ref.layer)}`;
+  }
+  return fallback || "selected source";
+}
+
+function probeModelLabel(
+  row: EpisodeProbePrediction | undefined,
+  probe: EpisodeProbeSummary | undefined,
+): string {
+  const model = String(row?.model || probe?.metrics.best_model || "").trim();
+  const metric = String(probe?.metrics.best_primary_metric || row?.primary_metric || "").trim();
+  return [model ? `${model} probe` : "probe", metric].filter(Boolean).join(" · ");
+}
+
+function probeFeatureLabel(row: EpisodeProbePrediction | undefined, fallback: string): string {
+  const feature = String(row?.feature || fallback || "").trim();
+  if (!feature) {
+    return "Feature source metadata is not available.";
+  }
+  if (feature === "selected model_sites") {
+    return "Uses the selected model site at each policy call.";
+  }
+  if (feature.includes("policy_call_index") || feature.includes("layer=")) {
+    return feature.replaceAll("_", " ");
+  }
+  return feature;
+}
+
+function humanizeModelSite(siteId: string): string {
+  const layerMatch = siteId.match(/layers\.([0-9.]+)/);
+  if (layerMatch) {
+    return `Expert layer ${formatLayerNumber(Number(layerMatch[1]))}`;
+  }
+  if (siteId.includes("action_head.input")) {
+    return "Action head input";
+  }
+  if (siteId.includes("action_head.output")) {
+    return "Action head output";
+  }
+  if (siteId.includes("image_features")) {
+    return "Image feature input";
+  }
+  return siteId.replace(/^pi05\./, "").replaceAll(".", " ");
+}
+
+function formatProbeComparison(predicted: unknown, actual: unknown): string {
+  return `pred ${formatProbeValue(predicted)} / truth ${formatProbeValue(actual)}`;
+}
+
+type EpisodeProbeCell = {
+  layer: string;
+  policyCall: string;
+  value: number;
+  count: number;
+};
+
+function EpisodeProbeHeatmap({ cells }: { cells: EpisodeProbeCell[] }) {
+  const layers = uniqueStrings(cells.map((cell) => cell.layer));
+  const calls = uniqueStrings(cells.map((cell) => cell.policyCall));
+  const range = {
+    min: Math.min(...cells.map((cell) => cell.value)),
+    max: Math.max(...cells.map((cell) => cell.value)),
+  };
+  return (
+    <div className="episode-probe-heatmap-wrap">
+      <div
+        className="heatmap-grid episode-probe-heatmap"
+        style={{ gridTemplateColumns: `64px repeat(${calls.length}, minmax(42px, 1fr))` }}
+      >
+        <div className="axis-corner">layer</div>
+        {calls.map((call) => (
+          <div className="axis-label" key={`call-${call}`}>
+            c{call}
+          </div>
+        ))}
+        {layers.map((layer) => (
+          <ProbeHeatmapRow
+            calls={calls}
+            cells={cells}
+            key={`layer-${layer}`}
+            layer={layer}
+            range={range}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProbeHeatmapRow({
+  calls,
+  cells,
+  layer,
+  range,
+}: {
+  calls: string[];
+  cells: EpisodeProbeCell[];
+  layer: string;
+  range: { min: number; max: number };
+}) {
+  return (
+    <>
+      <div className="axis-label y-label">{layer}</div>
+      {calls.map((call) => {
+        const cell = cells.find((item) => item.layer === layer && item.policyCall === call);
+        return (
+          <div
+            className="heatmap-cell readonly"
+            key={`${layer}-${call}`}
+            style={{ background: episodeProbeColor(cell?.value ?? null, range) }}
+            title={cell ? `${cell.count} row${cell.count === 1 ? "" : "s"}` : undefined}
+          >
+            {cell ? episodeProbeValueLabel(cell.value) : ""}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function EpisodeProbePredictionTable({ rows }: { rows: EpisodeProbeSummary["rows"] }) {
+  return (
+    <div className="table-scroll">
+      <table className="compact-table">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th>Actual</th>
+            <th>Predicted</th>
+            <th>Conf.</th>
+            <th>OK</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={`${row.feature ?? "feature"}-${index}`}>
+              <td>{row.feature ?? `layer ${row.layer} call ${row.policy_call_index}`}</td>
+              <td>{String(row.actual ?? row.target_value ?? "-")}</td>
+              <td>{String(row.predicted ?? row.prediction_value ?? "-")}</td>
+              <td>{formatMaybeNumber(row.confidence)}</td>
+              <td>{row.correct === null || row.correct === undefined ? "-" : row.correct ? "yes" : "no"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function episodeProbeCells(
+  rows: EpisodeProbeSummary["rows"],
+  metric: "confidence" | "correct",
+): EpisodeProbeCell[] {
+  const buckets = new Map<string, { layer: string; policyCall: string; total: number; count: number }>();
+  for (const row of rows) {
+    const layer = row.layer ?? layerFromFeature(row.feature) ?? "all";
+    const policyCall = row.policy_call_index ?? policyCallFromFeature(row.feature) ?? "all";
+    const value =
+      metric === "correct"
+        ? row.correct === null || row.correct === undefined
+          ? null
+          : row.correct
+            ? 1
+            : 0
+        : episodeProbeNumber(row.confidence);
+    if (value === null) {
+      continue;
+    }
+    const key = `${layer}:${policyCall}`;
+    const bucket = buckets.get(key) ?? {
+      layer: String(layer),
+      policyCall: String(policyCall),
+      total: 0,
+      count: 0,
+    };
+    bucket.total += value;
+    bucket.count += 1;
+    buckets.set(key, bucket);
+  }
+  return [...buckets.values()].map((bucket) => ({
+    layer: bucket.layer,
+    policyCall: bucket.policyCall,
+    value: bucket.total / Math.max(1, bucket.count),
+    count: bucket.count,
+  }));
+}
+
+function layerFromFeature(feature: string | undefined): number | null {
+  const match = feature?.match(/layer=([0-9.]+)/);
+  return match ? Number(match[1]) : null;
+}
+
+function policyCallFromFeature(feature: string | undefined): number | null {
+  const match = feature?.match(/policy_call_index=([0-9.]+)/);
+  return match ? Number(match[1]) : null;
+}
+
+function selectedEpisodeProbe(
+  probes: EpisodeProbesResponse | undefined,
+  artifactId: string,
+): EpisodeProbeSummary | undefined {
+  const allProbes = probes?.probes ?? [];
+  const availableProbes = allProbes.filter((probe) => probe.available);
+  return (
+    availableProbes.find((probe) => probe.artifact_id === artifactId) ??
+    allProbes.find((probe) => probe.artifact_id === artifactId) ??
+    availableProbes[0] ??
+    allProbes[0]
+  );
+}
+
+function probeLayerReferences(probes?: EpisodeProbesResponse): ProbeLayerRef[] {
+  return (probes?.probes ?? []).map((probe) => {
+    const row = probe.episode_summary.best_row;
+    const bestFeature =
+      probe.episode_summary.best_feature ||
+      row?.feature ||
+      (probe.metrics.best_feature === undefined ? "" : String(probe.metrics.best_feature));
+    const rowLayer = episodeProbeNumber(row?.layer);
+    const rowPolicyCall = episodeProbeNumber(row?.policy_call_index);
+    return {
+      actual: probe.episode_summary.actual,
+      artifactId: probe.artifact_id,
+      confidence: episodeProbeNumber(probe.episode_summary.confidence),
+      correct: probe.episode_summary.correct,
+      layer: rowLayer ?? layerFromFeature(bestFeature),
+      modelSiteId: row?.model_site_id,
+      name: probe.name,
+      policyCall: rowPolicyCall ?? policyCallFromFeature(bestFeature),
+      predicted: probe.episode_summary.predicted,
+      target: probe.target,
+    };
+  }).filter((ref) => ref.layer !== null || ref.policyCall !== null);
+}
+
+function episodeProbeNumber(value: unknown): number | null {
+  const number = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(number) ? number : null;
+}
+
+function formatSignedProbeNumber(value: number | null): string {
+  return value === null ? "-" : `${value >= 0 ? "+" : ""}${value.toFixed(4)}`;
+}
+
+function formatProbeValue(value: unknown): string {
+  return value === null || value === undefined || value === "" ? "-" : String(value);
+}
+
+function formatProbeCorrect(value: boolean | null | undefined): string {
+  if (value === null || value === undefined) {
+    return "unscored";
+  }
+  return value ? "correct" : "incorrect";
+}
+
+function episodeProbeValueLabel(value: number): string {
+  return value <= 1 ? value.toFixed(2) : value.toFixed(1);
+}
+
+function episodeProbeColor(value: number | null, range: { min: number; max: number }): string {
+  if (value === null) {
+    return "#eef2f7";
+  }
+  const min = Number.isFinite(range.min) ? range.min : 0;
+  const max = Number.isFinite(range.max) ? range.max : 1;
+  const ratio = Math.max(0, Math.min(1, (value - min) / Math.max(max - min, 1e-6)));
+  return `rgba(47, 111, 127, ${0.12 + ratio * 0.58})`;
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return Array.from(new Set(values)).sort((left, right) =>
+    left.localeCompare(right, undefined, { numeric: true }),
+  );
 }
 
 function MetricPlotPanel({
@@ -2138,6 +3420,7 @@ function ActivationSitePanel({
   attentionHead,
   attentionQueryToken,
   cameraOverlay,
+  episodeProbes,
   generationStep,
   generationStepCount,
   expertTokenActivations,
@@ -2153,11 +3436,16 @@ function ActivationSitePanel({
   onActivationClipPercentChange,
   onFeatureChange,
   onInspectionModeChange,
+  onPatchSelect,
+  onProbeSelect,
+  onPromptTokenSelect,
   onTopChannelCountChange,
   onSiteChange,
   patchFeatures,
   selectedExpertToken,
   selectedPatch,
+  selectedPromptToken,
+  selectedProbeArtifactId,
   sites,
   selectedSite,
   selectedSiteName,
@@ -2171,6 +3459,7 @@ function ActivationSitePanel({
   attentionHead: number | null;
   attentionQueryToken: number | null;
   cameraOverlay?: CameraOverlayPayload;
+  episodeProbes?: EpisodeProbesResponse;
   generationStep: number;
   generationStepCount: number;
   expertTokenActivations?: ExpertTokenActivationsResponse;
@@ -2186,11 +3475,16 @@ function ActivationSitePanel({
   onActivationClipPercentChange: (clipPercent: number) => void;
   onFeatureChange: (feature: number) => void;
   onInspectionModeChange: (mode: InspectionMode) => void;
+  onPatchSelect: (patch: SelectedPatch | null) => void;
+  onProbeSelect: (artifactId: string) => void;
+  onPromptTokenSelect: (tokenIndex: number | null) => void;
   onTopChannelCountChange: (count: number) => void;
   onSiteChange: (siteName: string) => void;
   patchFeatures?: PatchFeaturesResponse;
   selectedExpertToken: number | null;
   selectedPatch: SelectedPatch | null;
+  selectedPromptToken: number | null;
+  selectedProbeArtifactId: string;
   sites: ActivationSite[];
   selectedSite?: ActivationSite;
   selectedSiteName: string;
@@ -2202,6 +3496,7 @@ function ActivationSitePanel({
     ? Math.max(0, siteFeatureCount || activationSlice?.feature_count || 0)
     : 0;
   const topRows = selectedSiteHasFeatures ? activationSlice?.top_abs ?? [] : [];
+  const probeLayerRefs = probeLayerReferences(episodeProbes);
   const channelFeatureControl =
     inspectionMode === "features" && selectedSiteHasFeatures ? (
       <ChannelFeatureControl
@@ -2245,6 +3540,9 @@ function ActivationSitePanel({
         axisControls={attentionAxisControls ?? channelFeatureControl}
         inspectionMode={inspectionMode}
         onInspectionModeChange={onInspectionModeChange}
+        onProbeSelect={onProbeSelect}
+        probeLayerRefs={probeLayerRefs}
+        selectedProbeArtifactId={selectedProbeArtifactId}
         selectedSiteName={selectedSiteName}
         sites={sites}
         topChannelPanel={topChannelPanel}
@@ -2275,9 +3573,13 @@ function ActivationSitePanel({
                 activeFeature={feature}
                 details={expertTokenDetails}
                 payload={expertTokenActivations}
+                selectedPatch={selectedPatch}
+                selectedPromptToken={selectedPromptToken}
                 selectedToken={selectedExpertToken}
                 tokenSiteName={expertTokenSiteName}
                 onFeatureChange={onFeatureChange}
+                onPatchSelect={onPatchSelect}
+                onPromptTokenSelect={onPromptTokenSelect}
                 onTokenChange={onExpertTokenChange}
               />
             </>
@@ -2301,29 +3603,50 @@ function ChannelFeatureControl({
   onFeatureChange: (feature: number) => void;
   selectedSiteHasFeatures: boolean;
 }) {
+  const maxFeature = Math.max(0, featureCount - 1);
+  const clampFeature = (value: number) => Math.max(0, Math.min(maxFeature, Number.isFinite(value) ? value : 0));
+  const [draftFeature, setDraftFeature] = useState<number | null>(null);
+  const displayedFeature = draftFeature ?? clampFeature(feature);
+  const commitFeature = (value: number) => {
+    const next = clampFeature(value);
+    setDraftFeature(null);
+    if (next !== feature) {
+      onFeatureChange(next);
+    }
+  };
+
   if (!selectedSiteHasFeatures) {
     return null;
   }
+
   return (
     <div className="channel-feature-control">
       <div className="feature-control">
         <label>
-          Channel {feature}
+          Channel {displayedFeature}
           <input
-            max={Math.max(0, featureCount - 1)}
+            max={maxFeature}
             min={0}
             type="range"
-            value={feature}
-            onChange={(event) => onFeatureChange(Number(event.target.value))}
+            value={displayedFeature}
+            onChange={(event) => setDraftFeature(clampFeature(Number(event.target.value)))}
+            onBlur={() => commitFeature(displayedFeature)}
+            onKeyUp={() => commitFeature(displayedFeature)}
+            onMouseUp={() => commitFeature(displayedFeature)}
+            onTouchEnd={() => commitFeature(displayedFeature)}
           />
         </label>
         <input
           aria-label="Channel index"
-          max={Math.max(0, featureCount - 1)}
+          max={maxFeature}
           min={0}
           type="number"
-          value={feature}
-          onChange={(event) => onFeatureChange(Number(event.target.value))}
+          value={displayedFeature}
+          onBlur={() => commitFeature(displayedFeature)}
+          onChange={(event) => {
+            const next = clampFeature(Number(event.target.value));
+            commitFeature(next);
+          }}
         />
       </div>
     </div>
@@ -2351,6 +3674,46 @@ function AttentionAxisControls({
     queryToken === null || queryCount <= 0
       ? null
       : Math.max(0, Math.min(queryToken, queryCount - 1));
+  const queryCommitTimer = useRef<number | null>(null);
+  const activeQuery = clampedQuery ?? 0;
+  const [draftQuery, setDraftQuery] = useState<number | null>(null);
+  const displayedQuery = draftQuery ?? activeQuery;
+  const queryLabel =
+    selectedSite?.query_token_space_id === "pi05.action_horizon" ||
+    selectedSite?.token_kind === "action"
+      ? "Action slot"
+      : "Query slot";
+  const clampQuery = (value: number) =>
+    Math.max(0, Math.min(Math.max(0, queryCount - 1), Number.isFinite(value) ? value : 0));
+  const commitQuery = (value: number) => {
+    const next = clampQuery(value);
+    if (queryCommitTimer.current !== null) {
+      window.clearTimeout(queryCommitTimer.current);
+      queryCommitTimer.current = null;
+    }
+    setDraftQuery(null);
+    onQueryTokenChange(next);
+  };
+  const scheduleQueryCommit = (value: number) => {
+    const next = clampQuery(value);
+    setDraftQuery(next);
+    if (queryCommitTimer.current !== null) {
+      window.clearTimeout(queryCommitTimer.current);
+    }
+    queryCommitTimer.current = window.setTimeout(() => {
+      queryCommitTimer.current = null;
+      setDraftQuery(null);
+      onQueryTokenChange(next);
+    }, 120);
+  };
+
+  useEffect(() => {
+    return () => {
+      if (queryCommitTimer.current !== null) {
+        window.clearTimeout(queryCommitTimer.current);
+      }
+    };
+  }, []);
 
   if (headCount <= 0 && queryCount <= 0) {
     return null;
@@ -2366,52 +3729,54 @@ function AttentionAxisControls({
         </div>
       ) : null}
       {headCount > 0 ? (
-        <label>
-          Head
-          <select
-            value={clampedHead === null ? "avg" : String(clampedHead)}
-            onChange={(event) => {
-              const value = event.target.value;
-              onHeadChange(value === "avg" ? null : Number(value));
-            }}
-          >
-            <option value="avg">Average heads</option>
+        <div className="attention-head-control">
+          <span className="attention-control-label">Head</span>
+          <div className="attention-head-blocks" aria-label="Attention heads">
+            <button
+              className={clampedHead === null ? "active summary" : "summary"}
+              type="button"
+              onClick={() => onHeadChange(null)}
+            >
+              Mean
+            </button>
             {Array.from({ length: headCount }, (_, index) => (
-              <option key={index} value={index}>
-                Head {index}
-              </option>
+              <button
+                className={clampedHead === index ? "active" : ""}
+                key={index}
+                type="button"
+                onClick={() => onHeadChange(index)}
+              >
+                {index}
+              </button>
             ))}
-          </select>
-        </label>
+          </div>
+        </div>
       ) : null}
       {queryCount > 0 ? (
         <div className="feature-control attention-query-control">
           <label>
-            Looking slot {clampedQuery === null ? "average" : clampedQuery}
+            {queryLabel} {clampedQuery === null ? "mean" : clampedQuery}
             <input
-              disabled={clampedQuery === null}
               max={Math.max(0, queryCount - 1)}
               min={0}
               type="range"
-              value={clampedQuery ?? 0}
-              onChange={(event) => onQueryTokenChange(Number(event.target.value))}
+              value={displayedQuery}
+              onBlur={() => commitQuery(displayedQuery)}
+              onChange={(event) => scheduleQueryCommit(Number(event.target.value))}
+              onMouseUp={() => commitQuery(displayedQuery)}
+              onTouchEnd={() => commitQuery(displayedQuery)}
             />
           </label>
           <div className="attention-query-inputs">
-            <button
-              className={clampedQuery === null ? "active" : ""}
-              type="button"
-              onClick={() => onQueryTokenChange(null)}
-            >
-              Avg
-            </button>
+            <span>Slot</span>
             <input
-              aria-label="Looking slot index"
+              aria-label={`${queryLabel} index`}
               max={Math.max(0, queryCount - 1)}
               min={0}
               type="number"
-              value={clampedQuery ?? 0}
-              onChange={(event) => onQueryTokenChange(Number(event.target.value))}
+              value={displayedQuery}
+              onBlur={() => commitQuery(displayedQuery)}
+              onChange={(event) => scheduleQueryCommit(Number(event.target.value))}
             />
           </div>
         </div>
@@ -2498,15 +3863,19 @@ function GenerationStepControl({
 function PromptAttentionStrip({
   expertTokenDetails,
   context,
+  onPromptTokenSelect,
   prompt,
   promptAttention,
   promptFeatureMap,
+  selectedPromptToken,
 }: {
   expertTokenDetails?: ExpertTokenDetailsResponse;
   context: InspectorContext;
+  onPromptTokenSelect: (tokenIndex: number | null) => void;
   prompt?: string | null;
   promptAttention?: PromptAttentionResponse;
   promptFeatureMap?: PromptAttentionResponse;
+  selectedPromptToken: number | null;
 }) {
   const modelPromptRows = orderedPromptAttentionRows(
     expertTokenDetails?.available ? expertTokenDetails : undefined,
@@ -2527,7 +3896,12 @@ function PromptAttentionStrip({
         <strong>Prompt</strong>
       </div>
       {rows.length ? (
-        <PromptAttentionChips rows={rows} maxAttention={maxAttention} />
+        <PromptAttentionChips
+          rows={rows}
+          maxAttention={maxAttention}
+          selectedPromptToken={selectedPromptToken}
+          onPromptTokenSelect={onPromptTokenSelect}
+        />
       ) : (
         <p>{promptText}</p>
       )}
@@ -2600,10 +3974,14 @@ function CurrentImagePatchPanel({
 
 function PromptAttentionChips({
   maxAttention,
+  onPromptTokenSelect,
   rows,
+  selectedPromptToken,
 }: {
   maxAttention: number;
+  onPromptTokenSelect: (tokenIndex: number | null) => void;
   rows: PromptTokenAttention[];
+  selectedPromptToken: number | null;
 }) {
   if (!rows.length) {
     return <div className="empty-state">Prompt attention is not available for the current selection.</div>;
@@ -2613,17 +3991,21 @@ function PromptAttentionChips({
       {rows.map((row) => {
         const attention = Number(row.attention);
         const token = promptTokenDisplay(row);
+        const selected = selectedPromptToken === row.local_index;
         return (
           <span key={`${row.prefix_index ?? row.local_index}-${row.token_id ?? row.token_piece ?? ""}`}>
             {token.prefix ? <span className="prompt-token-space">{token.prefix}</span> : null}
             {token.text ? (
-              <span
-                className="prompt-attention-chip"
+              <button
+                aria-pressed={selected}
+                className={selected ? "prompt-attention-chip active" : "prompt-attention-chip"}
                 style={{ background: signedActivationColor(attention, maxAttention) }}
                 title={promptTokenTitle(row)}
+                type="button"
+                onClick={() => onPromptTokenSelect(row.local_index)}
               >
                 <strong>{token.text}</strong>
-              </span>
+              </button>
             ) : null}
           </span>
         );
@@ -2638,7 +4020,10 @@ function ModelPipelineMap({
   feature,
   inspectionMode,
   onInspectionModeChange,
+  onProbeSelect,
   onSiteChange,
+  probeLayerRefs,
+  selectedProbeArtifactId,
   selectedSiteName,
   sites,
   topChannelPanel,
@@ -2648,7 +4033,10 @@ function ModelPipelineMap({
   feature: number;
   inspectionMode: InspectionMode;
   onInspectionModeChange: (mode: InspectionMode) => void;
+  onProbeSelect: (artifactId: string) => void;
   onSiteChange: (siteName: string) => void;
+  probeLayerRefs: ProbeLayerRef[];
+  selectedProbeArtifactId: string;
   selectedSiteName: string;
   sites: ActivationSite[];
   topChannelPanel?: ReactNode;
@@ -2675,7 +4063,7 @@ function ModelPipelineMap({
   return (
     <div className="model-pipeline">
       <div className="pipeline-toolbar">
-        <PipelineLegend />
+        <PipelineLegend probeCount={probeLayerRefs.length} />
       </div>
       <PipelineMap2D
         cornerAction={
@@ -2703,6 +4091,8 @@ function ModelPipelineMap({
             onSiteChange(preferred.name);
           }
         }}
+        probeLayerRefs={probeLayerRefs}
+        selectedProbeArtifactId={selectedProbeArtifactId}
         selectedSiteName={selectedSiteName}
         architecture={architecture}
         stages={stages}
@@ -2727,6 +4117,8 @@ function ModelPipelineMap({
               onSiteChange(preferred.name);
             }
           }}
+          probeLayerRefs={probeLayerRefs}
+          selectedProbeArtifactId={selectedProbeArtifactId}
           selectedSiteName={selectedSiteName}
           architecture={architecture}
           stages={stages}
@@ -2736,7 +4128,10 @@ function ModelPipelineMap({
         inspectionMode={inspectionMode}
         node={expandedNode}
         onInspectionModeChange={onInspectionModeChange}
+        onProbeSelect={onProbeSelect}
         onSiteChange={onSiteChange}
+        probeLayerRefs={probeLayerRefs}
+        selectedProbeArtifactId={selectedProbeArtifactId}
         selectedSiteName={selectedSiteName}
       />
       {topChannelPanel ? <div className="pipeline-top-channels">{topChannelPanel}</div> : null}
@@ -2748,13 +4143,19 @@ function PipelineSelectedNodePanel({
   inspectionMode,
   node,
   onInspectionModeChange,
+  onProbeSelect,
   onSiteChange,
+  probeLayerRefs,
+  selectedProbeArtifactId,
   selectedSiteName,
 }: {
   inspectionMode: InspectionMode;
   node?: PipelineNode;
   onInspectionModeChange: (mode: InspectionMode) => void;
+  onProbeSelect: (artifactId: string) => void;
   onSiteChange: (siteName: string) => void;
+  probeLayerRefs: ProbeLayerRef[];
+  selectedProbeArtifactId: string;
   selectedSiteName: string;
 }) {
   const [rawQuery, setRawQuery] = useState("");
@@ -2790,6 +4191,7 @@ function PipelineSelectedNodePanel({
       onSiteChange(next.name);
     }
   };
+  const nodeProbeRefs = probeRefsForNode(node, probeLayerRefs);
 
   return (
     <div className={`pipeline-site-detail ${node.family}`}>
@@ -2818,7 +4220,10 @@ function PipelineSelectedNodePanel({
             <AdvancedRawCaptures
               choices={rawChoices}
               onQueryChange={setRawQuery}
-              onSiteChange={onSiteChange}
+              onChoiceSelect={(choice) => {
+                onInspectionModeChange(choice.mode);
+                onSiteChange(choice.site.name);
+              }}
               query={rawQuery}
               selectedSiteName={selectedSiteName}
             />
@@ -2850,20 +4255,68 @@ function PipelineSelectedNodePanel({
       ) : (
         <div className="pipeline-site-empty">No captured inspectable site for this node in the current profile.</div>
       )}
+      {nodeProbeRefs.length ? (
+        <NodeProbeChips
+          refs={nodeProbeRefs}
+          selectedProbeArtifactId={selectedProbeArtifactId}
+          onProbeSelect={onProbeSelect}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function NodeProbeChips({
+  onProbeSelect,
+  refs,
+  selectedProbeArtifactId,
+}: {
+  onProbeSelect: (artifactId: string) => void;
+  refs: ProbeLayerRef[];
+  selectedProbeArtifactId: string;
+}) {
+  return (
+    <div className="node-probe-chips">
+      <div className="section-title">
+        <span>Probes at this node</span>
+        <small>{refs.length}</small>
+      </div>
+      <div className="node-probe-chip-row">
+        {refs.map((ref) => (
+          <button
+            className={[
+              probeRefTone(ref),
+              ref.artifactId === selectedProbeArtifactId ? "active" : "",
+            ].filter(Boolean).join(" ")}
+            key={ref.artifactId}
+            title={probeLayerTitle(ref)}
+            type="button"
+            onClick={() => onProbeSelect(ref.artifactId)}
+          >
+            <strong>{ref.target || ref.name}</strong>
+            <span>
+              {[
+                ref.predicted === undefined ? "" : `pred ${formatProbeValue(ref.predicted)}`,
+                ref.confidence === null || ref.confidence === undefined ? "" : `conf ${formatMaybeNumber(ref.confidence)}`,
+              ].filter(Boolean).join(" · ")}
+            </span>
+          </button>
+        ))}
+      </div>
     </div>
   );
 }
 
 function AdvancedRawCaptures({
   choices,
+  onChoiceSelect,
   onQueryChange,
-  onSiteChange,
   query,
   selectedSiteName,
 }: {
   choices: PipelineSiteChoice[];
+  onChoiceSelect: (choice: PipelineSiteChoice) => void;
   onQueryChange: (query: string) => void;
-  onSiteChange: (siteName: string) => void;
   query: string;
   selectedSiteName: string;
 }) {
@@ -2884,15 +4337,11 @@ function AdvancedRawCaptures({
               key={choice.id}
               title={choice.site.name}
               type="button"
-              onClick={() => onSiteChange(choice.site.name)}
+              onClick={() => onChoiceSelect(choice)}
             >
               <strong>{choice.label}</strong>
               <span>{choice.site.name}</span>
-              <small>
-                {[formatCaptureShape(choice.site), captureStorageLabel(choice.site)]
-                  .filter(Boolean)
-                  .join(" · ")}
-              </small>
+              <small>{inspectionModeLabel(choice.mode)}</small>
             </button>
           ))
         ) : (
@@ -2906,50 +4355,26 @@ function AdvancedRawCaptures({
 function CaptureDescription({ choice, node }: { choice: PipelineSiteChoice; node: PipelineNode }) {
   const site = choice.site;
   const description = captureDescription(site, node);
-  const shape = site.shape?.length ? formatCaptureShape(site) : "";
-  const size = estimateCaptureSize(site);
-  const stored = captureStorageLabel(site);
-  const controls = captureControlsLabel(site);
   return (
     <div className="pipeline-capture-description">
       <div>
         <span>{choice.label}</span>
         <strong>{description}</strong>
       </div>
-      <dl>
-        {shape ? (
-          <div>
-            <dt>Size</dt>
-            <dd>{shape}{size ? ` · ${size}` : ""}</dd>
-          </div>
-        ) : null}
-        {stored ? (
-          <div>
-            <dt>Stored</dt>
-            <dd>{stored}</dd>
-          </div>
-        ) : null}
-        {controls ? (
-          <div>
-            <dt>Controls</dt>
-            <dd>{controls}</dd>
-          </div>
-        ) : null}
-      </dl>
     </div>
   );
 }
 
-function PipelineLegend() {
+function PipelineLegend({ probeCount }: { probeCount: number }) {
   return (
     <div className="pipeline-legend" aria-label="Pipeline legend">
-      <span><i className="legend-swatch vlm" />VLM</span>
-      <span><i className="legend-swatch expert" />Expert</span>
-      <span><i className="legend-swatch action" />State</span>
-      <span><i className="legend-swatch missing" />Missing</span>
-      <span><i className="legend-swatch feature" />Channel</span>
-      <span><i className="legend-conditioning" />K/V bus</span>
-      <span><i className="legend-loop" />Denoise</span>
+      <span><i className="legend-swatch vlm" />Vision path</span>
+      <span><i className="legend-swatch expert" />Action denoiser</span>
+      <span><i className="legend-swatch action" />Head / state</span>
+      <span><i className="legend-swatch missing" />Uncaptured</span>
+      <span><i className="legend-swatch active" />Current layer</span>
+      {probeCount ? <span><i className="legend-probe source" />Probe source</span> : null}
+      {probeCount ? <span><i className="legend-probe selected" />Selected probe source</span> : null}
     </div>
   );
 }
@@ -2961,6 +4386,8 @@ function PipelineMapModal({
   overlayControls,
   onClose,
   onNodeSelect,
+  probeLayerRefs,
+  selectedProbeArtifactId,
   selectedSiteName,
   stages,
 }: {
@@ -2970,6 +4397,8 @@ function PipelineMapModal({
   overlayControls?: ReactNode;
   onClose: () => void;
   onNodeSelect: (node: PipelineNode) => void;
+  probeLayerRefs: ProbeLayerRef[];
+  selectedProbeArtifactId: string;
   selectedSiteName: string;
   stages: PipelineStage[];
 }) {
@@ -3002,7 +4431,7 @@ function PipelineMapModal({
             <Layers3 size={17} />
             <strong>PI0.5 Pipeline</strong>
           </div>
-          <PipelineLegend />
+          <PipelineLegend probeCount={probeLayerRefs.length} />
           <button aria-label="Close expanded model pipeline" type="button" onClick={onClose}>
             <X size={17} />
           </button>
@@ -3013,6 +4442,8 @@ function PipelineMapModal({
           feature={feature}
           inspectionMode={inspectionMode}
           onNodeSelect={onNodeSelect}
+          probeLayerRefs={probeLayerRefs}
+          selectedProbeArtifactId={selectedProbeArtifactId}
           selectedSiteName={selectedSiteName}
           stages={stages}
         />
@@ -3029,6 +4460,8 @@ function PipelineMap2D({
   feature,
   inspectionMode,
   onNodeSelect,
+  probeLayerRefs,
+  selectedProbeArtifactId,
   selectedSiteName,
   stages,
 }: {
@@ -3038,6 +4471,8 @@ function PipelineMap2D({
   feature: number;
   inspectionMode: InspectionMode;
   onNodeSelect: (node: PipelineNode) => void;
+  probeLayerRefs: ProbeLayerRef[];
+  selectedProbeArtifactId: string;
   selectedSiteName: string;
   stages: PipelineStage[];
 }) {
@@ -3142,6 +4577,15 @@ function PipelineMap2D({
               inspectionMode === "advanced" ? entry.node.allSites : entry.node.sites,
               inspectionMode,
             );
+            const nodeProbeRefs = probeRefsForNode(entry.node, probeLayerRefs);
+            const nodeHasSelectedProbe = Boolean(
+              selectedProbeArtifactId &&
+                nodeProbeRefs.some((ref) => ref.artifactId === selectedProbeArtifactId),
+            );
+            const markerRefs =
+              selectedProbeArtifactId && nodeHasSelectedProbe
+                ? nodeProbeRefs.filter((ref) => ref.artifactId === selectedProbeArtifactId)
+                : nodeProbeRefs;
             return (
               <button
                 className={[
@@ -3149,6 +4593,8 @@ function PipelineMap2D({
                   entry.node.family,
                   entry.node.captured ? "captured" : "missing",
                   active ? "active" : "",
+                  nodeProbeRefs.length ? "probe-mapped" : "",
+                  nodeHasSelectedProbe ? "probe-selected" : "",
                   entry.width < 42 ? "compact" : "",
                 ].filter(Boolean).join(" ")}
                 disabled={!entry.node.captured}
@@ -3169,6 +4615,18 @@ function PipelineMap2D({
               >
                 <strong>{entry.node.label}</strong>
                 {entry.width >= 74 ? <small>{entry.node.sublabel}</small> : null}
+                {markerRefs.length ? (
+                  <span
+                    className={[
+                      "pipeline-probe-marker",
+                      nodeHasSelectedProbe ? "selected" : "",
+                      probeToneForRefs(markerRefs),
+                    ].filter(Boolean).join(" ")}
+                    title={markerRefs.map(probeLayerTitle).join("\n")}
+                  >
+                    {nodeHasSelectedProbe ? "P" : markerRefs.length}
+                  </span>
+                ) : null}
                 {showFeatureSlice && active ? (
                   <i
                     aria-hidden="true"
@@ -3194,16 +4652,24 @@ function ExpertTokenFlow({
   activeFeature,
   details,
   onFeatureChange,
+  onPatchSelect,
+  onPromptTokenSelect,
   onTokenChange,
   payload,
+  selectedPatch,
+  selectedPromptToken,
   selectedToken,
   tokenSiteName,
 }: {
   activeFeature: number;
   details?: ExpertTokenDetailsResponse;
   onFeatureChange: (feature: number) => void;
+  onPatchSelect: (patch: SelectedPatch | null) => void;
+  onPromptTokenSelect: (tokenIndex: number | null) => void;
   onTokenChange: (tokenIndex: number | null) => void;
   payload?: ExpertTokenActivationsResponse;
+  selectedPatch: SelectedPatch | null;
+  selectedPromptToken: number | null;
   selectedToken: number | null;
   tokenSiteName: string;
 }) {
@@ -3223,8 +4689,12 @@ function ExpertTokenFlow({
         <ExpertTokenDetails
           activeFeature={activeFeature}
           details={details}
+          selectedPatch={selectedPatch}
+          selectedPromptToken={selectedPromptToken}
           selectedToken={selectedToken}
           onFeatureChange={onFeatureChange}
+          onPatchSelect={onPatchSelect}
+          onPromptTokenSelect={onPromptTokenSelect}
         />
       </div>
       <ExpertAttentionSummary details={details} selectedToken={selectedToken} />
@@ -3374,11 +4844,19 @@ function ExpertTokenDetails({
   activeFeature,
   details,
   onFeatureChange,
+  onPatchSelect,
+  onPromptTokenSelect,
+  selectedPatch,
+  selectedPromptToken,
   selectedToken,
 }: {
   activeFeature: number;
   details?: ExpertTokenDetailsResponse;
   onFeatureChange: (feature: number) => void;
+  onPatchSelect: (patch: SelectedPatch | null) => void;
+  onPromptTokenSelect: (tokenIndex: number | null) => void;
+  selectedPatch: SelectedPatch | null;
+  selectedPromptToken: number | null;
   selectedToken: number | null;
 }) {
   if (selectedToken === null) {
@@ -3427,8 +4905,16 @@ function ExpertTokenDetails({
         rows={details.top_abs ?? []}
         title="Token Channel Ranking"
       />
-      <ImageAttentionTable rows={details.top_image_patches ?? []} />
-      <PromptAttentionTable rows={details.top_prompt_tokens ?? []} />
+      <ImageAttentionTable
+        rows={details.top_image_patches ?? []}
+        selectedPatch={selectedPatch}
+        onPatchSelect={onPatchSelect}
+      />
+      <PromptAttentionTable
+        rows={details.top_prompt_tokens ?? []}
+        selectedPromptToken={selectedPromptToken}
+        onPromptTokenSelect={onPromptTokenSelect}
+      />
       <FeatureTable
         activeFeature={-1}
         onFeatureChange={() => undefined}
@@ -3443,7 +4929,15 @@ function ExpertTokenDetails({
   );
 }
 
-function ImageAttentionTable({ rows }: { rows: ImagePatchAttention[] }) {
+function ImageAttentionTable({
+  onPatchSelect,
+  rows,
+  selectedPatch,
+}: {
+  onPatchSelect: (patch: SelectedPatch | null) => void;
+  rows: ImagePatchAttention[];
+  selectedPatch: SelectedPatch | null;
+}) {
   return (
     <div className="feature-table-wrap">
       <div className="section-title">
@@ -3459,14 +4953,30 @@ function ImageAttentionTable({ rows }: { rows: ImagePatchAttention[] }) {
             </tr>
           </thead>
           <tbody>
-            {rows.slice(0, 12).map((row) => (
-              <tr key={`${row.camera}-${row.row}-${row.col}`}>
-                <td>
-                  {row.camera} r{row.row} c{row.col}
-                </td>
-                <td>{formatPercent(row.attention)}</td>
-              </tr>
-            ))}
+            {rows.slice(0, 12).map((row) => {
+              const selected =
+                selectedPatch?.camera === row.camera &&
+                selectedPatch.row === row.row &&
+                selectedPatch.col === row.col;
+              return (
+                <tr
+                  className={selected ? "selectable-row active" : "selectable-row"}
+                  key={`${row.camera}-${row.row}-${row.col}`}
+                >
+                  <td>
+                    <button
+                      className="table-row-button"
+                      title={`Select ${row.camera} row ${row.row}, column ${row.col}`}
+                      type="button"
+                      onClick={() => onPatchSelect({ camera: row.camera, row: row.row, col: row.col })}
+                    >
+                      {row.camera} r{row.row} c{row.col}
+                    </button>
+                  </td>
+                  <td>{formatPercent(row.attention)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : (
@@ -3476,7 +4986,15 @@ function ImageAttentionTable({ rows }: { rows: ImagePatchAttention[] }) {
   );
 }
 
-function PromptAttentionTable({ rows }: { rows: PromptTokenAttention[] }) {
+function PromptAttentionTable({
+  onPromptTokenSelect,
+  rows,
+  selectedPromptToken,
+}: {
+  onPromptTokenSelect: (tokenIndex: number | null) => void;
+  rows: PromptTokenAttention[];
+  selectedPromptToken: number | null;
+}) {
   return (
     <div className="feature-table-wrap">
       <div className="section-title">
@@ -3488,18 +5006,33 @@ function PromptAttentionTable({ rows }: { rows: PromptTokenAttention[] }) {
           <thead>
             <tr>
               <th>Token</th>
-              <th>ID</th>
+              <th>Piece</th>
               <th>Mass</th>
             </tr>
           </thead>
           <tbody>
-            {rows.slice(0, 12).map((row) => (
-              <tr key={`${row.prefix_index ?? row.local_index}-${row.token_id ?? ""}`}>
-                <td>#{row.local_index}</td>
-                <td>{displayTokenPiece(row)}</td>
-                <td>{formatPercent(row.attention)}</td>
-              </tr>
-            ))}
+            {rows.slice(0, 12).map((row) => {
+              const selected = selectedPromptToken === row.local_index;
+              return (
+                <tr
+                  className={selected ? "selectable-row active" : "selectable-row"}
+                  key={`${row.prefix_index ?? row.local_index}-${row.token_id ?? ""}`}
+                >
+                  <td>
+                    <button
+                      className="table-row-button"
+                      title={promptTokenTitle(row)}
+                      type="button"
+                      onClick={() => onPromptTokenSelect(row.local_index)}
+                    >
+                      #{row.local_index}
+                    </button>
+                  </td>
+                  <td>{displayTokenPiece(row)}</td>
+                  <td>{formatPercent(row.attention)}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       ) : (
@@ -3523,7 +5056,7 @@ function FeatureTable({
   clip,
   clipPercent,
   indexHeader = "Channel",
-  indexPrefix = "c",
+  indexPrefix = "channel ",
   loading = false,
   onClipPercentChange,
   onFeatureChange,
@@ -3780,6 +5313,7 @@ function policyCallActive(call: PolicyCall | undefined, timestep: number, fallba
 
 function EpisodeNavigationBar({
   annotation,
+  cohortReturnHref,
   counterfactualPair,
   episode,
   episodeCount,
@@ -3793,6 +5327,7 @@ function EpisodeNavigationBar({
   onSaveAnnotation,
 }: {
   annotation?: EpisodeAnnotation;
+  cohortReturnHref?: string;
   counterfactualPair?: CounterfactualPair;
   episode: DatasetEpisode;
   episodeCount: number;
@@ -3851,13 +5386,25 @@ function EpisodeNavigationBar({
       <div className="episode-nav-main">
         <div className="episode-nav-meta">
           <span className={`outcome-pill ${outcomeClass(outcome)}`}>{outcome}</span>
-          {metadataItems.map((item) => (
-            <span className="episode-meta-item" key={item.label}>
-              <b>{item.label}</b>
-              {item.value}
-            </span>
-          ))}
+          {metadataItems.length ? (
+            <details className="episode-nav-details">
+              <summary>Episode details</summary>
+              <div>
+                {metadataItems.map((item) => (
+                  <span className="episode-meta-item" key={item.label}>
+                    <b>{item.label}</b>
+                    {item.value}
+                  </span>
+                ))}
+              </div>
+            </details>
+          ) : null}
         </div>
+        {cohortReturnHref ? (
+          <a className="episode-cohort-link" href={cohortReturnHref}>
+            Back to cohort
+          </a>
+        ) : null}
         {counterfactualPair ? (
           <CounterfactualPairStrip
             activeTraceId={episode.trace_id}
@@ -4079,6 +5626,62 @@ function imageTokenMapQueryKey(
   return ["image-token-map", traceId, callIndex, siteName, feature] as const;
 }
 
+function overlayStatusForSelection({
+  attentionMapFetching,
+  attentionMapPlaceholder,
+  attentionHead,
+  attentionQueryToken,
+  expertTokenDetailsFetching,
+  feature,
+  imageTokenMapFetching,
+  imageTokenMapPlaceholder,
+  inspectorContext,
+  selectedExpertToken,
+  selectedSite,
+}: {
+  attentionMapFetching: boolean;
+  attentionMapPlaceholder: boolean;
+  attentionHead: number | null;
+  attentionQueryToken: number | null;
+  expertTokenDetailsFetching: boolean;
+  feature: number;
+  imageTokenMapFetching: boolean;
+  imageTokenMapPlaceholder: boolean;
+  inspectorContext: InspectorContext;
+  selectedExpertToken: number | null;
+  selectedSite?: ActivationSite;
+}): CameraOverlayStatus | undefined {
+  const siteLabel = selectedSite ? siteOptionLabel(selectedSite) : "Selected site";
+  if (inspectorContext === "vlm") {
+    return {
+      detail: `${siteLabel} / c${feature}`,
+      isStale: imageTokenMapPlaceholder,
+      isUpdating: imageTokenMapFetching,
+      label: "Channel Map",
+      mode: inspectorContext,
+    };
+  }
+  if (inspectorContext === "attention") {
+    return {
+      detail: `head ${attentionHead === null ? "avg" : attentionHead} / slot ${attentionQueryToken === null ? "avg" : attentionQueryToken}`,
+      isStale: attentionMapPlaceholder,
+      isUpdating: attentionMapFetching,
+      label: "Attention Map",
+      mode: inspectorContext,
+    };
+  }
+  if (inspectorContext === "expert") {
+    return {
+      detail: selectedExpertToken === null ? `${siteLabel} / token -` : `${siteLabel} / token ${selectedExpertToken} / c${feature}`,
+      isStale: false,
+      isUpdating: expertTokenDetailsFetching,
+      label: "Expert Token",
+      mode: inspectorContext,
+    };
+  }
+  return undefined;
+}
+
 function preferredPipelineSite(sites: ActivationSite[]): ActivationSite | undefined {
   return (
     sites.find(
@@ -4153,6 +5756,101 @@ function isAttentionMapSite(site?: ActivationSite): boolean {
         site.name.endsWith(".prefix.attention") ||
         site.name.endsWith(".attention.attention_probs")),
   );
+}
+
+function siteLayerNumber(site?: ActivationSite): number | null {
+  const value = episodeProbeNumber(site?.layer);
+  return value === null ? null : value;
+}
+
+function siteForProbeLayer(sites: ActivationSite[], layer: number | null): ActivationSite | undefined {
+  if (layer === null) {
+    return undefined;
+  }
+  const sameLayer = sites.filter((site) => siteLayerNumber(site) === Number(layer));
+  return (
+    sameLayer.find(
+      (site) =>
+        (site.segment === "action_expert" || site.name.includes(".expert.")) &&
+        site.tensor_type === "hidden_tokens" &&
+        site.axes?.includes("channel"),
+    ) ??
+    sameLayer.find((site) => site.tensor_type === "hidden_tokens" && site.axes?.includes("channel")) ??
+    sameLayer[0]
+  );
+}
+
+function siteForProbeRef(sites: ActivationSite[], ref?: ProbeLayerRef): ActivationSite | undefined {
+  if (!ref) {
+    return undefined;
+  }
+  if (ref.modelSiteId) {
+    const exact = sites.find((site) => site.name === ref.modelSiteId);
+    if (exact) {
+      return exact;
+    }
+  }
+  return siteForProbeLayer(sites, ref.layer);
+}
+
+function probeRefsForNode(node: PipelineNode, refs: ProbeLayerRef[]): ProbeLayerRef[] {
+  const exact = refs.filter(
+    (ref) => ref.modelSiteId && node.allSites.some((site) => site.name === ref.modelSiteId),
+  );
+  if (exact.length) {
+    return exact;
+  }
+  const nodeLayers = new Set(
+    node.allSites
+      .map(siteLayerNumber)
+      .filter((layer): layer is number => layer !== null)
+      .map(Number),
+  );
+  if (!nodeLayers.size) {
+    return [];
+  }
+  const nodeIsExpert = node.allSites.some(
+    (site) => site.segment === "action_expert" || site.name.includes(".expert."),
+  );
+  return refs.filter(
+    (ref) =>
+      ref.layer !== null &&
+      nodeLayers.has(Number(ref.layer)) &&
+      (!ref.modelSiteId || !nodeIsExpert || ref.modelSiteId.includes(".expert.")),
+  );
+}
+
+function probeRefTone(ref: ProbeLayerRef): ProbeTone {
+  if (ref.correct === false) {
+    return "incorrect";
+  }
+  if (ref.correct === true) {
+    return "correct";
+  }
+  return "unscored";
+}
+
+function probeToneForRefs(refs: ProbeLayerRef[]): ProbeTone {
+  if (refs.some((ref) => probeRefTone(ref) === "incorrect")) {
+    return "incorrect";
+  }
+  if (refs.some((ref) => probeRefTone(ref) === "correct")) {
+    return "correct";
+  }
+  return "unscored";
+}
+
+function probeLayerTitle(ref: ProbeLayerRef): string {
+  return [
+    ref.target || ref.name,
+    ref.layer === null ? "" : `L${formatLayerNumber(ref.layer)}`,
+    ref.policyCall === null ? "" : `call ${ref.policyCall}`,
+    ref.confidence === null || ref.confidence === undefined ? "" : `conf ${formatMaybeNumber(ref.confidence)}`,
+  ].filter(Boolean).join(" / ");
+}
+
+function formatLayerNumber(layer: number): string {
+  return Number.isInteger(layer) ? String(layer) : layer.toFixed(1);
 }
 
 function siteUsesGenerationStep(site?: ActivationSite): boolean {
@@ -4851,7 +6549,7 @@ function inspectionModeForSite(site?: ActivationSite): InspectionMode {
 
 function inspectionModeLabel(mode: InspectionMode): string {
   const labels: Record<InspectionMode, string> = {
-    advanced: "Raw details",
+    advanced: "All captures",
     attention: "Attention",
     computation: "Computation",
     features: "Features",
@@ -4953,96 +6651,6 @@ function captureDescription(site: ActivationSite, node: PipelineNode): string {
       : "The expert features just before they are projected into action values.";
   }
   return "A captured tensor from this part of the model.";
-}
-
-function formatCaptureShape(site: ActivationSite): string {
-  const axes = site.axes ?? [];
-  const shape = site.shape ?? [];
-  return shape.map((value, index) => {
-    const axis = axes[index] ? plainAxisLabel(axes[index]) : "dim";
-    return `${Number(value).toLocaleString()} ${axis}`;
-  }).join(" x ");
-}
-
-function plainAxisLabel(axis: string): string {
-  const labels: Record<string, string> = {
-    action_dim: "action dims",
-    cached_token: "saved slots",
-    channel: "channels",
-    generation_step: "denoise steps",
-    head: "heads",
-    head_channel: "head channels",
-    horizon: "action slots",
-    key_token: "looked-at slots",
-    policy_call: "model calls",
-    query_token: "looking slots",
-    timestep: "timesteps",
-    token: "slots",
-  };
-  return labels[axis] ?? labelFromSnake(axis).toLowerCase();
-}
-
-function captureStorageLabel(site: ActivationSite): string {
-  const parts = [site.materialization, site.exactness, site.dtype].filter(Boolean);
-  if (!parts.length) {
-    return "";
-  }
-  return parts
-    .join(" / ")
-    .replace("raw", "raw")
-    .replace("exact", "exact")
-    .replace("summary", "summary")
-    .replace("lossy_summary", "lossy summary");
-}
-
-function captureControlsLabel(site: ActivationSite): string {
-  const axes = new Set(site.axes ?? []);
-  if (axes.has("query_token") && axes.has("key_token")) {
-    return "head selector + looking-slot selector; the overlay shows looked-at slots";
-  }
-  if (axes.has("head_channel") || axes.has("head")) {
-    return axes.has("head_channel")
-      ? "head and head-channel controls in raw inspection"
-      : "head selector";
-  }
-  const controls = [];
-  if (axes.has("channel")) controls.push("channel slider");
-  if (axes.has("generation_step")) controls.push("denoise step");
-  if (axes.has("token")) controls.push(site.token_kind === "action" ? "action slot" : "token/patch");
-  return controls.length ? controls.join(" + ") : "No special control for this capture yet.";
-}
-
-function estimateCaptureSize(site: ActivationSite): string {
-  const shape = site.shape ?? [];
-  if (!shape.length) {
-    return "";
-  }
-  const dtype = String(site.dtype ?? "").toLowerCase();
-  const bytesPerElement =
-    dtype.includes("float16") || dtype.includes("bfloat16") || dtype.includes("int16")
-      ? 2
-      : dtype.includes("float64") || dtype.includes("int64")
-        ? 8
-        : dtype.includes("int8") || dtype.includes("uint8") || dtype.includes("bool")
-          ? 1
-          : 4;
-  const elements = shape.reduce((product, value) => product * Math.max(1, Number(value) || 1), 1);
-  return formatBytes(elements * bytesPerElement);
-}
-
-function formatBytes(bytes: number): string {
-  if (!Number.isFinite(bytes) || bytes <= 0) {
-    return "";
-  }
-  const units = ["B", "KB", "MB", "GB", "TB"];
-  let value = bytes;
-  let unitIndex = 0;
-  while (value >= 1024 && unitIndex < units.length - 1) {
-    value /= 1024;
-    unitIndex += 1;
-  }
-  const digits = value >= 100 || unitIndex === 0 ? 0 : value >= 10 ? 1 : 2;
-  return `${value.toFixed(digits)} ${units[unitIndex]}`;
 }
 
 function labelFromSnake(value: string): string {
