@@ -13,11 +13,11 @@ choose accelerator
 choose config
 choose output location
 run one command
-open the same traces in the dashboard
+open the same datasets in the dashboard
 ```
 
-The durable artifact is the `.vlatrace` directory bundle. Capture jobs write
-bundles; dashboard jobs read bundles.
+The durable artifact is a LeRobot v3 dataset root plus the `vla_lens/` overlay.
+Capture jobs write dataset roots; dashboard jobs read those roots.
 
 ## Storage Model
 
@@ -30,10 +30,10 @@ NFS/EFS/FSx
 reliable FUSE-mounted object-store path
 ```
 
-This is the right default because capture writes Parquet tables, array shards,
-metadata, and status files as one logical bundle. Object stores are excellent
-for storing completed bundles, but less pleasant as the active write target for
-many small coordinated files.
+This is the right default because capture writes Parquet tables, MP4 shards,
+array shards, metadata, and status files as one logical dataset root. Object
+stores are excellent for storing completed roots, but less pleasant as the
+active write target for many small coordinated files.
 
 After capture, sync completed output roots wherever the user wants:
 
@@ -123,10 +123,10 @@ PI05_STRICT_DEVICE_CHECK=1 scripts/docker_pi05_rocm.sh \
   --run
 ```
 
-It wrote one valid `.vlatrace` bundle with 520 timesteps and 11 policy calls.
-The task outcome was `failure`, but the capture pipeline itself completed:
-model load, LIBERO rollout, activation capture, trace validation, and dashboard
-readback all worked.
+It wrote one valid LeRobot v3 dataset root plus `vla_lens/` overlay with 520
+timesteps and 11 policy calls. The task outcome was `failure`, but the capture
+pipeline itself completed: model load, LIBERO rollout, activation capture,
+LeRobot validation, and dashboard readback all worked.
 
 ## Current Boundary
 

@@ -11,6 +11,7 @@ dataset-root/
   meta/
     info.json
     stats.json
+    tasks.parquet
     tasks.jsonl
     episodes/...parquet
   data/
@@ -59,9 +60,8 @@ VLA Lens overlay.
 ## Cutoff Policy
 
 Standalone `.vlatrace` episode bundles are old internal storage, not the public
-dataset compatibility layer. The repository may still read them while existing
-capture and dashboard paths are being replaced, but new dataset-layer work must
-target:
+dataset compatibility layer. The repository may still read them for tests,
+demos, and one-off inspection, but new dataset-layer work must target:
 
 ```text
 LeRobot v3 robot data + vla_lens/ interpretability overlay
@@ -71,16 +71,44 @@ Do not add broad backwards-compatibility aliases to the core contract. If a
 specific old artifact needs conversion, that should be a one-off importer or
 research utility outside the canonical dataset schema.
 
-This implementation is contract-only. It validates LeRobot-like roots and
-overlay references without importing `lerobot`, Torch, LeRobot policies, or
-video encoders.
+The current implementation writes this layout for PI0.5 capture. The normal
+dashboard/test stack reads and writes the file contract directly without
+importing `lerobot`, Torch, LeRobot policies, or simulator packages. The capture
+containers/native capture environments still carry those runtime dependencies.
+
+## Writer Behavior
+
+PI0.5 capture now writes:
+
+```text
+meta/info.json
+meta/stats.json
+meta/tasks.parquet
+meta/tasks.jsonl
+meta/episodes/chunk-000/file-000.parquet
+data/chunk-000/file-000.parquet
+videos/observation.images.<camera>/chunk-000/file-000.mp4
+vla_lens/overlay.json
+vla_lens/tables/episode_refs.parquet
+vla_lens/episodes/episode_000000/...
+```
+
+The robot layer stores `action`, optional `observation.state`, frame indexes,
+timestamps, rewards/done flags, and MP4 camera streams. The overlay stores
+policy calls, token tables, action chunks, generation trajectories, context
+tables/arrays, model-site tensors, artifacts, and fingerprints.
+
+`TraceDataset.open(path)` accepts either a LeRobot v3 dataset root or the old
+internal `.vlatrace` bundle layout. For a LeRobot root, the dashboard can show
+episodes even when `vla_lens/` is absent; model internals simply appear
+unavailable.
 
 ## Validation
 
 The dependency-free validator checks:
 
 - required metadata: `meta/info.json`, `meta/stats.json`, and task metadata
-  through `meta/tasks.jsonl` or `meta/tasks.parquet`
+  through `meta/tasks.parquet` or `meta/tasks.jsonl`
 - at least one episode metadata parquet under `meta/episodes/`
 - at least one low-dimensional data parquet under `data/`
 - required step fields including `episode_index`, `frame_index`, `timestamp`,
@@ -89,4 +117,5 @@ The dependency-free validator checks:
 - overlay tables under `vla_lens/tables/` only reference known LeRobot
   `episode_index` and in-range `frame_index` values
 
-Current code lives in `vla_lens.capture.lerobot_v3`.
+Contract validation lives in `vla_lens.capture.lerobot_v3`; read/write storage
+lives in `vla_lens.lerobot_dataset`.

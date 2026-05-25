@@ -110,10 +110,14 @@ def replay_config_from_bundle(bundle: TraceBundle) -> ReplayConfig:
 
 
 def sparse_image_path(bundle: TraceBundle, *, camera: str, timestep: int) -> Path | None:
-    matches = bundle.array_index.loc[bundle.array_index["name"].astype(str) == f"frames.{camera}"]
+    names = {f"frames.{camera}", f"observation.images.{camera}"}
+    matches = bundle.array_index.loc[bundle.array_index["name"].astype(str).isin(names)]
     if matches.empty:
         return None
-    path = bundle.path / str(matches.iloc[0]["relative_path"]) / f"{int(timestep):06d}.jpg"
+    frame_root = bundle.path / str(matches.iloc[0]["relative_path"])
+    if not frame_root.is_dir():
+        return None
+    path = frame_root / f"{int(timestep):06d}.jpg"
     return path if path.exists() else None
 
 

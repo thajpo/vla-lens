@@ -57,7 +57,8 @@ Open:
 http://127.0.0.1:8080/
 ```
 
-Point either dashboard path at existing traces:
+Point either dashboard path at an existing LeRobot v3 + `vla_lens/` dataset
+root:
 
 ```bash
 scripts/view_vla_lens.sh runs/pi05-light-5-test
@@ -79,7 +80,7 @@ scripts/docker_pi05_cuda.sh --config configs/pi05_light_5_test.yaml --run
 scripts/docker_pi05_rocm.sh --config configs/pi05_light_5_test.yaml --run
 ```
 
-For high-volume capture, make the trace destination explicit:
+For high-volume capture, make the dataset destination explicit:
 
 ```bash
 scripts/docker_pi05_rocm.sh \
@@ -112,7 +113,8 @@ More detail: [docs/hardware-run-paths.md](docs/hardware-run-paths.md),
 
 `src/vla_lens` is the framework:
 
-- `traces.py`: trace bundles, dataset indexes, array loading, artifact persistence.
+- `traces.py`: dataset indexes, array loading, artifact persistence, and legacy
+  trace-bundle views.
 - `selectors.py`: axis-aware activation selection and feature matrix caching.
 - `artifacts.py`: saved analysis records with provenance and display metadata.
 - `analyzer.py`: dataset-aware analysis recommendations.
@@ -125,10 +127,10 @@ More detail: [docs/hardware-run-paths.md](docs/hardware-run-paths.md),
 
 ## Quick Start
 
-Serve an existing current trace dataset:
+Serve an existing LeRobot v3 dataset root:
 
 ```bash
-uv run python scripts/serve_vla_lens_dashboard.py runs/pi05_high10_vlatraces --port 8765
+uv run python scripts/serve_vla_lens_dashboard.py runs/pi05-light-5-test --port 8765
 ```
 
 Open:
@@ -143,9 +145,9 @@ Capture PI0.5 episodes with the current PI0.5 writer:
 scripts/pi05_batch_capture_rocm.sh --config configs/pi05_light_5_test.yaml --run
 ```
 
-This path still writes internal `.vlatrace` bundles while the LeRobot v3 +
-`vla_lens/` overlay writer is being built. New dataset-layer work should target
-[docs/dataset-format.md](docs/dataset-format.md), not `.vlatrace`.
+This writes LeRobot v3 robot data under `meta/`, `data/`, and `videos/`, plus
+VLA Lens internals under `vla_lens/`. The old `.vlatrace` bundle format remains
+only as a legacy test/demo storage path.
 
 ### PI0.5 Hardware Capture Environments
 
@@ -215,20 +217,20 @@ uv run python scripts/run_capture_profile_smoke.py \
   --capture-command 'scripts/pi05_capture.sh --backend rocm --model-id {model_id} --episodes {episodes} --start-seed {start_seed} --capture-profile {profile} --dataset-id {dataset_id} --vlatrace-out-root {traces_root}'
 ```
 
-The smoke script owns the profile roots and trace validation. The runner
+The smoke script owns the profile roots and LeRobot-root validation. The runner
 command is a template because the concrete PI0.5 capture
 entrypoint is model/environment-specific.
 
 Run dataset diagnostics:
 
 ```bash
-uv run python scripts/save_vla_lens_dataset_report.py runs/pi05_high10_vlatraces
+uv run python scripts/save_vla_lens_dataset_report.py runs/pi05-light-5-test
 ```
 
 Train a probe from a YAML spec:
 
 ```bash
-uv run python scripts/train_vla_lens_probe.py runs/pi05_high10_vlatraces --spec - <<'YAML'
+uv run python scripts/train_vla_lens_probe.py runs/pi05-light-5-test --spec - <<'YAML'
 name: Outcome probe over expert action features
 target:
   kind: outcome
@@ -253,7 +255,7 @@ YAML
 Save an action-generation artifact:
 
 ```bash
-uv run python scripts/save_vla_lens_action_generation.py runs/pi05_high10_vlatraces
+uv run python scripts/save_vla_lens_action_generation.py runs/pi05-light-5-test
 ```
 
 Refresh the dashboard and open the Artifacts page to inspect saved results.
@@ -275,10 +277,10 @@ Sampled PI0.5 model profiles capture the same VLM and expert layer indices
 For a profile-by-profile interpretability guide, see
 [docs/pi05-capture-profiles.md](docs/pi05-capture-profiles.md).
 
-Use `dataset_id` for capture-run provenance. The current `.vlatrace` writer
-stores it in `manifest.metadata.dataset_id` and in generated `episode_plan.csv`
-/ `probe_splits.csv` files so datasets can stay flat-ish while still being easy
-to filter and audit.
+Use `dataset_id` for capture-run provenance. The LeRobot + overlay writer stores
+it in overlay manifest metadata and in generated `episode_plan.csv` /
+`probe_splits.csv` files so datasets can stay flat-ish while still being easy to
+filter and audit.
 
 Use `capture_design=paired_counterfactual` when two traces should be analyzed as
 one clean/corrupt unit. This is a design layer over profiles, not a new tensor
@@ -298,11 +300,11 @@ The batch runner writes trace IDs like
 counterfactual metadata in each manifest, and the dashboard exposes pair groups
 through `/api/dataset` and `/api/counterfactual-pairs`.
 
-The current `.vlatrace` writer also stores fast provenance fingerprints in
-`tables/fingerprints.json`, `manifest.metadata.fingerprints`, and
-`capture_report.fingerprints`:
+The overlay writer also stores fast provenance fingerprints in
+`vla_lens/episodes/.../tables/fingerprints.json`,
+`manifest.metadata.fingerprints`, and `capture_report.fingerprints`:
 
-- `trajectory_fingerprint`: executed/actions/generation trajectory plus timestep-policy mapping.
+- `trajectory_fingerprint`: action/generation trajectory plus timestep-policy mapping.
 - `context_fingerprint`: object/robot/camera/evaluation/preprocessing context.
 - `trace_schema_fingerprint`: token/model-site/table semantics and capture request/plan/report.
 - `trace_fingerprint`: the combined trace identity for provenance checks.

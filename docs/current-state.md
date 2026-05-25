@@ -83,9 +83,31 @@ PI05_STRICT_DEVICE_CHECK=1 scripts/docker_pi05_rocm.sh \
   --run
 ```
 
-Result: one valid `.vlatrace` bundle, 520 timesteps, 11 policy calls, dashboard
-API readback OK. Task outcome was `failure`, which is acceptable for this
-runtime smoke because the test target was capture plumbing, not policy success.
+Result after the LeRobot writer switch: one valid LeRobot v3 dataset root plus
+`vla_lens/` overlay, 520 timesteps, 11 policy calls, dashboard API readback OK.
+Task outcome was `failure`, which is acceptable for this runtime smoke because
+the test target was capture plumbing, not policy success.
+
+The same root loaded with `lerobot.datasets.lerobot_dataset.LeRobotDataset` in
+the capture image for metadata and tabular rows (`len=520`, one episode, action
+and `observation.state` tensors readable). Full `dataset[0]` video decoding in
+that image currently needs a working LeRobot video backend (`torchcodec` or a
+Torchvision build with `VideoReader`).
+
+Captured root shape:
+
+```text
+meta/info.json
+meta/stats.json
+meta/tasks.parquet
+meta/episodes/chunk-000/file-000.parquet
+data/chunk-000/file-000.parquet
+videos/observation.images.main/chunk-000/file-000.mp4
+videos/observation.images.wrist/chunk-000/file-000.mp4
+vla_lens/overlay.json
+vla_lens/tables/episode_refs.parquet
+vla_lens/episodes/episode_000000/...
+```
 
 Do not run PI0.5 capture through plain `uv run vla-pi05-capture` or `uv run
 vla-pi05-batch-capture`.
@@ -170,7 +192,7 @@ Do not collect audit_windowed broadly without a concrete circuit/transcoder ques
 Serve an existing dataset:
 
 ```bash
-uv run python scripts/serve_vla_lens_dashboard.py /path/to/vlatrace/root --port 8765
+uv run python scripts/serve_vla_lens_dashboard.py /path/to/lerobot-root --port 8765
 ```
 
 Run a single PI0.5 capture:

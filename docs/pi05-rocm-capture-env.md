@@ -14,7 +14,7 @@ There are two dependency worlds in this repo:
 1. Normal VLA Lens development
    - server
    - frontend API work
-   - trace schema tests
+   - LeRobot v3 + overlay schema tests
    - pure Python analysis/probe code
    - pyproject.toml + uv.lock
 
@@ -28,11 +28,15 @@ There are two dependency worlds in this repo:
 
 Trying to force both into one `.venv` is brittle.
 
-The normal project lock currently includes:
+The normal project lock intentionally excludes simulator/capture packages. It
+keeps the dashboard and dataset tooling on ordinary Python data dependencies
+such as:
 
 ```text
-robosuite>=1.5.2,<2.0
 pyarrow>=19.0,<20.0
+pandas
+imageio
+zarr
 ```
 
 LeRobot/LIBERO capture currently needs:
@@ -130,7 +134,7 @@ import LeRobot PI0.5
 load PI0.5 weights
 touch ROCm/GPU
 run LIBERO
-write a real captured .vlatrace
+write a real captured LeRobot root plus `vla_lens/` overlay
 benchmark capture runtime or storage
 ```
 

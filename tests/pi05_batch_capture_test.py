@@ -55,7 +55,7 @@ def test_batch_capture_generates_dataset_id_episode_plan(tmp_path):
         plan_rows = list(csv.DictReader(handle))
     assert plan_rows[0]["dataset_id"] == "pi05-test-dataset"
     assert plan_rows[0]["expected_trace_path"].endswith(
-        "pi05_mechanistic_sampled_libero_object_task0_seed10.vlatrace"
+        "traces/pi05-test-dataset/mechanistic_sampled/libero_object/task_00"
     )
 
     with (tmp_path / "probe_splits.csv").open(newline="", encoding="utf-8") as handle:
@@ -240,5 +240,5 @@ def test_batch_capture_reads_paired_counterfactual_plan(tmp_path):
     assert plan_rows[0]["trace_variant"] == "clean"
     assert plan_rows[0]["counterfactual_role"] == "clean"
     assert plan_rows[0]["expected_trace_path"].endswith(
-        "pi05_mechanistic_sampled_libero_goal_task1_seed42_clean.vlatrace"
+        "traces/dataset-a/mechanistic_sampled/libero_goal/task_01"
     )

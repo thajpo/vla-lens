@@ -9,7 +9,7 @@ CONTAINER_PORT=8080
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/docker_dashboard.sh [TRACE_ROOT]
+  scripts/docker_dashboard.sh [DATASET_ROOT]
 
 Run the VLA Lens dashboard container.
 
@@ -18,11 +18,12 @@ Examples:
   scripts/docker_dashboard.sh runs/pi05-light-5-test
   scripts/docker_dashboard.sh /path/to/some-dataset
 
-No TRACE_ROOT:
+No DATASET_ROOT:
   mounts ./runs and creates/serves runs/vla_lens_demo if needed.
 
-With TRACE_ROOT:
-  mounts that existing dataset or .vlatrace bundle and serves it directly.
+With DATASET_ROOT:
+  mounts that existing LeRobot v3 dataset root, trace dataset, or .vlatrace
+  bundle and serves it directly.
 EOF
 }
 
@@ -48,7 +49,7 @@ fi
 
 TRACE_ROOT="$1"
 if [[ ! -e "$TRACE_ROOT" ]]; then
-  echo "Trace root does not exist: $TRACE_ROOT" >&2
+  echo "Dataset root does not exist: $TRACE_ROOT" >&2
   exit 2
 fi
 

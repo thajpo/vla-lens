@@ -168,6 +168,18 @@ def _mem_sample() -> dict[str, float]:
 def _trace_count(root: Path) -> int:
     if not root.exists():
         return 0
+    refs = list(root.rglob("vla_lens/tables/episode_refs.parquet"))
+    if refs:
+        total = 0
+        for path in refs:
+            try:
+                import pandas as pd
+
+                total += int(len(pd.read_parquet(path)))
+            except Exception:
+                continue
+        if total:
+            return total
     return sum(1 for _ in root.rglob("*.vlatrace"))
 
 

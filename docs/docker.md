@@ -21,14 +21,15 @@ dashboard container:
   portable visualizer, backend API, built React app
 
 capture containers:
-  Linux CUDA/ROCm PI0.5 inference and trace writing
+  Linux CUDA/ROCm PI0.5 inference and dataset writing
 
 native venv:
   Apple Silicon MPS capture
 ```
 
-The durable boundary is the `.vlatrace` artifact. Capture runtimes write traces;
-the dashboard runtime reads traces.
+The durable boundary is a LeRobot v3 dataset root plus the `vla_lens/` overlay.
+Capture runtimes write robot data and interpretability internals; the dashboard
+runtime reads the dataset root.
 
 ## Dashboard Container
 
@@ -44,7 +45,8 @@ Open:
 http://127.0.0.1:8080/
 ```
 
-Serve an existing trace dataset or one `.vlatrace` bundle:
+Serve an existing LeRobot v3 dataset root, trace dataset, or one `.vlatrace`
+bundle:
 
 ```bash
 scripts/docker_dashboard.sh runs/pi05-light-5-test
@@ -53,8 +55,9 @@ scripts/docker_dashboard.sh /path/to/episode.vlatrace
 ```
 
 With no argument, the script mounts local `./runs` and creates/serves
-`runs/vla_lens_demo` if needed. With an explicit trace root, the script mounts
-that path directly and fails if it does not contain a `.vlatrace` bundle.
+`runs/vla_lens_demo` if needed. With an explicit root, the script mounts that
+path directly and fails if it is neither a LeRobot v3 dataset root nor a legacy
+trace bundle/root.
 
 Run the same single-origin dashboard without Docker:
 
@@ -130,15 +133,9 @@ packaging honest against the current git tree.
 
 ## Current Cost
 
-The local dashboard image is currently about 1.75GB. That is bigger than a pure
-visualizer should be because the base Python project dependencies still include
-`robosuite`, `mujoco`, and transitive simulator packages. The Dockerfile uses a
-builder stage so compiler and kernel-header packages do not ship in the final
-image, but the simulator Python wheels still do.
-
-A useful follow-up is to move simulator/capture packages behind an optional
-dependency group so the dashboard image can install only trace, analysis,
-server, and artifact dependencies.
+The dashboard image is now scoped to the normal app stack. Simulator/capture
+packages such as `robosuite`, LIBERO, LeRobot policy runtimes, and accelerator
+Torch wheels belong in capture environments, not the visualizer image.
 
 ## Capture Containers
 
@@ -154,8 +151,8 @@ They:
 ```text
 1. install the matching Torch backend;
 2. install LeRobot, LIBERO, OpenPI Transformers patch, and robosuite==1.4.0;
-3. mount the same trace volume as the dashboard;
-4. write .vlatrace bundles into that volume.
+3. mount the same dataset volume as the dashboard;
+4. write LeRobot v3 robot data plus `vla_lens/` overlay into that volume.
 ```
 
 Run CUDA batch capture:
@@ -186,7 +183,9 @@ scripts/docker_pi05_rocm.sh \
 For absolute `--output-root` and `--vlatrace-out-root` values, the wrapper
 creates the host directory, mounts it at `/capture-output`, and rewrites the
 container command. This keeps the user-facing command honest: the path you pass
-is the path that receives the `.vlatrace` bundles on the host.
+is the path that receives the LeRobot dataset roots on the host. The
+`--vlatrace-out-root` flag name is retained only so existing scripts do not
+break; the artifact written there is now a LeRobot root.
 
 Run a single capture:
 
@@ -210,12 +209,12 @@ $VLA_LENS_HF_CACHE_DIR or ~/.cache/huggingface -> /root/.cache/huggingface
 $VLA_LENS_LIBERO_CACHE_DIR or ~/.cache/libero -> /root/.cache/libero
 ```
 
-Because the configs use `output_root: runs/...`, captured traces are written
+Because the configs use `output_root: runs/...`, captured datasets are written
 back to the host checkout by default. For cloud jobs, prefer a POSIX write
 target during capture: local NVMe, a mounted block volume, NFS/EFS/FSx, or a
 FUSE-mounted object-store path that is reliable for many small file writes.
-Syncing completed `.vlatrace` bundles to S3/GCS/Azure Blob after capture is
-usually safer than writing directly to object storage mid-rollout.
+Syncing completed dataset roots to S3/GCS/Azure Blob after capture is usually
+safer than writing directly to object storage mid-rollout.
 
 Equivalent compose services exist behind profiles:
 
@@ -230,7 +229,7 @@ correct render/video group access.
 
 On this workstation, `scripts/docker_pi05_rocm.sh --no-build check` has been
 validated with strict device checking against an RX 7900 XTX. A one-command
-real capture smoke also wrote a valid `.vlatrace` bundle to an absolute host
+real capture smoke also wrote a valid dataset root to an absolute host
 output root:
 
 ```bash

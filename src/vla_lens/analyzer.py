@@ -455,7 +455,8 @@ def _available_modalities(dataset: TraceDataset, model_sites: pd.DataFrame) -> d
     modules = " ".join(model_sites.get("module", pd.Series(dtype=str)).astype(str))
     return {
         "frames": {"available": bool(cameras), "cameras": cameras},
-        "executed_actions": {"available": "executed_actions" in array_names},
+        "executed_actions": {"available": bool({"action", "executed_actions"} & array_names)},
+        "action": {"available": "action" in array_names},
         "action_chunks": {"available": "action_chunks" in array_names},
         "generation_actions": {"available": "generation_actions" in array_names},
         "vlm_hidden": {"available": "vlm" in modules or "vlm" in activation_names},

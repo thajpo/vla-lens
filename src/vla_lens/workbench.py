@@ -1377,8 +1377,9 @@ def _workbench_capabilities(dataset: TraceDataset) -> dict[str, dict[str, Any]]:
             "detail": {"cameras": cameras},
         },
         "actions": {
-            "available": "executed_actions" in array_names,
-            "count": _array_episode_count(dataset, "executed_actions"),
+            "available": bool({"action", "executed_actions"} & array_names),
+            "count": _array_episode_count(dataset, "action")
+            or _array_episode_count(dataset, "executed_actions"),
             "detail": {},
         },
         "action_chunks": {
@@ -1557,16 +1558,20 @@ def image_frame_catalog(dataset: TraceDataset) -> tuple[ImageFrameSpec, ...]:
             continue
         for row in table.to_dict("records"):
             name = str(row.get("name") or "")
-            if not name.startswith("frames."):
+            if not (name.startswith("frames.") or name.startswith("observation.images.")):
                 continue
             dims = tuple(_axis_names_for_array(_parse_axes(row.get("axes"))))
             shape = tuple(_parse_shape(row.get("shape")))
-            camera = name.removeprefix("frames.")
+            camera = (
+                name.removeprefix("observation.images.")
+                if name.startswith("observation.images.")
+                else name.removeprefix("frames.")
+            )
             storage = _storage_ref_from_row(row)
             frame_count = int(shape[0]) if shape else 0
             frames.append(
                 ImageFrameSpec(
-                    frame_id=f"trace.{bundle.manifest.trace_id}.frames.{camera}",
+                    frame_id=f"trace.{bundle.manifest.trace_id}.observation.images.{camera}",
                     trace_id=bundle.manifest.trace_id,
                     episode_id=bundle.manifest.episode_id,
                     camera=camera,
@@ -1580,6 +1585,7 @@ def image_frame_catalog(dataset: TraceDataset) -> tuple[ImageFrameSpec, ...]:
                         "trace_id": bundle.manifest.trace_id,
                         "episode_id": bundle.manifest.episode_id,
                         "source": "trace_bundle",
+                        "field": name,
                     },
                 )
             )
@@ -3291,7 +3297,7 @@ def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
 
 
 def _kind_for_episode_array(name: str) -> LensDataKind:
-    if name.startswith("frames."):
+    if name.startswith("frames.") or name.startswith("observation.images."):
         return "image_sequence"
     return "tensor"
 

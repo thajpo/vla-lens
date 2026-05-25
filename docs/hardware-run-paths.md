@@ -146,7 +146,7 @@ scripts/docker_pi05_rocm.sh \
 
 Absolute Docker output paths are interpreted as host paths. The wrapper mounts
 that directory into the container and rewrites the internal command so the
-captured `.vlatrace` bundles land where the user asked.
+captured LeRobot dataset roots land where the user asked.
 
 The wrappers force batch-generated capture commands to use the selected
 virtualenv, device, and dtype. Older YAML files can still describe the dataset

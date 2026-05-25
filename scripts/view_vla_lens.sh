@@ -13,9 +13,9 @@ usage() {
 Usage:
   scripts/view_vla_lens.sh [TRACE_ROOT]
 
-Serve the built VLA Lens dashboard locally from a trace dataset or one
-.vlatrace bundle. With no TRACE_ROOT, a synthetic demo dataset is created under
-runs/vla_lens_demo if needed.
+Serve the built VLA Lens dashboard locally from a LeRobot v3 dataset root,
+trace dataset, or one .vlatrace bundle. With no TRACE_ROOT, a synthetic demo
+dataset is created under runs/vla_lens_demo if needed.
 EOF
 }
 
@@ -26,9 +26,14 @@ fi
 
 cd "$ROOT"
 
+has_dataset() {
+  [[ -f "$TRACE_ROOT/meta/info.json" && -d "$TRACE_ROOT/data" ]] && return 0
+  find "$TRACE_ROOT" -maxdepth 3 -name '*.vlatrace' -type d | grep -q .
+}
+
 if [[ $# -eq 0 ]]; then
   mkdir -p "$TRACE_ROOT"
-  if ! find "$TRACE_ROOT" -maxdepth 3 -name '*.vlatrace' -type d | grep -q .; then
+  if ! has_dataset; then
     uv run python scripts/build_vla_lens_demo.py --out "$TRACE_ROOT" --overwrite
   fi
 elif [[ ! -e "$TRACE_ROOT" ]]; then

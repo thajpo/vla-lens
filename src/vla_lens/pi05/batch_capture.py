@@ -20,6 +20,7 @@ from itertools import groupby
 from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
+import pandas as pd
 import yaml
 
 DEFAULT_CONFIG = Path("configs/pi05_diverse_500.yaml")
@@ -107,6 +108,7 @@ class CaptureCommand:
     capture_profile: str
     output_root: Path
     expected_paths: tuple[Path, ...]
+    expected_trace_ids: tuple[str, ...]
     command: tuple[str, ...]
 
 
@@ -179,7 +181,10 @@ def main(argv: list[str] | None = None) -> None:
 
     status_path = output_root / "capture_status.jsonl"
     for index, item in enumerate(commands, start=1):
-        expected_exists = item.expected_paths and all(path.exists() for path in item.expected_paths)
+        expected_exists = item.expected_trace_ids and all(
+            _expected_trace_exists(item.output_root, trace_id)
+            for trace_id in item.expected_trace_ids
+        )
         if expected_exists and not args.force:
             _append_status(
                 status_path,
@@ -343,6 +348,7 @@ def _capture_commands(
             seed_rows = [row for row in group_rows if row.seed in seed_set]
             task_root = _trace_root(output_root, seed_rows[0])
             expected_paths = tuple(_expected_trace_path(output_root, row) for row in seed_rows)
+            expected_trace_ids = tuple(row.expected_trace_id for row in seed_rows)
             command = (
                 *command_prefix,
                 python_executable,
@@ -390,6 +396,7 @@ def _capture_commands(
                     capture_profile=profile,
                     output_root=task_root,
                     expected_paths=expected_paths,
+                    expected_trace_ids=expected_trace_ids,
                     command=command,
                 )
             )
@@ -536,7 +543,20 @@ def _trace_root(output_root: Path, row: EpisodePlanRow) -> Path:
 
 
 def _expected_trace_path(output_root: Path, row: EpisodePlanRow) -> Path:
-    return _trace_root(output_root, row) / f"{row.expected_trace_id}.vlatrace"
+    return _trace_root(output_root, row)
+
+
+def _expected_trace_exists(task_root: Path, trace_id: str) -> bool:
+    refs_path = task_root / "vla_lens" / "tables" / "episode_refs.parquet"
+    if not refs_path.exists():
+        return False
+    try:
+        refs = pd.read_parquet(refs_path)
+    except Exception:
+        return False
+    if refs.empty or "trace_id" not in refs:
+        return False
+    return str(trace_id) in set(refs["trace_id"].astype(str))
 
 
 def _contiguous_seed_groups(seeds: Sequence[int]) -> list[list[int]]:

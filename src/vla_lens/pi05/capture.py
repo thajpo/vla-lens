@@ -24,8 +24,9 @@ from vla_lens.capture import (
     ModelTraceRecord,
     PolicyCallRecord,
     merge_episode_and_model_trace,
-    write_trace_record,
+    validate_lerobot_v3_dataset,
 )
+from vla_lens.lerobot_dataset import write_lerobot_trace_record
 from vla_lens.pi05.context_capture import (
     ContextCaptureResult,
     capture_camera_snapshot,
@@ -45,7 +46,6 @@ from vla_lens.pi05.token_metadata import (
     build_pi05_token_metadata,
 )
 from vla_lens.traces import ArraySpec, ModelSiteSpec, TraceDataset, TraceManifest
-from vla_lens.validation import validate_trace_dataset
 
 LANDMARK_5_LAYERS = (0, 4, 8, 12, 17)
 AUDIT_WINDOWED_LAYERS = (0, 1, 4, 5, 8, 9, 12, 13, 16, 17)
@@ -405,10 +405,10 @@ def main(argv: list[str] | None = None) -> None:
 
     _run_capture(args)
     dataset = TraceDataset.open(args.vlatrace_out_root)
-    validation = validate_trace_dataset(dataset)
+    validation = validate_lerobot_v3_dataset(args.vlatrace_out_root)
     if not validation.valid:
         raise SystemExit(validation.to_dict())
-    print(f"wrote {len(dataset.bundles)} traces to {args.vlatrace_out_root}")
+    print(f"wrote {len(dataset.bundles)} LeRobot episode(s) to {args.vlatrace_out_root}")
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -463,7 +463,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default="float16",
         help="Numeric dtype used for captured model internals in .vlatrace arrays.",
     )
-    parser.add_argument("--vlatrace-out-root", type=Path, default=Path("runs/pi05_golden"))
+    parser.add_argument(
+        "--vlatrace-out-root",
+        type=Path,
+        default=Path("runs/pi05_golden"),
+        help=(
+            "Output LeRobot v3 dataset root. The flag name is kept for existing "
+            "capture scripts, but new captures write LeRobot robot data plus vla_lens/ overlay."
+        ),
+    )
     parser.add_argument(
         "--dataset-id",
         help="Dataset identifier stored in every trace manifest metadata.",
@@ -1874,11 +1882,10 @@ def _write_episode(
         metadata={"capture_profile": args.capture_profile, "capture_plan": capture_plan},
     )
     record = merge_episode_and_model_trace(episode, model_trace)
-    write_trace_record(
+    write_lerobot_trace_record(
         record,
-        args.vlatrace_out_root / f"{buffer.trace_id}.vlatrace",
+        args.vlatrace_out_root,
         overwrite=True,
-        validate=True,
     )
 
 
@@ -2201,7 +2208,7 @@ def _action_normalization_table(buffer: EpisodeBuffer) -> pd.DataFrame:
                 "stats_ref": str(metadata.get("stats_ref") or ""),
                 "action_dim_names": _json_dumps(metadata.get("action_names")),
                 "normalized_action_array_ref": "action_chunks",
-                "unnormalized_action_array_ref": "executed_actions",
+                "unnormalized_action_array_ref": "action",
                 "metadata": _json_dumps(metadata),
             }
         )
@@ -2360,11 +2367,11 @@ def _capture_report(
                 "policy_calls",
                 "reward",
                 "done",
-                "executed_actions",
+                "action",
                 "action_chunks",
                 "generation_actions",
-                "frames.main" if buffer.frames else None,
-                "frames.wrist" if buffer.wrist_frames else None,
+                "observation.images.main" if buffer.frames else None,
+                "observation.images.wrist" if buffer.wrist_frames else None,
                 "tokens",
                 "token_spaces",
                 "streams",

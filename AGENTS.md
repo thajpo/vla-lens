@@ -31,7 +31,10 @@ hf-libero
 robosuite==1.4.0
 ```
 
-The normal repo lock currently wants `robosuite>=1.5.2`, and `uv run` may sync that into `.venv`. That breaks LeRobot's LIBERO import path. A casual `uv add lerobot` can also pull CUDA Torch wheels and overwrite the ROCm stack.
+The normal repo lock intentionally does not own this stack. A casual `uv add
+lerobot` can pull CUDA Torch wheels or resolver choices that overwrite the ROCm
+stack, and mixing simulator dependencies into `.venv` makes the dashboard/test
+environment harder to keep portable.
 
 If the capture virtualenv does not exist or fails checks, run the matching setup:
 
@@ -76,7 +79,10 @@ uv run pytest
 uv run ruff check scripts src tests
 ```
 
-These tests should cover schema, profile planning, trace validation, server APIs, pure analysis code, and frontend-independent metadata contracts. They should not require Torch, LeRobot, GPU/ROCm, or LIBERO unless they are explicitly testing model execution.
+These tests should cover schema, profile planning, LeRobot v3 + overlay
+validation, server APIs, pure analysis code, and frontend-independent metadata
+contracts. They should not require Torch, LeRobot, GPU/ROCm, or LIBERO unless
+they are explicitly testing model execution.
 
 Capture smokes run in the PI0.5 hardware capture environment:
 

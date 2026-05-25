@@ -1027,7 +1027,8 @@ def _resolve_target_value(
         return _array_target_value(bundle, str(target_spec["array_id"]), timestep, target_spec, row)
     if source in {"executed_actions", "action"}:
         spec = {**dict(target_spec), "selector": {"action_dim": target_spec.get("action_dim", 0)}}
-        return _array_target_value(bundle, "executed_actions", timestep, spec, row)
+        array_id = "action" if _array_has_name(bundle, "action") else "executed_actions"
+        return _array_target_value(bundle, array_id, timestep, spec, row)
     if source == "robot_state":
         array_id = _robot_array_id(bundle, str(target_spec.get("field") or ""))
         return _array_target_value(bundle, array_id, timestep, target_spec, row)
@@ -1241,6 +1242,11 @@ def _array_axes(bundle: TraceBundle, array_id: str) -> list[str]:
     if matches.empty:
         return []
     return list(json.loads(str(matches.iloc[0].get("axes") or "[]")))
+
+
+def _array_has_name(bundle: TraceBundle, array_id: str) -> bool:
+    table = bundle.array_index
+    return not table.empty and "name" in table and array_id in set(table["name"].astype(str))
 
 
 def _robot_array_id(bundle: TraceBundle, field_name: str) -> str:

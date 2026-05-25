@@ -1,9 +1,9 @@
-"""Run a small capture matrix that writes sealed ``.vlatrace`` bundles.
+"""Run a small capture matrix that writes LeRobot roots plus VLA overlays.
 
 This script is intentionally an orchestrator.  The model/env runner is supplied
 as a command template so the smoke test can survive changes to the concrete
 PI0.5 entrypoint while keeping the regeneration workflow stable.  The command
-must write ``.vlatrace`` bundles directly.
+must write dataset roots directly.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from string import Formatter
 
-from vla_lens import TraceDataset, validate_trace_dataset
+from vla_lens import TraceDataset, validate_lerobot_v3_dataset
 
 PROFILE_ORDER = ("rollout", "features", "mechanistic_sampled", "mechanistic_all")
 ALLOWED_PROFILES = (*PROFILE_ORDER, "internals_sampled", "audit_sampled", "audit_full", "custom")
@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
         "--dataset-id",
         help=(
             "Dataset id to pass through the capture-command template. "
-            "Defaults to vlatrace root name."
+            "Defaults to output root name."
         ),
     )
     parser.add_argument("--delete-existing", action="store_true")
@@ -54,7 +54,7 @@ def parse_args() -> argparse.Namespace:
         "--capture-command",
         default="",
         help=(
-            "Command template that writes .vlatrace bundles. Supported fields: "
+            "Command template that writes LeRobot dataset roots. Supported fields: "
             "{model_id}, {profile}, {episodes}, {start_seed}, {traces_root}, {dataset_id}. "
             "Example: 'uv run python -m vla_lens.pi05.capture --model-id {model_id} "
             "--episodes {episodes} --capture-profile {profile} --vlatrace-out-root {traces_root}'"
@@ -108,10 +108,10 @@ def main() -> None:
         errors: list[dict] = []
         if not args.dry_run:
             dataset = TraceDataset.open(traces_root)
-            validation = validate_trace_dataset(dataset)
+            validation = validate_lerobot_v3_dataset(traces_root)
             trace_count = len(dataset.bundles)
             valid = validation.valid
-            errors = list(validation.errors)
+            errors = [issue.to_dict() for issue in validation.errors]
             if not valid:
                 raise SystemExit(f"validation failed for profile={profile}: {errors}")
             _assert_trace_count(dataset, args.episodes, profile)

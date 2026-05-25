@@ -18,7 +18,11 @@ from vla_lens.traces import TraceDataset
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("root", type=Path, help="Trace dataset root or one .vlatrace bundle")
+    parser.add_argument(
+        "root",
+        type=Path,
+        help="LeRobot v3 dataset root, trace dataset root, or one .vlatrace bundle",
+    )
     parser.add_argument("--spec", default=None, help="YAML probe spec path. Use '-' for stdin.")
     parser.add_argument(
         "--print-spec",

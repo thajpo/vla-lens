@@ -19,6 +19,8 @@ Output paths:
 
   Absolute --output-root or --vlatrace-out-root values are treated as host paths,
   mounted at /capture-output, and rewritten for the command inside the container.
+  The --vlatrace-out-root flag name is legacy; capture now writes LeRobot v3
+  dataset roots plus vla_lens/ overlays.
 
 Examples:
   scripts/docker_pi05.sh --backend rocm --config configs/pi05_light_5_test.yaml --run

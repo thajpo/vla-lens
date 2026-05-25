@@ -522,6 +522,10 @@ class TraceDataset:
     @classmethod
     def open(cls, root: str | Path) -> "TraceDataset":
         root = Path(root)
+        from vla_lens.lerobot_dataset import is_lerobot_dataset_root, open_lerobot_dataset
+
+        if is_lerobot_dataset_root(root):
+            return open_lerobot_dataset(root)
         if (root / TraceBundle.MANIFEST).exists():
             return cls(root, [TraceBundle.open(root)])
         bundle_paths = sorted(

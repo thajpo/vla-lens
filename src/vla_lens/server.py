@@ -4623,8 +4623,8 @@ def _episode_frame_array_paths(bundle: TraceBundle, cameras: list[str]) -> list[
         return []
     paths: list[Path] = []
     for camera in cameras:
-        name = f"frames.{camera}"
-        matches = bundle.array_index.loc[bundle.array_index["name"].astype(str) == name]
+        names = {f"frames.{camera}", f"observation.images.{camera}"}
+        matches = bundle.array_index.loc[bundle.array_index["name"].astype(str).isin(names)]
         if matches.empty:
             continue
         paths.append(bundle.path / str(matches.iloc[0]["relative_path"]))
@@ -4634,8 +4634,8 @@ def _episode_frame_array_paths(bundle: TraceBundle, cameras: list[str]) -> list[
 def _trace_frame_file_path(bundle: TraceBundle, *, camera: str, timestep: int) -> Path | None:
     if bundle.array_index.empty:
         return None
-    name = f"frames.{camera}"
-    matches = bundle.array_index.loc[bundle.array_index["name"].astype(str) == name]
+    names = {f"frames.{camera}", f"observation.images.{camera}"}
+    matches = bundle.array_index.loc[bundle.array_index["name"].astype(str).isin(names)]
     if matches.empty:
         return None
     frame_dir = bundle.path / str(matches.iloc[0]["relative_path"])
