@@ -55,6 +55,9 @@ scripts/docker_dashboard.sh runs/pi05-light-5-test
 scripts/view_vla_lens.sh runs/pi05-light-5-test
 ```
 
+Dashboard paths can now point at one LeRobot root or a top-level batch output;
+the dataset opener discovers nested LeRobot roots and serves them together.
+
 PI0.5 hardware capture:
 
 ```bash

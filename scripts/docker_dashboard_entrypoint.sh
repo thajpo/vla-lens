@@ -12,7 +12,8 @@ PUBLIC_URL="${VLA_LENS_PUBLIC_URL:-}"
 
 has_dataset() {
   [[ -f "$TRACE_ROOT/meta/info.json" && -d "$TRACE_ROOT/data" ]] && return 0
-  find "$TRACE_ROOT" -maxdepth 3 -name '*.vlatrace' -type d | grep -q .
+  find "$TRACE_ROOT" -path '*/meta/info.json' -type f | grep -q . && return 0
+  find "$TRACE_ROOT" -name '*.vlatrace' -type d | grep -q .
 }
 
 mkdir -p "$(dirname "$TRACE_ROOT")"
@@ -20,7 +21,7 @@ mkdir -p "$(dirname "$TRACE_ROOT")"
 if ! has_dataset; then
   if [[ "$BOOTSTRAP_DEMO" != "1" ]]; then
     cat >&2 <<EOF
-No LeRobot v3 dataset root or .vlatrace bundles found under:
+No LeRobot v3 dataset roots or .vlatrace bundles found under:
   $TRACE_ROOT
 
 Set VLA_LENS_BOOTSTRAP_DEMO=1 to create a synthetic demo dataset, or mount an

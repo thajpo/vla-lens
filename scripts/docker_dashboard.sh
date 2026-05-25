@@ -22,8 +22,8 @@ No DATASET_ROOT:
   mounts ./runs and creates/serves runs/vla_lens_demo if needed.
 
 With DATASET_ROOT:
-  mounts that existing LeRobot v3 dataset root, trace dataset, or .vlatrace
-  bundle and serves it directly.
+  mounts that existing LeRobot v3 dataset root, directory containing nested
+  LeRobot roots, trace dataset, or .vlatrace bundle and serves it directly.
 EOF
 }
 

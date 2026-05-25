@@ -56,8 +56,9 @@ scripts/docker_dashboard.sh /path/to/episode.vlatrace
 
 With no argument, the script mounts local `./runs` and creates/serves
 `runs/vla_lens_demo` if needed. With an explicit root, the script mounts that
-path directly and fails if it is neither a LeRobot v3 dataset root nor a legacy
-trace bundle/root.
+path directly and serves it if it is a LeRobot v3 dataset root, a directory
+containing nested LeRobot v3 roots from batch capture, or a legacy trace
+bundle/root.
 
 Run the same single-origin dashboard without Docker:
 

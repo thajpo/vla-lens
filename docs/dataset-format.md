@@ -98,10 +98,12 @@ timestamps, rewards/done flags, and MP4 camera streams. The overlay stores
 policy calls, token tables, action chunks, generation trajectories, context
 tables/arrays, model-site tensors, artifacts, and fingerprints.
 
-`TraceDataset.open(path)` accepts either a LeRobot v3 dataset root or the old
-internal `.vlatrace` bundle layout. For a LeRobot root, the dashboard can show
-episodes even when `vla_lens/` is absent; model internals simply appear
-unavailable.
+`TraceDataset.open(path)` accepts a LeRobot v3 dataset root, a directory
+containing nested LeRobot v3 roots, or the old internal `.vlatrace` bundle
+layout. For a LeRobot root, the dashboard can show episodes even when
+`vla_lens/` is absent; model internals simply appear unavailable. For a
+top-level batch output, the opener discovers nested `meta/info.json` + `data/`
+roots and presents their episodes as one dataset view.
 
 ## Validation
 

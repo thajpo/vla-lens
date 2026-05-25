@@ -58,7 +58,7 @@ http://127.0.0.1:8080/
 ```
 
 Point either dashboard path at an existing LeRobot v3 + `vla_lens/` dataset
-root:
+root, or at a top-level capture output containing nested LeRobot roots:
 
 ```bash
 scripts/view_vla_lens.sh runs/pi05-light-5-test

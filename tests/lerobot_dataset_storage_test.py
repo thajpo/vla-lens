@@ -59,6 +59,27 @@ def test_multiple_records_append_to_one_lerobot_root(tmp_path):
     assert refs["trace_id"].tolist() == ["trace-a", "trace-b"]
 
 
+def test_trace_dataset_open_discovers_nested_lerobot_roots(tmp_path):
+    first_root = (
+        tmp_path / "traces" / "dataset-a" / "mechanistic_sampled" / "libero_object" / "task_00"
+    )
+    second_root = (
+        tmp_path / "traces" / "dataset-a" / "mechanistic_sampled" / "libero_goal" / "task_01"
+    )
+    write_lerobot_trace_record(_minimal_record("trace-a"), first_root)
+    write_lerobot_trace_record(_minimal_record("trace-b"), second_root)
+
+    dataset = TraceDataset.open(tmp_path)
+
+    assert dataset.root == tmp_path
+    assert sorted(bundle.manifest.trace_id for bundle in dataset.bundles) == [
+        "trace-a",
+        "trace-b",
+    ]
+    assert dataset.bundle("trace-a").actions().shape == (2, 2)
+    assert dataset.bundle("trace-b").cameras() == ["main"]
+
+
 def _minimal_record(trace_id: str) -> TraceRecord:
     length = 2
     manifest = TraceManifest(

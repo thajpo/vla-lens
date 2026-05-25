@@ -68,6 +68,9 @@ Run the same built dashboard locally without Docker:
 scripts/view_vla_lens.sh runs/pi05-light-5-test
 ```
 
+The dashboard input can be a single LeRobot dataset root or a top-level capture
+output containing many nested LeRobot roots.
+
 ## PI0.5 Capture Setup
 
 Use one setup command per hardware family:

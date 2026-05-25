@@ -528,6 +528,14 @@ class TraceDataset:
             return open_lerobot_dataset(root)
         if (root / TraceBundle.MANIFEST).exists():
             return cls(root, [TraceBundle.open(root)])
+
+        lerobot_roots = _nested_lerobot_dataset_roots(root, is_lerobot_dataset_root)
+        if lerobot_roots:
+            bundles: list[Any] = []
+            for dataset_root in lerobot_roots:
+                bundles.extend(open_lerobot_dataset(dataset_root).bundles)
+            return cls(root, bundles)
+
         bundle_paths = sorted(
             path
             for path in root.rglob("*.vlatrace")
@@ -536,7 +544,9 @@ class TraceDataset:
             and (path / TraceBundle.MANIFEST).exists()
         )
         if not bundle_paths:
-            raise FileNotFoundError(f"No .vlatrace bundles found in {root}")
+            raise FileNotFoundError(
+                f"No LeRobot v3 dataset roots or .vlatrace bundles found in {root}"
+            )
         return cls(root, [TraceBundle.open(path) for path in bundle_paths])
 
     @cached_property
@@ -793,6 +803,21 @@ def _read_table(path: Path) -> pd.DataFrame:
 
 def _table_or_empty(frame: pd.DataFrame | None) -> pd.DataFrame:
     return frame if frame is not None else pd.DataFrame()
+
+
+def _nested_lerobot_dataset_roots(root: Path, is_dataset_root: Any) -> tuple[Path, ...]:
+    if not root.exists() or not root.is_dir():
+        return ()
+    roots: list[Path] = []
+    seen: set[Path] = set()
+    for info_path in root.rglob("meta/info.json"):
+        dataset_root = info_path.parent.parent
+        if dataset_root == root or dataset_root in seen:
+            continue
+        if is_dataset_root(dataset_root):
+            seen.add(dataset_root)
+            roots.append(dataset_root)
+    return tuple(sorted(roots))
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
