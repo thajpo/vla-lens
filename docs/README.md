@@ -15,6 +15,9 @@ experiment notes when deciding what to run or implement.
   dashboard and Linux CUDA/ROCm capture containers.
 - [cloud-capture.md](cloud-capture.md): high-volume capture storage model,
   output-root commands, cache/secrets handling, and dashboard handoff.
+- [model-dataset-sim-agnosticity.md](model-dataset-sim-agnosticity.md):
+  target architecture for supporting multiple VLA models, robot datasets, and
+  simulators through adapters and dataset capabilities.
 - [pi05-capture-profiles.md](pi05-capture-profiles.md): what each PI0.5 capture
   profile is for in interpretability terms.
 - [pi05-rocm-capture-env.md](pi05-rocm-capture-env.md): how the dedicated ROCm
