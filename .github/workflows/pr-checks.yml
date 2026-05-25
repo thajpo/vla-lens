@@ -38,6 +38,9 @@ jobs:
       - name: Run Python lint
         run: uv run ruff check scripts src tests
 
+      - name: Report oversized source files
+        run: uv run python scripts/report_source_file_sizes.py
+
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
