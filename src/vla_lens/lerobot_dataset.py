@@ -72,7 +72,7 @@ def is_lerobot_dataset_root(root: str | Path) -> bool:
     return (path / LEROBOT_INFO_PATH).exists() and (path / LEROBOT_DATA_DIR).exists()
 
 
-def open_lerobot_dataset(root: str | Path) -> TraceDataset:
+def open_lerobot_dataset(root: str | Path, *, trace_id_prefix: str | None = None) -> TraceDataset:
     """Open a LeRobot v3 root as the existing VLA Lens ``TraceDataset`` API."""
 
     dataset_root = Path(root)
@@ -91,6 +91,7 @@ def open_lerobot_dataset(root: str | Path) -> TraceDataset:
             episode_row=row,
             info=info,
             tasks=tasks,
+            trace_id_prefix=trace_id_prefix,
             overlay_bundle=_overlay_bundle_for_episode(
                 dataset_root,
                 refs,
@@ -207,6 +208,7 @@ class LeRobotEpisodeBundle:
         info: Mapping[str, Any],
         tasks: pd.DataFrame,
         overlay_bundle: TraceBundle | None = None,
+        trace_id_prefix: str | None = None,
     ):
         self.root = Path(root)
         self.path = self.root
@@ -214,6 +216,7 @@ class LeRobotEpisodeBundle:
         self.info = dict(info)
         self.tasks = tasks
         self.overlay_bundle = overlay_bundle
+        self.trace_id_prefix = str(trace_id_prefix or "").strip()
         self.episode_index = int(self.episode_row[LEROBOT_EPISODE_INDEX])
         self._frame_cache: dict[str, np.ndarray] = {}
 
@@ -240,10 +243,13 @@ class LeRobotEpisodeBundle:
 
         task_index = int(self.episode_row.get(LEROBOT_TASK_INDEX, 0))
         task = _task_for_index(self.tasks, task_index)
-        trace_id = f"episode_{self.episode_index:06d}"
+        episode_id = f"episode_{self.episode_index:06d}"
+        trace_id = (
+            f"{self.trace_id_prefix}__{episode_id}" if self.trace_id_prefix else episode_id
+        )
         return TraceManifest(
             trace_id=trace_id,
-            episode_id=trace_id,
+            episode_id=episode_id,
             task_id=str(task_index),
             prompt=task,
             model_id="",
@@ -254,6 +260,7 @@ class LeRobotEpisodeBundle:
             metadata={
                 "robot_dataset_format": "lerobot_v3",
                 "lerobot_episode_index": self.episode_index,
+                "lerobot_trace_id_prefix": self.trace_id_prefix,
             },
         )
 

@@ -103,7 +103,10 @@ containing nested LeRobot v3 roots, or the old internal `.vlatrace` bundle
 layout. For a LeRobot root, the dashboard can show episodes even when
 `vla_lens/` is absent; model internals simply appear unavailable. For a
 top-level batch output, the opener discovers nested `meta/info.json` + `data/`
-roots and presents their episodes as one dataset view.
+roots and presents their episodes as one dataset view. Nested roots that have a
+VLA Lens overlay keep their captured `trace_id`; plain LeRobot roots without an
+overlay get a stable path-derived prefix so repeated `episode_000000` IDs do
+not collide.
 
 ## Validation
 

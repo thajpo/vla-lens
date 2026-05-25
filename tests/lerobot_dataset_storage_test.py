@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import shutil
+
 import numpy as np
 import pandas as pd
+import pytest
 
 from vla_lens import ArraySpec, TraceDataset, TraceManifest, validate_lerobot_v3_dataset
 from vla_lens.capture.records import TraceRecord
@@ -34,8 +37,6 @@ def test_lerobot_root_without_overlay_still_visualizes_robot_episode(tmp_path):
     write_lerobot_trace_record(_minimal_record("trace-a"), tmp_path)
     overlay = tmp_path / "vla_lens"
     if overlay.exists():
-        import shutil
-
         shutil.rmtree(overlay)
 
     dataset = TraceDataset.open(tmp_path)
@@ -78,6 +79,35 @@ def test_trace_dataset_open_discovers_nested_lerobot_roots(tmp_path):
     ]
     assert dataset.bundle("trace-a").actions().shape == (2, 2)
     assert dataset.bundle("trace-b").cameras() == ["main"]
+
+
+def test_nested_lerobot_roots_without_overlay_get_namespaced_trace_ids(tmp_path):
+    first_root = tmp_path / "batch" / "libero_object" / "task_00"
+    second_root = tmp_path / "batch" / "libero_goal" / "task_01"
+    write_lerobot_trace_record(_minimal_record("trace-a"), first_root)
+    write_lerobot_trace_record(_minimal_record("trace-b"), second_root)
+    shutil.rmtree(first_root / "vla_lens")
+    shutil.rmtree(second_root / "vla_lens")
+
+    dataset = TraceDataset.open(tmp_path)
+    trace_ids = sorted(bundle.manifest.trace_id for bundle in dataset.bundles)
+
+    assert trace_ids == [
+        "batch-libero_goal-task_01__episode_000000",
+        "batch-libero_object-task_00__episode_000000",
+    ]
+    assert dataset.bundle(trace_ids[0]).actions().shape == (2, 2)
+    assert len(dataset._bundle_by_trace_id) == 2
+
+
+def test_duplicate_overlay_trace_ids_fail_loudly_for_nested_roots(tmp_path):
+    first_root = tmp_path / "first"
+    second_root = tmp_path / "second"
+    write_lerobot_trace_record(_minimal_record("trace-a"), first_root)
+    write_lerobot_trace_record(_minimal_record("trace-a"), second_root)
+
+    with pytest.raises(ValueError, match="Duplicate trace_id"):
+        TraceDataset.open(tmp_path)
 
 
 def _minimal_record(trace_id: str) -> TraceRecord:

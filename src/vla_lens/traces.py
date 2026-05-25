@@ -517,7 +517,7 @@ class TraceDataset:
     def __init__(self, root: str | Path, bundles: Sequence[TraceBundle]):
         self.root = Path(root)
         self.bundles = list(bundles)
-        self._bundle_by_trace_id = {bundle.manifest.trace_id: bundle for bundle in self.bundles}
+        self._bundle_by_trace_id = _bundle_index_by_trace_id(self.bundles)
 
     @classmethod
     def open(cls, root: str | Path) -> "TraceDataset":
@@ -533,7 +533,12 @@ class TraceDataset:
         if lerobot_roots:
             bundles: list[Any] = []
             for dataset_root in lerobot_roots:
-                bundles.extend(open_lerobot_dataset(dataset_root).bundles)
+                bundles.extend(
+                    open_lerobot_dataset(
+                        dataset_root,
+                        trace_id_prefix=_nested_lerobot_trace_id_prefix(root, dataset_root),
+                    ).bundles
+                )
             return cls(root, bundles)
 
         bundle_paths = sorted(
@@ -805,6 +810,23 @@ def _table_or_empty(frame: pd.DataFrame | None) -> pd.DataFrame:
     return frame if frame is not None else pd.DataFrame()
 
 
+def _bundle_index_by_trace_id(bundles: Sequence[Any]) -> dict[str, Any]:
+    index: dict[str, Any] = {}
+    duplicates: dict[str, list[str]] = {}
+    for bundle in bundles:
+        trace_id = str(bundle.manifest.trace_id)
+        if trace_id in index:
+            duplicates.setdefault(trace_id, [str(index[trace_id].path)]).append(str(bundle.path))
+            continue
+        index[trace_id] = bundle
+    if duplicates:
+        details = "; ".join(
+            f"{trace_id}: {', '.join(paths)}" for trace_id, paths in sorted(duplicates.items())
+        )
+        raise ValueError(f"Duplicate trace_id values in dataset: {details}")
+    return index
+
+
 def _nested_lerobot_dataset_roots(root: Path, is_dataset_root: Any) -> tuple[Path, ...]:
     if not root.exists() or not root.is_dir():
         return ()
@@ -818,6 +840,14 @@ def _nested_lerobot_dataset_roots(root: Path, is_dataset_root: Any) -> tuple[Pat
             seen.add(dataset_root)
             roots.append(dataset_root)
     return tuple(sorted(roots))
+
+
+def _nested_lerobot_trace_id_prefix(root: Path, dataset_root: Path) -> str:
+    try:
+        relative = dataset_root.relative_to(root)
+    except ValueError:
+        relative = dataset_root
+    return slugify(str(relative), fallback="lerobot")
 
 
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:

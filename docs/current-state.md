@@ -57,6 +57,8 @@ scripts/view_vla_lens.sh runs/pi05-light-5-test
 
 Dashboard paths can now point at one LeRobot root or a top-level batch output;
 the dataset opener discovers nested LeRobot roots and serves them together.
+Captured overlay trace IDs remain unchanged. Plain nested LeRobot roots without
+overlays get path-prefixed episode IDs to avoid `episode_000000` collisions.
 
 PI0.5 hardware capture:
 
