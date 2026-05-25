@@ -1375,7 +1375,13 @@ def _storage_path_for_ref(
         if trace_id:
             return dataset.bundle(str(trace_id)).path / storage.uri
         return None
-    return dataset.root / storage.uri
+    dataset_path = dataset.root / storage.uri
+    if dataset_path.exists():
+        return dataset_path
+    artifact_root_path = dataset._dataset_artifact_root() / storage.uri
+    if artifact_root_path.exists():
+        return artifact_root_path
+    return dataset_path
 
 
 def _storage_ref_from_row(row: Mapping[str, Any]) -> StorageRef:

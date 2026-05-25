@@ -73,6 +73,7 @@ PI05_BACKEND="$BACKEND" "$PY" - <<'PY'
 import importlib.metadata as md
 import os
 import platform
+from packaging.version import Version
 
 backend = os.environ["PI05_BACKEND"]
 strict_device = os.environ.get("PI05_STRICT_DEVICE_CHECK", "1") != "0"
@@ -80,6 +81,27 @@ strict_device = os.environ.get("PI05_STRICT_DEVICE_CHECK", "1") != "0"
 
 def fail(message: str) -> None:
     raise SystemExit(message)
+
+
+def package_version(name: str) -> str:
+    try:
+        return md.version(name)
+    except md.PackageNotFoundError:
+        fail(f"required package is not installed: {name}")
+
+
+def assert_version_range(name: str, lower: str, upper: str) -> None:
+    version = Version(package_version(name).split("+", 1)[0])
+    if version < Version(lower) or version >= Version(upper):
+        fail(f"expected {name}>={lower},<{upper}, found {package_version(name)}")
+
+
+def assert_exact_version(name: str, expected: str | None) -> None:
+    if not expected:
+        return
+    actual = package_version(name)
+    if actual != expected:
+        fail(f"expected {name}=={expected}, found {actual}")
 
 
 try:
@@ -134,11 +156,48 @@ except Exception as exc:
 if robosuite.__version__ != "1.4.0":
     fail(f"expected robosuite 1.4.0, found {robosuite.__version__}")
 
+assert_version_range("numpy", "2.0", "2.3")
+assert_version_range("pyarrow", "21.0", "25.0")
+assert_exact_version("lerobot", "0.4.4")
+assert_exact_version("datasets", "4.8.5")
+assert_exact_version("opencv-python-headless", "4.12.0.88")
+assert_exact_version("rerun-sdk", "0.26.2")
+assert_exact_version("transformers", "4.53.2")
+assert_exact_version("peft", "0.19.1")
+assert_exact_version("hf-libero", "0.1.3")
+
+if backend == "rocm":
+    assert_exact_version("torch", os.environ.get("PI05_EXPECTED_TORCH_VERSION", "2.12.0+rocm7.2"))
+    assert_exact_version(
+        "torchvision",
+        os.environ.get("PI05_EXPECTED_TORCHVISION_VERSION", "0.27.0+rocm7.2"),
+    )
+    assert_exact_version(
+        "torchaudio",
+        os.environ.get("PI05_EXPECTED_TORCHAUDIO_VERSION", "2.11.0+rocm7.2"),
+    )
+elif backend == "cuda":
+    assert_exact_version("torch", os.environ.get("PI05_EXPECTED_TORCH_VERSION", "2.11.0+cu128"))
+    assert_exact_version(
+        "torchvision",
+        os.environ.get("PI05_EXPECTED_TORCHVISION_VERSION", "0.26.0+cu128"),
+    )
+    assert_exact_version(
+        "torchaudio",
+        os.environ.get("PI05_EXPECTED_TORCHAUDIO_VERSION", "2.11.0+cu128"),
+    )
+
 print(f"PI0.5 {backend} capture environment OK")
 for pkg in [
     "torch",
     "torchvision",
+    "torchaudio",
     "lerobot",
+    "datasets",
+    "numpy",
+    "pyarrow",
+    "opencv-python-headless",
+    "rerun-sdk",
     "transformers",
     "peft",
     "hf-libero",

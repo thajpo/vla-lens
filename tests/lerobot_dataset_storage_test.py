@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from dataclasses import replace
 
 import numpy as np
 import pandas as pd
@@ -13,6 +14,7 @@ from vla_lens import (
     LensArtifact,
     TraceDataset,
     TraceManifest,
+    lens_array_catalog,
     query_table,
     table_catalog,
     validate_lerobot_v3_dataset,
@@ -21,6 +23,7 @@ from vla_lens import (
 from vla_lens.capture.records import TraceRecord
 from vla_lens.lerobot_dataset import write_lerobot_trace_record
 from vla_lens.pi05.batch_capture import CaptureCommand, _expected_trace_exists
+from vla_lens.pi05.interaction_metrics import save_pi05_interaction_metrics_artifact
 from vla_lens.pi05.plan_capture import _command_expected_traces_exist, _validate_task_root
 from vla_lens.server import _dataset_signature
 from vla_lens.traces import ModelSiteSpec
@@ -58,6 +61,22 @@ def test_lerobot_overlay_model_sites_materialize_with_selectors(tmp_path):
     assert X.shape == (1, 4)
     assert rows["trace_id"].tolist() == ["trace-a"]
     assert rows["activation"].tolist() == ["model.layer0.hidden"]
+
+
+def test_lerobot_selector_cache_tracks_overlay_array_changes(tmp_path):
+    write_lerobot_trace_record(_minimal_record_with_model_value("trace-a", 0.0), tmp_path)
+    query = ActivationQuery(name="model.layer0.hidden", reduce_tokens="mean")
+    first = TraceDataset.open(tmp_path).select_model_sites(query).to_matrix(cache=True)[0]
+
+    write_lerobot_trace_record(
+        _minimal_record_with_model_value("trace-a", 7.0),
+        tmp_path,
+        overwrite=True,
+    )
+    second = TraceDataset.open(tmp_path).select_model_sites(query).to_matrix(cache=True)[0]
+
+    assert np.allclose(first, 0.0)
+    assert np.allclose(second, 7.0)
 
 
 def test_lerobot_root_without_overlay_still_visualizes_robot_episode(tmp_path):
@@ -230,7 +249,28 @@ def test_lerobot_dataset_artifacts_are_stored_under_overlay(tmp_path):
     assert (tmp_path / "vla_lens" / "artifacts" / saved.artifact_id / "artifact.json").exists()
     assert (tmp_path / "vla_lens" / "tables" / "artifact_index.parquet").exists()
     assert not (tmp_path / "tables" / "artifact_index.parquet").exists()
-    assert TraceDataset.open(tmp_path).load_artifact_array(saved, "weights").shape == (1, 1)
+    reopened = TraceDataset.open(tmp_path)
+    assert reopened.load_artifact_array(saved, "weights").shape == (1, 1)
+    assert validate_workbench_contracts(reopened)["valid"]
+    assert f"artifact.{saved.artifact_id}.weights" in {
+        array.array_id for array in lens_array_catalog(reopened)
+    }
+
+
+def test_lerobot_interaction_metrics_artifacts_stay_inside_overlay(tmp_path):
+    write_lerobot_trace_record(_interaction_record("trace-a"), tmp_path)
+    dataset = TraceDataset.open(tmp_path)
+
+    saved = save_pi05_interaction_metrics_artifact(dataset)
+    episode_labels = saved.artifact.method["outputs"]["episode_labels"]
+    object_metrics = saved.artifact.method["outputs"]["object_metrics"]
+
+    assert episode_labels.startswith("vla_lens/artifacts/")
+    assert object_metrics.startswith("vla_lens/artifacts/")
+    assert (tmp_path / episode_labels).exists()
+    assert (tmp_path / object_metrics).exists()
+    assert (tmp_path / "vla_lens" / "tables" / "artifact_index.parquet").exists()
+    assert not (tmp_path / "tables" / "artifact_index.parquet").exists()
 
 
 def test_lerobot_roots_pass_workbench_contract_and_table_queries(tmp_path):
@@ -415,4 +455,57 @@ def _minimal_record(
             }
         ),
         capture_report={"missing_model_sites": []},
+    )
+
+
+def _minimal_record_with_model_value(trace_id: str, value: float) -> TraceRecord:
+    record = _minimal_record(trace_id)
+    return replace(
+        record,
+        model_arrays=[
+            ModelSiteSpec(
+                name="model.layer0.hidden",
+                array=np.full((1, 2, 4), value, dtype=np.float32),
+                axes=["policy_call", "token", "channel"],
+                module="model.layer0",
+                layer=0,
+            )
+        ],
+    )
+
+
+def _interaction_record(trace_id: str) -> TraceRecord:
+    length = 8
+    record = _minimal_record(trace_id, length=length)
+    positions = np.zeros((length, 2, 3), dtype=np.float32)
+    positions[:, 0] = np.array([0.0, 0.0, 0.02], dtype=np.float32)
+    positions[:, 1] = np.array([0.2, 0.0, 0.02], dtype=np.float32)
+    positions[2:, 0, 0] += 0.05
+    positions[3:, 0, 2] += 0.06
+    eef = np.repeat(np.array([[0.05, 0.0, 0.08]], dtype=np.float32), length, axis=0)
+    episode_arrays = {
+        **dict(record.episode_arrays),
+        "scene_object_pos": ArraySpec(positions, ["timestep", "object", "xyz"]),
+        "eef_pos": ArraySpec(eef, ["timestep", "xyz"]),
+    }
+    manifest = replace(
+        record.manifest,
+        prompt="pick up the red cube",
+        metadata={
+            **dict(record.manifest.metadata),
+            "task_name": "LIVING_ROOM_SCENE1_pick_up_the_red_cube",
+        },
+    )
+    scene_state = pd.DataFrame(
+        {
+            "object_index": [0, 1],
+            "object_name": ["red_cube_1", "blue_cube_1"],
+            "object_kind": ["object", "object"],
+        }
+    )
+    return replace(
+        record,
+        manifest=manifest,
+        episode_arrays=episode_arrays,
+        scene_state=scene_state,
     )

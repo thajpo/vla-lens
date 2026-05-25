@@ -97,10 +97,11 @@ class FeatureView:
         return FeatureMatrix(X=X, rows=rows, selector=self.selector, cache_key=key)
 
     def cache_key(self) -> str:
+        model_sites = self._matching_model_sites()
         payload = {
             "selector": self.selector.to_dict(),
             "episodes": self.dataset.episode_index[["trace_id", "length"]].to_dict("records"),
-            "model_sites": _cache_activation_records(self.dataset.model_site_index),
+            "model_sites": _cache_activation_records(model_sites),
         }
         encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
         return hashlib.sha256(encoded).hexdigest()[:20]
@@ -424,10 +425,53 @@ def _cache_activation_records(index: pd.DataFrame) -> list[dict[str, Any]]:
         return []
     columns = [
         column
-        for column in ["trace_id", "name", "module", "layer", "tensor_type", "shape", "dtype"]
+        for column in [
+            "trace_id",
+            "name",
+            "module",
+            "layer",
+            "tensor_type",
+            "shape",
+            "dtype",
+            "bundle_path",
+            "relative_path",
+            "storage_format",
+        ]
         if column in index
     ]
-    return index[columns].to_dict("records")
+    records = index[columns].to_dict("records")
+    for record in records:
+        bundle_path = record.get("bundle_path")
+        relative_path = record.get("relative_path")
+        if bundle_path and relative_path:
+            path = Path(str(bundle_path)) / str(relative_path)
+            record["storage_signature"] = _path_signature(path)
+    return records
+
+
+def _path_signature(path: Path) -> dict[str, int | str]:
+    if not path.exists():
+        return {"exists": 0}
+    if path.is_file():
+        stat = path.stat()
+        return {"exists": 1, "size": int(stat.st_size), "mtime_ns": int(stat.st_mtime_ns)}
+    file_count = 0
+    total_size = 0
+    latest_mtime = int(path.stat().st_mtime_ns)
+    for child in path.rglob("*"):
+        if not child.is_file():
+            continue
+        file_count += 1
+        stat = child.stat()
+        total_size += int(stat.st_size)
+        latest_mtime = max(latest_mtime, int(stat.st_mtime_ns))
+    return {
+        "exists": 1,
+        "kind": "dir",
+        "files": file_count,
+        "size": total_size,
+        "mtime_ns": latest_mtime,
+    }
 
 
 __all__ = ["ActivationQuery", "FeatureMatrix", "FeatureView"]

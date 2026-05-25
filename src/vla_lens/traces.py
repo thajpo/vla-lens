@@ -434,6 +434,7 @@ class TraceBundle:
         arrays: Mapping[str, np.ndarray] | None = None,
     ) -> LensArtifact:
         """Persist an artifact and optionally its arrays inside this bundle."""
+        _validate_artifact_id(artifact.artifact_id)
         artifact_dir = self.path / "artifacts" / artifact.artifact_id
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
@@ -475,6 +476,7 @@ class TraceBundle:
         return saved
 
     def load_artifact(self, artifact_id: str) -> LensArtifact:
+        _validate_artifact_id(artifact_id)
         path = self.path / "artifacts" / artifact_id / "artifact.json"
         payload = json.loads(path.read_text(encoding="utf-8"))
         return LensArtifact.from_dict(payload)
@@ -637,6 +639,7 @@ class TraceDataset:
         datasets store cross-episode artifacts at the dataset root so probe
         suites and reports do not appear to belong to an arbitrary episode.
         """
+        _validate_artifact_id(artifact.artifact_id)
         if (self.root / TraceBundle.MANIFEST).exists() and len(self.bundles) == 1:
             saved = self.bundles[0].save_artifact(artifact, arrays=arrays)
             self.__dict__.pop("artifact_index", None)
@@ -686,6 +689,7 @@ class TraceDataset:
         return saved
 
     def load_artifact(self, artifact_id: str) -> LensArtifact:
+        _validate_artifact_id(artifact_id)
         artifact_root = self._dataset_artifact_root()
         dataset_path = artifact_root / "artifacts" / artifact_id / "artifact.json"
         if dataset_path.exists() and not (self.root / TraceBundle.MANIFEST).exists():
@@ -1148,6 +1152,14 @@ def _array_fingerprint_payload(path: Path) -> dict[str, Any]:
         "dtype": str(contiguous.dtype),
         "fingerprint": f"sha256:{digest.hexdigest()}",
     }
+
+
+def _validate_artifact_id(artifact_id: str) -> None:
+    value = str(artifact_id)
+    if not value or Path(value).name != value or "/" in value or "\\" in value:
+        raise ValueError(f"Invalid artifact_id: {artifact_id!r}")
+    if value in {".", ".."}:
+        raise ValueError(f"Invalid artifact_id: {artifact_id!r}")
 
 
 def _read_json(path: Path) -> dict[str, Any]:

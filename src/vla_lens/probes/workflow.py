@@ -1949,8 +1949,10 @@ def _json_scalar(value: Any) -> Any:
 
 
 def _artifact_dir(dataset: TraceDataset, artifact: LensArtifact) -> Path:
-    if artifact.scope == "dataset" and not (dataset.root / TraceBundle.MANIFEST).exists():
-        return dataset.root / "artifacts" / artifact.artifact_id
+    if artifact.scope == "dataset":
+        if artifact.path:
+            return (dataset._dataset_artifact_root() / artifact.path).parent
+        return dataset._dataset_artifact_root() / "artifacts" / artifact.artifact_id
     if len(dataset.bundles) == 1:
         return dataset.bundles[0].path / "artifacts" / artifact.artifact_id
     return dataset.root / "artifacts" / artifact.artifact_id

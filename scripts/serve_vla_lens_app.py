@@ -16,6 +16,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Final
 
+ROOT = Path(__file__).resolve().parents[1]
+
 HOP_BY_HOP_HEADERS: Final = {
     "connection",
     "keep-alive",
@@ -84,7 +86,7 @@ def _start_backend(root: Path, *, host: str, port: int) -> subprocess.Popen[str]
     return subprocess.Popen(
         [
             sys.executable,
-            "scripts/serve_vla_lens_dashboard.py",
+            str(ROOT / "scripts" / "serve_vla_lens_dashboard.py"),
             str(root),
             "--host",
             host,

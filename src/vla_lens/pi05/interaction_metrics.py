@@ -96,8 +96,7 @@ def save_pi05_interaction_metrics_artifact(
         source_trace_ids=tuple(sorted(str(value) for value in episode_labels["trace_id"])),
     )
     saved = dataset.save_artifact(artifact)
-    artifact_dir = dataset.root / str(saved.path or "")
-    artifact_dir = artifact_dir.parent
+    artifact_dir = (dataset._dataset_artifact_root() / str(saved.path or "")).parent
     episode_path = artifact_dir / "interaction_episode_labels.parquet"
     object_path = artifact_dir / "interaction_object_metrics.parquet"
     episode_labels.to_parquet(episode_path, index=False)
@@ -129,7 +128,7 @@ def save_pi05_interaction_metrics_artifact(
         json.dumps(updated.to_dict(), indent=2, sort_keys=True),
         encoding="utf-8",
     )
-    artifact_index_path = dataset.root / TraceBundle.ARTIFACT_INDEX
+    artifact_index_path = dataset._dataset_artifact_root() / TraceBundle.ARTIFACT_INDEX
     existing = (
         pd.read_parquet(artifact_index_path)
         if artifact_index_path.exists()

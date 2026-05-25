@@ -33,7 +33,7 @@ keeps the dashboard and dataset tooling on ordinary Python data dependencies
 such as:
 
 ```text
-pyarrow>=19.0,<20.0
+pyarrow>=19.0,<25.0
 pandas
 imageio
 zarr
@@ -55,7 +55,13 @@ the dedicated capture venv; do not let it replace Torch.
 known-good local capture stack, May 20, 2026:
   torch==2.12.0+rocm7.2
   torchvision==0.27.0+rocm7.2
+  torchaudio==2.11.0+rocm7.2
   lerobot==0.4.4
+  numpy>=2.0,<2.3
+  pyarrow>=21.0,<25.0
+  datasets==4.8.5
+  opencv-python-headless==4.12.0.88
+  rerun-sdk==0.26.2
   hf-libero==0.1.3
   robosuite==1.4.0
 ```
@@ -150,6 +156,17 @@ scripts/setup_pi05_rocm_env.sh
 
 The script creates `.venv-pi05-rocm`, installs VLA Lens editable without using the normal lock as the source of truth for capture, installs ROCm Torch wheels, installs LeRobot without dependency resolution, installs the required non-torch runtime packages, applies the OpenPI Transformers replacement patch, and verifies the critical imports.
 
+The capture environment intentionally follows LeRobot 0.4.4's newer data stack
+for packages such as NumPy, PyArrow, datasets, OpenCV, and Rerun. The normal
+dashboard/test environment can stay on the versions pinned in `uv.lock`; the
+project metadata is broad enough for both.
+
+`scripts/check_pi05_rocm_env.sh` asserts the explicit capture package matrix
+instead of using `uv pip check`. That is intentional: the working accelerator
+stack uses LeRobot without dependency resolution because LeRobot's package
+metadata currently excludes the newer ROCm/CUDA torchvision wheels used by the
+known-good runtime.
+
 The ROCm Torch wheel is large, so the first setup can take a while and may download several GiB. The wrapper scripts run `scripts/check_pi05_rocm_env.sh` before capture, so a missing or half-built `.venv-pi05-rocm` should fail loudly instead of starting a broken capture.
 
 Expected checks:
@@ -160,6 +177,7 @@ transformers.models.siglip.check passes
 lerobot.policies.pi05.modeling_pi05 imports
 libero.libero.envs.OffScreenRenderEnv imports
 robosuite is 1.4.0
+the expected NumPy/PyArrow/datasets/OpenCV/Rerun package range is present
 ```
 
 ## Capture Commands

@@ -482,6 +482,15 @@ class LeRobotEpisodeBundle:
             )
         return self._frame_cache[camera]
 
+    def frame(self, camera: str, timestep: int) -> np.ndarray:
+        if camera in self._frame_cache:
+            return np.asarray(self._frame_cache[camera][timestep])
+        reader = imageio.get_reader(self._video_path(f"{LEROBOT_IMAGE_PREFIX}{camera}"))
+        try:
+            return np.asarray(reader.get_data(int(timestep)))
+        finally:
+            reader.close()
+
     def cameras(self) -> list[str]:
         features = self.info.get("features")
         if not isinstance(features, Mapping):

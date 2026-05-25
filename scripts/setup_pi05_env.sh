@@ -20,6 +20,8 @@ Environment overrides:
   PI05_PYTHON           Python version, default 3.11
   PI05_ROCM_INDEX_URL   PyTorch ROCm wheel index
   PI05_CUDA_INDEX_URL   PyTorch CUDA wheel index
+  PI05_ROCM_TORCH_VERSION / PI05_ROCM_TORCHVISION_VERSION / PI05_ROCM_TORCHAUDIO_VERSION
+  PI05_CUDA_TORCH_VERSION / PI05_CUDA_TORCHVISION_VERSION / PI05_CUDA_TORCHAUDIO_VERSION
 EOF
 }
 
@@ -98,9 +100,9 @@ uv pip install --python "$PY" \
   "imageio-ffmpeg>=0.6,<0.7" \
   "matplotlib>=3.10,<4.0" \
   "numcodecs>=0.13,<0.16" \
-  "numpy==1.26.4" \
+  "numpy>=2.0,<2.3" \
   "pandas>=2.2,<3.0" \
-  "pyarrow==19.0.1" \
+  "pyarrow>=21.0,<25.0" \
   "pyyaml>=6.0,<7.0" \
   "scikit-learn>=1.6,<2.0" \
   "zarr>=2.18,<3.0"
@@ -109,12 +111,16 @@ echo "Installing PyTorch stack for backend=$BACKEND..."
 case "$BACKEND" in
   rocm)
     uv pip install --python "$PY" \
-      torch torchvision torchaudio \
+      "torch==${PI05_ROCM_TORCH_VERSION:-2.12.0+rocm7.2}" \
+      "torchvision==${PI05_ROCM_TORCHVISION_VERSION:-0.27.0+rocm7.2}" \
+      "torchaudio==${PI05_ROCM_TORCHAUDIO_VERSION:-2.11.0+rocm7.2}" \
       --index-url "${PI05_ROCM_INDEX_URL:-https://download.pytorch.org/whl/rocm7.2}"
     ;;
   cuda)
     uv pip install --python "$PY" \
-      torch torchvision torchaudio \
+      "torch==${PI05_CUDA_TORCH_VERSION:-2.11.0+cu128}" \
+      "torchvision==${PI05_CUDA_TORCHVISION_VERSION:-0.26.0+cu128}" \
+      "torchaudio==${PI05_CUDA_TORCHAUDIO_VERSION:-2.11.0+cu128}" \
       --index-url "${PI05_CUDA_INDEX_URL:-https://download.pytorch.org/whl/cu128}"
     ;;
   mps|cpu)

@@ -23,6 +23,8 @@ services:
     ipc: host
     shm_size: "16gb"
     gpus: all
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,graphics
     volumes:
       - ./runs:/app/runs
       - ${HOME}/.cache/huggingface:/root/.cache/huggingface

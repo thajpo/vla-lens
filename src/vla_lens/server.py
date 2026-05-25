@@ -72,6 +72,9 @@ except Exception:  # pragma: no cover - optional dependency boundary
     read_sparse_image = None  # type: ignore[assignment]
 
 
+_EPISODE_VIDEO_CACHE_LOCK = threading.RLock()
+
+
 def run_dashboard_server(
     root: str | Path,
     *,
@@ -225,11 +228,13 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
                     _expert_token_details_payload(self._bundle_from_query(query), query)
                 )
             else:
-                self.send_error(HTTPStatus.NOT_FOUND, f"Unknown route: {path}")
+                self._send_error_json(HTTPStatus.NOT_FOUND, f"Unknown route: {path}")
         except (BrokenPipeError, ConnectionResetError):  # browser navigated or scrubbed away
             return
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError, FileNotFoundError) as exc:
+            self._send_api_exception(exc)
         except Exception as exc:  # pragma: no cover - defensive server boundary
-            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, repr(exc))
+            self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, repr(exc))
 
     def do_POST(self) -> None:  # noqa: N802
         parsed = urllib.parse.urlparse(self.path)
@@ -278,11 +283,14 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
             elif path == "/api/artifacts/create/action-generation":
                 self._send_json(_create_action_generation_payload(self.dataset))
             else:
-                self.send_error(HTTPStatus.NOT_FOUND, f"Unknown route: {path}")
+                self._send_error_json(HTTPStatus.NOT_FOUND, f"Unknown route: {path}")
+            self._clear_payload_cache()
         except (BrokenPipeError, ConnectionResetError):  # browser navigated or scrubbed away
             return
+        except (json.JSONDecodeError, KeyError, TypeError, ValueError, FileNotFoundError) as exc:
+            self._send_api_exception(exc)
         except Exception as exc:  # pragma: no cover - defensive server boundary
-            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, repr(exc))
+            self._send_error_json(HTTPStatus.INTERNAL_SERVER_ERROR, repr(exc))
 
     def log_message(self, format: str, *args: Any) -> None:
         return
@@ -330,6 +338,27 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(payload)
 
+    def _send_error_json(self, status: HTTPStatus, message: str) -> None:
+        payload = json.dumps(
+            {"error": status.phrase, "message": message},
+            allow_nan=False,
+        ).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+    def _send_api_exception(self, exc: Exception) -> None:
+        status = _api_exception_status(exc)
+        self._send_error_json(status, _api_exception_message(exc))
+
+    def _clear_payload_cache(self) -> None:
+        cls = type(self)
+        with cls.dataset_lock:
+            cls.payload_cache.clear()
+
     def _read_json_body(self) -> dict[str, Any]:
         length = int(self.headers.get("Content-Length", "0"))
         if length <= 0:
@@ -351,7 +380,7 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
                 payload = frame_path.read_bytes()
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", mimetypes.types_map.get(".jpg", "image/jpeg"))
-                self.send_header("Cache-Control", "public, max-age=3600, immutable")
+                self.send_header("Cache-Control", "no-store")
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers()
                 self.wfile.write(payload)
@@ -401,6 +430,10 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
             except Exception:
                 if source == "replay":
                     raise
+        if source == "auto":
+            frame_reader = getattr(bundle, "frame", None)
+            if callable(frame_reader):
+                return np.asarray(frame_reader(camera, timestep))
         frames = bundle.frames(camera, mmap=True)
         return np.asarray(frames[timestep])
 
@@ -413,6 +446,27 @@ class TraceDashboardHandler(BaseHTTPRequestHandler):
                 renderer = PI05LiberoReplayRenderer(bundle)
                 self.replay_renderers[bundle.manifest.trace_id] = renderer
             return renderer
+
+
+def _api_exception_status(exc: Exception) -> HTTPStatus:
+    if isinstance(exc, json.JSONDecodeError):
+        return HTTPStatus.BAD_REQUEST
+    if isinstance(exc, KeyError):
+        message = _api_exception_message(exc)
+        if message.startswith("Missing query parameter:"):
+            return HTTPStatus.BAD_REQUEST
+        return HTTPStatus.NOT_FOUND
+    if isinstance(exc, FileNotFoundError):
+        return HTTPStatus.NOT_FOUND
+    if isinstance(exc, (TypeError, ValueError)):
+        return HTTPStatus.BAD_REQUEST
+    return HTTPStatus.INTERNAL_SERVER_ERROR
+
+
+def _api_exception_message(exc: Exception) -> str:
+    if isinstance(exc, KeyError) and exc.args:
+        return str(exc.args[0])
+    return str(exc)
 
 
 def _dataset_payload(dataset: TraceDataset, *, include_workbench: bool = True) -> dict[str, Any]:
@@ -4455,6 +4509,22 @@ def _action_vector_for_token(
 
 
 def _episode_video_path(
+    bundle: TraceBundle,
+    *,
+    camera: str,
+    fps: int,
+    max_width: int,
+) -> Path:
+    with _EPISODE_VIDEO_CACHE_LOCK:
+        return _episode_video_path_locked(
+            bundle,
+            camera=camera,
+            fps=fps,
+            max_width=max_width,
+        )
+
+
+def _episode_video_path_locked(
     bundle: TraceBundle,
     *,
     camera: str,

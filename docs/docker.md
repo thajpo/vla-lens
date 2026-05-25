@@ -183,10 +183,15 @@ scripts/docker_pi05_rocm.sh \
 
 For absolute `--output-root` and `--vlatrace-out-root` values, the wrapper
 creates the host directory, mounts it at `/capture-output`, and rewrites the
-container command. This keeps the user-facing command honest: the path you pass
-is the path that receives the LeRobot dataset roots on the host. The
-`--vlatrace-out-root` flag name is retained only so existing scripts do not
-break; the artifact written there is now a LeRobot root.
+container command. Absolute `output_root` values inside `--config` YAML files
+are handled the same way unless an explicit CLI output root override is passed.
+This keeps the user-facing command honest: the path you pass, or the absolute
+path in the config, is the path that receives the LeRobot dataset roots on the
+host. The `--vlatrace-out-root` flag name is retained only so existing scripts
+do not break; the artifact written there is now a LeRobot root.
+
+Absolute `--config` and `--episode-plan` input files are mounted read-only under
+`/host-inputs/...` and rewritten for the command inside the container.
 
 Run a single capture:
 
