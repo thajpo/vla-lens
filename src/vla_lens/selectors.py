@@ -116,7 +116,7 @@ class FeatureView:
 
         for row in model_sites.to_dict("records"):
             bundle = self.dataset.bundle(str(row["trace_id"]))
-            array = bundle._load_relative_array(str(row["relative_path"]), mmap=True)
+            array = bundle.model_site(str(row["name"]), mmap=True)
             axes = json.loads(row["axes"])
             samples = _resolve_samples(
                 bundle,

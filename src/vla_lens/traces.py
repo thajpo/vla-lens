@@ -690,9 +690,10 @@ class TraceDataset:
             payload = json.loads(dataset_path.read_text(encoding="utf-8"))
             return LensArtifact.from_dict(payload)
         for bundle in self.bundles:
-            path = bundle.path / "artifacts" / artifact_id / "artifact.json"
-            if path.exists():
+            try:
                 return bundle.load_artifact(artifact_id)
+            except (FileNotFoundError, KeyError):
+                continue
         raise KeyError(f"Unknown artifact '{artifact_id}'")
 
     def load_artifact_array(
@@ -709,9 +710,10 @@ class TraceDataset:
         if artifact.scope == "dataset" and dataset_path.exists():
             return _read_zarr_array(dataset_path)
         for bundle in self.bundles:
-            path = bundle.path / relative_path
-            if path.exists():
+            try:
                 return bundle.load_artifact_array(artifact, name, mmap=mmap)
+            except (FileNotFoundError, KeyError):
+                continue
         raise FileNotFoundError(relative_path)
 
     def cache_dir(self) -> Path:

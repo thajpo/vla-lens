@@ -12,11 +12,13 @@ import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
+from vla_lens.capture.lerobot_v3 import validate_lerobot_v3_dataset
 from vla_lens.pi05 import capture
 from vla_lens.pi05.batch_capture import (
     CaptureCommand,
     _capture_commands,
     _dataset_ids,
+    _expected_trace_exists,
     _load_config,
     _preflight_storage,
     _read_episode_plan,
@@ -82,7 +84,7 @@ def main(argv: list[str] | None = None) -> None:
     runtime_key: tuple[str, str, str] | None = None
     executed_commands = 0
     for index, item in enumerate(commands, start=1):
-        expected_exists = item.expected_paths and all(path.exists() for path in item.expected_paths)
+        expected_exists = _command_expected_traces_exist(item)
         if expected_exists and not args.force:
             _append_status(status_path, _status_payload("skipped_existing", index, item))
             print(f"[{index}/{len(commands)}] skip existing {item.benchmark} task={item.task_id}")
@@ -149,7 +151,19 @@ def _runtime_key(args: argparse.Namespace) -> tuple[str, str, str]:
     return (str(args.model_id), str(args.device), str(args.dtype))
 
 
+def _command_expected_traces_exist(item: CaptureCommand) -> bool:
+    return bool(item.expected_trace_ids) and all(
+        _expected_trace_exists(item.output_root, trace_id) for trace_id in item.expected_trace_ids
+    )
+
+
 def _validate_task_root(path: Path) -> None:
+    if (path / "meta" / "info.json").exists() and (path / "data").exists():
+        validation = validate_lerobot_v3_dataset(path)
+        if not validation.valid:
+            raise ValueError(validation.to_dict())
+        print(f"validated {len(TraceDataset.open(path).bundles)} LeRobot traces in {path}")
+        return
     dataset = TraceDataset.open(path)
     validation = validate_trace_dataset(dataset)
     if not validation.valid:

@@ -23,6 +23,8 @@ from typing import Any, Iterable, Mapping, Sequence
 import pandas as pd
 import yaml
 
+from vla_lens.capture.lerobot_v3 import validate_lerobot_v3_dataset
+
 DEFAULT_CONFIG = Path("configs/pi05_diverse_500.yaml")
 PLAN_COLUMNS = (
     "dataset_id",
@@ -550,13 +552,25 @@ def _expected_trace_exists(task_root: Path, trace_id: str) -> bool:
     refs_path = task_root / "vla_lens" / "tables" / "episode_refs.parquet"
     if not refs_path.exists():
         return False
+    validation = validate_lerobot_v3_dataset(task_root)
+    if not validation.valid:
+        return False
     try:
         refs = pd.read_parquet(refs_path)
     except Exception:
         return False
     if refs.empty or "trace_id" not in refs:
         return False
-    return str(trace_id) in set(refs["trace_id"].astype(str))
+    matches = refs.loc[refs["trace_id"].astype(str) == str(trace_id)]
+    if matches.empty:
+        return False
+    if "overlay_path" not in matches:
+        return False
+    for row in matches.to_dict("records"):
+        overlay_path = task_root / str(row.get("overlay_path") or "")
+        if not (overlay_path / "manifest.json").exists():
+            return False
+    return True
 
 
 def _contiguous_seed_groups(seeds: Sequence[int]) -> list[list[int]]:

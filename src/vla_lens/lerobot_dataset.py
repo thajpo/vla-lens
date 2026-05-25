@@ -113,6 +113,7 @@ def write_lerobot_trace_record(
 
     dataset_root = Path(root)
     dataset_root.mkdir(parents=True, exist_ok=True)
+    length = int(record.manifest.length)
     refs = _read_table(dataset_root / VLA_LENS_OVERLAY_REFERENCES)
     existing_ref = _matching_ref(refs, record.manifest.trace_id)
     if existing_ref is not None and not overwrite:
@@ -120,12 +121,12 @@ def write_lerobot_trace_record(
 
     if existing_ref is not None:
         episode_index = int(existing_ref["episode_index"])
+        _reject_length_changing_overwrite(dataset_root, episode_index, length)
         dataset_from_index = _episode_dataset_from_index(dataset_root, episode_index)
     else:
         episode_index = _next_episode_index(dataset_root)
         dataset_from_index = _next_dataset_frame_index(dataset_root)
 
-    length = int(record.manifest.length)
     chunk_index, file_index = _chunk_file_index(episode_index)
     task_index = _task_index_for_record(dataset_root, record)
     data_path = dataset_root / LEROBOT_DATA_PATH_TEMPLATE.format(
@@ -148,7 +149,6 @@ def write_lerobot_trace_record(
     )
     _write_info(dataset_root, record, features=features)
     _write_tasks(dataset_root, task_index=task_index, task=_task_text(record))
-    _write_stats(dataset_root, action=action, observation_state=observation_state)
     _write_robot_data(
         data_path,
         record,
@@ -173,6 +173,7 @@ def write_lerobot_trace_record(
         dataset_from_index=dataset_from_index,
         video_metadata=video_metadata,
     )
+    _write_stats(dataset_root)
     overlay_bundle = _write_overlay_bundle(
         dataset_root,
         record,
@@ -707,6 +708,25 @@ def _episode_dataset_from_index(root: Path, episode_index: int) -> int:
     return int(matches.iloc[-1].get("dataset_from_index") or 0)
 
 
+def _reject_length_changing_overwrite(root: Path, episode_index: int, length: int) -> None:
+    episodes = _read_episode_metadata(root)
+    if episodes.empty or LEROBOT_EPISODE_INDEX not in episodes:
+        return
+    matches = episodes.loc[episodes[LEROBOT_EPISODE_INDEX].astype(int) == int(episode_index)]
+    if matches.empty:
+        return
+    row = matches.iloc[-1]
+    existing_length = row.get("length", row.get("num_frames"))
+    if existing_length is None or pd.isna(existing_length):
+        return
+    if int(existing_length) != int(length):
+        raise ValueError(
+            "Cannot overwrite an existing LeRobot episode with a different length: "
+            f"episode_index={episode_index} existing_length={int(existing_length)} "
+            f"new_length={int(length)}"
+        )
+
+
 def _episode_row_for_index(root: Path, episode_index: int) -> dict[str, Any]:
     episodes = _read_episode_metadata(root)
     matches = episodes.loc[episodes[LEROBOT_EPISODE_INDEX].astype(int) == int(episode_index)]
@@ -727,10 +747,7 @@ def _task_index_for_record(root: Path, record: TraceRecord) -> int:
         if not matches.empty:
             return int(matches.iloc[-1]["task_index"])
         return int(pd.to_numeric(tasks["task_index"], errors="coerce").fillna(-1).max()) + 1
-    try:
-        return int(record.manifest.task_id)
-    except ValueError:
-        return 0
+    return 0
 
 
 def _task_text(record: TraceRecord) -> str:
@@ -852,11 +869,19 @@ def _features_for_record(
     return features
 
 
-def _write_stats(root: Path, *, action: np.ndarray, observation_state: np.ndarray | None) -> None:
-    stats = {LEROBOT_ACTION: _stats_payload(action)}
-    if observation_state is not None:
-        stats[LEROBOT_OBSERVATION_STATE] = _stats_payload(observation_state)
+def _write_stats(root: Path) -> None:
+    data = _read_all_robot_data(root)
+    stats: dict[str, Any] = {}
+    for name in (LEROBOT_ACTION, LEROBOT_OBSERVATION_STATE):
+        if name in data:
+            stats[name] = _stats_payload(_stack_column(data[name]))
     _write_json(root / LEROBOT_STATS_PATH, stats)
+
+
+def _read_all_robot_data(root: Path) -> pd.DataFrame:
+    paths = sorted((root / LEROBOT_DATA_DIR).rglob("*.parquet"))
+    frames = [pd.read_parquet(path) for path in paths]
+    return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
 
 
 def _write_robot_data(
