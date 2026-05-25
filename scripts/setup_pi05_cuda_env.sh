@@ -2,4 +2,4 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-exec "$ROOT/scripts/pi05_batch_capture.sh" --backend rocm "$@"
+exec "$ROOT/scripts/setup_pi05_env.sh" --backend cuda "$@"

@@ -4,10 +4,10 @@ description: >
   Five-episode PI0.5 mechanistic_sampled capture test across LIBERO suites.
   Intended for quick validation after capture/schema changes.
 
-output_root: /media/j/New Volume/vla-lens/pi05-light-5-test
+output_root: runs/pi05-light-5-test
 model_id: lerobot/pi05_libero_finetuned
-python_executable: /home/j/Projects/vla-lens/.venv-lerobot/bin/python
-pythonpath: /home/j/Projects/vla-lens/src
+python_executable: .venv-pi05-rocm/bin/python
+pythonpath: src
 capture_profile: mechanistic_sampled
 storage_dtype: float16
 obs_size: 256

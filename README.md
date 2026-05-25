@@ -20,6 +20,76 @@ HF model + environment + capture profile
 Current docs entrypoint: [docs/README.md](docs/README.md). Current operational
 state and known-good commands: [docs/current-state.md](docs/current-state.md).
 
+## Reviewer Quick Start
+
+Run the portable checks:
+
+```bash
+scripts/check_vla_lens.sh
+```
+
+Start a synthetic demo dataset, local backend, and React workbench:
+
+```bash
+scripts/run_vla_lens_demo.sh
+```
+
+Open:
+
+```text
+http://127.0.0.1:5173/
+```
+
+This path proves the package, trace contract, backend APIs, and frontend build
+without requiring PI0.5, LeRobot, LIBERO, Torch, or GPU hardware.
+
+Run the same dashboard path in Docker:
+
+```bash
+scripts/docker_dashboard.sh
+```
+
+Open:
+
+```text
+http://127.0.0.1:8080/
+```
+
+Point either dashboard path at existing traces:
+
+```bash
+scripts/view_vla_lens.sh runs/pi05-light-5-test
+scripts/docker_dashboard.sh runs/pi05-light-5-test
+```
+
+For hardware capture setup:
+
+```bash
+scripts/setup_pi05_rocm_env.sh  # AMD ROCm
+scripts/setup_pi05_cuda_env.sh  # NVIDIA CUDA
+scripts/setup_pi05_mps_env.sh   # Apple Silicon MPS
+```
+
+For Linux capture in Docker:
+
+```bash
+scripts/docker_pi05_cuda.sh --config configs/pi05_light_5_test.yaml --run
+scripts/docker_pi05_rocm.sh --config configs/pi05_light_5_test.yaml --run
+```
+
+For high-volume capture, make the trace destination explicit:
+
+```bash
+scripts/docker_pi05_rocm.sh \
+  --config configs/pi05_light_5_test.yaml \
+  --output-root /mnt/nvme/vla-lens/pi05-light-5-test \
+  --run
+```
+
+More detail: [docs/hardware-run-paths.md](docs/hardware-run-paths.md),
+[docs/docker.md](docs/docker.md), and
+[docs/cloud-capture.md](docs/cloud-capture.md).
+
 ## What You Can Do
 
 - Run PI0.5 in LIBERO and receive a reusable `.vlatrace` interpretability package.
@@ -46,8 +116,8 @@ state and known-good commands: [docs/current-state.md](docs/current-state.md).
 - `analyzer.py`: dataset-aware analysis recommendations.
 - `probes/`: probe training workflows and baselines.
 - `action_generation.py`: action-head generation summaries.
-- `server.py` and `live_dashboard.py`: local dashboard and APIs.
-- `importers/pi05_legacy.py`: one-way PI0.5 capture-to-`.vlatrace` converter.
+- `server.py`: local dashboard APIs.
+- `capture/`: generic capture record/adaptor contracts.
 - `pi05/`: PI0.5-specific selectors, replay, and intervention specs.
 
 ## Quick Start
@@ -73,9 +143,10 @@ scripts/pi05_batch_capture_rocm.sh --config configs/pi05_light_5_test.yaml --run
 The `.vlatrace` bundle is the canonical VLA-lens episode record used by the
 backend and webapp.
 
-### PI0.5 ROCm Capture Environment
+### PI0.5 Hardware Capture Environments
 
-PI0.5/LeRobot/LIBERO capture uses a dedicated environment. This is intentional.
+PI0.5/LeRobot/LIBERO capture uses dedicated hardware environments. This is
+intentional.
 
 Use this split:
 
@@ -84,10 +155,10 @@ Normal repo/dev/test/server work:
   .venv
   uv run ...
 
-PI0.5 ROCm capture work:
-  .venv-pi05-rocm
-  scripts/pi05_capture_rocm.sh ...
-  scripts/pi05_batch_capture_rocm.sh ...
+PI0.5 capture work:
+  .venv-pi05-rocm / .venv-pi05-cuda / .venv-pi05-mps
+  scripts/pi05_capture.sh --backend rocm|cuda|mps ...
+  scripts/pi05_batch_capture.sh --backend rocm|cuda|mps ...
 ```
 
 Do not run PI0.5 capture with plain `uv run vla-pi05-capture` or
@@ -101,18 +172,22 @@ Set up the capture environment once:
 
 ```bash
 scripts/setup_pi05_rocm_env.sh
+scripts/setup_pi05_cuda_env.sh
+scripts/setup_pi05_mps_env.sh
 ```
 
-The first setup downloads the ROCm Torch wheel, which is several GiB. The
-capture wrappers validate the environment before running so a missing or
-half-built `.venv-pi05-rocm` fails loudly.
+The first setup downloads Torch and model/runtime dependencies, which can be
+several GiB. The capture wrappers validate the environment before running so a
+missing or half-built capture virtualenv fails loudly.
 
-More detail: [`docs/pi05-rocm-capture-env.md`](docs/pi05-rocm-capture-env.md).
+More detail: [`docs/hardware-run-paths.md`](docs/hardware-run-paths.md) and
+[`docs/pi05-rocm-capture-env.md`](docs/pi05-rocm-capture-env.md).
 
 Testing follows the same split. Normal repo tests run with `uv run pytest` in
 `.venv` and should not require Torch/LeRobot/GPU. Real PI0.5 capture smokes run
-through `scripts/pi05_capture_rocm.sh` or `scripts/pi05_batch_capture_rocm.sh`
-after `scripts/check_pi05_rocm_env.sh` passes.
+through `scripts/pi05_capture.sh --backend ...` or
+`scripts/pi05_batch_capture.sh --backend ...` after
+`scripts/check_pi05_env.sh --backend ...` passes.
 
 The batch runner is the normal run surface. It writes an `episode_plan.csv`
 containing one row per intended episode:
@@ -133,7 +208,7 @@ uv run python scripts/run_capture_profile_smoke.py \
   --model-id lerobot/pi05_libero_finetuned \
   --episodes 2 \
   --delete-existing \
-  --capture-command 'scripts/pi05_capture_rocm.sh --model-id {model_id} --episodes {episodes} --start-seed {start_seed} --capture-profile {profile} --dataset-id {dataset_id} --vlatrace-out-root {traces_root}'
+  --capture-command 'scripts/pi05_capture.sh --backend rocm --model-id {model_id} --episodes {episodes} --start-seed {start_seed} --capture-profile {profile} --dataset-id {dataset_id} --vlatrace-out-root {traces_root}'
 ```
 
 The smoke script owns the profile roots and trace validation. The runner
@@ -182,8 +257,8 @@ Refresh the dashboard and open the Artifacts page to inspect saved results.
 PI0.5 capture profiles are named `rollout`, `features`,
 `mechanistic_sampled`, `mechanistic_all`, `internals_sampled`,
 `audit_sampled`, `audit_windowed`, `audit_full`, and `custom`. In short: use
-`scripts/pi05_batch_capture_rocm.sh` for PI0.5 dataset-scale work on this ROCm
-workstation.
+`scripts/pi05_batch_capture.sh --backend rocm|cuda|mps` for PI0.5
+dataset-scale work on a configured capture machine.
 `mechanistic_sampled` is the cheap default; `mechanistic_all` is the best
 serious single-trace inspector profile; `audit_sampled` adds sampled-layer
 circuit-boundary internals and is already large; `audit_windowed` captures

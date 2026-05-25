@@ -109,6 +109,21 @@ def test_batch_capture_can_group_noncontiguous_seed_list(tmp_path):
     assert "1000,2000,3000" in commands[0].command
 
 
+def test_batch_capture_runtime_env_overrides_stale_config_values(tmp_path, monkeypatch):
+    config = _config(tmp_path)
+    monkeypatch.setenv("VLA_LENS_CAPTURE_PYTHON", "/tmp/pi05/bin/python")
+    monkeypatch.setenv("VLA_LENS_CAPTURE_PYTHONPATH", "/tmp/vla-lens/src")
+    monkeypatch.setenv("VLA_LENS_CAPTURE_DEVICE", "mps")
+    monkeypatch.setenv("VLA_LENS_CAPTURE_DTYPE", "float32")
+
+    rows = _episode_rows_from_config(config)
+    command = _capture_commands(config, tmp_path, rows)[0].command
+
+    assert command[:3] == ("env", "PYTHONPATH=/tmp/vla-lens/src", "/tmp/pi05/bin/python")
+    assert command[command.index("--device") + 1] == "mps"
+    assert command[command.index("--dtype") + 1] == "float32"
+
+
 def test_plan_capture_reuses_batch_capture_command_args(tmp_path):
     plan = tmp_path / "episodes.csv"
     plan.write_text(

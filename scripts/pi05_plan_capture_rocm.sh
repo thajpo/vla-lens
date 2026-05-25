@@ -20,6 +20,10 @@ EOF
   exit 2
 fi
 
-"$ROOT/scripts/check_pi05_rocm_env.sh" >/dev/null
+"$ROOT/scripts/check_pi05_env.sh" --backend rocm >/dev/null
+export VLA_LENS_CAPTURE_PYTHON="${VLA_LENS_CAPTURE_PYTHON:-$VENV/bin/python}"
+export VLA_LENS_CAPTURE_PYTHONPATH="${VLA_LENS_CAPTURE_PYTHONPATH:-$ROOT/src}"
+export VLA_LENS_CAPTURE_DEVICE="${VLA_LENS_CAPTURE_DEVICE:-cuda}"
+export VLA_LENS_CAPTURE_DTYPE="${VLA_LENS_CAPTURE_DTYPE:-bfloat16}"
 export PYTHONPATH="$ROOT/src${PYTHONPATH:+:$PYTHONPATH}"
 exec "$VENV/bin/python" -m vla_lens.pi05.plan_capture "$@"

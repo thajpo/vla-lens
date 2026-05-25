@@ -5,10 +5,10 @@ description: >
   uses held-out tasks plus held-out seeds so probe results can be checked
   against task/layout priors instead of relying on row-level random splits.
 
-output_root: /media/j/New Volume/vla-lens/pi05-diverse-500
+output_root: runs/pi05-diverse-500
 model_id: lerobot/pi05_libero_finetuned
-python_executable: /home/j/Projects/vla-lens/.venv-lerobot/bin/python
-pythonpath: /home/j/Projects/vla-lens/src
+python_executable: .venv-pi05-rocm/bin/python
+pythonpath: src
 capture_profile: mechanistic_sampled
 storage_dtype: float16
 obs_size: 256

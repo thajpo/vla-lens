@@ -19,11 +19,11 @@ features plus post-processed interaction labels.
 - Saved diagnostics: predictions, per-split metrics, per-group metrics, null metrics, metadata baselines, linear weights when available
 - Runtime contract: normal repo work, saved-trace analysis, probe training, UI
   work, and tests use `.venv` / `uv run`. PI0.5 execution work uses
-  `.venv-pi05-rocm` plus wrapper scripts. "Execution work" means capture,
-  model forward/replay, LIBERO/LeRobot env execution, GPU/ROCm model loading,
+  `.venv-pi05-*` plus wrapper scripts. "Execution work" means capture,
+  model forward/replay, LIBERO/LeRobot env execution, hardware model loading,
   or writing real `.vlatrace` files.
-- ROCm preflight contract: do not infer the current PI0.5 execution
-  environment from docs alone. Run `scripts/check_pi05_rocm_env.sh` before
+- Capture preflight contract: do not infer the current PI0.5 execution
+  environment from docs alone. Run `scripts/check_pi05_env.sh --backend ...` before
   capture, forward replay, or other PI0.5 execution work.
 - Provenance contract: durable analyses should save trace IDs, source episode
   fingerprints, feature/target/row-index fingerprints, split definitions,

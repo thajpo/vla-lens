@@ -1,0 +1,49 @@
+services:
+  dashboard:
+    image: vla-lens-dashboard:local
+    build:
+      context: .
+      dockerfile: docker/dashboard.Dockerfile
+    environment:
+      VLA_LENS_TRACE_ROOT: /data/vla-lens/runs/vla_lens_demo
+      VLA_LENS_HOST: 0.0.0.0
+      VLA_LENS_PORT: 8080
+      VLA_LENS_PUBLIC_URL: http://127.0.0.1:8080
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./runs:/data/vla-lens/runs
+
+  capture-cuda:
+    profiles: ["cuda"]
+    image: vla-lens-pi05-cuda:local
+    build:
+      context: .
+      dockerfile: docker/capture.cuda.Dockerfile
+    ipc: host
+    shm_size: "16gb"
+    gpus: all
+    volumes:
+      - ./runs:/app/runs
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - ${HOME}/.cache/libero:/root/.cache/libero
+    command: ["vla-pi05-batch-capture", "--help"]
+
+  capture-rocm:
+    profiles: ["rocm"]
+    image: vla-lens-pi05-rocm:local
+    build:
+      context: .
+      dockerfile: docker/capture.rocm.Dockerfile
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    ipc: host
+    shm_size: "16gb"
+    security_opt:
+      - seccomp=unconfined
+    volumes:
+      - ./runs:/app/runs
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface
+      - ${HOME}/.cache/libero:/root/.cache/libero
+    command: ["vla-pi05-batch-capture", "--help"]

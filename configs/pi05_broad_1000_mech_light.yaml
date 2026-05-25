@@ -1,16 +1,16 @@
 name: pi05-broad-1000-mech-light
 dataset_id: pi05-broad-1000-mech-light
 description: >
-  Broad PI0.5/LIBERO mechanistic-light capture on the external drive. The
+  Broad PI0.5/LIBERO mechanistic-light capture. The
   canonical capture profile for mechanistic_light is mechanistic_sampled. This
   run prioritizes task coverage over repeated seeds: all 130 LIBERO task-suite
   pairs are represented, with seven or eight seeds per task for 1000 total
   episodes.
 
-output_root: /media/j/New Volume/vla-lens/pi05-broad-1000-mech-light
+output_root: runs/pi05-broad-1000-mech-light
 model_id: lerobot/pi05_libero_finetuned
-python_executable: /home/j/Projects/vla-lens/.venv-pi05-rocm/bin/python
-pythonpath: /home/j/Projects/vla-lens/src
+python_executable: .venv-pi05-rocm/bin/python
+pythonpath: src
 capture_profile: mechanistic_sampled
 storage_dtype: float16
 obs_size: 256

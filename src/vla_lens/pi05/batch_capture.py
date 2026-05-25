@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -307,8 +308,16 @@ def _capture_commands(
     rows: Sequence[EpisodePlanRow],
 ) -> list[CaptureCommand]:
     commands: list[CaptureCommand] = []
-    python_executable = str(config.get("python_executable") or sys.executable)
-    pythonpath = str(config.get("pythonpath") or "")
+    python_executable = str(
+        os.environ.get("VLA_LENS_CAPTURE_PYTHON")
+        or config.get("python_executable")
+        or sys.executable
+    )
+    pythonpath = str(
+        os.environ.get("VLA_LENS_CAPTURE_PYTHONPATH") or config.get("pythonpath") or ""
+    )
+    device = str(os.environ.get("VLA_LENS_CAPTURE_DEVICE") or config["device"])
+    dtype = str(os.environ.get("VLA_LENS_CAPTURE_DTYPE") or config["dtype"])
     command_prefix = (*_env_prefix(pythonpath),) if pythonpath else ()
 
     sorted_rows = sorted(
@@ -356,9 +365,9 @@ def _capture_commands(
                 "--obs-size",
                 str(config["obs_size"]),
                 "--device",
-                str(config["device"]),
+                device,
                 "--dtype",
-                str(config["dtype"]),
+                dtype,
                 "--vlatrace-out-root",
                 str(task_root),
                 "--dataset-id",

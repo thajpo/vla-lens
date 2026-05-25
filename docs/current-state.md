@@ -2,7 +2,7 @@
 
 Status: active operational summary.
 
-Last updated: May 20, 2026.
+Last updated: May 25, 2026.
 
 ## Direction
 
@@ -28,22 +28,64 @@ visualize the result in episode context
 Normal repo work:
 
 ```bash
+scripts/check_vla_lens.sh
 uv run pytest
 uv run ruff check scripts src tests
 cd frontend && npm run build
 ```
 
-PI0.5 ROCm capture:
+Portable demo:
+
+```bash
+scripts/run_vla_lens_demo.sh
+```
+
+Dashboard container:
+
+```bash
+scripts/docker_dashboard.sh
+scripts/docker_dashboard.sh runs/pi05-light-5-test
+scripts/view_vla_lens.sh runs/pi05-light-5-test
+```
+
+PI0.5 hardware capture:
 
 ```bash
 scripts/setup_pi05_rocm_env.sh
-scripts/check_pi05_rocm_env.sh
-scripts/pi05_capture_rocm.sh ...
-scripts/pi05_batch_capture_rocm.sh ...
+scripts/setup_pi05_cuda_env.sh
+scripts/setup_pi05_mps_env.sh
+scripts/check_pi05_env.sh --backend rocm
+scripts/pi05_batch_capture.sh --backend rocm ...
 ```
+
+PI0.5 Linux capture containers:
+
+```bash
+scripts/docker_pi05_cuda.sh --config configs/pi05_light_5_test.yaml --run
+scripts/docker_pi05_rocm.sh --config configs/pi05_light_5_test.yaml --run
+```
+
+Validated ROCm Docker smoke on May 25, 2026:
+
+```bash
+PI05_STRICT_DEVICE_CHECK=1 scripts/docker_pi05_rocm.sh --no-build check
+PI05_STRICT_DEVICE_CHECK=1 scripts/docker_pi05_rocm.sh \
+  --config configs/pi05_light_5_test.yaml \
+  --output-root /tmp/vla-lens-rocm-smoke \
+  --limit-commands 1 \
+  --run
+```
+
+Result: one valid `.vlatrace` bundle, 520 timesteps, 11 policy calls, dashboard
+API readback OK. Task outcome was `failure`, which is acceptable for this
+runtime smoke because the test target was capture plumbing, not policy success.
 
 Do not run PI0.5 capture through plain `uv run vla-pi05-capture` or `uv run
 vla-pi05-batch-capture`.
+
+Use [hardware-run-paths.md](hardware-run-paths.md) for the current ROCm, CUDA,
+and Apple Silicon setup/capture surface. Use [docker.md](docker.md) for the
+dashboard container and Linux CUDA/ROCm capture-container paths.
 
 Known-good capture environment from the last real smoke:
 
@@ -60,7 +102,7 @@ robosuite:   1.4.0
 Always verify the current machine state with:
 
 ```bash
-scripts/check_pi05_rocm_env.sh
+scripts/check_pi05_env.sh --backend rocm
 ```
 
 ## Current Capture Profiles
@@ -147,6 +189,22 @@ Run a batch from a config:
 
 ```bash
 scripts/pi05_batch_capture_rocm.sh \
+  --config configs/pi05_light_5_test.yaml \
+  --run
+```
+
+Run the same config on NVIDIA CUDA:
+
+```bash
+scripts/pi05_batch_capture_cuda.sh \
+  --config configs/pi05_light_5_test.yaml \
+  --run
+```
+
+Run the same config on Apple Silicon MPS:
+
+```bash
+scripts/pi05_batch_capture_mps.sh \
   --config configs/pi05_light_5_test.yaml \
   --run
 ```

@@ -2,6 +2,10 @@
 
 Status: operational environment contract for local PI0.5/LeRobot/LIBERO capture.
 
+For the cross-hardware run-path overview, see
+[hardware-run-paths.md](hardware-run-paths.md). This file keeps the ROCm-specific
+details and known-good package versions.
+
 ## The Problem
 
 There are two dependency worlds in this repo:

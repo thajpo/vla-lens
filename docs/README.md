@@ -7,6 +7,12 @@ experiment notes when deciding what to run or implement.
 
 - [current-state.md](current-state.md): current repo direction, known-good
   commands, environment split, measured capture costs, and next action items.
+- [hardware-run-paths.md](hardware-run-paths.md): one-command portable demo and
+  backend-specific PI0.5 setup/capture paths for ROCm, CUDA, and Apple Silicon.
+- [docker.md](docker.md): dashboard container usage and the split between
+  dashboard and Linux CUDA/ROCm capture containers.
+- [cloud-capture.md](cloud-capture.md): high-volume capture storage model,
+  output-root commands, cache/secrets handling, and dashboard handoff.
 - [pi05-capture-profiles.md](pi05-capture-profiles.md): what each PI0.5 capture
   profile is for in interpretability terms.
 - [pi05-rocm-capture-env.md](pi05-rocm-capture-env.md): how the dedicated ROCm
@@ -44,11 +50,12 @@ archive:
 
 ## Important Rule
 
-PI0.5 capture must use the ROCm wrapper scripts:
+PI0.5 capture must use the hardware wrapper scripts:
 
 ```bash
-scripts/pi05_capture_rocm.sh ...
-scripts/pi05_batch_capture_rocm.sh ...
+scripts/pi05_capture.sh --backend rocm ...
+scripts/pi05_batch_capture.sh --backend cuda ...
+scripts/pi05_batch_capture_mps.sh ...
 ```
 
 Do not run PI0.5/LeRobot/LIBERO capture through plain `uv run
