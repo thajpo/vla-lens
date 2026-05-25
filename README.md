@@ -3,22 +3,24 @@
 Episode-aligned interpretability packaging for Vision-Language-Action robot
 policies.
 
-VLA-lens stores robot rollouts, camera frames, actions, model internals, and saved
-analysis outputs in a trace format. It then provides selectors, probes, action-head
-analysis, reusable artifacts, and a local dashboard for inspecting what a policy saw,
-represented, and planned over time.
+VLA-lens uses LeRobotDataset v3 as the canonical robot-data layer, then adds a
+`vla_lens/` interpretability overlay for model internals, policy-call alignment,
+token metadata, probes, artifacts, and dashboard state. It provides selectors,
+probes, action-head analysis, reusable artifacts, and a local dashboard for
+inspecting what a policy saw, represented, and planned over time.
 
 The main idea:
 
 ```text
 HF model + environment + capture profile
-→ captured episodes
-→ VLA-lens interpretability package
-→ linked visual workbench and reproducible analyses
+-> LeRobot v3 robot data
+-> VLA Lens interpretability overlay
+-> linked visual workbench and reproducible analyses
 ```
 
 Current docs entrypoint: [docs/README.md](docs/README.md). Current operational
 state and known-good commands: [docs/current-state.md](docs/current-state.md).
+Dataset format contract: [docs/dataset-format.md](docs/dataset-format.md).
 
 ## Reviewer Quick Start
 
@@ -92,8 +94,8 @@ More detail: [docs/hardware-run-paths.md](docs/hardware-run-paths.md),
 
 ## What You Can Do
 
-- Run PI0.5 in LIBERO and receive a reusable `.vlatrace` interpretability package.
-- Import compatible capture directories into the same trace contract when needed.
+- Run PI0.5 in LIBERO and receive reusable robot/interp capture artifacts.
+- Import compatible capture directories into the same dataset/overlay contract when needed.
 - Browse datasets and open individual robot episodes.
 - Inspect frames, prompts, actions, model data, feature activations, image-token overlays,
   expert/action-token activations, and generation/action-flow traces.
@@ -117,12 +119,13 @@ More detail: [docs/hardware-run-paths.md](docs/hardware-run-paths.md),
 - `probes/`: probe training workflows and baselines.
 - `action_generation.py`: action-head generation summaries.
 - `server.py`: local dashboard APIs.
-- `capture/`: generic capture record/adaptor contracts.
+- `capture/`: LeRobot v3 robot-data contract, overlay helpers, and generic
+  capture record/adapter contracts.
 - `pi05/`: PI0.5-specific selectors, replay, and intervention specs.
 
 ## Quick Start
 
-Serve an existing trace dataset:
+Serve an existing current trace dataset:
 
 ```bash
 uv run python scripts/serve_vla_lens_dashboard.py runs/pi05_high10_vlatraces --port 8765
@@ -134,14 +137,15 @@ Open:
 http://127.0.0.1:8765/
 ```
 
-Capture PI0.5 episodes directly into VLA-lens traces:
+Capture PI0.5 episodes with the current PI0.5 writer:
 
 ```bash
 scripts/pi05_batch_capture_rocm.sh --config configs/pi05_light_5_test.yaml --run
 ```
 
-The `.vlatrace` bundle is the canonical VLA-lens episode record used by the
-backend and webapp.
+This path still writes internal `.vlatrace` bundles while the LeRobot v3 +
+`vla_lens/` overlay writer is being built. New dataset-layer work should target
+[docs/dataset-format.md](docs/dataset-format.md), not `.vlatrace`.
 
 ### PI0.5 Hardware Capture Environments
 
@@ -264,19 +268,17 @@ serious single-trace inspector profile; `audit_sampled` adds sampled-layer
 circuit-boundary internals and is already large; `audit_windowed` captures
 whole-episode adjacent layer windows (`0,1`, `4,5`, `8,9`, `12,13`,
 `16,17`) for transcoder/circuit work; `audit_full` adds all-layer raw forward
-internals and is intentionally expensive. Legacy aliases still work for one
-compatibility cycle: `representation`, `mechanistic_light`,
-`mechanistic_heavy`, and `full`.
+internals and is intentionally expensive.
 Sampled PI0.5 model profiles capture the same VLM and expert layer indices
 (`0, 4, 8, 12, 17`) so inspected prefix K/V pairs line up as
 `VLM L_i -> Expert L_i`.
 For a profile-by-profile interpretability guide, see
 [docs/pi05-capture-profiles.md](docs/pi05-capture-profiles.md).
 
-Use `dataset_id` for capture-run provenance. It is stored in
-`manifest.metadata.dataset_id` and in generated `episode_plan.csv` /
-`probe_splits.csv` files so datasets can stay flat-ish while still being easy to
-filter and audit.
+Use `dataset_id` for capture-run provenance. The current `.vlatrace` writer
+stores it in `manifest.metadata.dataset_id` and in generated `episode_plan.csv`
+/ `probe_splits.csv` files so datasets can stay flat-ish while still being easy
+to filter and audit.
 
 Use `capture_design=paired_counterfactual` when two traces should be analyzed as
 one clean/corrupt unit. This is a design layer over profiles, not a new tensor
@@ -296,7 +298,7 @@ The batch runner writes trace IDs like
 counterfactual metadata in each manifest, and the dashboard exposes pair groups
 through `/api/dataset` and `/api/counterfactual-pairs`.
 
-Every newly written `.vlatrace` also stores fast provenance fingerprints in
+The current `.vlatrace` writer also stores fast provenance fingerprints in
 `tables/fingerprints.json`, `manifest.metadata.fingerprints`, and
 `capture_report.fingerprints`:
 
@@ -313,14 +315,16 @@ whether behavior, context, trace semantics, or the extracted training data chang
 
 ```mermaid
 flowchart LR
-    Capture["Policy rollout / legacy capture"] --> Import["Importer / recorder"]
-    Import --> Trace[".vlatrace bundle"]
-    Trace --> Dataset["TraceDataset"]
+    Capture["Policy rollout"] --> Robot["LeRobot v3 robot data"]
+    Capture --> Overlay["vla_lens/ overlay"]
+    Robot --> Dataset["Dataset view"]
+    Overlay --> Dataset
     Dataset --> Selector["ActivationQuery"]
     Selector --> Probe["ProbeSuite"]
     Dataset --> Action["ActionGeneration"]
     Probe --> Artifact["LensArtifact"]
     Action --> Artifact
+    Artifact --> Overlay
     Artifact --> Dashboard["Dashboard"]
 ```
 

@@ -1,5 +1,20 @@
 # VLA Lens Architecture And Workflows
 
+## Dataset Layer Cutoff
+
+The canonical dataset shape is now LeRobotDataset v3 robot data plus a VLA Lens
+overlay:
+
+```text
+LeRobot v3 meta/data/videos
+  + vla_lens/ tables, arrays, artifacts, fingerprints
+```
+
+LeRobot owns observations, actions, episode/frame indexes, timestamps, task
+metadata, and camera media. VLA Lens owns model internals, policy-call
+alignment, token metadata, probes, artifacts, and dashboard state. Standalone
+`.vlatrace` bundles are old internal storage, not the new compatibility layer.
+
 ## Architecture
 
 ```mermaid
@@ -7,29 +22,28 @@ flowchart TB
     subgraph Native["Native model/environment world"]
         Env["Environment\nLIBERO, robosuite, SimplerEnv"]
         Policy["Policy / VLA\nPI0.5, OpenVLA, CogACT"]
-        Legacy["Existing saved captures\nPI0.5 legacy dirs, OpenVLA runs"]
     end
 
     subgraph Adapters["Adapter/importer edge"]
         EnvAdapter["EnvAdapter\nobservations, state, rewards, success"]
         ModelAdapter["ModelAdapter\nforward hooks, tokens, modules, actions"]
-        Importer["Legacy Importer\nconvert old captures"]
-        Recorder["TraceRecorder\nlive rollout orchestration"]
+        Recorder["LeRobot Recorder\nlive rollout orchestration"]
     end
 
     subgraph Core["vla_lens core"]
-        Writer["TraceWriter / TraceBundle.create"]
-        Bundle["TraceBundle\none episode-aligned trace"]
-        Dataset["TraceDataset\nmany bundles + indexes"]
+        Writer["DatasetWriter\nLeRobot + overlay"]
+        RobotData["LeRobot v3 robot data\nmeta, data, videos"]
+        Overlay["VLA Lens overlay\nmodel sites, tokens, artifacts"]
+        Dataset["Dataset view\nLeRobot + overlay"]
         Selector["ActivationQuery / FeatureView\naxis-aware slicing + cache"]
         Artifact["LensArtifact\nprobes, attribution, patch results"]
     end
 
-    subgraph Storage["Trace storage"]
-        Manifest["manifest.json"]
-        Tables["Parquet indexes\ntimesteps, tokens, arrays, activations, artifacts"]
-        Arrays["NumPy arrays now\nZarr-compatible direction later"]
-        RawRefs["Raw source refs\nlegacy pt/npz/png provenance"]
+    subgraph Storage["Dataset storage"]
+        Meta["LeRobot meta\ninfo, stats, tasks, episodes"]
+        Tables["LeRobot data parquet\nlow-dimensional robot rows"]
+        Media["LeRobot videos\nMP4 camera streams"]
+        Interp["vla_lens/\nmodel arrays and research artifacts"]
     end
 
     subgraph Tools["Research tools"]
@@ -43,15 +57,16 @@ flowchart TB
     Env --> EnvAdapter --> Recorder
     Policy --> ModelAdapter --> Recorder
     Recorder --> Writer
-    Legacy --> Importer --> Writer
 
-    Writer --> Bundle
-    Bundle --> Manifest
-    Bundle --> Tables
-    Bundle --> Arrays
-    Bundle --> RawRefs
+    Writer --> RobotData
+    Writer --> Overlay
+    RobotData --> Meta
+    RobotData --> Tables
+    RobotData --> Media
+    Overlay --> Interp
 
-    Bundle --> Dataset
+    RobotData --> Dataset
+    Overlay --> Dataset
     Dataset --> Selector
     Dataset --> Stats
     Selector --> Probes
@@ -65,48 +80,41 @@ flowchart TB
     Artifact --> Dashboard
 ```
 
-## Workflow 1: Capture Or Import Into Trace Bundles
+## Workflow 1: Capture Or Import Into Dataset Roots
 
 ```mermaid
 sequenceDiagram
     participant R as Researcher
     participant E as EnvAdapter
     participant M as ModelAdapter
-    participant T as TraceRecorder
-    participant W as TraceWriter
-    participant B as TraceBundle
-    participant I as Legacy Importer
+    participant C as CaptureRunner
+    participant L as LeRobot v3 Root
+    participant O as vla_lens Overlay
 
-    alt live capture
-        R->>T: rollout(policy, env, capture config)
-        T->>E: reset / step / read cameras and state
-        T->>M: forward policy and collect internals
-        M-->>T: actions, action chunks, activations, token metadata
-        E-->>T: frames, robot state, object state, reward, done
-        T->>W: write normalized episode + model-call data
-    else import existing captures
-        R->>I: convert legacy PI0.5 capture root
-        I->>W: normalize meta, state, actions, images, hidden means, flow actions
-    end
-
-    W->>B: create .vlatrace bundle
-    B-->>R: reusable trace for analysis/dashboard
+    R->>C: rollout(policy, env, capture config)
+    C->>E: reset / step / read cameras and state
+    C->>M: forward policy and collect internals
+    M-->>C: actions, action chunks, activations, token metadata
+    E-->>C: frames, robot state, object state, reward, done
+    C->>L: write robot data to meta, data, videos
+    C->>O: write model internals, policy calls, tokens, artifacts
+    O-->>R: reusable interpretability overlay joined to LeRobot keys
 ```
 
 ## Workflow 2: Dataset Browsing And Coverage
 
 ```mermaid
 flowchart LR
-    Root["Trace root\nmany .vlatrace bundles"] --> Open["TraceDataset.open"]
-    Open --> EpisodeIndex["episode_index\ntrace, task, outcome, model, env"]
-    Open --> TimestepIndex["timestep_index\ntime, phase, model_call_index"]
-    Open --> ActivationIndex["activation_index\nmodule, layer, tensor_type, axes, shape"]
+    Root["LeRobot v3 root\n+ vla_lens/ overlay"] --> Open["Dataset view"]
+    Open --> EpisodeIndex["episode_index\ntask, outcome, model, env"]
+    Open --> FrameIndex["frame_index\ntime, policy_call_index"]
+    Open --> ActivationIndex["model_site_index\nmodule, layer, tensor_type, axes, shape"]
     Open --> ArtifactIndex["artifact_index\nsaved probes/maps/results"]
 
     EpisodeIndex --> Filters["Filter episodes\nbenchmark, task, success, object"]
     ActivationIndex --> Coverage["activation_coverage"]
     EpisodeIndex --> TaskStats["stats.by_task"]
-    TimestepIndex --> TimelineStats["episode length / call density"]
+    FrameIndex --> TimelineStats["episode length / call density"]
 
     Filters --> Cohort["Research cohort\nsuccess/failure pairs, task subsets"]
     Coverage --> Plan["Choose feasible probes/views"]
@@ -156,10 +164,10 @@ flowchart LR
 
 ```mermaid
 flowchart TB
-    Bundle["TraceBundle"] --> Generation["generation_actions\ntimestep x generation_step x horizon x action_dim"]
-    Bundle --> Chunk["action_chunks\ntimestep x horizon x action_dim"]
-    Bundle --> Executed["executed_actions\ntimestep x action_dim"]
-    Bundle --> State["robot/object state\noptional"]
+    Overlay["vla_lens/ overlay"] --> Generation["generation_actions\nframe x generation_step x horizon x action_dim"]
+    Overlay --> Chunk["action_chunks\nframe x horizon x action_dim"]
+    Robot["LeRobot data"] --> Executed["action\nframe x action_dim"]
+    Robot --> State["observation.state / context\noptional"]
 
     Generation --> Commit["commitment metric\n||A_s - A_final||"]
     Generation --> Heatmap["generation_step x horizon heatmaps"]

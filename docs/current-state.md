@@ -9,6 +9,13 @@ Last updated: May 25, 2026.
 VLA Lens is an episode-grounded causal interpretability workbench for
 vision-language-action models.
 
+Dataset-layer cutoff: LeRobotDataset v3 is the canonical robot-data layer.
+VLA Lens adds a `vla_lens/` interpretability overlay for model internals,
+policy-call alignment, token metadata, probes, artifacts, fingerprints, and
+dashboard state. Standalone `.vlatrace` episode bundles are old internal storage,
+not a compatibility layer to preserve in the new dataset contract. See
+[dataset-format.md](dataset-format.md).
+
 The current implementation focus is PI0.5 on LIBERO. Older CogACT planning docs
 are archived and are not the active project direction.
 
@@ -149,11 +156,6 @@ Do not collect audit_windowed broadly without a concrete circuit/transcoder ques
 ## Current Validated Facts
 
 - Schema is `0.3.0`.
-- PI0.5 profile aliases still work:
-  - `representation -> features`
-  - `mechanistic_light -> mechanistic_sampled`
-  - `mechanistic_heavy -> mechanistic_all`
-  - `full -> audit_full`
 - `audit_sampled` uses layers `[0, 4, 8, 12, 17]`.
 - `audit_windowed` uses layers `[0, 1, 4, 5, 8, 9, 12, 13, 16, 17]`.
 - VLM prefix K/V is stored as exact per-layer key/value sites.

@@ -7,6 +7,8 @@ experiment notes when deciding what to run or implement.
 
 - [current-state.md](current-state.md): current repo direction, known-good
   commands, environment split, measured capture costs, and next action items.
+- [dataset-format.md](dataset-format.md): canonical dataset contract:
+  LeRobot v3 robot data plus the `vla_lens/` interpretability overlay.
 - [hardware-run-paths.md](hardware-run-paths.md): one-command portable demo and
   backend-specific PI0.5 setup/capture paths for ROCm, CUDA, and Apple Silicon.
 - [docker.md](docker.md): dashboard container usage and the split between

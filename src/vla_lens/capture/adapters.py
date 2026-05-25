@@ -163,9 +163,12 @@ COMMON_ROBOTICS_DATASETS: tuple[RoboticsDatasetSupport, ...] = (
     ),
     RoboticsDatasetSupport(
         family="lerobot",
-        common_formats=("parquet", "safetensors", "video"),
+        common_formats=("parquet", "mp4", "json", "jsonl"),
         replay_supported=False,
-        notes="LeRobot dataset layout with tabular episode metadata and external media.",
+        notes=(
+            "Canonical VLA Lens robot-data layer: LeRobot v3 metadata, parquet data "
+            "shards, and MP4 camera streams."
+        ),
     ),
 )
 
