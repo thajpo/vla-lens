@@ -61,7 +61,8 @@ scripts/pi05_batch_capture_mps.sh ...
 ```
 
 Do not run PI0.5/LeRobot/LIBERO capture through plain `uv run
-vla-pi05-capture` or `uv run vla-pi05-batch-capture` on this workstation.
+vla-pi05-capture` or `uv run vla-pi05-batch-capture` in the normal repo
+environment.
 
 ## Historical Experiment Notes
 

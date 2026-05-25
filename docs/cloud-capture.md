@@ -55,7 +55,7 @@ scripts/docker_pi05_rocm.sh \
 ```
 
 The wrapper creates `/mnt/nvme/vla-lens/pi05-light-5-test`, mounts it into the
-container, and rewrites the internal command so the trace bundles land on the
+container, and rewrites the internal command so the LeRobot dataset roots land on the
 host path.
 
 Then view the same dataset:

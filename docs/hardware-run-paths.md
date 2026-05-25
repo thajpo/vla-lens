@@ -59,7 +59,7 @@ Open:
 http://127.0.0.1:8080/
 ```
 
-See [docker.md](docker.md) for the dashboard container and planned capture
+See [docker.md](docker.md) for the dashboard container and capture
 container split.
 
 Run the same built dashboard locally without Docker:
@@ -159,8 +159,8 @@ while the wrapper owns the machine-specific runtime choice.
 
 | Backend | Virtualenv | Torch install default | Capture device | Policy dtype |
 | --- | --- | --- | --- | --- |
-| `rocm` | `.venv-pi05-rocm` | `https://download.pytorch.org/whl/rocm7.2` | `cuda` | `bfloat16` |
-| `cuda` | `.venv-pi05-cuda` | `https://download.pytorch.org/whl/cu128` | `cuda` | `bfloat16` |
+| `rocm` | `.venv-pi05-rocm` | `torch==2.12.0+rocm7.2`, `torchvision==0.27.0+rocm7.2`, `torchaudio==2.11.0+rocm7.2` from the ROCm 7.2 index | `cuda` | `bfloat16` |
+| `cuda` | `.venv-pi05-cuda` | `torch==2.11.0+cu128`, `torchvision==0.26.0+cu128`, `torchaudio==2.11.0+cu128` from the CUDA 12.8 index | `cuda` | `bfloat16` |
 | `mps` | `.venv-pi05-mps` | PyPI Torch wheels | `mps` | `float32` |
 | `cpu` | `.venv-pi05-cpu` | PyPI Torch wheels | `cpu` | `float32` |
 
@@ -170,8 +170,8 @@ CUDA-compatible API surface.
 Override defaults when needed:
 
 ```bash
-PI05_CUDA_INDEX_URL=https://download.pytorch.org/whl/cu126 scripts/setup_pi05_cuda_env.sh
-PI05_ROCM_INDEX_URL=https://download.pytorch.org/whl/rocm7.2 scripts/setup_pi05_rocm_env.sh
+PI05_CUDA_TORCH_VERSION=2.11.0+cu128 scripts/setup_pi05_cuda_env.sh
+PI05_ROCM_TORCH_VERSION=2.12.0+rocm7.2 scripts/setup_pi05_rocm_env.sh
 VLA_LENS_CAPTURE_DTYPE=float32 scripts/pi05_batch_capture_cuda.sh --config ... --run
 ```
 

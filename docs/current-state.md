@@ -121,19 +121,25 @@ Use [hardware-run-paths.md](hardware-run-paths.md) for the current ROCm, CUDA,
 and Apple Silicon setup/capture surface. Use [docker.md](docker.md) for the
 dashboard container and Linux CUDA/ROCm capture-container paths.
 
-Known-good capture environment from the last real smoke:
+Known-good ROCm capture environment from the last real smoke:
 
 ```text
-torch:       2.12.0+rocm7.2
-torchvision: 0.27.0+rocm7.2
-lerobot:     0.4.4
-transformers: 4.53.2 with OpenPI replacement patch
-peft:        0.19.1
-hf-libero:   0.1.3
-robosuite:   1.4.0
+torch:                  2.12.0+rocm7.2
+torchvision:            0.27.0+rocm7.2
+torchaudio:             2.11.0+rocm7.2
+lerobot:                0.4.4
+numpy:                  >=2.0,<2.3
+pyarrow:                >=21.0,<25.0
+datasets:               4.8.5
+opencv-python-headless: 4.12.0.88
+rerun-sdk:              0.26.2
+transformers:           4.53.2 with OpenPI replacement patch
+peft:                   0.19.1
+hf-libero:              0.1.3
+robosuite:              1.4.0
 ```
 
-Always verify the current machine state with:
+Always verify the target machine state with:
 
 ```bash
 scripts/check_pi05_env.sh --backend rocm
@@ -210,7 +216,7 @@ scripts/pi05_capture_rocm.sh \
   --benchmark libero_object \
   --task-id 0 \
   --capture-profile mechanistic_sampled \
-  --vlatrace-out-root "/media/j/New Volume/vla-lens/pi05-smoke" \
+  --vlatrace-out-root "/path/to/vla-lens/pi05-smoke" \
   --dataset-id pi05-smoke
 ```
 
@@ -243,7 +249,7 @@ Run a batch from an explicit episode plan:
 ```bash
 scripts/pi05_batch_capture_rocm.sh \
   --episode-plan path/to/episode_plan.csv \
-  --output-root "/media/j/New Volume/vla-lens/some-run" \
+  --output-root "/path/to/vla-lens/some-run" \
   --run
 ```
 

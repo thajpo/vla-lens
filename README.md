@@ -168,9 +168,9 @@ PI0.5 capture work:
 ```
 
 Do not run PI0.5 capture with plain `uv run vla-pi05-capture` or
-`uv run vla-pi05-batch-capture` on this workstation. `uv run` may sync the
+`uv run vla-pi05-batch-capture` in the normal repo environment. `uv run` may sync the
 normal repo lock into `.venv`, restoring dependencies that break the
-LeRobot/LIBERO capture stack. In particular, capture currently needs ROCm Torch,
+LeRobot/LIBERO capture stack. In particular, capture currently needs backend-specific Torch,
 OpenPI-patched Transformers, `hf-libero`, and `robosuite==1.4.0`, while the
 normal repo lock is for development/server/test work.
 

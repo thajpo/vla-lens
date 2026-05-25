@@ -233,10 +233,10 @@ CUDA still requires host NVIDIA driver support plus `nvidia-container-toolkit`.
 ROCm still requires host AMDGPU/ROCm support, `/dev/kfd`, `/dev/dri`, and
 correct render/video group access.
 
-On this workstation, `scripts/docker_pi05_rocm.sh --no-build check` has been
-validated with strict device checking against an RX 7900 XTX. A one-command
-real capture smoke also wrote a valid dataset root to an absolute host
-output root:
+Validated ROCm example: `scripts/docker_pi05_rocm.sh --no-build check` has
+passed with strict device checking on a Linux AMD GPU workstation. A
+one-command real capture smoke also wrote a valid dataset root to an absolute
+host output root:
 
 ```bash
 PI05_STRICT_DEVICE_CHECK=1 scripts/docker_pi05_rocm.sh \

@@ -18,7 +18,7 @@ There are two dependency worlds in this repo:
    - pure Python analysis/probe code
    - pyproject.toml + uv.lock
 
-2. PI0.5 capture on this workstation
+2. PI0.5 ROCm capture on a Linux AMD GPU machine
    - ROCm PyTorch wheels
    - LeRobot PI0.5 policy code
    - OpenPI-patched Transformers
@@ -52,7 +52,7 @@ working ROCm capture stack. Install LeRobot without dependency resolution in
 the dedicated capture venv; do not let it replace Torch.
 
 ```text
-known-good local capture stack, May 20, 2026:
+known-good ROCm capture stack, May 25, 2026:
   torch==2.12.0+rocm7.2
   torchvision==0.27.0+rocm7.2
   torchaudio==2.11.0+rocm7.2
@@ -197,7 +197,7 @@ scripts/pi05_capture_rocm.sh \
   --benchmark libero_object \
   --task-id 0 \
   --capture-profile mechanistic_sampled \
-  --vlatrace-out-root "/media/j/New Volume/vla-lens/pi05-smoke"
+  --vlatrace-out-root "/path/to/vla-lens/pi05-smoke"
 ```
 
 Batch capture:
