@@ -9,6 +9,7 @@ or any other frontend without changing the trace/analysis contract.
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence
@@ -1051,7 +1052,7 @@ def validate_workbench_contracts(dataset: TraceDataset) -> dict[str, Any]:
     invalid_tables = _invalid_table_refs(dataset)
     invalid_media = _invalid_media_refs(dataset)
     invalid_analysis_outputs = _invalid_analysis_run_outputs(dataset)
-    trace_validation = validate_trace_dataset(dataset).to_dict()
+    trace_validation = _storage_contract_validation(dataset)
     resolver_keys = {
         "examples",
         "lens_arrays",
@@ -1080,6 +1081,25 @@ def validate_workbench_contracts(dataset: TraceDataset) -> dict[str, Any]:
         "trace_validation": trace_validation,
         "resolver_required_keys": sorted(resolver_keys),
     }
+
+
+def _storage_contract_validation(dataset: TraceDataset) -> dict[str, Any]:
+    lerobot_roots: set[Path] = set()
+    for bundle in dataset.bundles:
+        if dict(bundle.manifest.metadata or {}).get("robot_dataset_format") != "lerobot_v3":
+            continue
+        if hasattr(bundle, "root"):
+            lerobot_roots.add(Path(bundle.root))
+    if lerobot_roots:
+        from vla_lens.capture.lerobot_v3 import validate_lerobot_v3_dataset
+
+        results = [validate_lerobot_v3_dataset(root).to_dict() for root in sorted(lerobot_roots)]
+        return {
+            "valid": all(bool(result["valid"]) for result in results),
+            "format": "lerobot_v3",
+            "datasets": results,
+        }
+    return validate_trace_dataset(dataset).to_dict()
 
 
 def _cohort_episode_frame(dataset: TraceDataset, cohort: CohortSpec) -> pd.DataFrame:
@@ -1140,6 +1160,17 @@ def _invalid_storage_refs(
     invalid: list[dict[str, Any]] = []
     for array in arrays:
         if array.kind in {"tensor", "artifact_array"}:
+            if array.storage.format == "parquet_column":
+                path = _storage_path(dataset, array)
+                if path is None or not path.exists():
+                    invalid.append(
+                        {
+                            "array_id": array.array_id,
+                            "reason": "missing_storage",
+                            "uri": array.storage.uri,
+                        }
+                    )
+                continue
             if array.storage.format != "zarr":
                 invalid.append(
                     {
@@ -1170,6 +1201,17 @@ def _invalid_storage_refs(
                     }
                 )
         elif array.kind == "image_sequence":
+            if array.storage.format == "mp4":
+                path = _storage_path(dataset, array)
+                if path is None or not path.exists():
+                    invalid.append(
+                        {
+                            "array_id": array.array_id,
+                            "reason": "missing_storage",
+                            "uri": array.storage.uri,
+                        }
+                    )
+                continue
             if array.storage.format != "jpeg":
                 invalid.append(
                     {
@@ -1251,6 +1293,17 @@ def _invalid_table_refs(dataset: TraceDataset) -> list[dict[str, Any]]:
 def _invalid_media_refs(dataset: TraceDataset) -> list[dict[str, Any]]:
     invalid: list[dict[str, Any]] = []
     for frame in image_frame_catalog(dataset):
+        if frame.storage.format == "mp4":
+            path = _storage_path_for_ref(dataset, frame.storage, trace_id=frame.trace_id)
+            if path is None or not path.exists():
+                invalid.append(
+                    {
+                        "frame_id": frame.frame_id,
+                        "reason": "missing_frame_storage",
+                        "uri": frame.storage.uri,
+                    }
+                )
+            continue
         if frame.storage.format != "jpeg":
             invalid.append(
                 {
@@ -1642,14 +1695,16 @@ def table_catalog(dataset: TraceDataset) -> tuple[TableSpec, ...]:
     """Return first-class Parquet-backed table contracts for metadata queries."""
     specs: list[TableSpec] = []
     for table_id, label, bundle_uri, aliases, is_context in TRACE_TABLE_SPECS:
-        uri = f"**/*.vlatrace/{bundle_uri}"
+        uri = _table_storage_uri(dataset, bundle_uri)
         try:
             summary = query_table(dataset, table=table_id, limit=0)
         except KeyError:
-            if not list(dataset.root.glob(uri)):
+            if not _table_storage_exists(dataset, bundle_uri):
                 continue
             summary = {"total": 0, "columns": []}
-        if summary["total"] == 0 and not summary["columns"] and not list(dataset.root.glob(uri)):
+        if summary["total"] == 0 and not summary["columns"] and not _table_storage_exists(
+            dataset, bundle_uri
+        ):
             continue
         specs.append(
             TableSpec(
@@ -1666,13 +1721,13 @@ def table_catalog(dataset: TraceDataset) -> tuple[TableSpec, ...]:
                 },
             )
         )
-    context_uri = "**/*.vlatrace/tables/*.parquet"
+    context_uri = _context_table_storage_uri(dataset)
     try:
         context_summary = query_table(dataset, table="context", limit=0)
     except KeyError:
         context_summary = {"total": 0, "columns": []}
     if context_summary["total"] or any(
-        list(dataset.root.glob(f"**/*.vlatrace/{TRACE_TABLE_PATHS[table_id]}"))
+        _table_storage_exists(dataset, TRACE_TABLE_PATHS[table_id])
         for table_id in CONTEXT_TABLE_IDS
     ):
         specs.append(
@@ -1692,6 +1747,36 @@ def table_catalog(dataset: TraceDataset) -> tuple[TableSpec, ...]:
             )
         )
     return tuple(specs)
+
+
+def _table_storage_uri(dataset: TraceDataset, bundle_uri: str) -> str:
+    for uri in _table_storage_uri_candidates(bundle_uri):
+        if list(dataset.root.glob(uri)):
+            return uri
+    return f"**/*.vlatrace/{bundle_uri}"
+
+
+def _context_table_storage_uri(dataset: TraceDataset) -> str:
+    for uri in (
+        "vla_lens/episodes/*/tables/*.parquet",
+        "**/vla_lens/episodes/*/tables/*.parquet",
+        "**/*.vlatrace/tables/*.parquet",
+    ):
+        if list(dataset.root.glob(uri)):
+            return uri
+    return "**/*.vlatrace/tables/*.parquet"
+
+
+def _table_storage_exists(dataset: TraceDataset, bundle_uri: str) -> bool:
+    return any(list(dataset.root.glob(uri)) for uri in _table_storage_uri_candidates(bundle_uri))
+
+
+def _table_storage_uri_candidates(bundle_uri: str) -> tuple[str, ...]:
+    return (
+        f"vla_lens/episodes/*/{bundle_uri}",
+        f"**/vla_lens/episodes/*/{bundle_uri}",
+        f"**/*.vlatrace/{bundle_uri}",
+    )
 
 
 def model_site_catalog(dataset: TraceDataset) -> tuple[ModelSiteSpec, ...]:
@@ -2922,58 +3007,72 @@ def _duckdb_source_sql(
         for context_table in CONTEXT_TABLE_IDS:
             bundle_path = TRACE_TABLE_PATHS[context_table]
             for bundle in dataset.bundles:
-                selects.append(
-                    _parquet_select(
-                        bundle.path / bundle_path,
-                        {
-                            "trace_id": bundle.manifest.trace_id,
-                            "episode_id": bundle.manifest.episode_id,
-                            "bundle_path": str(bundle.path),
-                            "context_table": context_table,
-                        },
+                constants = {
+                    "trace_id": bundle.manifest.trace_id,
+                    "episode_id": bundle.manifest.episode_id,
+                    "bundle_path": str(bundle.path),
+                    "context_table": context_table,
+                }
+                select = _parquet_select(bundle.path / bundle_path, constants)
+                if not select:
+                    select = _dataframe_select(
+                        con,
+                        f"context_{context_table}_{len(selects)}",
+                        _bundle_trace_table(bundle, context_table),
+                        constants,
                     )
-                )
+                selects.append(select)
     elif table_name in {"artifacts", "artifact_index"}:
-        dataset_index = dataset.root / TraceBundle.ARTIFACT_INDEX
-        if dataset_index.exists() and not (dataset.root / TraceBundle.MANIFEST).exists():
+        dataset_index = dataset.dataset_artifact_index.copy()
+        if not dataset_index.empty and not (dataset.root / TraceBundle.MANIFEST).exists():
             selects.append(
-                _parquet_select(
+                _dataframe_select(
+                    con,
+                    f"dataset_artifacts_{len(selects)}",
                     dataset_index,
                     {
                         "trace_id": None,
                         "episode_id": None,
                         "bundle_path": None,
-                        "dataset_path": str(dataset.root),
+                        "dataset_path": str(dataset._dataset_artifact_root()),
                         "artifact_scope": "dataset",
                     },
                 )
             )
         for bundle in dataset.bundles:
-            selects.append(
-                _parquet_select(
-                    bundle.path / TraceBundle.ARTIFACT_INDEX,
-                    {
-                        "trace_id": bundle.manifest.trace_id,
-                        "episode_id": bundle.manifest.episode_id,
-                        "bundle_path": str(bundle.path),
-                        "dataset_path": str(dataset.root),
-                        "artifact_scope": "bundle",
-                    },
+            constants = {
+                "trace_id": bundle.manifest.trace_id,
+                "episode_id": bundle.manifest.episode_id,
+                "bundle_path": str(bundle.path),
+                "dataset_path": str(dataset.root),
+                "artifact_scope": "bundle",
+            }
+            select = _parquet_select(bundle.path / TraceBundle.ARTIFACT_INDEX, constants)
+            if not select:
+                select = _dataframe_select(
+                    con,
+                    f"bundle_artifacts_{len(selects)}",
+                    bundle.artifact_index,
+                    constants,
                 )
-            )
+            selects.append(select)
     elif table_name in TRACE_TABLE_PATHS:
         bundle_path = TRACE_TABLE_PATHS[table_name]
         for bundle in dataset.bundles:
-            selects.append(
-                _parquet_select(
-                    bundle.path / bundle_path,
-                    {
-                        "trace_id": bundle.manifest.trace_id,
-                        "episode_id": bundle.manifest.episode_id,
-                        "bundle_path": str(bundle.path),
-                    },
+            constants = {
+                "trace_id": bundle.manifest.trace_id,
+                "episode_id": bundle.manifest.episode_id,
+                "bundle_path": str(bundle.path),
+            }
+            select = _parquet_select(bundle.path / bundle_path, constants)
+            if not select:
+                select = _dataframe_select(
+                    con,
+                    f"{table_name}_{len(selects)}",
+                    _bundle_trace_table(bundle, table_name),
+                    constants,
                 )
-            )
+            selects.append(select)
     else:
         return None
     selects = [select for select in selects if select]
@@ -3025,6 +3124,23 @@ def _parquet_select(path: Path, constants: Mapping[str, Any]) -> str:
             extra.append(f"{_quote_literal(str(value))} AS {_quote_identifier(key)}")
     suffix = ", " + ", ".join(extra) if extra else ""
     return f"SELECT *{suffix} FROM read_parquet({_quote_literal(str(path))})"
+
+
+def _dataframe_select(
+    con: duckdb.DuckDBPyConnection,
+    name: str,
+    frame: pd.DataFrame,
+    constants: Mapping[str, Any],
+) -> str:
+    if frame.empty:
+        return ""
+    table = frame.copy()
+    for key, value in constants.items():
+        if key not in table:
+            table[key] = value
+    safe_name = re.sub(r"[^A-Za-z0-9_]+", "_", name)
+    con.register(safe_name, table)
+    return f"SELECT * FROM {_quote_identifier(safe_name)}"
 
 
 def _duckdb_where(filters: Mapping[str, Any]) -> tuple[str, list[Any]]:
@@ -3249,7 +3365,12 @@ def _jsonable_array(value: np.ndarray) -> Any:
 
 
 def _workbench_dir(dataset: TraceDataset, name: str, *, create: bool) -> Path:
-    root = dataset.root / "workbench" / name
+    base = (
+        dataset.root / "vla_lens"
+        if (dataset.root / "meta" / "info.json").exists() and (dataset.root / "data").exists()
+        else dataset.root
+    )
+    root = base / "workbench" / name
     if create:
         root.mkdir(parents=True, exist_ok=True)
     return root
@@ -3316,6 +3437,8 @@ def _axis_names_for_array(axes: Sequence[str]) -> list[str]:
         "horizon": "action_horizon",
         "action_dim": "action_dim",
         "dim": "action_dim",
+        "state": "state_component",
+        "state_dim": "state_component",
         "feature": "unit",
         "hidden": "unit",
         "channel": "unit",
@@ -3336,8 +3459,14 @@ def _axis_names() -> set[str]:
         "rgb",
         "xyz",
         "quat",
+        "pose_component",
+        "matrix_row",
+        "matrix_col",
         "joint",
         "gripper_joint",
+        "gripper_component",
+        "state_component",
+        "predicate",
         "module",
         "layer",
         "token_kind",

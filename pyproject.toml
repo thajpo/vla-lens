@@ -36,6 +36,15 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/vla_lens"]
 
+[tool.hatch.build.targets.sdist]
+exclude = [
+    "/.venv",
+    "/.venv-*",
+    "/artifacts",
+    "/frontend/node_modules",
+    "/runs",
+]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"

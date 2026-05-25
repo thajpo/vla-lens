@@ -6,7 +6,6 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PI05_BACKEND=rocm \
 	    PI05_VENV=/opt/vla-lens/pi05 \
-	    PI05_STRICT_DEVICE_CHECK=0 \
 	    CMAKE_POLICY_VERSION_MINIMUM=3.5 \
 	    LIBERO_CONFIG_PATH=/root/.libero \
 	    LIBERO_DATASETS_PATH=/root/.cache/libero/datasets \
@@ -45,7 +44,8 @@ COPY src/ ./src/
 COPY scripts/ ./scripts/
 COPY configs/ ./configs/
 
-RUN --mount=type=cache,target=/root/.cache/uv scripts/setup_pi05_env.sh --backend rocm
+RUN --mount=type=cache,target=/root/.cache/uv \
+    PI05_STRICT_DEVICE_CHECK=0 scripts/setup_pi05_env.sh --backend rocm
 
 ENTRYPOINT ["scripts/docker_pi05_entrypoint.sh"]
 CMD ["vla-pi05-batch-capture", "--help"]

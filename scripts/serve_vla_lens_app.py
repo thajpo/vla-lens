@@ -62,7 +62,7 @@ def main() -> None:
 
     backend = _start_backend(args.root, host=args.backend_host, port=args.backend_port)
     try:
-        _wait_for_backend(args.backend_host, args.backend_port)
+        _wait_for_backend(args.backend_host, args.backend_port, process=backend)
         _serve_gateway(
             frontend_dist=frontend_dist,
             host=args.host,
@@ -96,9 +96,18 @@ def _start_backend(root: Path, *, host: str, port: int) -> subprocess.Popen[str]
     )
 
 
-def _wait_for_backend(host: str, port: int) -> None:
+def _wait_for_backend(
+    host: str,
+    port: int,
+    *,
+    process: subprocess.Popen[str] | None = None,
+) -> None:
     url = f"http://{host}:{port}/api/dataset"
     for _ in range(120):
+        if process is not None and process.poll() is not None:
+            raise RuntimeError(
+                f"backend exited before becoming ready: returncode={process.returncode}"
+            )
         try:
             with urllib.request.urlopen(url, timeout=0.25) as response:
                 if response.status == HTTPStatus.OK:

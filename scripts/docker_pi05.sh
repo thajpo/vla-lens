@@ -226,11 +226,15 @@ for name in \
   ROCR_VISIBLE_DEVICES \
   HSA_OVERRIDE_GFX_VERSION \
   CUDA_VISIBLE_DEVICES \
+  NVIDIA_DRIVER_CAPABILITIES \
   PYTORCH_HIP_ALLOC_CONF \
   PYTORCH_CUDA_ALLOC_CONF
 do
   pass_env_if_set "$name"
 done
+if [[ "$BACKEND" == "cuda" && -z "${NVIDIA_DRIVER_CAPABILITIES+x}" ]]; then
+  ENV_FLAGS+=("-e" "NVIDIA_DRIVER_CAPABILITIES=compute,utility,graphics")
+fi
 
 VOLUME_FLAGS=(
   -v "$RUNS_DIR:/app/runs"

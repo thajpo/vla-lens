@@ -130,13 +130,13 @@ More detail: [docs/hardware-run-paths.md](docs/hardware-run-paths.md),
 Serve an existing LeRobot v3 dataset root:
 
 ```bash
-uv run python scripts/serve_vla_lens_dashboard.py runs/pi05-light-5-test --port 8765
+VLA_LENS_PORT=8080 scripts/view_vla_lens.sh runs/pi05-light-5-test
 ```
 
 Open:
 
 ```text
-http://127.0.0.1:8765/
+http://127.0.0.1:8080/
 ```
 
 Capture PI0.5 episodes with the current PI0.5 writer:
@@ -247,7 +247,7 @@ split:
 baseline:
   - majority_class
   - benchmark
-  - target_object
+  - primary_target_object
 sweep: layer
 YAML
 ```

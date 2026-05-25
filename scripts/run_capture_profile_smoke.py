@@ -19,8 +19,14 @@ from string import Formatter
 
 from vla_lens import TraceDataset, validate_lerobot_v3_dataset
 
-PROFILE_ORDER = ("rollout", "features", "mechanistic_sampled", "mechanistic_all")
-ALLOWED_PROFILES = (*PROFILE_ORDER, "internals_sampled", "audit_sampled", "audit_full", "custom")
+PROFILE_ORDER = ("rollout", "features", "mechanistic_sampled", "mechanistic_all", "audit_windowed")
+ALLOWED_PROFILES = (
+    *PROFILE_ORDER,
+    "internals_sampled",
+    "audit_sampled",
+    "audit_full",
+    "custom",
+)
 
 
 @dataclass(frozen=True)
@@ -56,8 +62,9 @@ def parse_args() -> argparse.Namespace:
         help=(
             "Command template that writes LeRobot dataset roots. Supported fields: "
             "{model_id}, {profile}, {episodes}, {start_seed}, {traces_root}, {dataset_id}. "
-            "Example: 'uv run python -m vla_lens.pi05.capture --model-id {model_id} "
-            "--episodes {episodes} --capture-profile {profile} --vlatrace-out-root {traces_root}'"
+            "Example: 'scripts/pi05_capture.sh --backend rocm --model-id {model_id} "
+            "--episodes {episodes} --start-seed {start_seed} --capture-profile {profile} "
+            "--dataset-id {dataset_id} --vlatrace-out-root {traces_root}'"
         ),
     )
     parser.add_argument("--summary-json", type=Path)

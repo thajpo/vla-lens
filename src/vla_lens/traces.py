@@ -590,7 +590,7 @@ class TraceDataset:
             dataset_table["trace_id"] = None
             dataset_table["episode_id"] = None
             dataset_table["bundle_path"] = None
-            dataset_table["dataset_path"] = str(self.root)
+            dataset_table["dataset_path"] = str(self._dataset_artifact_root())
             dataset_table["artifact_scope"] = "dataset"
             frames.append(dataset_table)
         for bundle in self.bundles:
@@ -609,7 +609,7 @@ class TraceDataset:
     def dataset_artifact_index(self) -> pd.DataFrame:
         if (self.root / TraceBundle.MANIFEST).exists():
             return pd.DataFrame()
-        return _read_table(self.root / TraceBundle.ARTIFACT_INDEX)
+        return _read_table(self._dataset_artifact_root() / TraceBundle.ARTIFACT_INDEX)
 
     @property
     def stats(self) -> "TraceDatasetStats":
@@ -642,13 +642,14 @@ class TraceDataset:
             self.__dict__.pop("artifact_index", None)
             return saved
 
-        artifact_dir = self.root / "artifacts" / artifact.artifact_id
+        artifact_root = self._dataset_artifact_root()
+        artifact_dir = artifact_root / "artifacts" / artifact.artifact_id
         artifact_dir.mkdir(parents=True, exist_ok=True)
 
         array_paths = dict(artifact.arrays)
         for name, array in (arrays or {}).items():
             relative_path = Path("artifacts") / artifact.artifact_id / f"{slugify(name)}.zarr"
-            _write_zarr_array(self.root / relative_path, array)
+            _write_zarr_array(artifact_root / relative_path, array)
             array_paths[name] = str(relative_path)
 
         saved = LensArtifact(
@@ -673,19 +674,20 @@ class TraceDataset:
             encoding="utf-8",
         )
 
-        existing = _read_table(self.root / TraceBundle.ARTIFACT_INDEX)
+        existing = _read_table(artifact_root / TraceBundle.ARTIFACT_INDEX)
         updated = pd.concat(
             [existing, pd.DataFrame.from_records([saved.to_record()])],
             ignore_index=True,
         )
         updated = updated.drop_duplicates(subset=["artifact_id"], keep="last")
-        _write_table(self.root / TraceBundle.ARTIFACT_INDEX, updated)
+        _write_table(artifact_root / TraceBundle.ARTIFACT_INDEX, updated)
         self.__dict__.pop("dataset_artifact_index", None)
         self.__dict__.pop("artifact_index", None)
         return saved
 
     def load_artifact(self, artifact_id: str) -> LensArtifact:
-        dataset_path = self.root / "artifacts" / artifact_id / "artifact.json"
+        artifact_root = self._dataset_artifact_root()
+        dataset_path = artifact_root / "artifacts" / artifact_id / "artifact.json"
         if dataset_path.exists() and not (self.root / TraceBundle.MANIFEST).exists():
             payload = json.loads(dataset_path.read_text(encoding="utf-8"))
             return LensArtifact.from_dict(payload)
@@ -706,7 +708,7 @@ class TraceDataset:
         if name not in artifact.arrays:
             raise KeyError(f"Artifact '{artifact.name}' has no array named '{name}'")
         relative_path = artifact.arrays[name]
-        dataset_path = self.root / relative_path
+        dataset_path = self._dataset_artifact_root() / relative_path
         if artifact.scope == "dataset" and dataset_path.exists():
             return _read_zarr_array(dataset_path)
         for bundle in self.bundles:
@@ -720,6 +722,11 @@ class TraceDataset:
         path = self.root / ".vla_cache"
         path.mkdir(parents=True, exist_ok=True)
         return path
+
+    def _dataset_artifact_root(self) -> Path:
+        if (self.root / "meta" / "info.json").exists() and (self.root / "data").exists():
+            return self.root / "vla_lens"
+        return self.root
 
 
 class TraceDatasetStats:

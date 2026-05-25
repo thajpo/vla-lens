@@ -6,17 +6,13 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 echo "== Python lint =="
-uv run ruff check scripts src tests
+uv run --frozen ruff check scripts src tests
 
 echo "== Python tests =="
-uv run pytest
+uv run --frozen pytest
 
 echo "== Frontend dependencies =="
-if [[ ! -d "$ROOT/frontend/node_modules" ]]; then
-  npm ci --prefix "$ROOT/frontend"
-else
-  echo "frontend/node_modules already exists"
-fi
+npm ci --prefix "$ROOT/frontend" --prefer-offline
 
 echo "== Frontend lint =="
 npm run lint --prefix "$ROOT/frontend"

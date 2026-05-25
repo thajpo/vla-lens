@@ -22,26 +22,22 @@ denoising loop, not a single conditioning vector.
 ## Basic Usage
 
 ```python
-from vla_lens.pi05 import PI05CaptureStore
-from vla_lens.pi05.datasets import build_call_feature_table
+from vla_lens import ActivationQuery, TraceDataset
 
-store = PI05CaptureStore("/media/j/New Volume/vla-lens-artifacts/pi05_target_binding_captures_clean")
+dataset = TraceDataset.open("runs/pi05-light-5-test")
 
-table = build_call_feature_table(
-    store,
-    selectors=[
-        "vlm.layer.8.mean",
-        "vlm.final.mean",
-        "expert.layer.17.final_step.mean",
-        "flow.step.4.flat",
-        "action.final.flat",
-    ],
-    canonical=True,
-    max_calls_per_rollout=1,
+features, rows = dataset.select_model_sites(
+    ActivationQuery(
+        module="expert",
+        layer=17,
+        reduce_tokens="mean",
+    )
+).to_matrix(
+    cache=True,
 )
 
-print(table.rows.head())
-print(table.features["expert.layer.17.final_step.mean"].shape)
+print(rows.head())
+print(features.shape)
 ```
 
 ## Selector Names
@@ -68,14 +64,15 @@ flow states, or KV-cache attribution where the shape itself is meaningful.
 ```python
 from vla_lens.probes import run_probe_suite
 
-rows = table.rows.copy()
-rows["split"] = rows["layout_episode_index"].map(lambda x: "train" if int(x) < 20 else "test")
+probe_rows = rows.copy()
+probe_rows["target"] = probe_rows["trace_id"].map({"trace-a": "success", "trace-b": "failure"})
+probe_rows["split"] = probe_rows["trace_id"].map(lambda trace_id: "test" if trace_id.endswith("b") else "train")
 
 results = run_probe_suite(
-    rows=rows,
-    features=table.features,
-    targets=["first_moved_object", "first_lifted_object", "success"],
-    metadata_baseline_columns=["task_name", "layout_episode_index"],
+    rows=probe_rows,
+    features={"expert.layer.17.mean": features},
+    targets=["target"],
+    metadata_baseline_columns=["task_id", "prompt"],
 )
 
 print(results.sort_values("score", ascending=False).head())
@@ -105,7 +102,7 @@ that existing causal-trace scripts can consume.
 
 ## Intended Next Steps
 
-1. Convert one probe script to use `PI05CaptureStore` and selectors.
-2. Convert one Scene 4 causal-trace script to emit `InterventionSpec` records.
-3. Add visualizations over the resulting standard tables.
+1. Keep PI0.5 selector aliases thin wrappers over `TraceDataset` and `ActivationQuery`.
+2. Convert causal-trace scripts to emit `InterventionSpec` records.
+3. Keep probe outputs as dataset artifacts under the `vla_lens/` overlay.
 4. Add a second backend only after the PI0.5 interface feels stable.

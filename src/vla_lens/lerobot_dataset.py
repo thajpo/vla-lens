@@ -147,6 +147,7 @@ def write_lerobot_trace_record(
         observation_state=observation_state,
         frame_arrays=frame_arrays,
     )
+    _assert_lerobot_feature_schema(dataset_root, features, episode_index=episode_index)
     _write_info(dataset_root, record, features=features)
     _write_tasks(dataset_root, task_index=task_index, task=_task_text(record))
     _write_robot_data(
@@ -158,6 +159,8 @@ def write_lerobot_trace_record(
         action=action,
         observation_state=observation_state,
     )
+    if existing_ref is not None:
+        _remove_existing_episode_media(dataset_root, episode_index)
     video_metadata = _write_videos(
         dataset_root,
         record,
@@ -786,11 +789,10 @@ def _write_tasks(root: Path, *, task_index: int, task: str) -> None:
 
 def _write_info(root: Path, record: TraceRecord, *, features: Mapping[str, Any]) -> None:
     existing = _read_json(root / LEROBOT_INFO_PATH) if (root / LEROBOT_INFO_PATH).exists() else {}
-    merged_features = {**dict(existing.get("features") or {}), **dict(features)}
     payload = {
         "codebase_version": LEROBOT_V3_VERSION,
         "fps": _fps(record),
-        "features": merged_features,
+        "features": dict(features),
         "total_episodes": int(existing.get("total_episodes") or 0),
         "total_frames": int(existing.get("total_frames") or 0),
         "total_tasks": int(existing.get("total_tasks") or 0),
@@ -812,6 +814,41 @@ def _write_info(root: Path, record: TraceRecord, *, features: Mapping[str, Any])
         "splits": dict(existing.get("splits") or {}),
     }
     _write_json(root / LEROBOT_INFO_PATH, payload)
+
+
+def _assert_lerobot_feature_schema(
+    root: Path,
+    features: Mapping[str, Any],
+    *,
+    episode_index: int,
+) -> None:
+    info_path = root / LEROBOT_INFO_PATH
+    if not info_path.exists():
+        return
+    existing = _read_json(info_path)
+    existing_features = existing.get("features")
+    if not isinstance(existing_features, Mapping):
+        return
+    episodes = (
+        _read_episode_metadata(root)
+        if (root / LEROBOT_EPISODES_DIR).exists()
+        else pd.DataFrame()
+    )
+    if episodes.empty or LEROBOT_EPISODE_INDEX not in episodes:
+        return
+    other_episodes = episodes.loc[episodes[LEROBOT_EPISODE_INDEX].astype(int) != int(episode_index)]
+    if other_episodes.empty:
+        return
+    if _feature_signature(existing_features) == _feature_signature(features):
+        return
+    raise ValueError(
+        "Cannot mix LeRobot robot feature schemas in one dataset root. "
+        "Write captures with different robot observation/action fields to separate roots."
+    )
+
+
+def _feature_signature(features: Mapping[str, Any]) -> str:
+    return json.dumps(_jsonable(features), sort_keys=True, separators=(",", ":"))
 
 
 def _refresh_info_counts(root: Path) -> None:
@@ -874,7 +911,9 @@ def _write_stats(root: Path) -> None:
     stats: dict[str, Any] = {}
     for name in (LEROBOT_ACTION, LEROBOT_OBSERVATION_STATE):
         if name in data:
-            stats[name] = _stats_payload(_stack_column(data[name]))
+            array = _stack_non_null_column(data[name])
+            if array.size:
+                stats[name] = _stats_payload(array)
     _write_json(root / LEROBOT_STATS_PATH, stats)
 
 
@@ -882,6 +921,24 @@ def _read_all_robot_data(root: Path) -> pd.DataFrame:
     paths = sorted((root / LEROBOT_DATA_DIR).rglob("*.parquet"))
     frames = [pd.read_parquet(path) for path in paths]
     return pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
+
+
+def _stack_non_null_column(values: pd.Series) -> np.ndarray:
+    arrays = [np.asarray(value) for value in values if not _is_missing_cell(value)]
+    if not arrays:
+        return np.asarray([])
+    return np.stack(arrays, axis=0)
+
+
+def _is_missing_cell(value: Any) -> bool:
+    if value is None:
+        return True
+    if np.isscalar(value):
+        try:
+            return bool(pd.isna(value))
+        except (TypeError, ValueError):
+            return False
+    return False
 
 
 def _write_robot_data(
@@ -1003,6 +1060,34 @@ def _write_videos(
             }
         )
     return metadata
+
+
+def _remove_existing_episode_media(root: Path, episode_index: int) -> None:
+    episodes = _read_episode_metadata(root)
+    if episodes.empty or LEROBOT_EPISODE_INDEX not in episodes:
+        return
+    matches = episodes.loc[episodes[LEROBOT_EPISODE_INDEX].astype(int) == int(episode_index)]
+    if matches.empty:
+        return
+    row = dict(matches.iloc[-1])
+    info = _read_json(root / LEROBOT_INFO_PATH) if (root / LEROBOT_INFO_PATH).exists() else {}
+    template = str(info.get("video_path") or LEROBOT_VIDEO_PATH_TEMPLATE)
+    prefixes = sorted(
+        key.removesuffix("/chunk_index")
+        for key in row
+        if str(key).startswith("videos/") and str(key).endswith("/chunk_index")
+    )
+    for prefix in prefixes:
+        video_key = prefix.removeprefix("videos/")
+        path = root / _format_lerobot_path(
+            template,
+            row,
+            int(episode_index),
+            prefix=prefix,
+            video_key=video_key,
+        )
+        if path.exists():
+            path.unlink()
 
 
 def _write_video(path: Path, frames: np.ndarray, *, fps: int) -> None:

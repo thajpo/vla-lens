@@ -6,6 +6,7 @@ description: >
   run prioritizes task coverage over repeated seeds: all 130 LIBERO task-suite
   pairs are represented, with seven or eight seeds per task for 1000 total
   episodes.
+requires_episode_plan: true
 
 output_root: runs/pi05-broad-1000-mech-light
 model_id: lerobot/pi05_libero_finetuned

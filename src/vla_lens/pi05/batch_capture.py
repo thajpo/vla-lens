@@ -154,6 +154,10 @@ def main(argv: list[str] | None = None) -> None:
     output_root = Path(str(config["output_root"])).expanduser()
     output_root.mkdir(parents=True, exist_ok=True)
 
+    if args.episode_plan is None and config.get("requires_episode_plan"):
+        raise SystemExit(
+            f"{args.config} requires --episode-plan because it does not define a matrix plan"
+        )
     rows = (
         _read_episode_plan(args.episode_plan)
         if args.episode_plan is not None

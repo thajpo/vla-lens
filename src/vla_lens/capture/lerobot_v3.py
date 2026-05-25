@@ -197,14 +197,25 @@ def validate_lerobot_v3_dataset(
         )
 
     feature_names = _feature_names(info)
-    data_columns = _parquet_columns(data_paths[0], warnings) if data_paths else set()
-    available_fields = feature_names | data_columns
+    data_column_sets = {path: _parquet_columns(path, warnings) for path in data_paths}
+    data_columns = set().union(*data_column_sets.values()) if data_column_sets else set()
     for field_name in LEROBOT_REQUIRED_STEP_FIELDS:
-        if field_name not in available_fields:
+        if field_name not in feature_names:
             errors.append(
                 _issue(
                     "missing_step_field",
-                    f"LeRobot v3 data is missing required field '{field_name}'",
+                    f"LeRobot v3 feature metadata is missing required field '{field_name}'",
+                    details={"field": field_name},
+                )
+            )
+        for data_path, columns in data_column_sets.items():
+            if field_name in columns:
+                continue
+            errors.append(
+                _issue(
+                    "missing_data_field",
+                    f"LeRobot v3 data shard is missing required field '{field_name}'",
+                    path=data_path,
                     details={"field": field_name},
                 )
             )
@@ -237,6 +248,7 @@ def validate_lerobot_v3_dataset(
                 )
             )
 
+    available_fields = feature_names | data_columns
     image_fields = {field for field in available_fields if is_lerobot_image_field(field)}
     if image_fields and not lerobot_video_paths(dataset_root):
         errors.append(
