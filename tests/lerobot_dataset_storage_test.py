@@ -21,7 +21,12 @@ from vla_lens import (
     validate_workbench_contracts,
 )
 from vla_lens.capture.records import TraceRecord
-from vla_lens.lerobot_dataset import write_lerobot_trace_record
+from vla_lens.lerobot_dataset import (
+    LeRobotEpisodeBundle,
+    is_lerobot_dataset_root,
+    open_lerobot_dataset,
+    write_lerobot_trace_record,
+)
 from vla_lens.pi05.batch_capture import CaptureCommand, _expected_trace_exists
 from vla_lens.pi05.interaction_metrics import save_pi05_interaction_metrics_artifact
 from vla_lens.pi05.plan_capture import _command_expected_traces_exist, _validate_task_root
@@ -48,6 +53,25 @@ def test_write_lerobot_root_and_open_with_trace_dataset_api(tmp_path):
     assert opened.frames("main").shape[:3] == (2, 16, 16)
     assert opened.action_chunks().shape == (1, 2, 2)
     assert set(opened.model_sites["name"].astype(str)) == {"model.layer0.hidden"}
+
+
+def test_lerobot_dataset_facade_preserves_reader_writer_overlay_contract(tmp_path):
+    record = _minimal_record("trace-a")
+
+    written = write_lerobot_trace_record(record, tmp_path)
+    opened = open_lerobot_dataset(tmp_path)
+
+    assert is_lerobot_dataset_root(tmp_path)
+    assert isinstance(written, LeRobotEpisodeBundle)
+    assert isinstance(opened.bundle("trace-a"), LeRobotEpisodeBundle)
+    assert opened.episode_index["trace_id"].tolist() == ["trace-a"]
+
+    refs = pd.read_parquet(tmp_path / "vla_lens" / "tables" / "episode_refs.parquet")
+    assert refs[["trace_id", "episode_index", "episode_id"]].to_dict("records") == [
+        {"trace_id": "trace-a", "episode_index": 0, "episode_id": "trace-a"}
+    ]
+    assert "action" in set(pd.read_parquet(tmp_path / "data" / "chunk-000" / "file-000.parquet"))
+    assert not (tmp_path / "vla_lens" / "data").exists()
 
 
 def test_lerobot_overlay_model_sites_materialize_with_selectors(tmp_path):
