@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import { BarChart3 } from "lucide-react";
 import type {
   ActivationSite,
@@ -43,7 +43,7 @@ import {
   taskPromptRows,
 } from "./formatters";
 
-export function InspectorDebugSections({
+function InspectorDebugSectionsImpl({
   artifacts,
   calls,
   generationValues,
@@ -89,8 +89,25 @@ export function InspectorDebugSections({
   );
 }
 
+export const InspectorDebugSections = memo(InspectorDebugSectionsImpl, (previous, next) => {
+  if (
+    previous.artifacts !== next.artifacts ||
+    previous.inspectorContext !== next.inspectorContext
+  ) {
+    return false;
+  }
+  if (next.inspectorContext !== "expert") {
+    return true;
+  }
+  return (
+    previous.calls === next.calls &&
+    previous.generationValues === next.generationValues &&
+    previous.onTimestepChange === next.onTimestepChange &&
+    previous.timestep === next.timestep
+  );
+});
 
-export function ActivationSitePanel({
+function ActivationSitePanelImpl({
   activationSlice,
   activationSliceFetching,
   activationSlicePlaceholder,
@@ -270,6 +287,8 @@ export function ActivationSitePanel({
     </section>
   );
 }
+
+export const ActivationSitePanel = memo(ActivationSitePanelImpl);
 
 function ChannelFeatureControl({
   feature,
@@ -539,7 +558,7 @@ function GenerationStepControl({
   );
 }
 
-export function PromptAttentionStrip({
+function PromptAttentionStripImpl({
   expertTokenDetails,
   context,
   onPromptTokenSelect,
@@ -587,6 +606,8 @@ export function PromptAttentionStrip({
     </div>
   );
 }
+
+export const PromptAttentionStrip = memo(PromptAttentionStripImpl);
 
 function CurrentImagePatchPanel({
   cameraOverlay,

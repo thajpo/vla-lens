@@ -9,7 +9,8 @@ import numpy as np
 
 from vla_lens.artifacts import LensArtifact
 from vla_lens.probes.suite import run_probe_suite
-from vla_lens.probes.workflow import _attach_episode_metadata, _ensure_split, _value_counts
+from vla_lens.probes.workflow_artifacts import _value_counts
+from vla_lens.probes.workflow_prepare import _attach_episode_metadata, _ensure_split
 from vla_lens.selectors import ActivationQuery
 from vla_lens.traces import TraceDataset
 from vla_lens.workbench import AnalysisRunSpec, save_analysis_run

@@ -19,6 +19,10 @@ open the same datasets in the dashboard
 The durable artifact is a LeRobot v3 dataset root plus the `vla_lens/` overlay.
 Capture jobs write dataset roots; dashboard jobs read those roots.
 
+For the researcher-facing workflow where the GPU is rented only for capture and
+the completed dataset roots are copied to a local drive for analysis, see
+[remote-gpu-local-analysis.md](remote-gpu-local-analysis.md).
+
 ## Storage Model
 
 During capture, write to a POSIX filesystem path:

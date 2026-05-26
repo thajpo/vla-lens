@@ -70,6 +70,7 @@ def _dataset_payload(dataset: TraceDataset, *, include_workbench: bool = True) -
         "root": str(dataset.root),
         "episodes": [_manifest_payload(bundle) for bundle in dataset.bundles],
         "counterfactual_pairs": _counterfactual_pairs_payload(dataset),
+        "capabilities": _dataset_capabilities(dataset),
     }
     if include_workbench:
         workbench = workbench_manifest(dataset)
@@ -88,6 +89,64 @@ def _dataset_payload(dataset: TraceDataset, *, include_workbench: bool = True) -
             }
         )
     return payload
+
+def _dataset_capabilities(dataset: TraceDataset) -> dict[str, Any]:
+    model_sites = dataset.model_site_index
+    array_names = {
+        str(name)
+        for bundle in dataset.bundles
+        for name in bundle.array_index.get("name", [])
+        if str(name).strip()
+    }
+    token_space_rows = sum(len(bundle.token_spaces) for bundle in dataset.bundles)
+    artifact_counts = _artifact_summary(dataset)["counts"]
+    camera_names = sorted({camera for bundle in dataset.bundles for camera in bundle.cameras()})
+    capabilities = {
+        "robot_episodes": bool(dataset.bundles),
+        "cameras": bool(camera_names),
+        "policy_calls": any(not bundle.policy_calls.empty for bundle in dataset.bundles),
+        "model_sites": not model_sites.empty,
+        "token_spaces": token_space_rows > 0,
+        "image_token_maps": _has_token_kind(model_sites, "image_patch"),
+        "attention_maps": _has_tensor_type(model_sites, "attention"),
+        "action_chunks": "action_chunks" in array_names,
+        "action_generation": "generation_actions" in array_names,
+        "architecture_graph": not model_sites.empty,
+        "probe_artifacts": artifact_counts.get("probe_suite", 0) > 0,
+        "intervention_artifacts": artifact_counts.get("intervention_run", 0) > 0,
+    }
+    model_families = sorted(
+        {
+            str(row.get("model_family"))
+            for bundle in dataset.bundles
+            for row in bundle.policy_calls.to_dict("records")
+            if row.get("model_family")
+        }
+    )
+    model_site_prefixes = sorted(
+        {
+            str(name).split(".", 1)[0]
+            for name in model_sites.get("name", [])
+            if str(name).strip()
+        }
+    )
+    return {
+        "available": sorted(name for name, available in capabilities.items() if available),
+        "flags": capabilities,
+        "camera_names": camera_names,
+        "model_families": model_families,
+        "model_site_prefixes": model_site_prefixes,
+    }
+
+def _has_tensor_type(model_sites: pd.DataFrame, tensor_type: str) -> bool:
+    return "tensor_type" in model_sites and bool(
+        (model_sites["tensor_type"].astype(str) == tensor_type).any()
+    )
+
+def _has_token_kind(model_sites: pd.DataFrame, token_kind: str) -> bool:
+    return "token_kind" in model_sites and bool(
+        (model_sites["token_kind"].astype(str) == token_kind).any()
+    )
 
 def _counterfactual_pairs_response(dataset: TraceDataset) -> dict[str, Any]:
     pairs = _counterfactual_pairs_payload(dataset)

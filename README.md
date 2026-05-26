@@ -90,8 +90,8 @@ scripts/docker_pi05_rocm.sh \
 ```
 
 More detail: [docs/hardware-run-paths.md](docs/hardware-run-paths.md),
-[docs/docker.md](docs/docker.md), and
-[docs/cloud-capture.md](docs/cloud-capture.md).
+[docs/docker.md](docs/docker.md), [docs/cloud-capture.md](docs/cloud-capture.md),
+and [docs/remote-gpu-local-analysis.md](docs/remote-gpu-local-analysis.md).
 
 ## What You Can Do
 
@@ -120,7 +120,7 @@ More detail: [docs/hardware-run-paths.md](docs/hardware-run-paths.md),
 - `analyzer.py`: dataset-aware analysis recommendations.
 - `probes/`: probe training workflows and baselines.
 - `action_generation.py`: action-head generation summaries.
-- `server.py`: local dashboard APIs.
+- `server/`: local dashboard APIs.
 - `capture/`: LeRobot v3 robot-data contract, overlay helpers, and generic
   capture record/adapter contracts.
 - `pi05/`: PI0.5-specific selectors, replay, and intervention specs.
@@ -355,8 +355,10 @@ The goal is to help a researcher choose analyses that the current dataset can ac
 
 The dashboard remains episode-first for inspection:
 
-- Home: dataset analyzer and artifact overview.
+- Dataset: dataset analyzer and overview.
 - Episodes: browse and inspect robot episodes.
+- Probes: train and inspect probe suites.
+- Workbench: linked selection, cohorts, projections, and graph views.
 - Artifacts: saved probes, videos, reports, action-generation summaries, and future analysis outputs.
 
 Artifacts are becoming the durable research objects. Every serious analysis should save:

@@ -34,6 +34,18 @@ tasks, observations, actions, and camera media. The VLA Lens overlay owns
 interpretability semantics: policy calls, model sites, activations, token
 spaces, attention maps, action-generation traces, probes, and derived artifacts.
 
+Local research checks should use the same boundary. The read-only dataset trust
+gate:
+
+```bash
+uv run python scripts/validate_vla_lens_dataset_trust.py /path/to/dataset-root
+```
+
+opens an existing LeRobot root, nested batch output, or trace dataset and checks
+schema/overlay validity, split sidecars, activation coverage, outcome balance,
+and artifact freshness without invoking capture, replay, model loading, or a
+simulator.
+
 ## Why This Matters
 
 A researcher should not need to use PI0.5 or LIBERO to benefit from VLA Lens.
@@ -181,6 +193,8 @@ Acceptance criteria:
 - PI0.5 is documented as the first implementation, not the core assumption.
 - New work can point to this document when deciding whether code belongs in
   core, PI0.5, frontend generic UI, or a future adapter.
+- Local dataset trust checks exist outside PI0.5 capture and can validate a
+  saved root before probe or claim work.
 
 ### Phase 2: Adapter Compliance Tests
 
@@ -199,13 +213,22 @@ Acceptance criteria:
 
 Make available views explicit.
 
+Initial backend support exists: `/api/dataset` now includes a `capabilities`
+manifest with available capability names, boolean flags, camera names,
+model-family names, and model-site prefixes. The first contract test uses the
+synthetic non-PI0.5 dataset to verify that the server can summarize generic
+`backbone.*` and `action_head.*` sites without PI0.5 names.
+
 Acceptance criteria:
 
-- The backend exposes a capability manifest for each opened dataset.
+- The backend exposes a capability manifest for each opened dataset. Initial
+  support exists in `/api/dataset`.
 - Capabilities are derived from LeRobot metadata, overlay tables, arrays, and
-  model-site metadata.
+  model-site metadata. Initial support derives from opened bundles, arrays,
+  policy-call tables, token-space tables, model-site tables, and artifact
+  counts.
 - Frontend panels key off capabilities instead of PI0.5 name prefixes wherever
-  possible.
+  possible. This remains future work.
 
 ### Phase 4: Frontend Generalization
 

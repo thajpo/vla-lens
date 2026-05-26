@@ -15,6 +15,9 @@ experiment notes when deciding what to run or implement.
   dashboard and Linux CUDA/ROCm capture containers.
 - [cloud-capture.md](cloud-capture.md): high-volume capture storage model,
   output-root commands, cache/secrets handling, and dashboard handoff.
+- [remote-gpu-local-analysis.md](remote-gpu-local-analysis.md): rented-GPU
+  capture, local hard-drive analysis, and current options for online activation
+  hosting or archival.
 - [model-dataset-sim-agnosticity.md](model-dataset-sim-agnosticity.md):
   target architecture for supporting multiple VLA models, robot datasets, and
   simulators through adapters and dataset capabilities.
@@ -28,6 +31,8 @@ experiment notes when deciding what to run or implement.
   and replication priorities.
 - [vla-lens-architecture-workflows.md](vla-lens-architecture-workflows.md):
   architecture and workflow contracts.
+- [research_ui_principles.md](research_ui_principles.md): design principles for
+  research-facing UI and causal-evidence displays.
 - [library/pi05-lens.md](library/pi05-lens.md): PI0.5 library notes and
   reusable analysis primitives.
 

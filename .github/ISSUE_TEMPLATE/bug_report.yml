@@ -1,0 +1,62 @@
+name: Bug report
+description: Report a repo, dashboard, dataset, or documentation bug.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Use this for normal repo/dev/test/server/dashboard bugs. If the failure imports LeRobot, loads PI0.5, touches GPU/ROCm/CUDA/MPS, runs LIBERO, or writes real capture traces, use the PI0.5 capture runtime issue template instead.
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Affected surface
+      options:
+        - Normal repo/dev/test/server work
+        - Dashboard or frontend
+        - Dataset or VLA Lens overlay contract
+        - Documentation
+        - Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: What happened?
+      description: Include the command, page/API path, dataset shape, or doc section involved.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      placeholder: |
+        1. Run `scripts/check_vla_lens.sh`
+        2. Run `uv run pytest`
+        3. Open ...
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Validation already run
+      description: Normal checks should stay in `.venv` through `uv run`; do not run PI0.5 capture through normal `uv run`.
+      value: |
+        - [ ] `scripts/check_vla_lens.sh`
+        - [ ] `uv run pytest`
+        - [ ] `uv run ruff check scripts src tests`
+        - [ ] `cd frontend && npm run build`
+        - [ ] Not applicable / explain below
+    validations:
+      required: true
+  - type: textarea
+    id: context
+    attributes:
+      label: Extra context
+      description: Logs, screenshots, links to datasets, or related issues.

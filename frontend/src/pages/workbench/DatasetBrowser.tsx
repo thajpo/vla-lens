@@ -1,7 +1,12 @@
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search, Target } from "lucide-react";
-import { fetchDataset, fetchDatasetDiagnostics, fetchProbeIndex } from "../../api/dataset";
+import {
+  cachedDatasetSnapshot,
+  fetchDataset,
+  fetchDatasetDiagnostics,
+  fetchProbeIndex,
+} from "../../api/dataset";
 import type { DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
 import type { WorkbenchManifest } from "../../types/workbench";
 import {
@@ -48,14 +53,31 @@ export function DatasetBrowser({
 }: {
   onOpenEpisode: (traceId: string, context?: EpisodeOpenContext) => void;
 }) {
-  const dataset = useQuery({
-    queryKey: ["dataset"],
-    queryFn: fetchDataset,
-    staleTime: 30_000,
-  });
   const diagnostics = useQuery({
     queryKey: ["dataset-diagnostics"],
     queryFn: fetchDatasetDiagnostics,
+  });
+  const datasetFingerprint = diagnostics.data?.fingerprint;
+  const datasetCacheReady = diagnostics.isFetched || diagnostics.isError;
+  const datasetIdentityKey = datasetFingerprint
+    ? `fingerprint:${datasetFingerprint}`
+    : datasetCacheReady
+      ? "unknown"
+      : "pending";
+  const dataset = useQuery({
+    queryKey: ["dataset", datasetIdentityKey],
+    queryFn: () => fetchDataset({ fingerprint: datasetFingerprint }),
+    enabled: datasetCacheReady,
+    initialData: () => {
+      if (!datasetCacheReady) {
+        return undefined;
+      }
+      return datasetFingerprint
+        ? cachedDatasetSnapshot({ fingerprint: datasetFingerprint })
+        : cachedDatasetSnapshot();
+    },
+    initialDataUpdatedAt: 0,
+    staleTime: 30_000,
   });
   const probeIndex = useQuery({
     queryKey: ["probe-index"],
@@ -72,6 +94,8 @@ export function DatasetBrowser({
   const [profileFilter, setProfileFilter] = useState("all");
   const [probeFilter, setProbeFilter] = useState("all");
   const [probeQuery, setProbeQuery] = useState("");
+  const deferredQuery = useDeferredValue(query);
+  const deferredProbeQuery = useDeferredValue(probeQuery);
   const [probeCohortPreset, setProbeCohortPreset] = useState<ProbeCohortPreset>("all");
   const [probeSplitFilter, setProbeSplitFilter] = useState("all");
   const [probePredictionFilter, setProbePredictionFilter] = useState("all");
@@ -81,8 +105,8 @@ export function DatasetBrowser({
   );
   const rankedProbes = useMemo(() => rankProbesForReview(probes), [probes]);
   const visibleProbeChoices = useMemo(
-    () => filterProbeChoices(rankedProbes, probeQuery).slice(0, PROBE_LIST_LIMIT),
-    [probeQuery, rankedProbes],
+    () => filterProbeChoices(rankedProbes, deferredProbeQuery).slice(0, PROBE_LIST_LIMIT),
+    [deferredProbeQuery, rankedProbes],
   );
 
   const datasetIds = useMemo(() => uniqueValues(episodes.map(episodeDatasetId)), [episodes]);
@@ -93,24 +117,14 @@ export function DatasetBrowser({
     [episodes],
   );
   const profiles = useMemo(() => uniqueValues(episodes.map(episodeProfile)), [episodes]);
+  const episodeSearchText = useMemo(
+    () => new Map(episodes.map((episode) => [episode.trace_id, searchableEpisodeText(episode)])),
+    [episodes],
+  );
+  const searchNeedle = useMemo(() => deferredQuery.trim().toLowerCase(), [deferredQuery]);
   const filteredEpisodes = useMemo(
     () =>
       episodes.filter((episode) => {
-        const searchText = [
-          episode.trace_id,
-          episode.episode_id,
-          episode.task_id,
-          episode.prompt,
-          episode.outcome,
-          episodeDatasetId(episode),
-          episodeBenchmark(episode),
-          episodeProfile(episode),
-          episodeSeed(episode),
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        const needle = query.trim().toLowerCase();
         return (
           (datasetFilter === "all" || episodeDatasetId(episode) === datasetFilter) &&
           (benchmarkFilter === "all" || episodeBenchmark(episode) === benchmarkFilter) &&
@@ -124,19 +138,20 @@ export function DatasetBrowser({
             probeSplitFilter,
             probePredictionFilter,
           ) &&
-          (!needle || searchText.includes(needle))
+          (!searchNeedle || episodeSearchText.get(episode.trace_id)?.includes(searchNeedle))
         );
       }),
     [
       datasetFilter,
       benchmarkFilter,
       episodes,
+      episodeSearchText,
       outcomeFilter,
       probeCohortPreset,
       probePredictionFilter,
       probeSplitFilter,
       profileFilter,
-      query,
+      searchNeedle,
       selectedProbe,
       taskFilter,
     ],
@@ -217,7 +232,7 @@ export function DatasetBrowser({
         />
       </section>
 
-      {dataset.isLoading ? <div className="app-message">Loading dataset...</div> : null}
+      {!datasetCacheReady || dataset.isLoading ? <div className="app-message">Loading dataset...</div> : null}
       {dataset.isError ? <div className="empty-state">Dataset API unavailable.</div> : null}
       {probeIndex.isError ? <div className="empty-state compact">Probe index unavailable.</div> : null}
 
@@ -734,6 +749,24 @@ function Metric({ label, value }: { label: string; value: number }) {
     </div>
   );
 }
+
+function searchableEpisodeText(episode: DatasetEpisode): string {
+  return [
+    episode.trace_id,
+    episode.episode_id,
+    episode.task_id,
+    episode.prompt,
+    episode.outcome,
+    episodeDatasetId(episode),
+    episodeBenchmark(episode),
+    episodeProfile(episode),
+    episodeSeed(episode),
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+}
+
 function ProbeEpisodeBadge({ record }: { record?: ProbeEpisodeIndex }) {
   if (!record) {
     return <span className="probe-episode-badge muted">Select probe</span>;

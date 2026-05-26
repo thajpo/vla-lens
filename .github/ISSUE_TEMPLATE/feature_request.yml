@@ -1,0 +1,59 @@
+name: Feature or architecture request
+description: Propose repo behavior, analysis, architecture, docs, or dashboard changes.
+title: "[Feature]: "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What research or engineering workflow should become easier or more reliable?
+    validations:
+      required: true
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Primary surface
+      options:
+        - Dataset and overlay contract
+        - PI0.5 capture planning or profiles
+        - Analysis/probes/artifacts
+        - Server/API
+        - Dashboard/frontend
+        - Documentation
+        - CI/release/repo hygiene
+    validations:
+      required: true
+  - type: textarea
+    id: design
+    attributes:
+      label: Proposed shape
+      description: Mention expected inputs, outputs, ownership boundaries, and compatibility constraints.
+    validations:
+      required: true
+  - type: textarea
+    id: environment-split
+    attributes:
+      label: Environment split impact
+      description: Normal repo work uses `.venv` and `uv run`; PI0.5 capture uses `.venv-pi05-*` wrappers.
+      value: |
+        - [ ] Normal repo/dev/test/server only
+        - [ ] Requires PI0.5/LeRobot/LIBERO capture environment
+        - [ ] Requires ROCm/CUDA/MPS-specific validation
+        - [ ] Unsure
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: Expected validation
+      placeholder: |
+        Normal: `uv run pytest`, `uv run ruff check scripts src tests`, `cd frontend && npm run build`
+        Capture: `scripts/check_pi05_env.sh --backend ...`, wrapper-based capture smoke
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives or tradeoffs
+      description: Include simpler approaches, known risks, or why this belongs in this repo.

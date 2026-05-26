@@ -16,6 +16,13 @@ export type DatasetPayload = {
   root: string;
   episodes: DatasetEpisode[];
   activation_sites: number;
+  capabilities?: {
+    available: string[];
+    flags: Record<string, boolean>;
+    camera_names: string[];
+    model_families: string[];
+    model_site_prefixes: string[];
+  };
   artifacts: {
     total: number;
     counts: Record<string, number>;

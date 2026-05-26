@@ -1,4 +1,4 @@
-import { type CSSProperties, useState } from "react";
+import { memo, type CSSProperties, useState } from "react";
 import type {
   EpisodeProbePrediction,
   EpisodeProbeSummary,
@@ -40,7 +40,7 @@ import {
   uniqueStrings,
 } from "./episodeProbeModel";
 
-export function EpisodeProbePanel({
+function EpisodeProbePanelImpl({
   canInspectProbe,
   canJumpToProbeCall,
   comparisons,
@@ -227,6 +227,8 @@ export function EpisodeProbePanel({
     </div>
   );
 }
+
+export const EpisodeProbePanel = memo(EpisodeProbePanelImpl);
 
 function EpisodeProbeStack({
   onProbeChange,
