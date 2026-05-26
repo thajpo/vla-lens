@@ -30,6 +30,9 @@ from vla_lens.lerobot_dataset import (
 from vla_lens.pi05.batch_capture import CaptureCommand, _expected_trace_exists
 from vla_lens.pi05.interaction_metrics import save_pi05_interaction_metrics_artifact
 from vla_lens.pi05.plan_capture import _command_expected_traces_exist, _validate_task_root
+from vla_lens.probes import train_probe_artifact
+from vla_lens.probes.workflow_prepare import _attach_episode_metadata
+from vla_lens.research_guardrails import check_dataset_trust
 from vla_lens.server import _dataset_signature
 from vla_lens.traces import ModelSiteSpec
 
@@ -259,6 +262,32 @@ def test_lerobot_overlay_bundle_artifacts_load_through_trace_dataset(tmp_path):
     assert weights.shape == (1, 2)
 
 
+def test_lerobot_bundle_artifact_index_paths_resolve_from_dataset_root(tmp_path):
+    write_lerobot_trace_record(_minimal_record("trace-a"), tmp_path)
+    dataset = TraceDataset.open(tmp_path)
+    saved = dataset.bundle("trace-a").save_artifact(
+        LensArtifact.create(artifact_type="probe", name="Bundle probe"),
+        arrays={"weights": np.asarray([[1.0, 2.0]], dtype=np.float32)},
+    )
+
+    reopened = TraceDataset.open(tmp_path)
+    artifact_row = reopened.artifact_index.loc[
+        reopened.artifact_index["artifact_id"].astype(str) == saved.artifact_id
+    ].iloc[0]
+    artifact_path = tmp_path / str(artifact_row["path"])
+    report = check_dataset_trust(
+        tmp_path,
+        require_splits=False,
+        require_artifacts=True,
+        require_outcome_balance=False,
+    )
+
+    assert artifact_row["artifact_scope"] == "bundle"
+    assert str(artifact_row["path"]).startswith("vla_lens/episodes/episode_000000/artifacts/")
+    assert artifact_path.exists()
+    assert report.valid, report.to_dict()
+
+
 def test_lerobot_dataset_artifacts_are_stored_under_overlay(tmp_path):
     write_lerobot_trace_record(_minimal_record("trace-a"), tmp_path)
     write_lerobot_trace_record(_minimal_record("trace-b"), tmp_path)
@@ -295,6 +324,61 @@ def test_lerobot_interaction_metrics_artifacts_stay_inside_overlay(tmp_path):
     assert (tmp_path / object_metrics).exists()
     assert (tmp_path / "vla_lens" / "tables" / "artifact_index.parquet").exists()
     assert not (tmp_path / "tables" / "artifact_index.parquet").exists()
+
+
+def test_lerobot_interaction_metrics_legacy_output_paths_feed_probe_targets(tmp_path):
+    write_lerobot_trace_record(_interaction_record("trace-a"), tmp_path)
+    dataset = TraceDataset.open(tmp_path)
+    saved = save_pi05_interaction_metrics_artifact(dataset)
+    artifact_path = (
+        tmp_path / "vla_lens" / "artifacts" / saved.artifact.artifact_id / "artifact.json"
+    )
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+    payload["method"]["outputs"] = {
+        key: str(value).removeprefix("vla_lens/")
+        for key, value in payload["method"]["outputs"].items()
+    }
+    artifact_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    reopened = TraceDataset.open(tmp_path)
+    rows = _attach_episode_metadata(reopened.episode_index[["trace_id"]], reopened)
+
+    assert rows["target_contacted"].tolist() == [True]
+
+
+def test_lerobot_probe_outputs_are_dataset_root_relative(tmp_path):
+    records = [
+        _minimal_record_with_model_value("trace-a", 0.0),
+        _minimal_record_with_model_value("trace-b", 1.0),
+        _minimal_record_with_model_value("trace-c", 0.2),
+        _minimal_record_with_model_value("trace-d", 1.2),
+    ]
+    outcomes = ["failure", "success", "failure", "success"]
+    for record, outcome in zip(records, outcomes, strict=False):
+        write_lerobot_trace_record(
+            replace(record, manifest=replace(record.manifest, outcome=outcome)),
+            tmp_path,
+        )
+    pd.DataFrame(
+        {
+            "trace_id": ["trace-a", "trace-b", "trace-c", "trace-d"],
+            "split": ["train", "train", "test", "test"],
+        }
+    ).to_csv(tmp_path / "probe_splits.csv", index=False)
+
+    dataset = TraceDataset.open(tmp_path)
+    saved = train_probe_artifact(
+        dataset,
+        name="LeRobot output path probe",
+        selector=ActivationQuery(name="model.layer0.hidden", reduce_tokens="mean"),
+        target="outcome",
+        probe_models=["linear"],
+        sweep="none",
+    )
+
+    output_path = saved.artifact.method["outputs"]["metrics"]
+    assert output_path.startswith("vla_lens/artifacts/")
+    assert (tmp_path / output_path).exists()
 
 
 def test_lerobot_roots_pass_workbench_contract_and_table_queries(tmp_path):

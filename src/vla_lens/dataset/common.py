@@ -300,12 +300,17 @@ def _array_record(
 
 def _prefix_table_paths(table: pd.DataFrame, prefix: Path) -> pd.DataFrame:
     out = table.copy()
-    if "relative_path" in out:
-        out["relative_path"] = [
-            str(prefix / str(value)) if str(value) else str(value)
-            for value in out["relative_path"]
-        ]
+    for column in ("relative_path", "path"):
+        if column in out:
+            out[column] = [_prefix_path_value(value, prefix) for value in out[column]]
     return out
+
+
+def _prefix_path_value(value: object, prefix: Path) -> str:
+    text = str(value)
+    if not text or Path(text).is_absolute():
+        return text
+    return str(prefix / text)
 
 
 def _uint8_rgb(frame: np.ndarray) -> np.ndarray:

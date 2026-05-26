@@ -131,22 +131,23 @@ def train_probe_artifact(
         results,
         selection_value=selection_value or test_value,
     )
+    output_dir = _dataset_output_dir(dataset, artifact_id)
     outputs = {
-        "metrics": str(Path("artifacts") / artifact_id / "metrics.json"),
-        "predictions": str(Path("artifacts") / artifact_id / "predictions.parquet"),
-        "per_split_metrics": str(Path("artifacts") / artifact_id / "per_split_metrics.parquet"),
-        "per_group_metrics": str(Path("artifacts") / artifact_id / "per_group_metrics.parquet"),
-        "null_metrics": str(Path("artifacts") / artifact_id / "null_metrics.parquet"),
-        "weights": str(Path("artifacts") / artifact_id / "weights.zarr")
+        "metrics": str(output_dir / "metrics.json"),
+        "predictions": str(output_dir / "predictions.parquet"),
+        "per_split_metrics": str(output_dir / "per_split_metrics.parquet"),
+        "per_group_metrics": str(output_dir / "per_group_metrics.parquet"),
+        "null_metrics": str(output_dir / "null_metrics.parquet"),
+        "weights": str(output_dir / "weights.zarr")
         if "weights" in model_arrays
         else None,
-        "bias": str(Path("artifacts") / artifact_id / "bias.zarr")
+        "bias": str(output_dir / "bias.zarr")
         if "bias" in model_arrays
         else None,
-        "normalizer_feature_mean": str(Path("artifacts") / artifact_id / "feature_mean.zarr")
+        "normalizer_feature_mean": str(output_dir / "feature_mean.zarr")
         if "feature_mean" in model_arrays
         else None,
-        "normalizer_feature_scale": str(Path("artifacts") / artifact_id / "feature_scale.zarr")
+        "normalizer_feature_scale": str(output_dir / "feature_scale.zarr")
         if "feature_scale" in model_arrays
         else None,
     }
@@ -352,6 +353,13 @@ def train_probe_artifact_from_spec(
             str(value) for value in normalized.get("probe", {}).get("models", ["linear"])
         ],
     )
+
+
+def _dataset_output_dir(dataset: TraceDataset, artifact_id: str) -> Path:
+    artifact_root = dataset._dataset_artifact_root()
+    if artifact_root == dataset.root:
+        return Path("artifacts") / artifact_id
+    return artifact_root.relative_to(dataset.root) / "artifacts" / artifact_id
 
 
 def _run_sweep(

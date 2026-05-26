@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import numpy as np
@@ -171,7 +172,7 @@ def _latest_interaction_object_metrics(dataset: TraceDataset) -> pd.DataFrame:
     path = outputs.get("object_metrics")
     if not path:
         return pd.DataFrame()
-    table_path = dataset.root / str(path)
+    table_path = _artifact_output_path(dataset, str(path))
     if not table_path.exists():
         return pd.DataFrame()
     return pd.read_parquet(table_path)
@@ -185,10 +186,20 @@ def _latest_interaction_labels(dataset: TraceDataset) -> pd.DataFrame:
     path = outputs.get("episode_labels")
     if not path:
         return pd.DataFrame()
-    table_path = dataset.root / str(path)
+    table_path = _artifact_output_path(dataset, str(path))
     if table_path.exists():
         return pd.read_parquet(table_path)
     return pd.DataFrame()
+
+
+def _artifact_output_path(dataset: TraceDataset, relative_path: str) -> Path:
+    path = Path(relative_path)
+    if path.is_absolute():
+        return path
+    dataset_path = dataset.root / path
+    if dataset_path.exists():
+        return dataset_path
+    return dataset._dataset_artifact_root() / path
 
 
 def _latest_interaction_artifact(dataset: TraceDataset) -> LensArtifact | None:

@@ -126,13 +126,23 @@ def _interaction_metrics_table(
     relative_path = outputs.get(key) if isinstance(outputs, Mapping) else None
     if not relative_path:
         return pd.DataFrame()
-    path = dataset.root / str(relative_path)
+    path = _artifact_output_path(dataset, str(relative_path))
     if not path.exists():
         return pd.DataFrame()
     try:
         return pd.read_parquet(path)
     except Exception:
         return pd.DataFrame()
+
+
+def _artifact_output_path(dataset: TraceDataset, relative_path: str) -> Path:
+    path = Path(relative_path)
+    if path.is_absolute():
+        return path
+    dataset_path = dataset.root / path
+    if dataset_path.exists():
+        return dataset_path
+    return dataset._dataset_artifact_root() / path
 
 def _episode_probes_payload(
     dataset: TraceDataset,

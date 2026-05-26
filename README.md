@@ -384,3 +384,7 @@ Run the focused trace MVP tests:
 ```bash
 uv run pytest tests/vla_lens_trace_mvp_test.py
 ```
+
+## License
+
+MIT. See [LICENSE](LICENSE).

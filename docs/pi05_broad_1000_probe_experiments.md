@@ -6,7 +6,7 @@ features plus post-processed interaction labels.
 
 ## Dataset Contract
 
-- Dataset root: `/media/j/New Volume/vla-lens/pi05-broad-1000-mech-light`
+- Dataset root: `/mnt/new-volume/vla-lens/pi05-broad-1000-mech-light-lerobot-v3`
 - Dataset shorthand: mech-light
 - Actual capture profile: `mechanistic_sampled`
 - Split column: `split`
@@ -33,9 +33,12 @@ features plus post-processed interaction labels.
   generation script/config version, post-processing config, source schema
   versions, row counts after filters, class balance, and excluded-row counts.
 - Trust-gate contract: before training or interpreting broad-1000 probes, run
-  `uv run python scripts/validate_vla_lens_dataset_trust.py "/media/j/New Volume/vla-lens/pi05-broad-1000-mech-light"`.
+  `uv run python scripts/validate_vla_lens_dataset_trust.py "/mnt/new-volume/vla-lens/pi05-broad-1000-mech-light-lerobot-v3"`.
   The gate is local and read-only; it checks schema/overlay validity, split
   sidecars, activation coverage, outcome balance, and artifact freshness.
+- Latest local gate: passed on 2026-05-26 with 1000 episodes, 34000 activation
+  site rows, 1.0 activation coverage, train/val/test split counts of
+  600/200/200 episodes, and 7 checked artifacts.
 
 ## Artifact Contract
 
@@ -83,7 +86,7 @@ uv run python scripts/lint_research_guardrails.py \
   --root . \
   --episode-plan "/path/to/episode_plan.csv"
 uv run python scripts/validate_vla_lens_dataset_trust.py \
-  "/media/j/New Volume/vla-lens/pi05-broad-1000-mech-light"
+  "/mnt/new-volume/vla-lens/pi05-broad-1000-mech-light-lerobot-v3"
 ```
 
 For a future audit/circuit capture, start from
@@ -129,6 +132,29 @@ These are the probe artifacts already present on the broad-1000 dataset.
   is worth inspecting in the probe-suite UI before deciding whether to run a
   causal follow-up or a neighboring target-contact/lift probe.
 
+### Target Contacted - Expert Action Hidden
+
+- Artifact: `probe_suite-pi0.5-broad-1000-target-contacted---expert-action-hidden-b8c82b1877`
+- Spec: `configs/probes/pi05_broad_1000_target_contacted_expert_action_hidden.yaml`
+- Target: `target_contacted`
+- Feature: `pi05.expert.layers.*` hidden action tokens
+- Result: decodable object-interaction signal, not causal evidence.
+- Best score: `0.669`
+- Metadata baseline: `0.578`
+- Delta: `+0.091`
+- Null p-value: `0.048`
+- Best site: `layer=0.0, policy_call_index=6`
+- Selection split: `val_heldout_task`
+- Final held-out split aggregate balanced accuracy: `0.804`
+- Source episodes: `1000`
+- Training rows: `27880`
+- Prediction rows: `22270`
+- Target distribution: `False=18845`, `True=9035`
+- Interpretation: this clears the strongest metadata baseline on the selection
+  split and survives final held-out-task aggregation. Per-group performance is
+  uneven, so treat this as a candidate for UI inspection and localization work,
+  not as proof that the site causally controls target contact.
+
 ### First Moved Is Target - Action Head Output
 
 - Artifact: `probe_suite-pi0.5-broad-1000-first-moved-is-target---action-head-output-6051e97b3f`
@@ -163,30 +189,25 @@ These are the probe artifacts already present on the broad-1000 dataset.
 
 ## Active Next Run
 
-The first integration probe and the first promising object-interaction probe
-have both been run. Do not rerun the outcome action-head-input probe or the
-target-moved expert-action-hidden probe unless the UI/artifact loader needs a
-regression check.
+The first integration probe and two object-interaction probes have been run.
+Do not rerun the outcome action-head-input, target-moved expert-action-hidden,
+or target-contacted expert-action-hidden probes unless the UI/artifact loader
+needs a regression check.
 
-Recommended next single probe after UI review:
+Recommended next work after UI review:
+- Inspect the target-contacted artifact in the dashboard/workbench, especially
+  `layer=0.0, policy_call_index=6`, prediction traces, confusion slices, and
+  low-scoring groups.
+- If the goal is physical interaction localization, run neighboring-window
+  analysis around the target-contacted best site before proposing any replay or
+  intervention.
+- If the goal is a new broad probe, choose `target_lifted` only after checking
+  class support, or choose filtered `first_moved_is_target` for target-relative
+  binding.
 
-```bash
-uv run python scripts/train_vla_lens_probe.py \
-  "/media/j/New Volume/vla-lens/pi05-broad-1000-mech-light" \
-  --spec configs/probes/pi05_broad_1000_target_contacted_expert_action_hidden.yaml
-```
-
-Why this next:
-- Target moved produced a positive activation-over-metadata delta, so contact is
-  the nearest label for checking whether the signal is about physical
-  interaction rather than generic target/task state.
-- Contact is less sparse than lift but more specific than movement, making it a
-  good second object-interaction probe.
-- It should still be interpreted only if label quality and held-out-task support
-  survive inspection.
-
-Fallback next probe: filtered `first_moved_is_target` if the immediate goal is
-target-relative binding rather than broad target movement.
+Current interpretation: target contact is decodable above metadata and null
+baselines, but the evidence is still observational. The next claim upgrade
+requires localization consistency plus a concrete replay/intervention plan.
 
 ## Feature Contracts
 
@@ -277,7 +298,8 @@ Run decisions:
 ### 1. Target Moved - Expert Action Hidden
 
 - Spec: `configs/probes/pi05_broad_1000_target_moved_expert_action_hidden.yaml`
-- Status: planned / recommended next single probe
+- Status: completed / inspect before causal follow-up
+- Artifact: `probe_suite-pi0.5-broad-1000-target-moved---expert-action-hidden-ca5380446b`
 - Target: `target_moved`
 - Feature: expert action hidden
 - Sweep: layer x policy call
@@ -303,7 +325,8 @@ Run decisions:
 ### 3. Target Contacted - Expert Action Hidden
 
 - Spec: `configs/probes/pi05_broad_1000_target_contacted_expert_action_hidden.yaml`
-- Status: planned
+- Status: completed / inspect before causal follow-up
+- Artifact: `probe_suite-pi0.5-broad-1000-target-contacted---expert-action-hidden-b8c82b1877`
 - Target: `target_contacted`
 - Feature: expert action hidden
 - Sweep: layer x policy call
@@ -311,7 +334,11 @@ Run decisions:
 - Gate: require contact-label quality audit because contact can be noisy and
   object-family dependent.
 - Purpose: test whether representation predicts contact with the target object.
-- Suspicious result if: contact labels are noisy or dominated by one object family.
+- Result: clears strongest metadata baseline on the selection split by `+0.091`
+  balanced accuracy and has final held-out-task aggregate balanced accuracy
+  `0.804`.
+- Suspicious result if: contact labels are noisy, dominated by one object family,
+  or the site does not survive localization/neighboring-window checks.
 
 ### 4. First Moved Is Target, Filtered - Expert Action Hidden
 
@@ -371,7 +398,7 @@ Run decisions:
 
 ```bash
 uv run python scripts/train_vla_lens_probe.py \
-  "/media/j/New Volume/vla-lens/pi05-broad-1000-mech-light" \
+  "/mnt/new-volume/vla-lens/pi05-broad-1000-mech-light-lerobot-v3" \
   --spec configs/probes/pi05_broad_1000_outcome_action_head_input_robust.yaml
 ```
 
@@ -382,9 +409,9 @@ Why this was trained first:
 
 Result: completed as
 `probe_suite-pi0.5-broad-1000-outcome-robust---action-head-input-7f7ec8ae54`.
-It should now serve as a regression/UI artifact. The next scientific run should
-be `target_moved` or filtered `first_moved_is_target`, as described in
-`Active Next Run`.
+It should now serve as a regression/UI artifact. The target-moved and
+target-contacted probes have both been run; use `Active Next Run` for the
+current follow-up recommendation.
 
 ## Superseded YAML Specs
 
