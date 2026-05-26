@@ -9,6 +9,7 @@ import {
 } from "../../api/dataset";
 import type { DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
 import type { WorkbenchManifest } from "../../types/workbench";
+import { datasetBrowserCapabilityGates } from "../capabilityGating";
 import {
   COHORT_PRESETS,
   EVIDENCE_EPISODE_LIMIT,
@@ -79,7 +80,7 @@ export function DatasetBrowser({
     initialDataUpdatedAt: 0,
     staleTime: 30_000,
   });
-  const hasProbeArtifacts = dataset.data?.capabilities?.flags.probe_artifacts ?? true;
+  const { hasProbeArtifacts } = datasetBrowserCapabilityGates(dataset.data?.capabilities?.flags);
   const probeIndex = useQuery({
     queryKey: ["probe-index"],
     queryFn: fetchProbeIndex,
