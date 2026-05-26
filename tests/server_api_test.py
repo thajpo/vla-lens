@@ -42,6 +42,21 @@ def test_artifact_ids_cannot_escape_dataset_root(tmp_path):
         thread.join(timeout=2)
 
 
+def test_dataset_payload_reports_model_sites_without_workbench_payload(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
+    base_url, server, thread = _serve_dataset(dataset)
+    try:
+        with urllib.request.urlopen(f"{base_url}/api/dataset", timeout=5) as response:
+            payload = json.loads(response.read().decode("utf-8"))
+
+        assert payload["activation_sites"] == len(dataset.model_site_index)
+        assert "workbench" not in payload
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+
 def _serve_dataset(dataset):
     class Handler(TraceDashboardHandler):
         pass

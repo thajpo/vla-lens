@@ -83,7 +83,7 @@ def _dataset_payload(dataset: TraceDataset, *, include_workbench: bool = True) -
     else:
         payload.update(
             {
-                "activation_sites": 0,
+                "activation_sites": int(len(dataset.model_site_index)),
                 "artifacts": {"total": 0, "counts": {}},
             }
         )
