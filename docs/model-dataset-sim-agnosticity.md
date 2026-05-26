@@ -200,13 +200,19 @@ Acceptance criteria:
 
 Prove the core can run without PI0.5.
 
+Initial support exists: `vla_lens.capture.fake_adapters` provides tiny
+dataset, environment, and model adapters that emit normal capture records. The
+contract test writes them through the LeRobot v3 writer and opens the result
+through `TraceDataset` without PI0.5, Torch, LeRobot runtime imports, LIBERO, or
+GPU access.
+
 Acceptance criteria:
 
-- Add tiny fake dataset, environment, and model adapters.
+- Add tiny fake dataset, environment, and model adapters. Initial support exists.
 - Add tests that write a minimal LeRobot v3 + `vla_lens/` overlay through the
-  generic path.
+  generic path. Initial support exists.
 - Add tests that the dashboard/server can summarize the fake model's sites
-  without `pi05.*` names.
+  without `pi05.*` names. Initial support exists.
 - Keep PI0.5 capture tests separate from normal `uv run pytest`.
 
 ### Phase 3: Capability Manifest
@@ -228,7 +234,9 @@ Acceptance criteria:
   policy-call tables, token-space tables, model-site tables, and artifact
   counts.
 - Frontend panels key off capabilities instead of PI0.5 name prefixes wherever
-  possible. This remains future work.
+  possible. Initial support gates model-site, policy-call, probe, token-space,
+  attention, image-token-map, and action-generation queries/panels from
+  `/api/dataset` capability flags.
 
 ### Phase 4: Frontend Generalization
 
