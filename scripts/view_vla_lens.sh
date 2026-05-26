@@ -7,6 +7,7 @@ FRONTEND_DIST="$ROOT/frontend/dist"
 HOST="${VLA_LENS_HOST:-127.0.0.1}"
 PORT="${VLA_LENS_PORT:-8080}"
 BACKEND_PORT="${VLA_LENS_BACKEND_PORT:-8765}"
+BACKEND_TIMEOUT_SECONDS="${VLA_LENS_BACKEND_TIMEOUT_SECONDS:-300}"
 
 usage() {
   cat <<'EOF'
@@ -53,4 +54,5 @@ exec uv run python scripts/serve_vla_lens_app.py "$TRACE_ROOT" \
   --host "$HOST" \
   --port "$PORT" \
   --backend-port "$BACKEND_PORT" \
+  --backend-timeout-seconds "$BACKEND_TIMEOUT_SECONDS" \
   --public-url "http://127.0.0.1:$PORT"

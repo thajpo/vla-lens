@@ -48,6 +48,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--backend-host", default="127.0.0.1")
     parser.add_argument("--backend-port", type=int, default=8765)
     parser.add_argument(
+        "--backend-timeout-seconds",
+        type=float,
+        default=300.0,
+        help="Seconds to wait for the backend API to open large datasets.",
+    )
+    parser.add_argument(
         "--public-url",
         help="User-facing URL to print instead of the bound host/port.",
     )
@@ -64,7 +70,12 @@ def main() -> None:
 
     backend = _start_backend(args.root, host=args.backend_host, port=args.backend_port)
     try:
-        _wait_for_backend(args.backend_host, args.backend_port, process=backend)
+        _wait_for_backend(
+            args.backend_host,
+            args.backend_port,
+            process=backend,
+            timeout_seconds=args.backend_timeout_seconds,
+        )
         _serve_gateway(
             frontend_dist=frontend_dist,
             host=args.host,
@@ -103,9 +114,11 @@ def _wait_for_backend(
     port: int,
     *,
     process: subprocess.Popen[str] | None = None,
+    timeout_seconds: float = 300.0,
 ) -> None:
     url = f"http://{host}:{port}/api/dataset"
-    for _ in range(120):
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    while time.monotonic() <= deadline:
         if process is not None and process.poll() is not None:
             raise RuntimeError(
                 f"backend exited before becoming ready: returncode={process.returncode}"
