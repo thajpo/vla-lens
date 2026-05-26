@@ -383,7 +383,7 @@ Do not use it for:
 
 - default dataset-scale capture
 - vague "more internals" collection
-- selected-policy-call capture, unless the roadmap explicitly changes
+- selected-policy-call capture, unless current-state guidance explicitly changes
 - all-layer completeness
 
 Interpretability claim level:

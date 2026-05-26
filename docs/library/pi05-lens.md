@@ -28,8 +28,8 @@ dataset = TraceDataset.open("runs/pi05-light-5-test")
 
 features, rows = dataset.select_model_sites(
     ActivationQuery(
-        module="expert",
-        layer=17,
+        module="pi05.expert.layers.*",
+        layers=[17],
         reduce_tokens="mean",
     )
 ).to_matrix(

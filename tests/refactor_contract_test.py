@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import importlib
+
 import numpy as np
 import pandas as pd
 import pytest
+
+
+def _export(module_name: str, name: str):
+    return getattr(importlib.import_module(module_name), name)
 
 
 def test_public_backend_import_paths_remain_stable():
@@ -46,16 +52,80 @@ def test_public_backend_import_paths_remain_stable():
     assert hasattr(SavedProbeSuite, "__dataclass_fields__")
 
 
+@pytest.mark.parametrize(
+    ("public_module", "public_name", "canonical_module", "canonical_name"),
+    [
+        (
+            "vla_lens.probes",
+            "normalize_probe_spec",
+            "vla_lens.probes.workflow_spec",
+            "normalize_probe_spec",
+        ),
+        (
+            "vla_lens.probes",
+            "train_probe_artifact_from_spec",
+            "vla_lens.probes.workflow_training",
+            "train_probe_artifact_from_spec",
+        ),
+        (
+            "vla_lens.probes.workflow",
+            "SavedProbeSuite",
+            "vla_lens.probes.workflow_types",
+            "SavedProbeSuite",
+        ),
+        (
+            "vla_lens.probes.workflow",
+            "baseline_columns",
+            "vla_lens.probes.workflow_spec",
+            "baseline_columns",
+        ),
+        (
+            "vla_lens.probes.workflow",
+            "normalize_probe_spec",
+            "vla_lens.probes.workflow_spec",
+            "normalize_probe_spec",
+        ),
+        (
+            "vla_lens.probes.workflow",
+            "train_probe_artifact",
+            "vla_lens.probes.workflow_training",
+            "train_probe_artifact",
+        ),
+        (
+            "vla_lens.probes.workflow",
+            "train_probe_artifact_from_spec",
+            "vla_lens.probes.workflow_training",
+            "train_probe_artifact_from_spec",
+        ),
+    ],
+)
+def test_probe_public_facades_alias_canonical_implementations(
+    public_module: str,
+    public_name: str,
+    canonical_module: str,
+    canonical_name: str,
+):
+    assert _export(public_module, public_name) is _export(canonical_module, canonical_name)
+
+
+def test_probe_workflow_facade_does_not_reexport_private_helpers():
+    import vla_lens.probes.workflow as workflow
+
+    assert not hasattr(workflow, "_apply_missing_policy")
+    assert not hasattr(workflow, "_resolve_probe_target")
+
+
 def test_probe_workflow_helper_contracts_used_by_server_modules():
-    from vla_lens.probes.workflow import (
+    from vla_lens.probes.workflow_artifacts import _value_counts
+    from vla_lens.probes.workflow_prepare import (
         _apply_missing_policy,
         _apply_row_filters,
         _ensure_split,
+    )
+    from vla_lens.probes.workflow_spec import baseline_columns, normalize_probe_spec
+    from vla_lens.probes.workflow_targets import (
         _normalize_target_spec,
         _target_name,
-        _value_counts,
-        baseline_columns,
-        normalize_probe_spec,
     )
 
     spec = normalize_probe_spec(

@@ -463,7 +463,7 @@ interpretation.
 - `audit_sampled`, `audit_windowed`, `audit_full`: narrow causal/circuit
   follow-ups only. Do not scale these across broad 1000 without a specific
   circuit question and storage/runtime budget.
-- Causal ordering from the roadmap: probe grid -> attention/routing maps ->
+- Causal ordering for broad follow-up work: probe grid -> attention/routing maps ->
   counterfactual pairs -> no-intervention replay -> patching/steering -> sparse
   dictionaries or transcoder-style work.
 

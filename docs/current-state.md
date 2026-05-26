@@ -274,7 +274,7 @@ When work validates or invalidates a claim:
 
 ```text
 1. update this file if it changes current operating truth;
-2. update the living roadmap if it changes sequencing;
-3. archive or mark old experiment docs as historical if their commands are stale;
+2. update the current planning registry if it changes sequencing;
+3. mark old experiment notes as historical if their commands are stale;
 4. prefer deleting obsolete instructions over preserving contradictory plans.
 ```

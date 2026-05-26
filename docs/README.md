@@ -28,6 +28,8 @@ experiment notes when deciding what to run or implement.
   and replication priorities.
 - [vla-lens-architecture-workflows.md](vla-lens-architecture-workflows.md):
   architecture and workflow contracts.
+- [research_ui_principles.md](research_ui_principles.md): design principles for
+  research-facing UI and causal-evidence displays.
 - [library/pi05-lens.md](library/pi05-lens.md): PI0.5 library notes and
   reusable analysis primitives.
 

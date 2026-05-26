@@ -11,9 +11,11 @@ import numpy as np
 import pandas as pd
 
 from vla_lens.artifacts import LensArtifact
-from vla_lens.probes.workflow import (
+from vla_lens.probes.workflow_prepare import (
     _apply_missing_policy,
     _attach_episode_metadata,
+)
+from vla_lens.probes.workflow_targets import (
     _normalize_target_spec,
     _resolve_probe_target,
     _target_name,
