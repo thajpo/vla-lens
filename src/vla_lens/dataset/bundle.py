@@ -284,7 +284,12 @@ class LeRobotEpisodeBundle:
 
     @cached_property
     def artifact_index(self) -> pd.DataFrame:
-        return _overlay_table(self.overlay_bundle, "artifact_index")
+        if self.overlay_bundle is None or self.overlay_bundle.artifact_index.empty:
+            return pd.DataFrame()
+        return _prefix_table_paths(
+            self.overlay_bundle.artifact_index,
+            self.overlay_bundle.path.relative_to(self.root),
+        )
 
     def episode_record(self) -> dict[str, Any]:
         record = self.manifest.to_dict()
