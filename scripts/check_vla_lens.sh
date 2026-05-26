@@ -17,6 +17,9 @@ npm ci --prefix "$ROOT/frontend" --prefer-offline
 echo "== Frontend lint =="
 npm run lint --prefix "$ROOT/frontend"
 
+echo "== Frontend tests =="
+npm run test --prefix "$ROOT/frontend"
+
 echo "== Frontend build =="
 npm run build --prefix "$ROOT/frontend"
 

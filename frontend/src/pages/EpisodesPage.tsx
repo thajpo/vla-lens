@@ -34,6 +34,7 @@ import {
 } from "../api/dataset";
 import type { PolicyCall, SelectedPatch } from "../types/dataset";
 import type { WorkbenchManifest } from "../types/workbench";
+import { episodeCapabilityGates, episodeQueryGates } from "./capabilityGating";
 import { CameraGrid, FramePlaybackControls } from "./episodes/CameraTimeline";
 import { EpisodeNavigationBar } from "./episodes/EpisodeNavigation";
 import { EpisodeProbePanel } from "./episodes/EpisodeProbePanel";
@@ -129,6 +130,16 @@ export function EpisodesPage({
     initialDataUpdatedAt: 0,
     staleTime: 30_000,
   });
+  const capabilities = episodeCapabilityGates(dataset.data?.capabilities?.flags);
+  const {
+    hasPolicyCalls,
+    hasModelSites,
+    hasTokenSpaces,
+    hasImageTokenMaps,
+    hasAttentionMaps,
+    hasActionGeneration,
+    hasProbeArtifacts,
+  } = capabilities;
 
   const episodes = dataset.data?.episodes ?? episodesFromManifest(manifest);
   const [timestep, setTimestep] = useState(0);
@@ -165,7 +176,7 @@ export function EpisodesPage({
       }
       return patch;
     });
-  }, []);
+  }, [setSelectedPatch]);
   const selectedEpisode =
     episodes.find((episode) => episode.trace_id === activeTraceId) ?? episodes[0];
   const selectedEpisodeIndex = selectedEpisode
@@ -187,12 +198,19 @@ export function EpisodesPage({
     setSelectedExpertToken(null);
     setSelectedPromptTokenIndex(null);
     onTraceChange?.(traceId);
-  }, [onTraceChange]);
+  }, [
+    onTraceChange,
+    setIsPlayingFrames,
+    setSelectedExpertToken,
+    setSelectedPatch,
+    setSelectedPromptTokenIndex,
+    setTimestep,
+  ]);
   const handlePromptTokenSelect = useCallback((tokenIndex: number | null) => {
     setSelectedPromptTokenIndex((current) => (
       tokenIndex === null || current === tokenIndex ? null : tokenIndex
     ));
-  }, []);
+  }, [setSelectedPromptTokenIndex]);
   const navigatePreviousEpisode = useCallback(
     () => navigateEpisode(previousEpisode?.trace_id),
     [navigateEpisode, previousEpisode?.trace_id],
@@ -233,7 +251,17 @@ export function EpisodesPage({
   const policyCalls = useQuery({
     queryKey: ["policy-calls", activeTraceId],
     queryFn: () => fetchPolicyCalls(activeTraceId),
-    enabled: Boolean(activeTraceId),
+    enabled: episodeQueryGates(capabilities, {
+      activeTraceId,
+      activeSelectedProbeArtifactId: "",
+      activeSelectedSiteName: "",
+      activeCall: undefined,
+      attentionSiteName: "",
+      effectiveSelectedExpertToken: null,
+      expertTokenSiteName: "",
+      inspectorContext: "",
+      selectedSiteHasFeatures: false,
+    }).policyCalls,
   });
   const episodeMetrics = useQuery({
     queryKey: ["episode-metrics", activeTraceId],
@@ -248,12 +276,32 @@ export function EpisodesPage({
   const episodeProbes = useQuery({
     queryKey: ["episode-probes", activeTraceId],
     queryFn: () => fetchEpisodeProbes(activeTraceId),
-    enabled: Boolean(activeTraceId),
+    enabled: episodeQueryGates(capabilities, {
+      activeTraceId,
+      activeSelectedProbeArtifactId: "",
+      activeSelectedSiteName: "",
+      activeCall: undefined,
+      attentionSiteName: "",
+      effectiveSelectedExpertToken: null,
+      expertTokenSiteName: "",
+      inspectorContext: "",
+      selectedSiteHasFeatures: false,
+    }).episodeProbes,
   });
   const activationSites = useQuery({
     queryKey: ["activation-sites", activeTraceId],
     queryFn: () => fetchActivationSites(activeTraceId),
-    enabled: Boolean(activeTraceId),
+    enabled: episodeQueryGates(capabilities, {
+      activeTraceId,
+      activeSelectedProbeArtifactId: "",
+      activeSelectedSiteName: "",
+      activeCall: undefined,
+      attentionSiteName: "",
+      effectiveSelectedExpertToken: null,
+      expertTokenSiteName: "",
+      inspectorContext: "",
+      selectedSiteHasFeatures: false,
+    }).activationSites,
   });
 
   const cameras = episodeDetail.data?.cameras.length
@@ -289,7 +337,7 @@ export function EpisodesPage({
   const observationalComparisons = useQuery({
     queryKey: ["observational-comparisons", activeTraceId, activeSelectedProbeArtifactId],
     queryFn: () => fetchObservationalComparisons(activeTraceId, activeSelectedProbeArtifactId),
-    enabled: Boolean(activeTraceId && activeSelectedProbeArtifactId),
+    enabled: Boolean(activeTraceId && activeSelectedProbeArtifactId && hasProbeArtifacts),
     placeholderData: keepPreviousData,
   });
   const openComparisonCandidate = useCallback((traceId: string) => {
@@ -310,6 +358,11 @@ export function EpisodesPage({
     selectedProbePolicyCall,
     selectedProbeRef?.modelSiteId,
     selectedProbeSite?.name,
+    setIsPlayingFrames,
+    setSelectedExpertToken,
+    setSelectedPatch,
+    setSelectedPromptTokenIndex,
+    setTimestep,
   ]);
   const architecture = activationSites.data?.architecture;
   const defaultSite = preferredPipelineSite(sites);
@@ -318,7 +371,7 @@ export function EpisodesPage({
   const generation = useQuery({
     queryKey: ["generation-commitment", activeTraceId],
     queryFn: () => fetchGenerationCommitment(activeTraceId),
-    enabled: Boolean(activeTraceId && inspectorContext === "expert"),
+    enabled: Boolean(activeTraceId && hasActionGeneration && inspectorContext === "expert"),
   });
   const selectedSiteHasFeatures = isFeatureActivationSite(selectedSite);
   const expertTokenSite = expertTokenSiteForSite(sites, selectedSite);
@@ -345,6 +398,18 @@ export function EpisodesPage({
     ? policyCallList.findIndex((call) => call.index === activeCall.index)
     : -1;
   const nextPolicyCall = activeCallPosition >= 0 ? policyCallList[activeCallPosition + 1] : undefined;
+  const queryGates = episodeQueryGates(capabilities, {
+    activeTraceId,
+    activeSelectedProbeArtifactId,
+    activeSelectedSiteName,
+    activeCall,
+    attentionSiteName,
+    effectiveSelectedExpertToken,
+    expertTokenSiteName,
+    inspectorContext,
+    selectedPatch,
+    selectedSiteHasFeatures,
+  });
   const activationSlice = useQuery({
     queryKey: [
       "activation-slice",
@@ -367,9 +432,7 @@ export function EpisodesPage({
         topChannelCount,
         signal,
       ),
-    enabled: Boolean(
-      activeTraceId && activeSelectedSiteName && activeCall && selectedSiteHasFeatures,
-    ),
+    enabled: queryGates.activationSlice,
     placeholderData: keepPreviousData,
   });
   const clampedFeature = Math.max(
@@ -391,13 +454,7 @@ export function EpisodesPage({
         clampedFeature,
         signal,
       ),
-    enabled: Boolean(
-      inspectorContext === "vlm" &&
-        activeTraceId &&
-        activeSelectedSiteName &&
-        activeCall &&
-        selectedSiteHasFeatures,
-    ),
+    enabled: queryGates.imageTokenMap,
     placeholderData: keepPreviousData,
     staleTime: 60_000,
   });
@@ -421,13 +478,7 @@ export function EpisodesPage({
         selectedPatch as SelectedPatch,
         signal,
       ),
-    enabled: Boolean(
-      activeTraceId &&
-        activeSelectedSiteName &&
-        activeCall &&
-        selectedPatch &&
-        selectedSiteHasFeatures,
-    ),
+    enabled: queryGates.patchFeatures,
   });
   const expertTokenActivations = useQuery({
     queryKey: [
@@ -447,9 +498,7 @@ export function EpisodesPage({
         activeGenerationStep,
         signal,
       ),
-    enabled: Boolean(
-      inspectorContext === "expert" && activeTraceId && activeCall && expertTokenSiteName,
-    ),
+    enabled: queryGates.expertTokenActivations,
   });
   const expertTokenDetails = useQuery({
     queryKey: [
@@ -471,13 +520,7 @@ export function EpisodesPage({
         activeGenerationStep,
         signal,
       ),
-    enabled: Boolean(
-      inspectorContext === "expert" &&
-        activeTraceId &&
-        activeCall &&
-        expertTokenSiteName &&
-        effectiveSelectedExpertToken !== null,
-    ),
+    enabled: queryGates.expertTokenDetails,
   });
   const attentionMap = useQuery({
     queryKey: [
@@ -501,9 +544,7 @@ export function EpisodesPage({
         attentionQueryToken,
         signal,
       ),
-    enabled: Boolean(
-      inspectorContext === "attention" && activeTraceId && activeCall && attentionSiteName,
-    ),
+    enabled: queryGates.attentionMap,
     placeholderData: keepPreviousData,
     staleTime: 60_000,
   });
@@ -530,7 +571,7 @@ export function EpisodesPage({
         attentionQueryToken,
         signal,
       ),
-    enabled: Boolean(activeTraceId && activeCall && attentionSiteName),
+    enabled: queryGates.promptAttention,
     staleTime: 60_000,
   });
   const promptFeatureMap = useQuery({
@@ -549,13 +590,7 @@ export function EpisodesPage({
         clampedFeature,
         signal,
       ),
-    enabled: Boolean(
-      inspectorContext === "vlm" &&
-        activeTraceId &&
-        activeCall &&
-        activeSelectedSiteName &&
-        selectedSiteHasFeatures,
-    ),
+    enabled: queryGates.promptFeatureMap,
     placeholderData: keepPreviousData,
   });
   const cameraOverlay: CameraOverlayPayload | undefined =
@@ -590,7 +625,7 @@ export function EpisodesPage({
     ) {
       setAttentionQueryToken(0);
     }
-  }, [attentionQueryToken, selectedSite, sites]);
+  }, [attentionQueryToken, selectedSite, setAttentionQueryToken, setInspectionMode, sites]);
   const handleSiteChange = useCallback((siteName: string) => {
     const nextSite = sites.find((site) => site.name === siteName);
     const nextAttentionSite = nextSite ? attentionSiteForSite(sites, nextSite) ?? nextSite : undefined;
@@ -606,7 +641,17 @@ export function EpisodesPage({
     setSelectedExpertToken(null);
     setSelectedPromptTokenIndex(null);
     setGenerationStep(0);
-  }, [sites]);
+  }, [
+    setAttentionHead,
+    setAttentionQueryToken,
+    setFeature,
+    setGenerationStep,
+    setSelectedExpertToken,
+    setSelectedPatch,
+    setSelectedPromptTokenIndex,
+    setSelectedSiteName,
+    sites,
+  ]);
   const inspectProbeSite = useCallback(() => {
     if (!selectedProbeSite) {
       return;
@@ -623,7 +668,7 @@ export function EpisodesPage({
     }
     setIsPlayingFrames(false);
     setTimestep(Math.max(0, Math.min(maxTimestep, call.env_timestep ?? call.segment_start)));
-  }, [maxTimestep, policyCalls.data?.calls]);
+  }, [maxTimestep, policyCalls.data?.calls, setIsPlayingFrames, setTimestep]);
   const jumpToProbeCall = useCallback(() => {
     if (selectedProbePolicyCall !== null && selectedProbePolicyCall !== undefined) {
       jumpToPolicyCall(selectedProbePolicyCall);
@@ -733,36 +778,55 @@ export function EpisodesPage({
           queryFn: () => fetchEpisode(traceId),
           staleTime: 60_000,
         });
-        void queryClient.prefetchQuery({
-          queryKey: ["policy-calls", traceId],
-          queryFn: () => fetchPolicyCalls(traceId),
-          staleTime: 60_000,
-        });
-        void queryClient.prefetchQuery({
-          queryKey: ["episode-probes", traceId],
-          queryFn: () => fetchEpisodeProbes(traceId),
-          staleTime: 60_000,
-        });
-        void queryClient.prefetchQuery({
-          queryKey: ["activation-sites", traceId],
-          queryFn: () => fetchActivationSites(traceId),
-          staleTime: 60_000,
-        });
+        if (hasPolicyCalls) {
+          void queryClient.prefetchQuery({
+            queryKey: ["policy-calls", traceId],
+            queryFn: () => fetchPolicyCalls(traceId),
+            staleTime: 60_000,
+          });
+        }
+        if (hasProbeArtifacts) {
+          void queryClient.prefetchQuery({
+            queryKey: ["episode-probes", traceId],
+            queryFn: () => fetchEpisodeProbes(traceId),
+            staleTime: 60_000,
+          });
+        }
+        if (hasModelSites) {
+          void queryClient.prefetchQuery({
+            queryKey: ["activation-sites", traceId],
+            queryFn: () => fetchActivationSites(traceId),
+            staleTime: 60_000,
+          });
+        }
       }
     }, 250);
     return () => window.clearTimeout(timer);
-  }, [nextEpisode?.trace_id, previousEpisode?.trace_id, queryClient]);
+  }, [
+    hasModelSites,
+    hasPolicyCalls,
+    hasProbeArtifacts,
+    nextEpisode?.trace_id,
+    previousEpisode?.trace_id,
+    queryClient,
+  ]);
 
   useEffect(() => {
     if (
       !isPlayingFrames ||
       !showAttentionOverlay ||
       !activeTraceId ||
-      !nextPolicyCall
+      !nextPolicyCall ||
+      !hasPolicyCalls
     ) {
       return;
     }
-    if (inspectorContext === "vlm" && activeSelectedSiteName && selectedSiteHasFeatures) {
+    if (
+      hasImageTokenMaps &&
+      inspectorContext === "vlm" &&
+      activeSelectedSiteName &&
+      selectedSiteHasFeatures
+    ) {
       void queryClient.prefetchQuery({
         queryKey: imageTokenMapQueryKey(
           activeTraceId,
@@ -780,7 +844,7 @@ export function EpisodesPage({
         staleTime: 60_000,
       });
     }
-    if (inspectorContext === "attention" && attentionSiteName) {
+    if (hasAttentionMaps && hasTokenSpaces && inspectorContext === "attention" && attentionSiteName) {
       const kind = attentionSite?.name.includes(".vlm.") ? "vlm" : "expert";
       void queryClient.prefetchQuery({
         queryKey: [
@@ -815,6 +879,10 @@ export function EpisodesPage({
     attentionSite?.name,
     attentionSiteName,
     clampedFeature,
+    hasAttentionMaps,
+    hasImageTokenMaps,
+    hasPolicyCalls,
+    hasTokenSpaces,
     inspectorContext,
     isPlayingFrames,
     nextPolicyCall,
@@ -840,25 +908,34 @@ export function EpisodesPage({
   const resetPlayback = useCallback(() => {
     setIsPlayingFrames(false);
     setTimestep(0);
-  }, []);
-  const togglePlayback = useCallback(() => setIsPlayingFrames((value) => !value), []);
-  const toggleAttentionOverlay = useCallback(() => setShowAttentionOverlay((value) => !value), []);
-  const toggleObjectOverlay = useCallback(() => setShowObjectOverlay((value) => !value), []);
+  }, [setIsPlayingFrames, setTimestep]);
+  const togglePlayback = useCallback(
+    () => setIsPlayingFrames((value) => !value),
+    [setIsPlayingFrames],
+  );
+  const toggleAttentionOverlay = useCallback(
+    () => setShowAttentionOverlay((value) => !value),
+    [setShowAttentionOverlay],
+  );
+  const toggleObjectOverlay = useCallback(
+    () => setShowObjectOverlay((value) => !value),
+    [setShowObjectOverlay],
+  );
   const handleFeatureChange = useCallback((nextFeature: number) => {
     setFeature(nextFeature);
     setSelectedPatch(null);
     setSelectedExpertToken(null);
     setSelectedPromptTokenIndex(null);
-  }, []);
+  }, [setFeature, setSelectedExpertToken, setSelectedPatch, setSelectedPromptTokenIndex]);
   const handleGenerationStepChange = useCallback((nextStep: number) => {
     setGenerationStep(nextStep);
     setSelectedExpertToken(null);
     setSelectedPromptTokenIndex(null);
-  }, []);
+  }, [setGenerationStep, setSelectedExpertToken, setSelectedPromptTokenIndex]);
   const handleInteractionTimestepChange = useCallback((nextTimestep: number) => {
     setIsPlayingFrames(false);
     setTimestep(Math.max(0, Math.min(maxTimestep, nextTimestep)));
-  }, [maxTimestep]);
+  }, [maxTimestep, setIsPlayingFrames, setTimestep]);
 
   return (
     <main className="episodes-workspace episode-main" style={workspaceStyle}>
@@ -962,11 +1039,11 @@ export function EpisodesPage({
                       ) : (
                         <EpisodeProbePanel
                           comparisons={observationalComparisons.data}
-                          probes={episodeProbes.data}
+                          probes={hasProbeArtifacts ? episodeProbes.data : undefined}
                           selectedProbe={selectedProbe}
                           selectedProbeRef={selectedProbeRef}
-                          isError={episodeProbes.isError}
-                          isLoading={episodeProbes.isLoading}
+                          isError={hasProbeArtifacts && episodeProbes.isError}
+                          isLoading={hasProbeArtifacts && episodeProbes.isLoading}
                           isComparisonError={observationalComparisons.isError}
                           isComparisonLoading={observationalComparisons.isFetching}
                           canInspectProbe={Boolean(selectedProbeSite)}
@@ -1014,54 +1091,60 @@ export function EpisodesPage({
               </div>
             </div>
             <div className="body">
-              <ActivationSitePanel
-                architecture={architecture}
-                sites={sites}
-                activationSlice={activationSlice.data}
-                feature={clampedFeature}
-                cameraOverlay={cameraOverlay}
-                episodeProbes={episodeProbes.data}
-                selectedProbeArtifactId={activeSelectedProbeArtifactId}
-                patchFeatures={patchFeatures.data}
-                expertTokenActivations={expertTokenActivations.data}
-                expertTokenDetails={expertTokenDetails.data}
-                activationSliceFetching={activationSlice.isFetching}
-                activationSlicePlaceholder={activationSlice.isPlaceholderData}
-                activationClipPercent={activationClipPercent}
-                attentionHead={attentionHead}
-                attentionQueryToken={attentionQueryToken}
-                selectedPatch={selectedPatch}
-                selectedExpertToken={effectiveSelectedExpertToken}
-                selectedPromptToken={selectedPromptTokenIndex}
-                onFeatureChange={handleFeatureChange}
-                generationStep={activeGenerationStep}
-                generationStepCount={generationStepCount}
-                expertTokenSiteName={expertTokenSiteName}
-                inspectorContext={inspectorContext}
-                inspectionMode={inspectionMode}
-                onGenerationStepChange={handleGenerationStepChange}
-                onAttentionHeadChange={setAttentionHead}
-                onAttentionQueryTokenChange={setAttentionQueryToken}
-                onExpertTokenChange={setSelectedExpertToken}
-                onPatchSelect={handlePatchSelect}
-                onPromptTokenSelect={handlePromptTokenSelect}
-                onActivationClipPercentChange={setActivationClipPercent}
-                onInspectionModeChange={handleInspectionModeChange}
-                onProbeSelect={setSelectedProbeArtifactId}
-                onTopChannelCountChange={setTopChannelCount}
-                selectedSite={selectedSite}
-                selectedSiteName={activeSelectedSiteName}
-                topChannelCount={topChannelCount}
-                onSiteChange={handleSiteChange}
-              />
-              <InspectorDebugSections
-                artifacts={episodeDetail.data?.artifacts ?? EMPTY_ARTIFACTS}
-                calls={policyCallList}
-                generationValues={generation.data?.values ?? EMPTY_GENERATION_VALUES}
-                inspectorContext={inspectorContext}
-                onTimestepChange={setTimestep}
-                timestep={currentTimestep}
-              />
+              {hasModelSites ? (
+                <ActivationSitePanel
+                  architecture={architecture}
+                  sites={sites}
+                  activationSlice={activationSlice.data}
+                  feature={clampedFeature}
+                  cameraOverlay={cameraOverlay}
+                  episodeProbes={hasProbeArtifacts ? episodeProbes.data : undefined}
+                  selectedProbeArtifactId={activeSelectedProbeArtifactId}
+                  patchFeatures={patchFeatures.data}
+                  expertTokenActivations={expertTokenActivations.data}
+                  expertTokenDetails={expertTokenDetails.data}
+                  activationSliceFetching={activationSlice.isFetching}
+                  activationSlicePlaceholder={activationSlice.isPlaceholderData}
+                  activationClipPercent={activationClipPercent}
+                  attentionHead={attentionHead}
+                  attentionQueryToken={attentionQueryToken}
+                  selectedPatch={selectedPatch}
+                  selectedExpertToken={effectiveSelectedExpertToken}
+                  selectedPromptToken={selectedPromptTokenIndex}
+                  onFeatureChange={handleFeatureChange}
+                  generationStep={activeGenerationStep}
+                  generationStepCount={generationStepCount}
+                  expertTokenSiteName={expertTokenSiteName}
+                  inspectorContext={inspectorContext}
+                  inspectionMode={inspectionMode}
+                  onGenerationStepChange={handleGenerationStepChange}
+                  onAttentionHeadChange={setAttentionHead}
+                  onAttentionQueryTokenChange={setAttentionQueryToken}
+                  onExpertTokenChange={setSelectedExpertToken}
+                  onPatchSelect={handlePatchSelect}
+                  onPromptTokenSelect={handlePromptTokenSelect}
+                  onActivationClipPercentChange={setActivationClipPercent}
+                  onInspectionModeChange={handleInspectionModeChange}
+                  onProbeSelect={setSelectedProbeArtifactId}
+                  onTopChannelCountChange={setTopChannelCount}
+                  selectedSite={selectedSite}
+                  selectedSiteName={activeSelectedSiteName}
+                  topChannelCount={topChannelCount}
+                  onSiteChange={handleSiteChange}
+                />
+              ) : (
+                <div className="empty-state">No model-site overlay is available for this dataset.</div>
+              )}
+              {hasPolicyCalls || hasActionGeneration ? (
+                <InspectorDebugSections
+                  artifacts={episodeDetail.data?.artifacts ?? EMPTY_ARTIFACTS}
+                  calls={policyCallList}
+                  generationValues={generation.data?.values ?? EMPTY_GENERATION_VALUES}
+                  inspectorContext={inspectorContext}
+                  onTimestepChange={setTimestep}
+                  timestep={currentTimestep}
+                />
+              ) : null}
             </div>
           </section>
         </>

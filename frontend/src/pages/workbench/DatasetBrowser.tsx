@@ -9,6 +9,7 @@ import {
 } from "../../api/dataset";
 import type { DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
 import type { WorkbenchManifest } from "../../types/workbench";
+import { datasetBrowserCapabilityGates } from "../capabilityGating";
 import {
   COHORT_PRESETS,
   EVIDENCE_EPISODE_LIMIT,
@@ -79,13 +80,18 @@ export function DatasetBrowser({
     initialDataUpdatedAt: 0,
     staleTime: 30_000,
   });
+  const { hasProbeArtifacts } = datasetBrowserCapabilityGates(dataset.data?.capabilities?.flags);
   const probeIndex = useQuery({
     queryKey: ["probe-index"],
     queryFn: fetchProbeIndex,
+    enabled: hasProbeArtifacts,
     staleTime: 60_000,
   });
   const episodes = useMemo(() => dataset.data?.episodes ?? [], [dataset.data?.episodes]);
-  const probes = useMemo(() => probeIndex.data?.probes ?? [], [probeIndex.data?.probes]);
+  const probes = useMemo(
+    () => (hasProbeArtifacts ? probeIndex.data?.probes ?? [] : []),
+    [hasProbeArtifacts, probeIndex.data?.probes],
+  );
   const [query, setQuery] = useState("");
   const [datasetFilter, setDatasetFilter] = useState("all");
   const [benchmarkFilter, setBenchmarkFilter] = useState("all");
@@ -234,7 +240,9 @@ export function DatasetBrowser({
 
       {!datasetCacheReady || dataset.isLoading ? <div className="app-message">Loading dataset...</div> : null}
       {dataset.isError ? <div className="empty-state">Dataset API unavailable.</div> : null}
-      {probeIndex.isError ? <div className="empty-state compact">Probe index unavailable.</div> : null}
+      {hasProbeArtifacts && probeIndex.isError ? (
+        <div className="empty-state compact">Probe index unavailable.</div>
+      ) : null}
 
       <section className="dataset-probe-workbench" aria-label="Probe evidence and cohort mining">
         <div className="probe-workbench-toolbar">

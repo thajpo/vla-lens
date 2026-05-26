@@ -16,6 +16,12 @@ from vla_lens.capture.adapters import (
     RoboticsDatasetSupport,
     TransformerSegmentSpec,
 )
+from vla_lens.capture.fake_adapters import (
+    FakeDatasetEpisodeAdapter,
+    FakeEnvironmentAdapter,
+    FakeModelCaptureAdapter,
+    write_fake_adapter_lerobot_dataset,
+)
 from vla_lens.capture.lerobot_v3 import (
     LEROBOT_ACTION,
     LEROBOT_CANONICAL_ROBOT_FIELDS,
@@ -77,6 +83,9 @@ __all__ = [
     "EnvironmentAdapter",
     "EnvironmentDescriptor",
     "EnvironmentSupport",
+    "FakeDatasetEpisodeAdapter",
+    "FakeEnvironmentAdapter",
+    "FakeModelCaptureAdapter",
     "ModelCaptureAdapter",
     "ModelDescriptor",
     "ModelTraceRecord",
@@ -119,5 +128,6 @@ __all__ = [
     "merge_episode_and_model_trace",
     "validate_lerobot_v3_dataset",
     "vla_lens_overlay_path",
+    "write_fake_adapter_lerobot_dataset",
     "write_trace_record",
 ]
