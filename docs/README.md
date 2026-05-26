@@ -72,4 +72,3 @@ environment.
 Old per-experiment markdown files and CogACT-era planning docs were removed
 after their useful probe-design ideas were consolidated into
 [pi05_broad_1000_probe_experiments.md](pi05_broad_1000_probe_experiments.md).
-The [experiments/](experiments/) directory now contains only a small index.
