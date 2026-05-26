@@ -10,14 +10,14 @@ from vla_lens.capture.lerobot_v3 import (
     VLA_LENS_OVERLAY_REFERENCES,
     validate_lerobot_v3_dataset,
 )
-from vla_lens.lerobot_dataset_bundle import LeRobotEpisodeBundle
-from vla_lens.lerobot_dataset_common import (
+from vla_lens.dataset.bundle import LeRobotEpisodeBundle
+from vla_lens.dataset.common import (
     _read_episode_metadata,
     _read_json,
     _read_table,
     _read_tasks,
 )
-from vla_lens.lerobot_dataset_overlay import _overlay_bundle_for_episode
+from vla_lens.dataset.overlay import _overlay_bundle_for_episode
 from vla_lens.traces import TraceDataset
 
 

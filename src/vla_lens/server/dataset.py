@@ -16,7 +16,7 @@ from vla_lens.analyzer import diagnostics_status, run_dataset_diagnostics
 from vla_lens.probes.workflow import (
     train_probe_artifact_from_spec,
 )
-from vla_lens.server_common import (
+from vla_lens.server.common import (
     _array_preview,
     _array_summary,
     _dedupe_reasons,
@@ -32,7 +32,7 @@ from vla_lens.server_common import (
     _record_text,
     _string_list,
 )
-from vla_lens.server_metrics import (
+from vla_lens.server.metrics import (
     _manifest_payload,
 )
 from vla_lens.target_object import save_target_object_encoding_artifact
@@ -164,7 +164,7 @@ def _observational_comparisons_payload(
     dataset: TraceDataset,
     query: Mapping[str, list[str]],
 ) -> dict[str, Any]:
-    from vla_lens.server_probes import _probe_index_artifact_payload
+    from vla_lens.server.probes import _probe_index_artifact_payload
 
     trace_id = _query_one(dict(query), "trace_id")
     probe_id = (query.get("probe_id") or query.get("probe") or [""])[0]

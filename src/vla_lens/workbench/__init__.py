@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from vla_lens.workbench_api import (
+from vla_lens.workbench.api import (
     cohort_from_selection,
     compare_cohorts,
     graph_from_selection,
@@ -21,7 +21,7 @@ from vla_lens.workbench_api import (
     spatial_overlay_contracts,
     workbench_manifest,
 )
-from vla_lens.workbench_catalog import (
+from vla_lens.workbench.catalog import (
     _activation_lens_arrays,
     _artifact_lens_arrays,
     _axis_value_catalog,
@@ -45,7 +45,7 @@ from vla_lens.workbench_catalog import (
     table_catalog,
     workflow_presets,
 )
-from vla_lens.workbench_schema import (
+from vla_lens.workbench.schema import (
     AXIS_ALIASES,
     CONTEXT_TABLE_IDS,
     MAX_JSON_SLICE_VALUES,
@@ -75,7 +75,7 @@ from vla_lens.workbench_schema import (
     normalize_axis_values,
     normalize_selection,
 )
-from vla_lens.workbench_selection import (
+from vla_lens.workbench.selection import (
     _action_stabilization_cell,
     _action_stabilization_examples,
     _array_matches_site,
@@ -99,7 +99,7 @@ from vla_lens.workbench_selection import (
     resolve_selection,
     unit_profile,
 )
-from vla_lens.workbench_tables import (
+from vla_lens.workbench.tables import (
     _bundle_trace_table,
     _dataframe_select,
     _duckdb_source_sql,
@@ -113,7 +113,7 @@ from vla_lens.workbench_tables import (
     _table_frame,
     query_table,
 )
-from vla_lens.workbench_utils import (
+from vla_lens.workbench.utils import (
     _activation_axes,
     _array_episode_count,
     _array_names,
@@ -147,7 +147,7 @@ from vla_lens.workbench_utils import (
     _workbench_dir,
     _write_json,
 )
-from vla_lens.workbench_validation import (
+from vla_lens.workbench.validation import (
     _array_value,
     _axis_index,
     _cohort_delta_table,

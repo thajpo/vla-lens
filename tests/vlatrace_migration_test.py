@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 
 from vla_lens import ArraySpec, TraceDataset, TraceManifest, validate_lerobot_v3_dataset
+from vla_lens.migration.vlatrace import copy_dataset_level_state, migrate_vlatrace_bundle
 from vla_lens.traces import ModelSiteSpec, TraceBundle
-from vla_lens.vlatrace_migration import copy_dataset_level_state, migrate_vlatrace_bundle
 
 
 def test_migrate_vlatrace_bundle_writes_lerobot_root_and_pruned_overlay(tmp_path):

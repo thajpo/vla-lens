@@ -10,7 +10,7 @@ import numpy as np
 import pandas as pd
 
 from vla_lens.traces import TraceBundle, TraceDataset
-from vla_lens.workbench_schema import (
+from vla_lens.workbench.schema import (
     LensArraySpec,
     LensDataKind,
 )

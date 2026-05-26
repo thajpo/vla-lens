@@ -17,7 +17,7 @@ from typing import Any
 import imageio.v2 as imageio
 import numpy as np
 
-from vla_lens.server_helpers import (
+from vla_lens.server.helpers import (
     _action_metric_metadata,
     _action_norm_payload,
     _action_vector_for_token,

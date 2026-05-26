@@ -10,12 +10,12 @@ import duckdb
 import pandas as pd
 
 from vla_lens.traces import TraceBundle, TraceDataset
-from vla_lens.workbench_schema import (
+from vla_lens.workbench.schema import (
     CONTEXT_TABLE_IDS,
     TRACE_TABLE_ALIASES,
     TRACE_TABLE_PATHS,
 )
-from vla_lens.workbench_utils import (
+from vla_lens.workbench.utils import (
     _jsonable_record,
 )
 

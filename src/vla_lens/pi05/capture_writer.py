@@ -13,7 +13,7 @@ from vla_lens.capture import (
     PolicyCallRecord,
     merge_episode_and_model_trace,
 )
-from vla_lens.lerobot_dataset import write_lerobot_trace_record
+from vla_lens.dataset import write_lerobot_trace_record
 from vla_lens.pi05.capture_arrays import (
     _episode_arrays,
     _is_audit_sampled_site,

@@ -6,7 +6,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from vla_lens.vlatrace_migration import (
+from vla_lens.migration.vlatrace import (
     discover_vlatrace_bundles,
     migrate_vlatrace_bundle,
     migrate_vlatrace_dataset,

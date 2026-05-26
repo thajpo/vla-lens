@@ -7,7 +7,7 @@ from typing import Any, Mapping
 import pandas as pd
 
 from vla_lens.traces import TraceBundle, TraceDataset
-from vla_lens.workbench_schema import (
+from vla_lens.workbench.schema import (
     CONTEXT_TABLE_IDS,
     TRACE_TABLE_PATHS,
     TRACE_TABLE_SPECS,
@@ -22,10 +22,10 @@ from vla_lens.workbench_schema import (
     StorageRef,
     TableSpec,
 )
-from vla_lens.workbench_tables import (
+from vla_lens.workbench.tables import (
     query_table,
 )
-from vla_lens.workbench_utils import (
+from vla_lens.workbench.utils import (
     _activation_axes,
     _array_episode_count,
     _array_names,
@@ -241,7 +241,7 @@ def lens_array_catalog(dataset: TraceDataset) -> tuple[LensArraySpec, ...]:
 
 def image_frame_catalog(dataset: TraceDataset) -> tuple[ImageFrameSpec, ...]:
     """Return first-class encoded frame-stream specs."""
-    from vla_lens.workbench_validation import _storage_ref_from_row
+    from vla_lens.workbench.validation import _storage_ref_from_row
 
     frames: list[ImageFrameSpec] = []
     for bundle in dataset.bundles:
@@ -822,7 +822,7 @@ def workflow_presets(dataset: TraceDataset) -> list[dict[str, Any]]:
     ]
 
 def _episode_lens_arrays(bundle: TraceBundle) -> list[LensArraySpec]:
-    from vla_lens.workbench_validation import _storage_ref_from_row
+    from vla_lens.workbench.validation import _storage_ref_from_row
 
     arrays: list[LensArraySpec] = []
     table = bundle.array_index
@@ -853,7 +853,7 @@ def _episode_lens_arrays(bundle: TraceBundle) -> list[LensArraySpec]:
     return arrays
 
 def _activation_lens_arrays(bundle: TraceBundle) -> list[LensArraySpec]:
-    from vla_lens.workbench_validation import _storage_ref_from_row
+    from vla_lens.workbench.validation import _storage_ref_from_row
 
     arrays: list[LensArraySpec] = []
     table = bundle.model_sites

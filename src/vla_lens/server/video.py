@@ -11,7 +11,7 @@ import imageio.v2 as imageio
 import numpy as np
 
 from vla_lens.artifacts import LensArtifact
-from vla_lens.server_common import (
+from vla_lens.server.common import (
     _cache_part,
 )
 from vla_lens.traces import TraceBundle

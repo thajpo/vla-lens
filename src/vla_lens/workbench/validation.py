@@ -11,16 +11,16 @@ import zarr
 
 from vla_lens.traces import TraceDataset
 from vla_lens.validation import validate_trace_dataset
-from vla_lens.workbench_schema import (
+from vla_lens.workbench.schema import (
     CohortSpec,
     LensArraySpec,
     StorageRef,
     normalize_axis_name,
 )
-from vla_lens.workbench_tables import (
+from vla_lens.workbench.tables import (
     _filter_table,
 )
-from vla_lens.workbench_utils import (
+from vla_lens.workbench.utils import (
     _first_scalar,
     _jsonable_scalar,
     _optional_str,
@@ -257,7 +257,7 @@ def _invalid_storage_refs(
     return invalid
 
 def _invalid_analysis_run_outputs(dataset: TraceDataset) -> list[dict[str, Any]]:
-    from vla_lens.workbench_api import list_analysis_runs
+    from vla_lens.workbench.api import list_analysis_runs
 
     invalid: list[dict[str, Any]] = []
     for run in list_analysis_runs(dataset):

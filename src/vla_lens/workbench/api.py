@@ -7,7 +7,7 @@ from typing import Any, Mapping
 import numpy as np
 
 from vla_lens.traces import TraceDataset
-from vla_lens.workbench_catalog import (
+from vla_lens.workbench.catalog import (
     axis_registry,
     dataset_id,
     default_panel_recipes,
@@ -21,7 +21,7 @@ from vla_lens.workbench_catalog import (
     table_catalog,
     workflow_presets,
 )
-from vla_lens.workbench_schema import (
+from vla_lens.workbench.schema import (
     MAX_JSON_SLICE_VALUES,
     AnalysisRunSpec,
     CohortSpec,
@@ -33,7 +33,7 @@ from vla_lens.workbench_schema import (
     normalize_axis_values,
     normalize_selection,
 )
-from vla_lens.workbench_selection import (
+from vla_lens.workbench.selection import (
     _load_lens_array,
     _matching_episode_records,
     _matching_lens_arrays,
@@ -41,7 +41,7 @@ from vla_lens.workbench_selection import (
     _target_object_examples,
     resolve_selection,
 )
-from vla_lens.workbench_utils import (
+from vla_lens.workbench.utils import (
     _first_scalar,
     _jsonable_array,
     _jsonable_scalar,
@@ -54,7 +54,7 @@ from vla_lens.workbench_utils import (
     _workbench_dir,
     _write_json,
 )
-from vla_lens.workbench_validation import (
+from vla_lens.workbench.validation import (
     _cohort_delta_table,
     _cohort_episode_frame,
     _graph_edge,

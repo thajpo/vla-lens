@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from vla_lens.server_activation import (
+from vla_lens.server.activation import (
     _activation_architecture,
     _activation_architecture_edges,
     _activation_runtime_collections,
@@ -15,7 +15,7 @@ from vla_lens.server_activation import (
     _site_layer,
     _vlm_kv_sites_by_layer,
 )
-from vla_lens.server_attention import (
+from vla_lens.server.attention import (
     _action_vector_for_token,
     _activation_token_feature_vector,
     _activation_token_matrix,
@@ -47,7 +47,7 @@ from vla_lens.server_attention import (
     _token_count,
     _token_rows_for_space,
 )
-from vla_lens.server_common import (
+from vla_lens.server.common import (
     _api_exception_message,
     _api_exception_status,
     _array_preview,
@@ -86,7 +86,7 @@ from vla_lens.server_common import (
     _take_axis_values,
     _take_policy_call_value,
 )
-from vla_lens.server_dataset import (
+from vla_lens.server.dataset import (
     _analysis_runs_payload,
     _artifact_detail_payload,
     _artifact_record_payload,
@@ -141,7 +141,7 @@ from vla_lens.server_dataset import (
     _workbench_signature_paths,
     _workspaces_payload,
 )
-from vla_lens.server_metrics import (
+from vla_lens.server.metrics import (
     _action_metric_metadata,
     _action_norm_payload,
     _episode_metrics_payload,
@@ -151,7 +151,7 @@ from vla_lens.server_metrics import (
     _policy_calls,
     _policy_calls_payload,
 )
-from vla_lens.server_probes import (
+from vla_lens.server.probes import (
     _best_probe_rows,
     _episode_interactions_payload,
     _episode_probe_prediction_path,
@@ -178,7 +178,7 @@ from vla_lens.server_probes import (
     _saved_probe_prediction_tables,
     _score_and_save_episode_probe,
 )
-from vla_lens.server_spatial import (
+from vla_lens.server.spatial import (
     _camera_aliases,
     _camera_extrinsic_at,
     _camera_frame_size,
@@ -198,7 +198,7 @@ from vla_lens.server_spatial import (
     _project_world_point,
     _scene_object_rows,
 )
-from vla_lens.server_video import (
+from vla_lens.server.video import (
     _ensure_episode_video_artifact,
     _episode_frame_array_paths,
     _episode_video_path,

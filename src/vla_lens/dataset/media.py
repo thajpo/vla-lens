@@ -14,7 +14,7 @@ from vla_lens.capture.lerobot_v3 import (
     LEROBOT_INFO_PATH,
 )
 from vla_lens.capture.records import TraceRecord
-from vla_lens.lerobot_dataset_common import (
+from vla_lens.dataset.common import (
     LEROBOT_VIDEO_PATH_TEMPLATE,
     _chunk_file_index,
     _format_lerobot_path,

@@ -10,7 +10,7 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from vla_lens.server_common import (
+from vla_lens.server.common import (
     _json_scalar,
     _optional_int,
     _patches_per_image,
@@ -22,7 +22,7 @@ from vla_lens.server_common import (
     _take_axis_values,
     _take_policy_call_value,
 )
-from vla_lens.server_metrics import (
+from vla_lens.server.metrics import (
     _policy_calls,
 )
 from vla_lens.traces import TraceBundle

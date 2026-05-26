@@ -8,7 +8,7 @@ from typing import Any
 
 import numpy as np
 
-from vla_lens.server_attention import (
+from vla_lens.server.attention import (
     _activation_token_feature_vector,
     _activation_token_matrix,
     _camera_patch_layout_from_record,
@@ -19,7 +19,7 @@ from vla_lens.server_attention import (
     _token_count,
     _token_rows_for_space,
 )
-from vla_lens.server_common import (
+from vla_lens.server.common import (
     _json_list,
     _json_scalar,
     _query_call_index,
@@ -29,7 +29,7 @@ from vla_lens.server_common import (
     _take_axis_value,
     _take_policy_call_value,
 )
-from vla_lens.server_metrics import (
+from vla_lens.server.metrics import (
     _policy_calls,
 )
 from vla_lens.traces import TraceBundle

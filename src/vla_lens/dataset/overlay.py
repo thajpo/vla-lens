@@ -15,7 +15,7 @@ from vla_lens.capture.lerobot_v3 import (
     VLA_LENS_OVERLAY_REFERENCES,
 )
 from vla_lens.capture.records import TraceRecord
-from vla_lens.lerobot_dataset_common import (
+from vla_lens.dataset.common import (
     LEGACY_ACTION_ARRAY,
     LEGACY_FRAME_PREFIX,
     OVERLAY_EPISODE_DIR,

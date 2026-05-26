@@ -21,7 +21,7 @@ from vla_lens.capture.lerobot_v3 import (
     LEROBOT_TASK_INDEX,
     LEROBOT_TIMESTAMP,
 )
-from vla_lens.lerobot_dataset_common import (
+from vla_lens.dataset.common import (
     LEROBOT_DATA_PATH_TEMPLATE,
     LEROBOT_VIDEO_PATH_TEMPLATE,
     OVERLAY_EPISODE_DIR,
@@ -32,8 +32,8 @@ from vla_lens.lerobot_dataset_common import (
     _stack_column,
     _task_for_index,
 )
-from vla_lens.lerobot_dataset_media import _read_video_frames
-from vla_lens.lerobot_dataset_overlay import (
+from vla_lens.dataset.media import _read_video_frames
+from vla_lens.dataset.overlay import (
     _overlay_table,
     _record_from_manifest,
     _write_overlay_root,

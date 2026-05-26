@@ -7,12 +7,12 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 
 from vla_lens.traces import TraceDataset
-from vla_lens.workbench_catalog import (
+from vla_lens.workbench.catalog import (
     default_panel_recipes,
     lens_array_catalog,
     model_site_catalog,
 )
-from vla_lens.workbench_schema import (
+from vla_lens.workbench.schema import (
     LensArraySpec,
     ModelSiteSpec,
     PanelRecipe,
@@ -20,14 +20,14 @@ from vla_lens.workbench_schema import (
     UnitRef,
     normalize_selection,
 )
-from vla_lens.workbench_utils import (
+from vla_lens.workbench.utils import (
     _as_set,
     _first_scalar,
     _jsonable_record,
     _jsonable_scalar,
     _numeric_summary,
 )
-from vla_lens.workbench_validation import (
+from vla_lens.workbench.validation import (
     _array_value,
     _axis_index,
 )
@@ -603,7 +603,7 @@ def _unit_probe_associations(
     unit: UnitRef,
     selection: SelectionState,
 ) -> list[dict[str, Any]]:
-    from vla_lens.workbench_api import list_analysis_runs
+    from vla_lens.workbench.api import list_analysis_runs
 
     del unit
     axes = selection.axis_values

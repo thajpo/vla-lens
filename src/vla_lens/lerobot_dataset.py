@@ -1,15 +1,17 @@
-"""LeRobot v3 robot data plus VLA Lens overlay storage.
+"""Compatibility facade for the LeRobot-backed dataset API.
 
-The normal VLA Lens app reads and writes the LeRobot v3 directory contract
-directly.  It intentionally does not import ``lerobot`` because policy/runtime
-dependencies belong to capture environments, not the dashboard/test stack.
+New storage internals live under :mod:`vla_lens.dataset`; this module keeps the
+short public import path used by scripts, tests, and notebooks.
 """
 
 from __future__ import annotations
 
-from vla_lens.lerobot_dataset_bundle import LeRobotEpisodeBundle
-from vla_lens.lerobot_dataset_reader import is_lerobot_dataset_root, open_lerobot_dataset
-from vla_lens.lerobot_dataset_writer import write_lerobot_trace_record
+from vla_lens.dataset import (
+    LeRobotEpisodeBundle,
+    is_lerobot_dataset_root,
+    open_lerobot_dataset,
+    write_lerobot_trace_record,
+)
 
 __all__ = [
     "LeRobotEpisodeBundle",

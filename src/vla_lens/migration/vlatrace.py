@@ -20,8 +20,8 @@ from vla_lens.capture.lerobot_v3 import (
     validate_lerobot_v3_dataset,
 )
 from vla_lens.capture.records import TraceRecord
-from vla_lens.lerobot_dataset import write_lerobot_trace_record
-from vla_lens.lerobot_dataset_common import (
+from vla_lens.dataset import write_lerobot_trace_record
+from vla_lens.dataset.common import (
     LEGACY_ACTION_ARRAY,
     LEGACY_FRAME_PREFIX,
     LEROBOT_DATA_PATH_TEMPLATE,

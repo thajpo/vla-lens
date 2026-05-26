@@ -19,7 +19,7 @@ from vla_lens.probes.workflow import (
     _target_name,
 )
 from vla_lens.selectors import ActivationQuery
-from vla_lens.server_common import (
+from vla_lens.server.common import (
     _dominant_value,
     _is_missing_scalar,
     _json_parse,
@@ -136,7 +136,7 @@ def _episode_probes_payload(
     dataset: TraceDataset,
     query: Mapping[str, list[str]],
 ) -> dict[str, Any]:
-    from vla_lens.server_dataset import _artifact_records
+    from vla_lens.server.dataset import _artifact_records
 
     trace_id = _query_one(query, "trace_id")
     probes: list[dict[str, Any]] = []
@@ -179,7 +179,7 @@ def _episode_probes_payload(
     }
 
 def _probe_index_payload(dataset: TraceDataset) -> dict[str, Any]:
-    from vla_lens.server_dataset import _artifact_records
+    from vla_lens.server.dataset import _artifact_records
 
     split_sidecar = _probe_split_sidecar(dataset.root)
     trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]

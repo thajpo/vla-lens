@@ -39,7 +39,7 @@ from vla_lens.capture import (
     vla_lens_overlay_path,
     write_trace_record,
 )
-from vla_lens.lerobot_dataset import write_lerobot_trace_record
+from vla_lens.dataset import write_lerobot_trace_record
 from vla_lens.pi05.interaction_metrics import (
     InteractionMetricsArtifact,
     save_pi05_interaction_metrics_artifact,

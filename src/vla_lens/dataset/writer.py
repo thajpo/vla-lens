@@ -27,8 +27,8 @@ from vla_lens.capture.lerobot_v3 import (
     VLA_LENS_OVERLAY_REFERENCES,
 )
 from vla_lens.capture.records import TraceRecord
-from vla_lens.lerobot_dataset_bundle import LeRobotEpisodeBundle
-from vla_lens.lerobot_dataset_common import (
+from vla_lens.dataset.bundle import LeRobotEpisodeBundle
+from vla_lens.dataset.common import (
     DEFAULT_CHUNKS_SIZE,
     DEFAULT_DATA_FILE_SIZE_IN_MB,
     DEFAULT_VIDEO_FILE_SIZE_IN_MB,
@@ -56,8 +56,8 @@ from vla_lens.lerobot_dataset_common import (
     _write_json,
     _write_table,
 )
-from vla_lens.lerobot_dataset_media import _remove_existing_episode_media, _write_videos
-from vla_lens.lerobot_dataset_overlay import _write_overlay_bundle, _write_overlay_root
+from vla_lens.dataset.media import _remove_existing_episode_media, _write_videos
+from vla_lens.dataset.overlay import _write_overlay_bundle, _write_overlay_root
 
 
 def write_lerobot_trace_record(

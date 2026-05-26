@@ -7,7 +7,7 @@ from typing import Any
 
 import numpy as np
 
-from vla_lens.server_common import (
+from vla_lens.server.common import (
     _json_parse,
     _json_scalar,
     _jsonable,
