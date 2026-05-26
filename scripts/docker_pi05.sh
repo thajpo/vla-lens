@@ -338,7 +338,7 @@ ROCM_GROUP_FLAGS=()
 add_device_group() {
   local path="$1"
   local gid existing
-  [[ -e "$path" ]] || return
+  [[ -e "$path" ]] || return 0
   gid="$(stat -c "%g" "$path")"
   for existing in "${ROCM_GROUP_FLAGS[@]}"; do
     if [[ "$existing" == "$gid" ]]; then

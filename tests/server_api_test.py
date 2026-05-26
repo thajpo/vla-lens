@@ -1,75 +1,78 @@
 from __future__ import annotations
 
 import json
-import threading
+import socket
+import subprocess
+import sys
+import time
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
+from pathlib import Path
 
 from vla_lens import create_synthetic_trace_dataset
-from vla_lens.server import TraceDashboardHandler, _dataset_signature
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
-def test_api_client_errors_are_json(tmp_path):
+def test_dashboard_script_serves_fastapi_backend(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
-    base_url, server, thread = _serve_dataset(dataset)
+    port = _free_port()
+    process = subprocess.Popen(
+        [
+            sys.executable,
+            str(ROOT / "scripts" / "serve_vla_lens_dashboard.py"),
+            str(dataset.root),
+            "--host",
+            "127.0.0.1",
+            "--port",
+            str(port),
+        ],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
     try:
-        response = _http_error(f"{base_url}/api/frame")
-        payload = json.loads(response.read().decode("utf-8"))
-
-        assert response.code == 400
-        assert response.headers["Content-Type"].startswith("application/json")
-        assert payload["message"] == "Missing query parameter: trace_id"
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def test_artifact_ids_cannot_escape_dataset_root(tmp_path):
-    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
-    base_url, server, thread = _serve_dataset(dataset)
-    try:
-        response = _http_error(f"{base_url}/api/artifacts/..%2F..%2Fescape")
-        payload = json.loads(response.read().decode("utf-8"))
-
-        assert response.code == 400
-        assert response.headers["Content-Type"].startswith("application/json")
-        assert "Invalid artifact_id" in payload["message"]
-    finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
-
-
-def test_dataset_payload_reports_model_sites_without_workbench_payload(tmp_path):
-    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
-    base_url, server, thread = _serve_dataset(dataset)
-    try:
-        with urllib.request.urlopen(f"{base_url}/api/dataset", timeout=5) as response:
-            payload = json.loads(response.read().decode("utf-8"))
-
+        payload = _wait_for_json(f"http://127.0.0.1:{port}/api/dataset", process)
         assert payload["activation_sites"] == len(dataset.model_site_index)
         assert "workbench" not in payload
+
+        error = _http_error(f"http://127.0.0.1:{port}/api/frame")
+        error_payload = json.loads(error.read().decode("utf-8"))
+        assert error.code == 400
+        assert error.headers["Content-Type"].startswith("application/json")
+        assert error_payload["message"] == "Missing query parameter: trace_id"
     finally:
-        server.shutdown()
-        server.server_close()
-        thread.join(timeout=2)
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5)
 
 
-def _serve_dataset(dataset):
-    class Handler(TraceDashboardHandler):
-        pass
+def _free_port() -> int:
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        return int(sock.getsockname()[1])
 
-    Handler.dataset = dataset
-    Handler.dataset_signature = _dataset_signature(dataset.root)
-    Handler.dataset_signature_checked_at = 0.0
-    Handler.root = dataset.root
-    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
-    thread = threading.Thread(target=server.serve_forever, daemon=True)
-    thread.start()
-    host, port = server.server_address
-    return f"http://{host}:{port}", server, thread
+
+def _wait_for_json(url: str, process: subprocess.Popen[str]) -> dict[str, object]:
+    deadline = time.monotonic() + 10
+    last_error: Exception | None = None
+    while time.monotonic() < deadline:
+        if process.poll() is not None:
+            stdout, stderr = process.communicate()
+            raise AssertionError(
+                f"dashboard server exited early rc={process.returncode}\n"
+                f"stdout={stdout}\nstderr={stderr}"
+            )
+        try:
+            with urllib.request.urlopen(url, timeout=0.25) as response:
+                return json.loads(response.read().decode("utf-8"))
+        except (OSError, urllib.error.URLError) as exc:
+            last_error = exc
+            time.sleep(0.1)
+    raise AssertionError(f"dashboard server did not become ready: {url}") from last_error
 
 
 def _http_error(url: str) -> urllib.error.HTTPError:

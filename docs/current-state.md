@@ -2,7 +2,7 @@
 
 Status: active operational summary.
 
-Last updated: May 25, 2026.
+Last updated: May 26, 2026.
 
 ## Direction
 
@@ -252,6 +252,26 @@ scripts/pi05_batch_capture_rocm.sh \
   --output-root "/path/to/vla-lens/some-run" \
   --run
 ```
+
+Run research guardrails without capture:
+
+```bash
+uv run python scripts/lint_research_guardrails.py --root .
+uv run python scripts/lint_research_guardrails.py \
+  --root . \
+  --episode-plan path/to/episode_plan.csv \
+  --audit-contract path/to/audit_contract.yaml
+uv run python scripts/validate_vla_lens_dataset_trust.py /path/to/dataset-root
+```
+
+The config linter is read-only. It parses `configs/*.yaml` and
+`configs/probes/*.yaml`, warns about machine-local runtime fields that wrapper
+scripts override, blocks broad audit-profile accidents, and enforces
+`requires_episode_plan: true` for broad-1000 capture configs.
+
+The dataset trust gate is also read-only. It opens an existing local root and
+checks schema/overlay validity, `probe_splits.csv`, activation coverage, outcome
+balance, and saved artifact freshness before treating the root as probe-grade.
 
 ## Current Next Actions
 

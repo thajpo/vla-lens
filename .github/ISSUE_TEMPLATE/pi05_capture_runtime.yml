@@ -1,0 +1,68 @@
+name: PI0.5 capture runtime issue
+description: Report failures involving PI0.5, LeRobot, LIBERO, GPU backends, or real capture traces.
+title: "[PI0.5 Capture]: "
+labels: ["capture", "pi0.5"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        PI0.5 capture must not run through the normal repo `uv run` environment. Use the backend wrapper scripts and capture-specific virtualenvs:
+
+        - `.venv-pi05-rocm` with `scripts/pi05_capture.sh --backend rocm ...`
+        - `.venv-pi05-cuda` with `scripts/pi05_capture.sh --backend cuda ...`
+        - `.venv-pi05-mps` with `scripts/pi05_capture.sh --backend mps ...`
+  - type: dropdown
+    id: backend
+    attributes:
+      label: Backend
+      options:
+        - ROCm
+        - CUDA
+        - MPS
+        - Docker ROCm
+        - Docker CUDA
+        - Unsure
+    validations:
+      required: true
+  - type: input
+    id: command
+    attributes:
+      label: Exact command
+      placeholder: scripts/pi05_batch_capture.sh --backend rocm --config configs/... --run
+    validations:
+      required: true
+  - type: textarea
+    id: env-check
+    attributes:
+      label: Environment check output
+      description: Paste the relevant result from `scripts/check_pi05_env.sh --backend ...` or the Docker `check` command.
+    validations:
+      required: true
+  - type: input
+    id: profile
+    attributes:
+      label: Capture profile
+      placeholder: mechanistic_sampled
+  - type: textarea
+    id: dataset
+    attributes:
+      label: Dataset/output details
+      description: Dataset id, output root, episode count, benchmark, task id, seed range, and whether files were partially written.
+  - type: textarea
+    id: failure
+    attributes:
+      label: Failure details
+      description: Include the first real error plus any hardware/runtime versions that matter.
+    validations:
+      required: true
+  - type: checkboxes
+    id: guardrails
+    attributes:
+      label: Guardrails checked
+      options:
+        - label: I did not run PI0.5 capture through plain `uv run vla-pi05-capture` in `.venv`.
+          required: true
+        - label: I used a backend wrapper or Docker capture wrapper.
+          required: true
+        - label: I can distinguish capture plumbing failure from policy task success/failure.
+          required: false

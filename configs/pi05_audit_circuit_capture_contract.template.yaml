@@ -1,0 +1,50 @@
+kind: audit_capture_contract
+template: true
+name: pi05-audit-circuit-contract-template
+question: replace with the narrow circuit/debugging question
+hypothesis: replace with the mechanism that audit capture should test
+
+source_dataset:
+  root: /path/to/existing/mechanistic_sampled_dataset
+  trust_gate: scripts/validate_vla_lens_dataset_trust.py
+source_traces:
+  - replace_trace_id
+
+capture_profile: audit_windowed
+sites:
+  model_family: pi05
+  modules:
+    - pi05.expert.layers.8
+    - pi05.expert.layers.9
+  tensor_roles:
+    - residual_post_mlp
+    - residual_pre_attention
+    - attention_probs
+
+episode_selection:
+  basis: saved_trace_review
+  include:
+    - split: val_heldout_task
+      reason: representative positive/negative example for the claim
+  exclude:
+    - reason: broad random audit capture
+
+budget:
+  max_episodes: 2
+  max_estimated_gb: 12
+  stop_if_missing_source_artifacts: true
+
+evidence_plan:
+  required_outputs:
+    - source trace IDs and fingerprints
+    - exact model sites and layers
+    - replay/capture preflight result
+    - expected intervention or patching follow-up
+  controls:
+    - metadata baseline or null comparison from the source probe
+    - nearby negative site or layer control
+
+stop_rules:
+  - dataset trust gate fails
+  - source probe claim is not at least decodable
+  - selected traces do not cover both behavior/outcome classes needed by the claim

@@ -116,7 +116,7 @@ def _wait_for_backend(
     process: subprocess.Popen[str] | None = None,
     timeout_seconds: float = 300.0,
 ) -> None:
-    url = f"http://{host}:{port}/api/dataset"
+    url = f"http://{host}:{port}/api/health"
     deadline = time.monotonic() + max(0.0, timeout_seconds)
     while time.monotonic() <= deadline:
         if process is not None and process.poll() is not None:

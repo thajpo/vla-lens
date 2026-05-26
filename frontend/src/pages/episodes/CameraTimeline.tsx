@@ -24,6 +24,7 @@ export function CameraGrid({
   isPlaying,
   maxTimestep,
   overlayStatus,
+  preloadFrameCount = 2,
   showAttentionOverlay,
   showObjectOverlay,
   onPatchSelect,
@@ -37,6 +38,7 @@ export function CameraGrid({
   isPlaying: boolean;
   maxTimestep: number;
   overlayStatus?: CameraOverlayStatus;
+  preloadFrameCount?: number;
   showAttentionOverlay: boolean;
   showObjectOverlay: boolean;
   onPatchSelect: (patch: SelectedPatch | null) => void;
@@ -59,7 +61,8 @@ export function CameraGrid({
     if (!isPlaying) {
       return;
     }
-    for (let next = timestep + 1; next <= Math.min(maxTimestep, timestep + 2); next += 1) {
+    const lookahead = Math.max(1, Math.min(10, preloadFrameCount));
+    for (let next = timestep + 1; next <= Math.min(maxTimestep, timestep + lookahead); next += 1) {
       for (const camera of cameras) {
         const key = `${cacheKey}:${traceId}:${camera}:${next}`;
         if (preloadedFrames.current.has(key)) {
@@ -69,13 +72,14 @@ export function CameraGrid({
         const image = new Image();
         image.decoding = "async";
         image.src = frameUrl(traceId, camera, next, cacheKey);
+        void image.decode?.().catch(() => undefined);
         preloadImages.current.push(image);
       }
     }
-    if (preloadImages.current.length > 80) {
-      preloadImages.current = preloadImages.current.slice(-80);
+    if (preloadImages.current.length > 160) {
+      preloadImages.current = preloadImages.current.slice(-160);
     }
-  }, [cacheKey, cameras, isPlaying, maxTimestep, timestep, traceId]);
+  }, [cacheKey, cameras, isPlaying, maxTimestep, preloadFrameCount, timestep, traceId]);
 
   if (!cameras.length) {
     return <div className="empty-state">No camera streams for this episode.</div>;
@@ -132,13 +136,14 @@ function CameraFrame({
   const frameReady = loadedFrameSrc === frameSrc;
   const objectOverlay = useQuery({
     queryKey: ["object-camera-overlay", traceId, camera, timestep],
-    queryFn: () => fetchObjectCameraOverlay(traceId, camera, timestep),
-    enabled: !isPlaying,
+    queryFn: ({ signal }) => fetchObjectCameraOverlay(traceId, camera, timestep, signal),
+    enabled: showObjectOverlay && !isPlaying,
     staleTime: 60_000,
   });
   const visibleObjects = useMemo(
     () => {
       if (
+        !showObjectOverlay ||
         isPlaying ||
         !frameReady ||
         objectOverlay.data?.timestep !== timestep
@@ -152,12 +157,12 @@ function CameraFrame({
           Number.isFinite(object.y ?? NaN),
       );
     },
-    [frameReady, isPlaying, objectOverlay.data?.objects, objectOverlay.data?.timestep, timestep],
+    [frameReady, isPlaying, objectOverlay.data?.objects, objectOverlay.data?.timestep, showObjectOverlay, timestep],
   );
   const [hoveredObject, setHoveredObject] = useState<ObjectCameraOverlayObject | null>(null);
   const [imageHovered, setImageHovered] = useState(false);
 
-  const activeHoveredObject = isPlaying || !frameReady ? null : hoveredObject;
+  const activeHoveredObject = isPlaying || !frameReady || !showObjectOverlay ? null : hoveredObject;
   const showOverlayStatus = Boolean(
     showAttentionOverlay &&
       overlayStatus &&
@@ -171,11 +176,11 @@ function CameraFrame({
         onPointerEnter={() => setImageHovered(true)}
         onPointerMove={(event) => {
           if (isPlaying) {
-            setHoveredObject(null);
+            setHoveredObject((current) => current === null ? current : null);
             return;
           }
           if (!visibleObjects.length) {
-            setHoveredObject(null);
+            setHoveredObject((current) => current === null ? current : null);
             return;
           }
           const rect = event.currentTarget.getBoundingClientRect();
@@ -200,7 +205,7 @@ function CameraFrame({
             }
           }
           if (containing) {
-            setHoveredObject(containing);
+            setHoveredObject((current) => sameOverlayObject(current, containing) ? current : containing);
             return;
           }
           let nearest: ObjectCameraOverlayObject | null = null;
@@ -214,11 +219,12 @@ function CameraFrame({
               nearestDistance = distance;
             }
           }
-          setHoveredObject(nearestDistance <= 44 ? nearest : null);
+          const nextHoveredObject = nearestDistance <= 44 ? nearest : null;
+          setHoveredObject((current) => sameOverlayObject(current, nextHoveredObject) ? current : nextHoveredObject);
         }}
         onPointerLeave={() => {
           setImageHovered(false);
-          setHoveredObject(null);
+          setHoveredObject((current) => current === null ? current : null);
         }}
       >
         <img
@@ -351,6 +357,13 @@ function objectOverlayEdgeClass(x: number, y: number) {
   ]
     .filter(Boolean)
     .join(" ");
+}
+
+function sameOverlayObject(
+  left: ObjectCameraOverlayObject | null,
+  right: ObjectCameraOverlayObject | null,
+): boolean {
+  return left === right;
 }
 
 function normalizedObjectBbox(object: ObjectCameraOverlayObject) {

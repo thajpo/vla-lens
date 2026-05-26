@@ -32,6 +32,10 @@ features plus post-processed interaction labels.
   manifest/version, trace inventory hash or equivalent fingerprint, label
   generation script/config version, post-processing config, source schema
   versions, row counts after filters, class balance, and excluded-row counts.
+- Trust-gate contract: before training or interpreting broad-1000 probes, run
+  `uv run python scripts/validate_vla_lens_dataset_trust.py "/media/j/New Volume/vla-lens/pi05-broad-1000-mech-light"`.
+  The gate is local and read-only; it checks schema/overlay validity, split
+  sidecars, activation coverage, outcome balance, and artifact freshness.
 
 ## Artifact Contract
 
@@ -63,6 +67,36 @@ Operational meaning:
   concrete intervention/replay plan.
 - `causal_intervention` requires replay reproduction, tensor/site preflight,
   controls, and rerun-verified behavior.
+
+The code-level claim gate lives in `vla_lens.research_guardrails`. It classifies
+probe artifacts into `integration_smoke`, `decodable`, `candidate_mechanism`,
+or `causal_intervention` from required evidence fields, and rejects overclaims
+when an artifact declares a stronger level than its saved evidence supports.
+
+## Guardrail Commands
+
+Run these before changing broad-1000 configs, episode plans, or claim language:
+
+```bash
+uv run python scripts/lint_research_guardrails.py --root .
+uv run python scripts/lint_research_guardrails.py \
+  --root . \
+  --episode-plan "/path/to/episode_plan.csv"
+uv run python scripts/validate_vla_lens_dataset_trust.py \
+  "/media/j/New Volume/vla-lens/pi05-broad-1000-mech-light"
+```
+
+For a future audit/circuit capture, start from
+`configs/pi05_audit_circuit_capture_contract.template.yaml` and lint it:
+
+```bash
+uv run python scripts/lint_research_guardrails.py \
+  --root . \
+  --audit-contract path/to/audit_contract.yaml
+```
+
+This is a planning/check contract only. It is not a capture command and must not
+be treated as approval to collect broad audit data.
 
 UI meaning:
 - Probe artifacts should support layer x call/time heatmaps, metrics tables,

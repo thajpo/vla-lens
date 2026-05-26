@@ -90,8 +90,8 @@ scripts/docker_pi05_rocm.sh \
 ```
 
 More detail: [docs/hardware-run-paths.md](docs/hardware-run-paths.md),
-[docs/docker.md](docs/docker.md), and
-[docs/cloud-capture.md](docs/cloud-capture.md).
+[docs/docker.md](docs/docker.md), [docs/cloud-capture.md](docs/cloud-capture.md),
+and [docs/remote-gpu-local-analysis.md](docs/remote-gpu-local-analysis.md).
 
 ## What You Can Do
 

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { ChevronLeft, ChevronRight, Star } from "lucide-react";
 import type {
   CounterfactualPair,
@@ -7,7 +7,7 @@ import type {
 } from "../../types/dataset";
 import { episodeMetadataItems, outcomeClass } from "./episodeData";
 
-export function EpisodeNavigationBar({
+function EpisodeNavigationBarImpl({
   annotation,
   cohortReturnHref,
   counterfactualPair,
@@ -146,6 +146,8 @@ export function EpisodeNavigationBar({
     </section>
   );
 }
+
+export const EpisodeNavigationBar = memo(EpisodeNavigationBarImpl);
 
 function CounterfactualPairStrip({
   activeTraceId,

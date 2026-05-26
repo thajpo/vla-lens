@@ -113,13 +113,20 @@ The runtime starts:
 scripts/serve_vla_lens_app.py
 ```
 
-That process starts the existing Python dashboard backend on an internal port,
-serves built React assets, and proxies `/api/*` to the backend. The user gets
-one browser origin:
+That process starts the FastAPI/uvicorn dashboard backend on an internal port,
+serves built React assets, and proxies `/api/*` to the backend. The small
+single-origin gateway is separate from the dashboard API implementation; the API
+surface itself lives in `vla_lens.server.fastapi_app`. The user gets one browser
+origin:
 
 ```text
 http://127.0.0.1:8080/
 ```
+
+The gateway waits for the backend on `/api/health`, which checks that the
+dataset-backed API state is loaded without building the full dataset payload.
+The local OpenAPI schema and Swagger UI are intentionally exposed through the
+same proxied namespace at `/api/openapi.json` and `/api/docs`.
 
 ## CI Sync
 
