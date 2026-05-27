@@ -10,6 +10,7 @@ import numpy as np
 from vla_lens.traces.layout import SCHEMA_VERSION
 
 
+@dataclass(frozen=True, slots=True)
 class TraceManifest:
     """Rollout-level metadata for one trace bundle."""
 

@@ -43,3 +43,18 @@ def test_source_size_check_ignores_generated_paths(tmp_path):
     offenders = oversized_source_files([Path("frontend")], max_lines=2, cwd=tmp_path)
 
     assert offenders == []
+
+
+def test_refactored_core_files_stay_under_700_lines():
+    repo_root = Path(__file__).resolve().parents[1]
+    roots = [
+        repo_root / "src" / "vla_lens" / "traces",
+        repo_root / "src" / "vla_lens" / "server",
+        repo_root / "frontend" / "src" / "pages" / "EpisodesPage.tsx",
+        repo_root / "frontend" / "src" / "pages" / "episodes",
+        repo_root / "tests",
+    ]
+
+    offenders = oversized_source_files(roots, max_lines=700, cwd=repo_root)
+
+    assert offenders == []
