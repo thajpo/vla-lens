@@ -148,7 +148,7 @@ def test_plan_capture_reuses_batch_capture_command_args(tmp_path):
     assert args.episodes == 2
     assert args.seed_list == "1000,2000"
     assert args.capture_profile == "mechanistic_sampled"
-    assert str(args.vlatrace_out_root).endswith(
+    assert str(args.output_root).endswith(
         "traces/dataset-a/mechanistic_sampled/libero_goal/task_01"
     )
 

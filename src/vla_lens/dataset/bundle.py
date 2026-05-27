@@ -42,7 +42,13 @@ from vla_lens.traces import TraceBundle, TraceManifest
 
 
 class LeRobotEpisodeBundle:
-    """Episode-level view over LeRobot robot data and one optional VLA overlay."""
+    """Episode-level view over LeRobot robot data and one optional VLA overlay.
+
+    The object intentionally presents the same methods as ``TraceBundle`` where
+    possible. Robot arrays and frames come from LeRobot parquet/video shards;
+    model sites, token tables, artifacts, and provenance come from the overlay
+    bundle when one exists.
+    """
 
     def __init__(
         self,
@@ -66,6 +72,7 @@ class LeRobotEpisodeBundle:
 
     @cached_property
     def manifest(self) -> TraceManifest:
+        """Return dashboard-facing episode metadata with LeRobot provenance."""
         if self.overlay_bundle is not None:
             overlay_manifest = self.overlay_bundle.manifest
             metadata = dict(overlay_manifest.metadata)
@@ -110,6 +117,7 @@ class LeRobotEpisodeBundle:
 
     @cached_property
     def timesteps(self) -> pd.DataFrame:
+        """Return LeRobot frame rows merged with overlay timestep columns."""
         data = self._data_frame()
         frame = pd.DataFrame(
             {
@@ -303,6 +311,7 @@ class LeRobotEpisodeBundle:
         return record
 
     def array(self, name: str, *, mmap: bool = False) -> np.ndarray:
+        """Load a robot-layer array or delegate to the overlay array store."""
         del mmap
         if name == LEROBOT_ACTION:
             return _stack_column(self._data_frame()[LEROBOT_ACTION])
@@ -315,11 +324,13 @@ class LeRobotEpisodeBundle:
         return self.overlay_bundle.array(name)
 
     def model_site(self, name: str, *, mmap: bool = False) -> np.ndarray:
+        """Load a captured model-site tensor from the VLA Lens overlay."""
         if self.overlay_bundle is None:
             raise KeyError(f"Unknown model site '{name}' in {self.root}")
         return self.overlay_bundle.model_site(name, mmap=mmap)
 
     def frames(self, camera: str, *, mmap: bool = False) -> np.ndarray:
+        """Load all frames for one LeRobot video camera as a numpy array."""
         del mmap
         if camera not in self._frame_cache:
             self._frame_cache[camera] = _read_video_frames(
@@ -328,6 +339,7 @@ class LeRobotEpisodeBundle:
         return self._frame_cache[camera]
 
     def frame(self, camera: str, timestep: int) -> np.ndarray:
+        """Read one camera frame without materializing the full video cache."""
         if camera in self._frame_cache:
             return np.asarray(self._frame_cache[camera][timestep])
         reader = imageio.get_reader(self._video_path(f"{LEROBOT_IMAGE_PREFIX}{camera}"))
@@ -337,6 +349,7 @@ class LeRobotEpisodeBundle:
             reader.close()
 
     def cameras(self) -> list[str]:
+        """Return camera stream names declared in LeRobot feature metadata."""
         features = self.info.get("features")
         if not isinstance(features, Mapping):
             return []
@@ -366,6 +379,7 @@ class LeRobotEpisodeBundle:
         artifact: LensArtifact,
         arrays: Mapping[str, np.ndarray] | None = None,
     ) -> LensArtifact:
+        """Persist an artifact in the episode overlay, creating it if needed."""
         bundle = self._ensure_overlay_bundle()
         return bundle.save_artifact(artifact, arrays=arrays)
 

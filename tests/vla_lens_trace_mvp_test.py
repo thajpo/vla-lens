@@ -189,7 +189,7 @@ def test_synthetic_dataset_indexes_and_stats(tmp_path):
 
 
 def test_trace_bundle_writes_probe_provenance_fingerprints(tmp_path):
-    bundle = _make_minimal_trace(tmp_path / "fingerprinted.vlatrace")
+    bundle = _make_minimal_trace(tmp_path / "fingerprinted")
 
     fingerprints = bundle.fingerprints
     assert fingerprints["algorithm"] == "sha256"
@@ -207,7 +207,7 @@ def test_trace_bundle_writes_probe_provenance_fingerprints(tmp_path):
         ["timestep", "action_dim"],
     )
     changed = _make_minimal_trace(
-        tmp_path / "fingerprinted_changed.vlatrace",
+        tmp_path / "fingerprinted_changed",
         extra_episode_arrays={"executed_actions": changed_actions},
     )
     assert changed.fingerprints["trajectory_fingerprint"] != fingerprints["trajectory_fingerprint"]
@@ -230,7 +230,7 @@ def test_dataset_payload_uses_workbench_contract_not_legacy_schema(tmp_path):
 
 def test_dataset_payload_groups_counterfactual_pairs(tmp_path):
     clean = _make_minimal_trace(
-        tmp_path / "pi05_mechanistic_sampled_libero_goal_task1_seed42_clean.vlatrace",
+        tmp_path / "pi05_mechanistic_sampled_libero_goal_task1_seed42_clean",
         metadata={
             "capture_design": "paired_counterfactual",
             "trace_variant": "clean",
@@ -245,7 +245,7 @@ def test_dataset_payload_groups_counterfactual_pairs(tmp_path):
         },
     )
     corrupt = _make_minimal_trace(
-        tmp_path / "pi05_mechanistic_sampled_libero_goal_task1_seed42_corrupt.vlatrace",
+        tmp_path / "pi05_mechanistic_sampled_libero_goal_task1_seed42_corrupt",
         metadata={
             "capture_design": "paired_counterfactual",
             "trace_variant": "corrupt",
@@ -310,7 +310,7 @@ def test_workbench_manifest_exposes_axis_native_handles(tmp_path):
     assert any(array["kind"] == "tensor" for array in manifest["lens_arrays"])
     assert manifest["image_frames"]
     assert manifest["media"]
-    assert {frame["storage"]["format"] for frame in manifest["image_frames"]} == {"jpeg"}
+    assert {frame["storage"]["format"] for frame in manifest["image_frames"]} == {"mp4"}
     assert any(item["kind"] == "jpeg_sequence" for item in manifest["media"])
     assert manifest["model_sites"]
     assert any(panel["panel_type"] == "heatmap" for panel in manifest["panel_recipes"])
@@ -396,29 +396,35 @@ def test_lens_array_data_plane_exposes_bounded_slices(tmp_path):
 def test_trace_creation_writes_zarr_arrays_and_parquet_indexes(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=8)
     bundle = dataset.bundles[0]
-    frame_mask = bundle.array_index["name"].astype(str).str.startswith("frames.")
-    frame_rows = bundle.array_index.loc[frame_mask]
-    dense_rows = bundle.array_index.loc[~frame_mask]
+    overlay = bundle.overlay_bundle
+    assert overlay is not None
+    robot_image_rows = bundle.array_index.loc[
+        bundle.array_index["name"].astype(str).str.startswith("observation.images.")
+    ]
+    overlay_rows = overlay.array_index
 
-    assert (bundle.path / "tables" / "array_index.parquet").exists()
-    assert (bundle.path / "tables" / "model_sites.parquet").exists()
-    assert (bundle.path / "tables" / "policy_calls.parquet").exists()
-    assert set(frame_rows["storage_format"]) == {"jpeg"}
-    assert set(dense_rows["storage_format"]) == {"zarr"}
+    assert (bundle.path / "meta" / "info.json").exists()
+    assert (bundle.path / "data").exists()
+    assert (overlay.path / "tables" / "array_index.parquet").exists()
+    assert (overlay.path / "tables" / "model_sites.parquet").exists()
+    assert (overlay.path / "tables" / "policy_calls.parquet").exists()
+    assert set(robot_image_rows["storage_format"]) == {"mp4"}
+    assert "executed_actions" not in set(overlay_rows["name"].astype(str))
+    assert not any(str(name).startswith("frames.") for name in overlay_rows["name"])
+    assert set(overlay_rows["storage_format"]) == {"zarr"}
     assert set(bundle.model_sites["storage_format"]) == {"zarr"}
-    assert all(str(path).endswith(".zarr") for path in dense_rows["relative_path"])
-    assert all(str(path).startswith("media/frames/") for path in frame_rows["relative_path"])
+    assert all(str(path).endswith(".zarr") for path in overlay_rows["relative_path"])
     assert not list(bundle.path.glob("arrays/**/*.npy"))
-    assert list((bundle.path / str(frame_rows.iloc[0]["relative_path"])).glob("*.jpg"))
+    assert (bundle.path / str(robot_image_rows.iloc[0]["relative_path"])).exists()
     assert bundle.actions(mmap=True).shape[0] == 8
     assert bundle.frames("main", mmap=True).shape == (8, 96, 128, 3)
-    assert (bundle.path / "tables" / "generation_steps.parquet").exists()
-    assert (bundle.path / "tables" / "streams.parquet").exists()
-    assert (bundle.path / "tables" / "token_spaces.parquet").exists()
-    assert (bundle.path / "tables" / "robot_state.parquet").exists()
-    assert (bundle.path / "tables" / "scene_state.parquet").exists()
-    assert (bundle.path / "tables" / "camera_state.parquet").exists()
-    assert (bundle.path / "tables" / "evaluation.parquet").exists()
+    assert (overlay.path / "tables" / "generation_steps.parquet").exists()
+    assert (overlay.path / "tables" / "streams.parquet").exists()
+    assert (overlay.path / "tables" / "token_spaces.parquet").exists()
+    assert (overlay.path / "tables" / "robot_state.parquet").exists()
+    assert (overlay.path / "tables" / "scene_state.parquet").exists()
+    assert (overlay.path / "tables" / "camera_state.parquet").exists()
+    assert (overlay.path / "tables" / "evaluation.parquet").exists()
     assert not bundle.robot_state.empty
     assert not bundle.scene_state.empty
     assert not bundle.camera_state.empty
@@ -438,7 +444,7 @@ def test_object_camera_overlay_projects_scene_objects_to_frame(tmp_path):
     object_quat = np.zeros((2, 2, 4), dtype=np.float32)
     object_quat[..., 3] = 1.0
     bundle = _make_minimal_trace(
-        tmp_path / "object_overlay.vlatrace",
+        tmp_path / "object_overlay",
         include_frames=True,
         extra_episode_arrays={
             "scene_object_pos": ArraySpec(
@@ -524,7 +530,7 @@ def test_object_camera_overlay_prefers_geometry_bbox_anchor(tmp_path):
     object_pos = np.array([[[0.0, 0.0, 1.0]]], dtype=np.float32)
     object_bbox = np.array([[[[0.1, 0.1, 1.0], [0.3, 0.3, 1.0]]]], dtype=np.float32)
     bundle = _make_minimal_trace(
-        tmp_path / "object_overlay_bbox.vlatrace",
+        tmp_path / "object_overlay_bbox",
         include_frames=True,
         extra_episode_arrays={
             "scene_object_pos": ArraySpec(
@@ -592,7 +598,7 @@ def test_object_camera_overlay_prefers_camera_segmentation_bbox(tmp_path):
     object_pos = np.array([[[0.0, 0.0, 1.0]]], dtype=np.float32)
     camera_bbox = np.array([[[[2.0, 4.0, 10.0, 12.0]]]], dtype=np.float32)
     bundle = _make_minimal_trace(
-        tmp_path / "object_overlay_camera_bbox.vlatrace",
+        tmp_path / "object_overlay_camera_bbox",
         include_frames=True,
         extra_episode_arrays={
             "scene_object_pos": ArraySpec(
@@ -668,11 +674,17 @@ def test_workbench_storage_refs_use_zarr_for_dense_and_jpeg_for_frames(tmp_path)
 
     assert dense_arrays
     assert image_arrays
-    assert {array["storage"]["format"] for array in dense_arrays} == {"zarr"}
-    assert all(array["storage"]["chunks"] for array in dense_arrays if array["shape"])
-    assert all(array["storage"]["compression"] == "zstd" for array in dense_arrays)
-    assert {array["storage"]["format"] for array in image_arrays} == {"jpeg"}
-    assert all(array["storage"]["compression"] == "jpeg" for array in image_arrays)
+    zarr_arrays = [array for array in dense_arrays if array["storage"]["format"] == "zarr"]
+    parquet_arrays = [
+        array for array in dense_arrays if array["storage"]["format"] == "parquet_column"
+    ]
+    assert zarr_arrays
+    assert parquet_arrays
+    assert all(array["storage"]["chunks"] for array in zarr_arrays if array["shape"])
+    assert all(array["storage"]["compression"] == "zstd" for array in zarr_arrays)
+    assert all(array["storage"]["compression"] == "snappy" for array in parquet_arrays)
+    assert {array["storage"]["format"] for array in image_arrays} == {"mp4"}
+    assert all(array["storage"]["compression"] == "h264" for array in image_arrays)
 
 
 def test_artifact_arrays_are_saved_as_zarr_storage_refs(tmp_path):
@@ -734,24 +746,17 @@ def test_table_catalog_exposes_parquet_storage_refs(tmp_path):
     assert list((dataset.root).glob(tables["timesteps"]["storage"]["uri"]))
 
 
-def test_trace_dataset_open_discovers_nested_trace_bundles(tmp_path):
+def test_trace_dataset_open_rejects_nested_overlay_bundles(tmp_path):
     root = tmp_path / "external-dataset"
     _make_minimal_trace(
-        root / "traces" / "mechanistic_light" / "libero_object" / "task_00" / "a.vlatrace"
+        root / "traces" / "mechanistic_light" / "libero_object" / "task_00" / "a"
     )
     _make_minimal_trace(
-        root / "traces" / "mechanistic_light" / "libero_goal" / "task_01" / "b.vlatrace"
+        root / "traces" / "mechanistic_light" / "libero_goal" / "task_01" / "b"
     )
 
-    dataset = TraceDataset.open(root)
-    tables = {table.table_id: table.to_dict() for table in table_catalog(dataset)}
-    payload = _dataset_payload(dataset)
-
-    assert len(dataset.bundles) == 2
-    assert {bundle.manifest.trace_id for bundle in dataset.bundles} == {"a", "b"}
-    assert payload["root"] == str(root)
-    assert len(payload["episodes"]) == 2
-    assert list(root.glob(tables["timesteps"]["storage"]["uri"]))
+    with pytest.raises(FileNotFoundError, match="No LeRobot v3 dataset root"):
+        TraceDataset.open(root)
 
 
 def test_richer_trace_tables_are_cataloged_and_queryable(tmp_path):
@@ -788,7 +793,8 @@ def test_richer_trace_tables_are_cataloged_and_queryable(tmp_path):
 def test_model_site_catalog_exposes_richer_schema_fields(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=8)
     bundle = dataset.bundles[0]
-    table_path = bundle.path / TraceBundle.MODEL_SITES
+    assert bundle.overlay_bundle is not None
+    table_path = bundle.overlay_bundle.path / TraceBundle.MODEL_SITES
     sites = pd.read_parquet(table_path)
     sites.loc[0, "family"] = "expert"
     sites.loc[0, "role"] = "action_generation"
@@ -817,7 +823,7 @@ def test_model_site_catalog_exposes_richer_schema_fields(tmp_path):
 
 def test_validation_rejects_token_space_reference_errors(tmp_path):
     bundle = _make_minimal_trace(
-        tmp_path / "bad_tokens.vlatrace",
+        tmp_path / "bad_tokens",
         tokens={
             "token_space_id": ["missing_space"],
             "token_index": [0],
@@ -863,7 +869,7 @@ def test_validation_requires_exact_raw_full_sites(tmp_path):
         exactness="lossy_summary",
     )
     bundle = _make_minimal_trace(
-        tmp_path / "partial_full.vlatrace",
+        tmp_path / "partial_full",
         profile="full",
         model_sites=model_sites,
     )
@@ -889,7 +895,7 @@ def test_validation_accepts_complete_exact_raw_full_sites(tmp_path):
         for role in FULL_REQUIRED_MODEL_SITE_ROLES
     ]
     bundle = _make_minimal_trace(
-        tmp_path / "complete_full.vlatrace",
+        tmp_path / "complete_full",
         profile="full",
         model_sites=model_sites,
     )
@@ -901,7 +907,7 @@ def test_validation_accepts_complete_exact_raw_full_sites(tmp_path):
 
 def test_validation_accepts_audit_windowed_profile(tmp_path):
     bundle = _make_minimal_trace(
-        tmp_path / "audit_windowed_validation.vlatrace",
+        tmp_path / "audit_windowed_validation",
         profile="audit_windowed",
         model_sites=[
             TraceModelSiteSpec(
@@ -931,7 +937,7 @@ def test_validation_accepts_audit_windowed_profile(tmp_path):
 
 def test_activation_sites_payload_includes_runtime_kv_collection(tmp_path):
     bundle = _make_minimal_trace(
-        tmp_path / "kv_collection.vlatrace",
+        tmp_path / "kv_collection",
         model_sites=[
             TraceModelSiteSpec(
                 name="pi05.vlm.layers.0.kv_cache.key",
@@ -1016,7 +1022,7 @@ def test_activation_sites_payload_includes_per_layer_kv_architecture_edges(tmp_p
                 ),
             ]
         )
-    bundle = _make_minimal_trace(tmp_path / "kv_architecture.vlatrace", model_sites=model_sites)
+    bundle = _make_minimal_trace(tmp_path / "kv_architecture", model_sites=model_sites)
 
     payload = _activation_sites_payload(bundle)
 
@@ -1085,7 +1091,7 @@ def test_activation_sites_payload_includes_audit_windowed_kv_edges(tmp_path):
             ]
         )
     bundle = _make_minimal_trace(
-        tmp_path / "audit_windowed_kv_architecture.vlatrace",
+        tmp_path / "audit_windowed_kv_architecture",
         model_sites=model_sites,
     )
 
@@ -1104,7 +1110,7 @@ def test_activation_sites_payload_includes_audit_windowed_kv_edges(tmp_path):
 
 def test_activation_sites_payload_keeps_empty_architecture_for_non_pi05_sites(tmp_path):
     bundle = _make_minimal_trace(
-        tmp_path / "generic_activation.vlatrace",
+        tmp_path / "generic_activation",
         model_sites=[
             TraceModelSiteSpec(
                 name="toy.layers.0.hidden",
@@ -1138,7 +1144,7 @@ def test_expert_token_details_project_attention_to_image_and_prompt_tokens(tmp_p
         dtype=np.float32,
     )
     bundle = _make_minimal_trace(
-        tmp_path / "attention_details.vlatrace",
+        tmp_path / "attention_details",
         include_frames=True,
         camera_state=pd.DataFrame.from_records(
             [{"camera_id": "main", "name": "main", "width": 16, "height": 16}]
@@ -1480,8 +1486,8 @@ def test_activation_query_materializes_and_caches(tmp_path):
 def test_activation_selector_slices_generation_step_axis(tmp_path):
     root = tmp_path / "generation_selector"
     array = np.arange(2 * 3 * 4 * 5, dtype=np.float32).reshape(2, 3, 4, 5)
-    TraceBundle.create(
-        root / "trace.vlatrace",
+    bundle = TraceBundle.create(
+        root / "trace",
         manifest=TraceManifest(
             trace_id="trace",
             episode_id="trace",
@@ -1535,7 +1541,7 @@ def test_activation_selector_slices_generation_step_axis(tmp_path):
             )
         ],
     )
-    dataset = TraceDataset.open(root)
+    dataset = TraceDataset(root, [bundle])
 
     query = ActivationQuery(
         module="pi05.expert.layers.*",
@@ -1552,14 +1558,11 @@ def test_activation_selector_slices_generation_step_axis(tmp_path):
     assert np.allclose(X, array[:, -1, :, :].mean(axis=1))
 
 
-def test_trace_dataset_can_open_single_bundle(tmp_path):
-    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=6)
-    bundle_path = dataset.bundles[0].path
+def test_trace_dataset_open_rejects_overlay_bundle_root(tmp_path):
+    bundle = _make_minimal_trace(tmp_path / "single_overlay")
 
-    single = TraceDataset.open(bundle_path)
-
-    assert len(single.bundles) == 1
-    assert single.bundles[0].manifest.trace_id == dataset.bundles[0].manifest.trace_id
+    with pytest.raises(FileNotFoundError, match="No LeRobot v3 dataset root"):
+        TraceDataset.open(bundle.path)
 
 
 def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
@@ -1613,7 +1616,7 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
     assert method["input"]["feature_matrix_fingerprint"].startswith("sha256:")
     assert method["target"]["target_fingerprint"].startswith("sha256:")
     assert method["examples"]["row_index_fingerprint"].startswith("sha256:")
-    artifact_dir = dataset.root / "artifacts" / saved.artifact.artifact_id
+    artifact_dir = dataset.root / "vla_lens" / "artifacts" / saved.artifact.artifact_id
     assert (artifact_dir / "metrics.json").exists()
     predictions_path = artifact_dir / "predictions.parquet"
     assert predictions_path.exists()
@@ -1830,7 +1833,7 @@ def test_probe_workflow_uses_probe_split_sidecar(tmp_path):
 
 def test_pi05_interaction_metrics_derives_object_labels(tmp_path):
     root = tmp_path / "interaction"
-    bundle_path = root / "red_cube_trace.vlatrace"
+    bundle_path = root / "red_cube_trace"
     timesteps = 8
     positions = np.zeros((timesteps, 2, 3), dtype=np.float32)
     positions[:, 0] = np.array([0.0, 0.0, 0.02], dtype=np.float32)
@@ -1850,7 +1853,7 @@ def test_pi05_interaction_metrics_derives_object_labels(tmp_path):
         length=timesteps,
         metadata={"task_name": "LIVING_ROOM_SCENE1_pick_up_the_red_cube", "seed": 1},
     )
-    TraceBundle.create(
+    bundle = TraceBundle.create(
         bundle_path,
         manifest=manifest,
         timesteps=pd.DataFrame({"timestep": np.arange(timesteps)}),
@@ -1891,7 +1894,7 @@ def test_pi05_interaction_metrics_derives_object_labels(tmp_path):
             ),
         },
     )
-    dataset = TraceDataset.open(root)
+    dataset = TraceDataset(root, [bundle])
 
     saved = save_pi05_interaction_metrics_artifact(dataset)
     row = saved.episode_labels.iloc[0]
@@ -2075,6 +2078,7 @@ def test_probe_workflow_resolves_trace_context_targets(tmp_path):
     assert np.isclose(first_row["negative_generation_action"], expected)
 
     for bundle in dataset.bundles:
+        assert bundle.overlay_bundle is not None
         final_success = pd.DataFrame.from_records(
             [
                 {
@@ -2087,8 +2091,12 @@ def test_probe_workflow_resolves_trace_context_targets(tmp_path):
                 }
             ]
         )
-        final_success.to_parquet(bundle.path / "tables" / "evaluation.parquet", index=False)
+        final_success.to_parquet(
+            bundle.overlay_bundle.path / "tables" / "evaluation.parquet",
+            index=False,
+        )
         bundle.__dict__.pop("evaluation", None)
+        bundle.overlay_bundle.__dict__.pop("evaluation", None)
     with pytest.raises(ValueError, match="could not be resolved"):
         train_probe_artifact_from_spec(
             dataset,
@@ -2123,7 +2131,7 @@ def test_artifact_api_payloads_include_probe_and_attention(tmp_path):
 
 def test_episode_metrics_use_action_metadata_and_axis_labels(tmp_path):
     bundle = _make_minimal_trace(
-        tmp_path / "metrics.vlatrace",
+        tmp_path / "metrics",
         action_normalization={
             "normalization_id": ["libero_action"],
             "mode": ["checkpoint"],

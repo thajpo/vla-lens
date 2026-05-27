@@ -36,7 +36,7 @@ def capture_libero_context(
 
     The returned ``arrays`` mapping can be passed to ``TraceBundle.create`` as
     episode arrays.  The returned tables are plain pandas frames intended for
-    richer capture manifests or future .vlatrace table slots.
+    richer capture manifests or overlay table slots.
     """
 
     obs_sequence = _observation_sequence(observations)

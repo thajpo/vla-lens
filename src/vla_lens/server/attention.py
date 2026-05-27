@@ -54,7 +54,7 @@ def _attention_map_payload(bundle: TraceBundle, query: dict[str, list[str]]) -> 
         )
     except KeyError:
         return _not_captured_in_profile(
-            f"{kind} attention maps require attention arrays stored in the .vlatrace bundle.",
+            f"{kind} attention maps require attention arrays stored in the VLA Lens overlay.",
             kind=kind,
             generation_step=generation_step,
             name=name,
@@ -80,7 +80,7 @@ def _attention_map_payload(bundle: TraceBundle, query: dict[str, list[str]]) -> 
         "generation_step": generation_step,
         **axis_selection,
         "site": selected_site,
-        "source": "vlatrace",
+        "source": "vla_lens_overlay",
         **layout,
         "coarse": {
             "image": _json_scalar(float(np.nansum(key_mass[: int(layout["image_tokens"])]))),
@@ -804,7 +804,7 @@ def _prompt_attention_payload(bundle: TraceBundle, query: dict[str, list[str]]) 
         )
     except KeyError:
         return _not_captured_in_profile(
-            f"Prompt attention requires {kind} attention arrays stored in the .vlatrace bundle.",
+            f"Prompt attention requires {kind} attention arrays stored in the VLA Lens overlay.",
             kind=kind,
             prompt=bundle.manifest.prompt,
             generation_step=generation_step,
@@ -954,10 +954,10 @@ def _expert_token_details_payload(
         "maps": attention.get("maps", {}) if attention else {},
         "action": action,
         "note": (
-            "This is one expert query/action token from the .vlatrace activation store. "
+            "This is one expert query/action token from the VLA Lens overlay. "
             "Image and prompt rows are attention mass from the matching expert layer/query token."
             if attention
-            else "Attention details are unavailable unless captured into .vlatrace."
+            else "Attention details are unavailable unless captured into the VLA Lens overlay."
         ),
     }
 
@@ -977,7 +977,7 @@ def _action_vector_for_token(
     safe = np.nan_to_num(vector, nan=0.0, posinf=0.0, neginf=0.0)
     order = np.argsort(np.abs(safe))[::-1][:10]
     return {
-        "source": "vlatrace.action_chunks",
+        "source": "vla_lens_overlay.action_chunks",
         "dim": int(vector.shape[0]),
         "norm": _json_scalar(float(np.linalg.norm(safe))),
         "top_abs": [

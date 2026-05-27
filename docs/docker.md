@@ -45,20 +45,18 @@ Open:
 http://127.0.0.1:8080/
 ```
 
-Serve an existing LeRobot v3 dataset root, trace dataset, or one `.vlatrace`
-bundle:
+Serve an existing LeRobot v3 dataset root or a directory containing nested
+LeRobot v3 roots:
 
 ```bash
 scripts/docker_dashboard.sh runs/pi05-light-5-test
 scripts/docker_dashboard.sh /path/to/some-dataset
-scripts/docker_dashboard.sh /path/to/episode.vlatrace
 ```
 
 With no argument, the script mounts local `./runs` and creates/serves
 `runs/vla_lens_demo` if needed. With an explicit root, the script mounts that
 path directly and serves it if it is a LeRobot v3 dataset root, a directory
-containing nested LeRobot v3 roots from batch capture, or a legacy trace
-bundle/root.
+containing nested LeRobot v3 roots from batch capture.
 
 Run the same single-origin dashboard without Docker:
 
@@ -188,14 +186,12 @@ scripts/docker_pi05_rocm.sh \
   --run
 ```
 
-For absolute `--output-root` and `--vlatrace-out-root` values, the wrapper
-creates the host directory, mounts it at `/capture-output`, and rewrites the
-container command. Absolute `output_root` values inside `--config` YAML files
-are handled the same way unless an explicit CLI output root override is passed.
-This keeps the user-facing command honest: the path you pass, or the absolute
-path in the config, is the path that receives the LeRobot dataset roots on the
-host. The `--vlatrace-out-root` flag name is retained only so existing scripts
-do not break; the artifact written there is now a LeRobot root.
+For absolute `--output-root` values, the wrapper creates the host directory,
+mounts it at `/capture-output`, and rewrites the container command. Absolute
+`output_root` values inside `--config` YAML files are handled the same way
+unless an explicit CLI output root override is passed. This keeps the
+user-facing command honest: the path you pass, or the absolute path in the
+config, is the path that receives the LeRobot dataset roots on the host.
 
 Absolute `--config` and `--episode-plan` input files are mounted read-only under
 `/host-inputs/...` and rewritten for the command inside the container.

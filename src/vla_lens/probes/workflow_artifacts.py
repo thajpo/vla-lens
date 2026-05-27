@@ -75,7 +75,7 @@ def _probe_source(dataset: TraceDataset, rows: pd.DataFrame) -> dict[str, Any]:
         "source_episodes": source_episodes,
         "source_trace_fingerprints": trace_fingerprints,
         "source_collection_fingerprint": _hash_json(trace_fingerprints),
-        "vlatrace_schema_versions": sorted(schema_versions),
+        "trace_schema_versions": sorted(schema_versions),
     }
 
 

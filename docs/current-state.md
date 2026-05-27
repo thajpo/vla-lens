@@ -12,8 +12,8 @@ vision-language-action models.
 Dataset-layer cutoff: LeRobotDataset v3 is the canonical robot-data layer.
 VLA Lens adds a `vla_lens/` interpretability overlay for model internals,
 policy-call alignment, token metadata, probes, artifacts, fingerprints, and
-dashboard state. Standalone `.vlatrace` episode bundles are old internal storage,
-not a compatibility layer to preserve in the new dataset contract. See
+dashboard state. Standalone episode-bundle directories are an internal overlay
+primitive, not a compatibility layer to preserve in the dataset contract. See
 [dataset-format.md](dataset-format.md).
 
 The current implementation focus is PI0.5 on LIBERO. Older CogACT planning docs
@@ -216,7 +216,7 @@ scripts/pi05_capture_rocm.sh \
   --benchmark libero_object \
   --task-id 0 \
   --capture-profile mechanistic_sampled \
-  --vlatrace-out-root "/path/to/vla-lens/pi05-smoke" \
+  --output-root "/path/to/vla-lens/pi05-smoke" \
   --dataset-id pi05-smoke
 ```
 

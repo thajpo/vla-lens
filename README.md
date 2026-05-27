@@ -113,8 +113,8 @@ and [docs/remote-gpu-local-analysis.md](docs/remote-gpu-local-analysis.md).
 
 `src/vla_lens` is the framework:
 
-- `traces.py`: dataset indexes, array loading, artifact persistence, and legacy
-  trace-bundle views.
+- `traces.py`: dataset indexes, array loading, artifact persistence, and overlay
+  bundle views.
 - `selectors.py`: axis-aware activation selection and feature matrix caching.
 - `artifacts.py`: saved analysis records with provenance and display metadata.
 - `analyzer.py`: dataset-aware analysis recommendations.
@@ -146,8 +146,7 @@ scripts/pi05_batch_capture_rocm.sh --config configs/pi05_light_5_test.yaml --run
 ```
 
 This writes LeRobot v3 robot data under `meta/`, `data/`, and `videos/`, plus
-VLA Lens internals under `vla_lens/`. The old `.vlatrace` bundle format remains
-only as a legacy test/demo storage path.
+VLA Lens internals under `vla_lens/`.
 
 ### PI0.5 Hardware Capture Environments
 
@@ -214,7 +213,7 @@ uv run python scripts/run_capture_profile_smoke.py \
   --model-id lerobot/pi05_libero_finetuned \
   --episodes 2 \
   --delete-existing \
-  --capture-command 'scripts/pi05_capture.sh --backend rocm --model-id {model_id} --episodes {episodes} --start-seed {start_seed} --capture-profile {profile} --dataset-id {dataset_id} --vlatrace-out-root {traces_root}'
+  --capture-command 'scripts/pi05_capture.sh --backend rocm --model-id {model_id} --episodes {episodes} --start-seed {start_seed} --capture-profile {profile} --dataset-id {dataset_id} --output-root {traces_root}'
 ```
 
 The smoke script owns the profile roots and LeRobot-root validation. The runner

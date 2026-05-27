@@ -17,17 +17,15 @@ Output paths:
   Relative output roots write under the container workdir. The default configs use
   runs/..., and the wrapper mounts $VLA_LENS_RUNS_DIR or ./runs at /app/runs.
 
-  Absolute --output-root or --vlatrace-out-root values are treated as host paths,
-  mounted at /capture-output, and rewritten for the command inside the container.
+  Absolute --output-root values are treated as host paths, mounted at
+  /capture-output, and rewritten for the command inside the container.
   Absolute output_root values inside --config YAML files are handled the same way
   unless an explicit CLI output root override is provided.
-  The --vlatrace-out-root flag name is legacy; capture now writes LeRobot v3
-  dataset roots plus vla_lens/ overlays.
 
 Examples:
   scripts/docker_pi05.sh --backend rocm --config configs/pi05_light_5_test.yaml --run
   scripts/docker_pi05.sh --backend rocm --config configs/pi05_light_5_test.yaml --output-root /mnt/nvme/pi05-light-5-test --run
-  scripts/docker_pi05.sh --backend rocm capture --vlatrace-out-root /mnt/nvme/smoke --episodes 1 ...
+  scripts/docker_pi05.sh --backend rocm capture --output-root /mnt/nvme/smoke --episodes 1 ...
 
 Useful environment:
   VLA_LENS_RUNS_DIR       host directory mounted at /app/runs
@@ -214,7 +212,7 @@ rewrite_output_args() {
   for ((index = 0; index < ${#input_args[@]}; index++)); do
     item="${input_args[$index]}"
     case "$item" in
-      --output-root|--vlatrace-out-root)
+      --output-root)
         if (( index + 1 >= ${#input_args[@]} )); then
           echo "Missing value for $item" >&2
           exit 2
@@ -224,7 +222,7 @@ rewrite_output_args() {
         output_args+=("$item" "$CONTAINER_PATH_RESULT")
         index=$((index + 1))
         ;;
-      --output-root=*|--vlatrace-out-root=*)
+      --output-root=*)
         SAW_OUTPUT_ROOT_FLAG=1
         flag="${item%%=*}"
         value="${item#*=}"

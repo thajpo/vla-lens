@@ -1,4 +1,4 @@
-"""Save an ActionGeneration artifact for a VLA-lens trace dataset."""
+"""Save an ActionGeneration artifact for a LeRobot-backed VLA Lens dataset."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "root",
         type=Path,
-        help="LeRobot v3 dataset root, trace dataset root, or one .vlatrace bundle",
+        help="LeRobot v3 dataset root or top-level directory containing nested LeRobot v3 roots",
     )
     parser.add_argument("--name", default="Action generation summary")
     return parser.parse_args()

@@ -2,6 +2,8 @@
 
 Status: active architecture contract.
 
+Last updated: May 27, 2026.
+
 ## Canonical Layout
 
 VLA Lens now treats LeRobotDataset v3 as the canonical robot-data layer.
@@ -59,17 +61,16 @@ VLA Lens overlay.
 
 ## Cutoff Policy
 
-Standalone `.vlatrace` episode bundles are old internal storage, not the public
-dataset compatibility layer. The repository may still read them for tests,
-demos, and one-off inspection, but new dataset-layer work must target:
+Standalone episode-bundle directories are not a public dataset compatibility
+layer. The repository supports only:
 
 ```text
 LeRobot v3 robot data + vla_lens/ interpretability overlay
 ```
 
 Do not add broad backwards-compatibility aliases to the core contract. If a
-specific old artifact needs conversion, that should be a one-off importer or
-research utility outside the canonical dataset schema.
+specific old artifact needs conversion, keep it outside the canonical dataset
+schema and do not wire it into `TraceDataset.open`.
 
 The current implementation writes this layout for PI0.5 capture. The normal
 dashboard/test stack reads and writes the file contract directly without
@@ -98,9 +99,9 @@ timestamps, rewards/done flags, and MP4 camera streams. The overlay stores
 policy calls, token tables, action chunks, generation trajectories, context
 tables/arrays, model-site tensors, artifacts, and fingerprints.
 
-`TraceDataset.open(path)` accepts a LeRobot v3 dataset root, a directory
-containing nested LeRobot v3 roots, or the old internal `.vlatrace` bundle
-layout. For a LeRobot root, the dashboard can show episodes even when
+`TraceDataset.open(path)` accepts a LeRobot v3 dataset root or a directory
+containing nested LeRobot v3 roots. For a LeRobot root, the dashboard can show
+episodes even when
 `vla_lens/` is absent; model internals simply appear unavailable. For a
 top-level batch output, the opener discovers nested `meta/info.json` + `data/`
 roots and presents their episodes as one dataset view. Nested roots that have a

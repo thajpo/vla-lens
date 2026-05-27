@@ -1,8 +1,10 @@
-"""Trace-first interpretability helpers for VLA models.
+"""Episode-grounded interpretability helpers for VLA robot datasets.
 
-The generic API centers on episode-aligned trace bundles, queryable trace
-datasets, selector-based feature extraction, and saved artifacts.
-PI0.5-specific capture helpers remain available under ``vla_lens.pi05``.
+The public API centers on LeRobot v3 dataset roots with an optional
+``vla_lens/`` interpretability overlay. ``TraceDataset`` opens those roots,
+nested batch outputs, and exposes one query surface for selectors, probes,
+artifacts, and dashboard state. PI0.5-specific capture helpers remain isolated
+under ``vla_lens.pi05``.
 """
 
 from __future__ import annotations
@@ -37,7 +39,6 @@ from vla_lens.capture import (
     merge_episode_and_model_trace,
     validate_lerobot_v3_dataset,
     vla_lens_overlay_path,
-    write_trace_record,
 )
 from vla_lens.dataset import write_lerobot_trace_record
 from vla_lens.pi05.interaction_metrics import (
@@ -212,6 +213,5 @@ __all__ = [
     "save_action_generation_artifact",
     "save_target_object_encoding_artifact",
     "workbench_manifest",
-    "write_trace_record",
     "write_lerobot_trace_record",
 ]

@@ -554,7 +554,7 @@ def _avoid_or_delay(
         rows.append(
             {
                 "title": "Strong attention-mechanism claims",
-                "why": "No explicit attention tensors are indexed in the trace dataset.",
+                "why": "No explicit attention tensors are indexed in the opened dataset.",
             }
         )
     return rows

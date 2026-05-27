@@ -23,7 +23,7 @@ No DATASET_ROOT:
 
 With DATASET_ROOT:
   mounts that existing LeRobot v3 dataset root, directory containing nested
-  LeRobot roots, trace dataset, or .vlatrace bundle and serves it directly.
+  LeRobot roots and serves it directly.
 EOF
 }
 

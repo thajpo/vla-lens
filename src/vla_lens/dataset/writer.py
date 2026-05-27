@@ -32,11 +32,11 @@ from vla_lens.dataset.common import (
     DEFAULT_CHUNKS_SIZE,
     DEFAULT_DATA_FILE_SIZE_IN_MB,
     DEFAULT_VIDEO_FILE_SIZE_IN_MB,
-    LEGACY_ACTION_ARRAY,
-    LEGACY_FRAME_PREFIX,
     LEROBOT_DATA_PATH_TEMPLATE,
     LEROBOT_EPISODE_PATH_TEMPLATE,
     LEROBOT_VIDEO_PATH_TEMPLATE,
+    TRACE_ACTION_ARRAY,
+    TRACE_FRAME_PREFIX,
     _action_dim_names,
     _chunk_file_index,
     _column_or_default,
@@ -95,7 +95,7 @@ def write_lerobot_trace_record(
         file_index=file_index,
     )
 
-    action = _required_episode_array(record, LEGACY_ACTION_ARRAY, LEROBOT_ACTION, length=length)
+    action = _required_episode_array(record, TRACE_ACTION_ARRAY, LEROBOT_ACTION, length=length)
     observation_state = _observation_state_array(record, length=length)
     frame_arrays = _frame_arrays(record, length=length)
     features = _features_for_record(
@@ -464,7 +464,7 @@ def _write_episode_metadata(
                     LEROBOT_ACTION: _stats_payload(
                         _required_episode_array(
                             record,
-                            LEGACY_ACTION_ARRAY,
+                            TRACE_ACTION_ARRAY,
                             LEROBOT_ACTION,
                             length=length,
                         )
@@ -509,8 +509,8 @@ def _frame_arrays(record: TraceRecord, *, length: int) -> dict[str, np.ndarray]:
         text = str(name)
         if text.startswith(LEROBOT_IMAGE_PREFIX):
             camera = text.removeprefix(LEROBOT_IMAGE_PREFIX)
-        elif text.startswith(LEGACY_FRAME_PREFIX):
-            camera = text.removeprefix(LEGACY_FRAME_PREFIX)
+        elif text.startswith(TRACE_FRAME_PREFIX):
+            camera = text.removeprefix(TRACE_FRAME_PREFIX)
         else:
             continue
         frames[camera] = _pad_or_trim(np.asarray(spec.array), length=length)

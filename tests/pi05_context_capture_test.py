@@ -470,7 +470,7 @@ def test_context_arrays_can_be_written_to_trace_bundle(tmp_path):
     }
 
     bundle = TraceBundle.create(
-        tmp_path / "context.vlatrace",
+        tmp_path / "context",
         manifest=TraceManifest(
             trace_id="context",
             episode_id="context",

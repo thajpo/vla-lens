@@ -51,19 +51,26 @@ from vla_lens.traces import TraceDataset
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Run PI0.5 capture from CLI arguments in a capture-specific environment."""
     args = parse_args(argv)
-    if args.delete_existing and args.vlatrace_out_root.exists():
-        shutil.rmtree(args.vlatrace_out_root)
-    args.vlatrace_out_root.mkdir(parents=True, exist_ok=True)
+    if args.delete_existing and args.output_root.exists():
+        shutil.rmtree(args.output_root)
+    args.output_root.mkdir(parents=True, exist_ok=True)
 
     _run_capture(args)
-    dataset = TraceDataset.open(args.vlatrace_out_root)
-    validation = validate_lerobot_v3_dataset(args.vlatrace_out_root)
+    dataset = TraceDataset.open(args.output_root)
+    validation = validate_lerobot_v3_dataset(args.output_root)
     if not validation.valid:
         raise SystemExit(validation.to_dict())
-    print(f"wrote {len(dataset.bundles)} LeRobot episode(s) to {args.vlatrace_out_root}")
+    print(f"wrote {len(dataset.bundles)} LeRobot episode(s) to {args.output_root}")
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse package-native PI0.5 capture flags.
+
+    Normal users should reach this through `scripts/pi05_capture.sh --backend
+    ...`, not through plain `uv run`, so the heavy LeRobot/LIBERO/Torch stack
+    stays isolated from the repo development environment.
+    """
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--model-id", default="lerobot/pi05_libero_finetuned")
     parser.add_argument("--benchmark", default="libero_object")
@@ -113,16 +120,13 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--storage-dtype",
         choices=STORAGE_DTYPES,
         default="float16",
-        help="Numeric dtype used for captured model internals in .vlatrace arrays.",
+        help="Numeric dtype used for captured model internals in VLA Lens overlay arrays.",
     )
     parser.add_argument(
-        "--vlatrace-out-root",
+        "--output-root",
         type=Path,
         default=Path("runs/pi05_golden"),
-        help=(
-            "Output LeRobot v3 dataset root. The flag name is kept for existing "
-            "capture scripts, but new captures write LeRobot robot data plus vla_lens/ overlay."
-        ),
+        help="Output LeRobot v3 dataset root.",
     )
     parser.add_argument(
         "--dataset-id",
@@ -167,6 +171,12 @@ def _run_capture(args: argparse.Namespace) -> None:
     run_pi05_capture_task(args, runtime=runtime, plan=plan)
 
 def load_pi05_capture_runtime(args: argparse.Namespace) -> PI05CaptureRuntime:
+    """Load PI0.5 policy, preprocessing, and LIBERO factories.
+
+    This function intentionally imports Torch, LeRobot, and LIBERO lazily so
+    normal tests and dashboard work can import `vla_lens.pi05.capture` without
+    pulling capture-only dependencies into `.venv`.
+    """
     import torch
     from lerobot.configs.policies import PreTrainedConfig
     from lerobot.envs.factory import make_env, make_env_config, make_env_pre_post_processors
@@ -215,6 +225,7 @@ def run_pi05_capture_task(
     runtime: PI05CaptureRuntime,
     plan: CapturePlan | None = None,
 ) -> None:
+    """Roll out LIBERO episodes, capture PI0.5 internals, and write overlays."""
     plan = plan or _resolve_capture_plan(args)
     benchmark = runtime.get_benchmark(args.benchmark)(task_order_index=0)
     task = benchmark.get_task(args.task_id)
@@ -299,6 +310,7 @@ def run_pi05_capture_task(
         env.close()
 
 def namespace_for_capture_args(**overrides: Any) -> argparse.Namespace:
+    """Build a test namespace using CLI defaults plus explicit overrides."""
     defaults = vars(parse_args([]))
     defaults.update(overrides)
     return SimpleNamespace(**defaults)

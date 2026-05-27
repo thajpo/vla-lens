@@ -1,16 +1,19 @@
-"""Normalized capture records used to assemble sealed ``.vlatrace`` bundles."""
+"""Normalized capture records for LeRobot roots plus VLA Lens overlays.
+
+Adapters produce plain records here so capture code can stay separate from the
+storage writer. The current writer targets LeRobot v3 robot data with a
+``vla_lens/`` overlay.
+"""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
 from vla_lens.artifacts import LensArtifact
-from vla_lens.traces import ArraySpec, ModelSiteSpec, TraceBundle, TraceManifest
-from vla_lens.validation import validate_trace_bundle
+from vla_lens.traces import ArraySpec, ModelSiteSpec, TraceManifest
 
 
 @dataclass(frozen=True, slots=True)
@@ -149,7 +152,7 @@ class ModelTraceRecord:
 
 @dataclass(frozen=True, slots=True)
 class TraceRecord:
-    """Complete normalized record ready to write as one ``.vlatrace`` bundle."""
+    """Complete normalized record ready for the dataset/overlay writer."""
 
     manifest: TraceManifest
     timesteps: pd.DataFrame
@@ -289,46 +292,6 @@ def _manifest_with_environment(
     )
 
 
-def write_trace_record(
-    record: TraceRecord,
-    path: str | Path,
-    *,
-    overwrite: bool = False,
-    validate: bool = True,
-) -> TraceBundle:
-    """Write one normalized record as a sealed trace bundle."""
-    bundle = TraceBundle.create(
-        path,
-        manifest=record.manifest,
-        timesteps=record.timesteps,
-        episode_arrays=record.episode_arrays,
-        model_arrays=record.model_arrays,
-        policy_calls=record.policy_calls,
-        generation_steps=record.generation_steps,
-        streams=record.streams,
-        token_spaces=record.token_spaces,
-        tokens=record.tokens,
-        robot_state=record.robot_state,
-        scene_state=record.scene_state,
-        camera_state=record.camera_state,
-        evaluation=record.evaluation,
-        image_preprocessing=record.image_preprocessing,
-        prompt_metadata=record.prompt_metadata,
-        action_normalization=record.action_normalization,
-        capture_request=record.capture_request,
-        capture_plan=record.capture_plan,
-        capture_report=record.capture_report,
-        artifacts=record.artifacts,
-        overwrite=overwrite,
-    )
-    if validate:
-        result = validate_trace_bundle(bundle)
-        if not result.valid:
-            messages = "; ".join(str(error) for error in result.errors)
-            raise ValueError(f"Trace failed validation: {messages}")
-    return bundle
-
-
 def _policy_call_frame(calls: Sequence[PolicyCallRecord]) -> pd.DataFrame:
     if not calls:
         return pd.DataFrame()
@@ -348,5 +311,4 @@ __all__ = [
     "PolicyCallRecord",
     "TraceRecord",
     "merge_episode_and_model_trace",
-    "write_trace_record",
 ]

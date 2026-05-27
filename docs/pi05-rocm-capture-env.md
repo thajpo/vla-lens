@@ -2,6 +2,8 @@
 
 Status: operational environment contract for local PI0.5/LeRobot/LIBERO capture.
 
+Last updated: May 27, 2026.
+
 For the cross-hardware run-path overview, see
 [hardware-run-paths.md](hardware-run-paths.md). This file keeps the ROCm-specific
 details and known-good package versions.
@@ -197,7 +199,7 @@ scripts/pi05_capture_rocm.sh \
   --benchmark libero_object \
   --task-id 0 \
   --capture-profile mechanistic_sampled \
-  --vlatrace-out-root "/path/to/vla-lens/pi05-smoke"
+  --output-root "/path/to/vla-lens/pi05-smoke"
 ```
 
 Batch capture:

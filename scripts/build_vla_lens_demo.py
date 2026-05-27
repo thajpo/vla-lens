@@ -1,4 +1,4 @@
-"""Build a synthetic VLA-lens trace dataset for the live dashboard."""
+"""Build a synthetic LeRobot-backed VLA Lens dataset for the live dashboard."""
 
 from __future__ import annotations
 

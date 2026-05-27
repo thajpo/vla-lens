@@ -199,7 +199,7 @@ def _write_episode(
     record = merge_episode_and_model_trace(episode, model_trace)
     write_lerobot_trace_record(
         record,
-        args.vlatrace_out_root,
+        args.output_root,
         overwrite=True,
     )
 

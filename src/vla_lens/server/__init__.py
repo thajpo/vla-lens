@@ -1,4 +1,4 @@
-"""Local slice-based dashboard server for VLA-lens trace datasets."""
+"""Local slice-based dashboard server for LeRobot-backed VLA Lens datasets."""
 
 from __future__ import annotations
 

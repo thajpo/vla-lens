@@ -1,5 +1,9 @@
 # VLA Lens Architecture And Workflows
 
+Status: active architecture contract.
+
+Last updated: May 27, 2026.
+
 ## Dataset Layer Cutoff
 
 The canonical dataset shape is now LeRobotDataset v3 robot data plus a VLA Lens
@@ -13,7 +17,8 @@ LeRobot v3 meta/data/videos
 LeRobot owns observations, actions, episode/frame indexes, timestamps, task
 metadata, and camera media. VLA Lens owns model internals, policy-call
 alignment, token metadata, probes, artifacts, and dashboard state. Standalone
-`.vlatrace` bundles are old internal storage, not the new compatibility layer.
+episode-bundle directories are an internal overlay primitive, not a dataset
+compatibility layer.
 
 ## Architecture
 

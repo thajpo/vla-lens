@@ -16,12 +16,12 @@ from vla_lens.capture.lerobot_v3 import (
 )
 from vla_lens.capture.records import TraceRecord
 from vla_lens.dataset.common import (
-    LEGACY_ACTION_ARRAY,
-    LEGACY_FRAME_PREFIX,
     OVERLAY_EPISODE_DIR,
     OVERLAY_ROOT_ARRAY_NAMES,
     OVERLAY_ROOT_ARRAY_PREFIXES,
     OVERLAY_SCHEMA_VERSION,
+    TRACE_ACTION_ARRAY,
+    TRACE_FRAME_PREFIX,
     _read_table,
     _write_json,
     _write_table,
@@ -149,9 +149,9 @@ def _write_overlay_root(
 def _overlay_episode_arrays(record: TraceRecord) -> dict[str, ArraySpec]:
     arrays: dict[str, ArraySpec] = {}
     for name, spec in record.episode_arrays.items():
-        if name == LEGACY_ACTION_ARRAY:
+        if name == TRACE_ACTION_ARRAY:
             continue
-        if str(name).startswith(LEGACY_FRAME_PREFIX):
+        if str(name).startswith(TRACE_FRAME_PREFIX):
             continue
         if name in OVERLAY_ROOT_ARRAY_NAMES:
             continue

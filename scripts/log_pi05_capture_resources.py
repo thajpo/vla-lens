@@ -10,7 +10,7 @@ import subprocess
 import time
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
 FIELDS = (
     "timestamp_utc",
@@ -168,19 +168,22 @@ def _mem_sample() -> dict[str, float]:
 def _trace_count(root: Path) -> int:
     if not root.exists():
         return 0
-    refs = list(root.rglob("vla_lens/tables/episode_refs.parquet"))
-    if refs:
-        total = 0
-        for path in refs:
-            try:
-                import pandas as pd
+    refs_total = _count_parquet_rows(root.rglob("vla_lens/tables/episode_refs.parquet"))
+    if refs_total:
+        return refs_total
+    return _count_parquet_rows(root.rglob("meta/episodes/**/*.parquet"))
 
-                total += int(len(pd.read_parquet(path)))
-            except Exception:
-                continue
-        if total:
-            return total
-    return sum(1 for _ in root.rglob("*.vlatrace"))
+
+def _count_parquet_rows(paths: Iterable[Path]) -> int:
+    total = 0
+    for path in paths:
+        try:
+            import pandas as pd
+
+            total += int(len(pd.read_parquet(path)))
+        except Exception:
+            continue
+    return total
 
 
 def _json_command(command: list[str]) -> dict[str, Any]:

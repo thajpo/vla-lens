@@ -1,4 +1,4 @@
-"""Synthetic trace dataset generation for developing the VLA-lens substrate."""
+"""Synthetic LeRobot-backed dataset generation for developing the VLA-lens substrate."""
 
 from __future__ import annotations
 
@@ -9,7 +9,9 @@ import numpy as np
 import pandas as pd
 
 from vla_lens.artifacts import LensArtifact
-from vla_lens.traces import ActivationSpec, ArraySpec, TraceBundle, TraceDataset, TraceManifest
+from vla_lens.capture.records import TraceRecord
+from vla_lens.dataset import write_lerobot_trace_record
+from vla_lens.traces import ActivationSpec, ArraySpec, TraceDataset, TraceManifest
 
 
 def create_synthetic_trace_dataset(
@@ -21,15 +23,14 @@ def create_synthetic_trace_dataset(
     seed: int = 0,
     overwrite: bool = False,
 ) -> TraceDataset:
-    """Create a small trace dataset with camera frames, flow actions, and artifacts.
+    """Create a small LeRobot-backed dataset with camera frames, flow actions, and artifacts.
 
     The synthetic data exists to make the trace/index/dashboard contract concrete before
     model-specific capture adapters are ready.
     """
     root = Path(root)
     if overwrite and root.exists():
-        for bundle_path in root.glob("synthetic_*.vlatrace"):
-            shutil.rmtree(bundle_path)
+        shutil.rmtree(root)
     root.mkdir(parents=True, exist_ok=True)
     rng = np.random.default_rng(seed)
 
@@ -38,7 +39,6 @@ def create_synthetic_trace_dataset(
         outcome = "success" if episode_idx % 2 == 0 else "failure"
         task_id = "pick_red_cube" if episode_idx != 2 else "pick_blue_cube"
         prompt = "pick up the red cube" if task_id == "pick_red_cube" else "pick up the blue cube"
-        bundle_path = root / f"{trace_id}.vlatrace"
 
         episode = _make_episode_arrays(
             timesteps=timesteps,
@@ -102,8 +102,7 @@ def create_synthetic_trace_dataset(
             }
         )
         generation_steps = _make_generation_steps(policy_calls, generation_step_count=5)
-        bundle = TraceBundle.create(
-            bundle_path,
+        record = TraceRecord(
             manifest=manifest,
             timesteps=timestep_index,
             policy_calls=policy_calls,
@@ -152,8 +151,8 @@ def create_synthetic_trace_dataset(
                 "unavailable_cheap_fields": [],
                 "missing_model_sites": [],
             },
-            overwrite=overwrite,
         )
+        bundle = write_lerobot_trace_record(record, root)
         _save_synthetic_artifacts(
             bundle,
             layers=layers,
@@ -514,7 +513,7 @@ def _make_context_payload(
 
 
 def _save_synthetic_artifacts(
-    bundle: TraceBundle,
+    bundle,
     *,
     layers: int,
     timesteps: int,

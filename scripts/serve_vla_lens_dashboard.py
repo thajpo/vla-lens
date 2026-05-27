@@ -1,4 +1,4 @@
-"""Serve a live VLA-lens dashboard backend for a trace dataset."""
+"""Serve a live VLA Lens dashboard backend for a LeRobot-backed dataset."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "root",
         type=Path,
-        help="LeRobot v3 dataset root, trace dataset root, or one .vlatrace bundle",
+        help="LeRobot v3 dataset root or top-level directory containing nested LeRobot v3 roots",
     )
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)

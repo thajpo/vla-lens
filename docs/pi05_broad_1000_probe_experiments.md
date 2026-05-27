@@ -1,5 +1,9 @@
 # PI0.5 Broad 1000 Probe Experiments
 
+Status: active experiment registry.
+
+Last updated: May 27, 2026.
+
 This document is the review surface for the PI0.5 broad 1000 probe campaign.
 The probes are not new capture. They train on the existing mech-light activation
 features plus post-processed interaction labels.
@@ -21,7 +25,7 @@ features plus post-processed interaction labels.
   work, and tests use `.venv` / `uv run`. PI0.5 execution work uses
   `.venv-pi05-*` plus wrapper scripts. "Execution work" means capture,
   model forward/replay, LIBERO/LeRobot env execution, hardware model loading,
-  or writing real `.vlatrace` files.
+  or writing real LeRobot capture roots.
 - Capture preflight contract: do not infer the current PI0.5 execution
   environment from docs alone. Run `scripts/check_pi05_env.sh --backend ...` before
   capture, forward replay, or other PI0.5 execution work.
@@ -705,7 +709,7 @@ interpretation.
   success must be logged together.
 - Preserve the high10 schema idea of one rollout directory containing behavior,
   state trajectory, actions, VLM call tensors, and expert call tensors, but map
-  it into `.vlatrace` bundles and VLA-lens artifacts.
+  it into LeRobot v3 roots, VLA Lens overlays, and artifacts.
 - Preserve the non-duplicated cache-reference model: VLM prefix/past-key-values
   should be stored once and expert calls should reference the matching VLM call.
 - Preserve denoising-step expert internals as possible future probe axes:

@@ -281,7 +281,7 @@ class ActionSuffixLayout:
 
 @dataclass(frozen=True, slots=True)
 class PI05TokenMetadata:
-    """DataFrames and per-call metadata ready for a richer .vlatrace bundle."""
+    """DataFrames and per-call metadata ready for the VLA Lens overlay."""
 
     streams: pd.DataFrame
     token_spaces: pd.DataFrame

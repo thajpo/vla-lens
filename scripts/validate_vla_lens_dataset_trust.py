@@ -15,7 +15,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "root",
         type=Path,
-        help="LeRobot root, batch output root, trace dataset root, or one .vlatrace bundle.",
+        help="LeRobot v3 dataset root or top-level directory containing nested LeRobot v3 roots.",
     )
     parser.add_argument("--json", action="store_true", help="Print machine-readable JSON.")
     parser.add_argument(

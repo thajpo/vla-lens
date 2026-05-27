@@ -1,7 +1,7 @@
 """Replay rendering for PI0.5 LIBERO traces.
 
-Replay uses only metadata and action arrays stored in the ``.vlatrace`` bundle.
-Recorded RGB frames, when available, are also read from the bundle rather than
+Replay uses only metadata and action arrays stored in the VLA Lens overlay.
+Recorded RGB frames, when available, are also read from the dataset rather than
 from the original capture directory.
 """
 

@@ -346,7 +346,8 @@ def test_fastapi_representative_post_routes_return_legacy_payload_shapes(tmp_pat
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2, timesteps=3)
     client = TestClient(create_dashboard_app(dataset.root))
     trace_id = dataset.bundles[0].manifest.trace_id
-    array_id = client.get("/api/lens-arrays").json()["lens_arrays"][2]["array_id"]
+    lens_arrays = client.get("/api/lens-arrays").json()["lens_arrays"]
+    array_id = next(array["array_id"] for array in lens_arrays if array["kind"] == "tensor")
     selection = {"selection_id": "episode_selection", "axis_values": {"episode": [trace_id]}}
 
     cases: list[tuple[str, dict[str, Any], set[str]]] = [

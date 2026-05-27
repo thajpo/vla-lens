@@ -67,7 +67,6 @@ from vla_lens.capture.records import (
     PolicyCallRecord,
     TraceRecord,
     merge_episode_and_model_trace,
-    write_trace_record,
 )
 
 __all__ = [
@@ -129,5 +128,4 @@ __all__ = [
     "validate_lerobot_v3_dataset",
     "vla_lens_overlay_path",
     "write_fake_adapter_lerobot_dataset",
-    "write_trace_record",
 ]

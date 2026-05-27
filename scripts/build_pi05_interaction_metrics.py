@@ -1,4 +1,4 @@
-"""Build PI0.5 interaction-label metrics from a VLA-lens trace dataset."""
+"""Build PI0.5 interaction-label metrics from a LeRobot-backed VLA Lens dataset."""
 
 from __future__ import annotations
 

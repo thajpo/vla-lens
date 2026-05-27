@@ -380,7 +380,7 @@ def _capture_commands(
                 device,
                 "--dtype",
                 dtype,
-                "--vlatrace-out-root",
+                "--output-root",
                 str(task_root),
                 "--dataset-id",
                 dataset_id,

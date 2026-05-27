@@ -1,4 +1,4 @@
-"""Validation for sealed ``.vlatrace`` bundles.
+"""Validation for sealed VLA Lens overlay bundles.
 
 The validator enforces the data-integrity invariant: a trace may contain
 captured episode data and trace-local derived summaries, but it must not depend
@@ -561,7 +561,7 @@ def _validate_full_profile_model_sites(
 
 def _capture_profile(bundle: TraceBundle) -> str:
     metadata = dict(bundle.manifest.metadata or {})
-    value = metadata.get("capture_profile") or metadata.get("vlatrace_profile")
+    value = metadata.get("capture_profile")
     return str(value or "rollout")
 
 

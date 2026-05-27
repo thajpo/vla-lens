@@ -65,10 +65,10 @@ OVERLAY_ROOT_ARRAY_PREFIXES = (
 )
 
 
-LEGACY_ACTION_ARRAY = "executed_actions"
+TRACE_ACTION_ARRAY = "executed_actions"
 
 
-LEGACY_FRAME_PREFIX = "frames."
+TRACE_FRAME_PREFIX = "frames."
 
 
 def _read_episode_metadata(root: Path) -> pd.DataFrame:
@@ -303,6 +303,8 @@ def _prefix_table_paths(table: pd.DataFrame, prefix: Path) -> pd.DataFrame:
     for column in ("relative_path", "path"):
         if column in out:
             out[column] = [_prefix_path_value(value, prefix) for value in out[column]]
+    if "arrays" in out:
+        out["arrays"] = [_prefix_json_paths(value, prefix) for value in out["arrays"]]
     return out
 
 
@@ -311,6 +313,17 @@ def _prefix_path_value(value: object, prefix: Path) -> str:
     if not text or Path(text).is_absolute():
         return text
     return str(prefix / text)
+
+
+def _prefix_json_paths(value: object, prefix: Path) -> str:
+    try:
+        payload = json.loads(str(value)) if isinstance(value, str) else dict(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return str(value)
+    if not isinstance(payload, Mapping):
+        return str(value)
+    prefixed = {str(key): _prefix_path_value(item, prefix) for key, item in payload.items()}
+    return json.dumps(prefixed, sort_keys=True)
 
 
 def _uint8_rgb(frame: np.ndarray) -> np.ndarray:

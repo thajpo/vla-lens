@@ -21,7 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "root",
         type=Path,
-        help="LeRobot v3 dataset root, trace dataset root, or one .vlatrace bundle",
+        help="LeRobot v3 dataset root or top-level directory containing nested LeRobot v3 roots",
     )
     parser.add_argument("--spec", default=None, help="YAML probe spec path. Use '-' for stdin.")
     parser.add_argument(

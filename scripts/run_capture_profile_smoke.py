@@ -45,7 +45,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, default=2)
     parser.add_argument("--profiles", default=",".join(PROFILE_ORDER))
     parser.add_argument("--start-seed", type=int, default=1000)
-    parser.add_argument("--vlatrace-root", type=Path, default=Path("runs/profile_smoke_vlatraces"))
+    parser.add_argument("--output-root", type=Path, default=Path("runs/profile_smoke_lerobot"))
     parser.add_argument(
         "--dataset-id",
         help=(
@@ -64,7 +64,7 @@ def parse_args() -> argparse.Namespace:
             "{model_id}, {profile}, {episodes}, {start_seed}, {traces_root}, {dataset_id}. "
             "Example: 'scripts/pi05_capture.sh --backend rocm --model-id {model_id} "
             "--episodes {episodes} --start-seed {start_seed} --capture-profile {profile} "
-            "--dataset-id {dataset_id} --vlatrace-out-root {traces_root}'"
+            "--dataset-id {dataset_id} --output-root {traces_root}'"
         ),
     )
     parser.add_argument("--summary-json", type=Path)
@@ -74,7 +74,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     profiles = _parse_profiles(args.profiles)
-    dataset_id = args.dataset_id or args.vlatrace_root.name
+    dataset_id = args.dataset_id or args.output_root.name
     if not args.skip_capture and not args.capture_command:
         raise SystemExit(
             "--capture-command is required unless --skip-capture is set. "
@@ -83,11 +83,11 @@ def main() -> None:
     _validate_template(args.capture_command)
 
     if args.delete_existing and not args.dry_run:
-        _delete_roots(args.vlatrace_root)
+        _delete_roots(args.output_root)
 
     results: list[ProfileResult] = []
     for index, profile in enumerate(profiles):
-        traces_root = args.vlatrace_root / profile
+        traces_root = args.output_root / profile
         seed = args.start_seed + index * args.episodes
         print(f"== profile={profile} episodes={args.episodes} seed={seed}")
 

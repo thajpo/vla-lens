@@ -217,6 +217,7 @@ def _duckdb_source_sql(
 
 def _bundle_trace_table(bundle: TraceBundle, table_name: str) -> pd.DataFrame:
     readers = {
+        "timesteps": bundle.timesteps,
         "policy_calls": bundle.policy_calls,
         "generation_steps": bundle.generation_steps,
         "streams": bundle.streams,

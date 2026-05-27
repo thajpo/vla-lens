@@ -2,6 +2,8 @@
 
 Status: active, living
 
+Last updated: May 27, 2026.
+
 This document defines the goal for making VLA Lens agnostic to model family,
 robot dataset source, and robot simulator while preserving rich model-specific
 interpretability views.
@@ -41,7 +43,7 @@ gate:
 uv run python scripts/validate_vla_lens_dataset_trust.py /path/to/dataset-root
 ```
 
-opens an existing LeRobot root, nested batch output, or trace dataset and checks
+opens an existing LeRobot root or nested batch output and checks
 schema/overlay validity, split sidecars, activation coverage, outcome balance,
 and artifact freshness without invoking capture, replay, model loading, or a
 simulator.
@@ -283,7 +285,7 @@ Acceptance criteria:
 - Do not add heavyweight model or simulator dependencies to the normal
   dashboard/test environment.
 - Do not create parallel dataset formats for each model family.
-- Do not preserve old standalone `.vlatrace` behavior as a primary future path.
+- Do not preserve standalone overlay bundles as dataset inputs.
 
 ## Design Rule
 

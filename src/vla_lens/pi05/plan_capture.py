@@ -113,7 +113,7 @@ def main(argv: list[str] | None = None) -> None:
         )
         try:
             capture.run_pi05_capture_task(capture_args, runtime=runtime, plan=plan)
-            _validate_task_root(capture_args.vlatrace_out_root)
+            _validate_task_root(capture_args.output_root)
         except Exception as exc:
             _append_status(
                 status_path,

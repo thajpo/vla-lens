@@ -389,17 +389,16 @@ def _table_storage_uri(dataset: TraceDataset, bundle_uri: str) -> str:
     for uri in _table_storage_uri_candidates(bundle_uri):
         if list(dataset.root.glob(uri)):
             return uri
-    return f"**/*.vlatrace/{bundle_uri}"
+    return f"**/vla_lens/episodes/*/{bundle_uri}"
 
 def _context_table_storage_uri(dataset: TraceDataset) -> str:
     for uri in (
         "vla_lens/episodes/*/tables/*.parquet",
         "**/vla_lens/episodes/*/tables/*.parquet",
-        "**/*.vlatrace/tables/*.parquet",
     ):
         if list(dataset.root.glob(uri)):
             return uri
-    return "**/*.vlatrace/tables/*.parquet"
+    return "**/vla_lens/episodes/*/tables/*.parquet"
 
 def _table_storage_exists(dataset: TraceDataset, bundle_uri: str) -> bool:
     return any(list(dataset.root.glob(uri)) for uri in _table_storage_uri_candidates(bundle_uri))
@@ -408,7 +407,6 @@ def _table_storage_uri_candidates(bundle_uri: str) -> tuple[str, ...]:
     return (
         f"vla_lens/episodes/*/{bundle_uri}",
         f"**/vla_lens/episodes/*/{bundle_uri}",
-        f"**/*.vlatrace/{bundle_uri}",
     )
 
 def model_site_catalog(dataset: TraceDataset) -> tuple[ModelSiteSpec, ...]:
