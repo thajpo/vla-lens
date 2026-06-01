@@ -6,16 +6,20 @@ description: >
   run prioritizes task coverage over repeated seeds: all 130 LIBERO task-suite
   pairs are represented, with seven or eight seeds per task for 1000 total
   episodes.
+# Broad runs must be driven by a reviewed episode_plan.csv, not an implicit matrix.
 requires_episode_plan: true
 
 output_root: runs/pi05-broad-1000-mech-light
 model_id: lerobot/pi05_libero_finetuned
+# Machine-local runtime defaults. Wrapper scripts override these for the chosen backend.
 python_executable: .venv-pi05-rocm/bin/python
 pythonpath: src
 capture_profile: mechanistic_sampled
 storage_dtype: float16
 obs_size: 256
+# ROCm and CUDA both appear as device=cuda to PyTorch.
 device: cuda
 dtype: bfloat16
+# Planning estimates used by lint/guardrails; verify disk before real capture.
 estimated_mb_per_episode: 320
 minimum_free_gb_after_capture: 25

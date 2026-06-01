@@ -1,5 +1,9 @@
 # Research UI Principles
 
+Status: active design principles.
+
+Last updated: May 27, 2026.
+
 VLA-lens UI should help a researcher move from an observed episode behavior to a testable mechanistic hypothesis.
 
 ## Default Surface

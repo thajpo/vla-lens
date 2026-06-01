@@ -1,5 +1,9 @@
 # PI0.5 Lens Library
 
+Status: active library notes.
+
+Last updated: May 27, 2026.
+
 This is the first interpretability-library layer for the repo.  It is additive:
 it wraps the existing PI0.5 capture schema and does not replace the current
 experiment scripts.

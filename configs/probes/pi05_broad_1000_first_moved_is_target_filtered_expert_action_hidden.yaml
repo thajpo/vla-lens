@@ -1,3 +1,4 @@
+# Probe training uses saved activations in the normal repo environment, not capture wrappers.
 name: PI0.5 broad 1000 first moved is target filtered - expert action hidden
 target:
   kind: first_moved_is_target
@@ -19,6 +20,7 @@ features:
   reduction: mean
   dtype: float32
 split:
+  # Held-out task split is the claim-bearing split; row-level random splits are not enough.
   kind: heldout_task
   column: split
   train_value: train

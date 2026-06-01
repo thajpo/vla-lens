@@ -1,4 +1,6 @@
+# Probe training uses saved activations in the normal repo environment, not capture wrappers.
 name: PI0.5 broad 1000 robust probe campaign
+# Order is the reviewed campaign queue, not a parallel execution requirement.
 specs:
   - configs/probes/pi05_broad_1000_target_moved_expert_action_hidden.yaml
   - configs/probes/pi05_broad_1000_target_lifted_expert_action_hidden.yaml

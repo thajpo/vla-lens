@@ -13,6 +13,7 @@ source_traces:
 capture_profile: audit_windowed
 sites:
   model_family: pi05
+  # Name only the layers/sites needed for the mechanism under test.
   modules:
     - pi05.expert.layers.8
     - pi05.expert.layers.9
@@ -30,6 +31,7 @@ episode_selection:
     - reason: broad random audit capture
 
 budget:
+  # Audit profiles are GiB-scale; keep budgets small and question-driven.
   max_episodes: 2
   max_estimated_gb: 12
   stop_if_missing_source_artifacts: true

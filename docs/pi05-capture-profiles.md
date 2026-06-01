@@ -1,5 +1,9 @@
 # PI0.5 Capture Profiles for Interpretability
 
+Status: active capture-profile guide.
+
+Last updated: May 27, 2026.
+
 This document explains what each PI0.5 capture profile is for in interpretability terms.
 
 The short version:

@@ -744,7 +744,7 @@ export function BackendUnavailable() {
         The React dev server is running, but the VLA-lens Python backend is not listening on
         127.0.0.1:8765.
       </p>
-      <pre>uv run python scripts/serve_vla_lens_dashboard.py runs/pi05_real_20_vlatraces --port 8765</pre>
+      <pre>uv run python scripts/serve_vla_lens_dashboard.py runs/vla_lens_demo --port 8765</pre>
     </main>
   );
 }

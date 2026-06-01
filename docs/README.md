@@ -1,5 +1,9 @@
 # VLA Lens Documentation Index
 
+Status: active documentation entrypoint.
+
+Last updated: May 27, 2026.
+
 This is the current documentation entrypoint. Prefer these files over older
 experiment notes when deciding what to run or implement.
 
@@ -18,6 +22,10 @@ experiment notes when deciding what to run or implement.
 - [remote-gpu-local-analysis.md](remote-gpu-local-analysis.md): rented-GPU
   capture, local hard-drive analysis, and current options for online activation
   hosting or archival.
+- [dashboard-api.md](dashboard-api.md): local FastAPI dashboard route groups,
+  query/body conventions, caching, and serving paths.
+- [workbench-frontend.md](workbench-frontend.md): React workbench module split,
+  capability gating, API data flow, and frontend development commands.
 - [model-dataset-sim-agnosticity.md](model-dataset-sim-agnosticity.md):
   target architecture for supporting multiple VLA models, robot datasets, and
   simulators through adapters and dataset capabilities.

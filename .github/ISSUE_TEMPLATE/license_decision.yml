@@ -1,12 +1,12 @@
 name: License decision
-description: Track a maintainer/admin decision about repository licensing.
-title: "[License]: Decide repository license"
+description: Track a maintainer/admin decision about repository licensing or license changes.
+title: "[License]: Review repository license"
 labels: ["admin", "license"]
 body:
   - type: markdown
     attributes:
       value: |
-        This repository currently has no tracked license file. Do not add a license in routine code or hygiene work; use this issue type to make the maintainer decision explicit.
+        This repository currently tracks an MIT license. Use this issue type when distribution, dependency, dataset, model, employer/lab, or contributor constraints require a license review or license change.
   - type: textarea
     id: intended-use
     attributes:
@@ -25,4 +25,4 @@ body:
     id: decision
     attributes:
       label: Proposed decision record
-      description: Leave blank until a maintainer/admin chooses a license or chooses to keep the repo unlicensed.
+      description: Leave blank until a maintainer/admin chooses whether to keep MIT or change the repository license.

@@ -18,4 +18,4 @@ This project follows an explicit environment split:
 ### Baseline
 
 - Initial tracked release baseline for the VLA Lens package and documentation.
-- Repository license remains undecided; no license file is tracked yet.
+- Repository license is MIT; see `LICENSE`.

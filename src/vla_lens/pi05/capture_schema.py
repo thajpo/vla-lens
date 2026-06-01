@@ -92,6 +92,14 @@ LIBERO_ACTION_DIM_UNITS = (
 
 @dataclass(frozen=True, slots=True)
 class CapturePlan:
+    """Concrete tensor budget derived from a PI0.5 capture profile.
+
+    Profiles are researcher-facing names such as ``mechanistic_sampled`` or
+    ``audit_windowed``. A plan resolves those names into layer sets, hidden and
+    attention resolutions, bridge-site capture, and storage dtype so the capture
+    runner can make deterministic hook/writer decisions.
+    """
+
     profile: str
     vlm_layers: tuple[int, ...]
     expert_layers: tuple[int, ...]
@@ -103,10 +111,12 @@ class CapturePlan:
 
     @property
     def np_dtype(self) -> np.dtype:
+        """Return the numpy dtype used for persisted model internals."""
         return np.dtype(self.storage_dtype)
 
     @property
     def capture_bridge_sites(self) -> bool:
+        """Return whether VLM cache, expert input, and action-head sites are captured."""
         return canonical_profile(self.profile) in {
             "mechanistic_sampled",
             "mechanistic_all",
@@ -118,18 +128,22 @@ class CapturePlan:
 
     @property
     def capture_audit_full_sites(self) -> bool:
+        """Return whether all declared raw/debug sites are required."""
         return canonical_profile(self.profile) == "audit_full"
 
     @property
     def capture_audit_sampled_sites(self) -> bool:
+        """Return whether sampled-layer raw audit internals are captured."""
         return canonical_profile(self.profile) == "audit_sampled"
 
     @property
     def capture_windowed_audit_sites(self) -> bool:
+        """Return whether adjacent-layer audit windows are captured."""
         return canonical_profile(self.profile) == "audit_windowed"
 
     @property
     def capture_internals_sites(self) -> bool:
+        """Return whether operation-level internals beyond normal views are captured."""
         return canonical_profile(self.profile) in {
             "internals_sampled",
             "audit_sampled",
@@ -138,6 +152,7 @@ class CapturePlan:
         }
 
     def to_metadata(self) -> dict[str, Any]:
+        """Serialize the plan into provenance stored in the overlay manifest."""
         payload = asdict(self)
         payload["profile"] = canonical_profile(self.profile)
         if self.profile != payload["profile"]:
@@ -184,9 +199,11 @@ def _past_key_values_collection_metadata(plan: "CapturePlan") -> dict[str, Any]:
     }
 
 def canonical_profile(profile: str) -> str:
+    """Resolve historical profile aliases to canonical profile names."""
     return PROFILE_ALIASES.get(str(profile), str(profile))
 
 def profile_dimensions(profile: str) -> dict[str, Any]:
+    """Return researcher-facing coverage labels for a canonical profile."""
     profile = canonical_profile(profile)
     if profile == "rollout":
         return {
@@ -307,6 +324,8 @@ def _sampled_audit_internals_label(profile: str) -> str:
 
 @dataclass
 class CaptureCall:
+    """Captured tensors and metadata for one policy call/action chunk."""
+
     call_index: int
     env_timestep: int
     final_action_chunk: np.ndarray
@@ -332,6 +351,8 @@ class CaptureCall:
 
 @dataclass
 class EpisodeBuffer:
+    """Mutable in-memory rollout buffer before writing one captured episode."""
+
     trace_id: str
     task_id: int
     task_name: str
@@ -352,6 +373,8 @@ class EpisodeBuffer:
 
 @dataclass
 class PI05CaptureRuntime:
+    """Heavy PI0.5 runtime objects loaded only in the capture environment."""
+
     torch: Any
     policy_cfg: Any
     policy: Any

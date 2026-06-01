@@ -37,6 +37,7 @@ class _PI05FullSiteRecorder:
         generation_step: int | None = None,
         squeeze_batch: bool = True,
     ) -> None:
+        """Store one declared tensor, optionally under a denoising step."""
         if name not in self._declarations_by_name:
             raise KeyError(f"Unknown PI0.5 full capture site: {name}")
         array = _capture_numpy(value, dtype=dtype)
@@ -48,6 +49,7 @@ class _PI05FullSiteRecorder:
             self._step_arrays[name][int(generation_step)] = array
 
     def finalized_arrays(self, *, generation_steps: int) -> dict[str, np.ndarray]:
+        """Return captured tensors with per-step captures stacked and padded."""
         arrays = dict(self._arrays)
         for name, by_step in self._step_arrays.items():
             if not by_step:
@@ -61,10 +63,12 @@ class _PI05FullSiteRecorder:
         return arrays
 
     def missing_names(self, arrays: Mapping[str, np.ndarray]) -> tuple[str, ...]:
+        """Return declared full-capture site names absent from a finalized call."""
         captured = set(arrays)
         return tuple(item.name for item in self.declarations if item.name not in captured)
 
 def _empty_step_array(generation_steps: int, sample: np.ndarray) -> np.ndarray:
+    """Create a padded step-major array for sparse denoising-step captures."""
     if np.issubdtype(sample.dtype, np.floating):
         fill_value: float | int | bool = np.nan
     elif np.issubdtype(sample.dtype, np.bool_):
@@ -74,6 +78,7 @@ def _empty_step_array(generation_steps: int, sample: np.ndarray) -> np.ndarray:
     return np.full((generation_steps, *sample.shape), fill_value, dtype=sample.dtype)
 
 def _capture_numpy(value: Any, *, dtype: np.dtype | str | None = None) -> np.ndarray:
+    """Detach a Torch-like value and return a contiguous numpy array."""
     if hasattr(value, "detach"):
         value = value.detach()
     if dtype is not None and np.dtype(dtype).kind == "f" and hasattr(value, "float"):
@@ -143,6 +148,7 @@ def _install_full_layer_hooks(
     vlm_model: Any,
     expert_model: Any,
 ) -> tuple[list[Any], list[tuple[Any, Any]]]:
+    """Install true-full capture hooks on selected VLM and expert layers."""
     handles: list[Any] = []
     patched_mlps: list[tuple[Any, Any]] = []
 
@@ -183,6 +189,7 @@ def _install_full_single_layer_hooks(
     layer: Any,
     prefix: str,
 ) -> list[Any]:
+    """Install raw residual, norm, attention, and MLP hooks for one layer."""
     handles: list[Any] = []
 
     def capture(name: str, value: Any, *, dtype: np.dtype | str | None = None) -> None:
@@ -286,6 +293,7 @@ def _make_full_mlp_forward(
     stack: str,
     prefix: str,
 ) -> Any:
+    """Wrap a PI0.5 MLP forward pass to expose intermediate gate/up/down sites."""
     def capture(name: str, value: Any) -> None:
         _capture_full_tensor(
             recorder,
