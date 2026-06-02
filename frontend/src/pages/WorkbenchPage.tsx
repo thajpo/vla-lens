@@ -139,7 +139,7 @@ function parseEpisodeRoute(value: string): EpisodeRouteState {
   return {
     fromCohort: params.get("from") === "cohort",
     policyCall: policyCall ?? undefined,
-    probeId: params.get("probe") ?? "",
+    probeId: params.get("probe_id") ?? params.get("probe") ?? "",
     siteName: params.get("site") ?? "",
     traceId: decodeURIComponent(tracePart),
   };
@@ -148,7 +148,7 @@ function parseEpisodeRoute(value: string): EpisodeRouteState {
 function buildEpisodeHash(route: EpisodeRouteState): string {
   const params = new URLSearchParams();
   if (route.probeId) {
-    params.set("probe", route.probeId);
+    params.set("probe_id", route.probeId);
   }
   if (typeof route.policyCall === "number") {
     params.set("call", String(route.policyCall));
@@ -160,7 +160,7 @@ function buildEpisodeHash(route: EpisodeRouteState): string {
     params.set("from", "cohort");
   }
   const query = params.toString();
-  return `#dataset/${encodeURIComponent(route.traceId)}${query ? `?${query}` : ""}`;
+  return `#episode/${encodeURIComponent(route.traceId)}${query ? `?${query}` : ""}`;
 }
 
 function episodeRouteKey(route: EpisodeRouteState): string {

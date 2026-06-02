@@ -21,12 +21,12 @@ from vla_lens.artifacts import LensArtifact
 from vla_lens.capture.lerobot_v3 import LEROBOT_INFO_PATH
 from vla_lens.traces import TraceDataset
 
-INDEX_SCHEMA_VERSION = "0.1.0"
+INDEX_SCHEMA_VERSION = "0.1.1"
 INDEX_TABLE_DIR = Path("vla_lens") / "tables"
 INDEX_MANIFEST = INDEX_TABLE_DIR / "index_manifest.json"
 EPISODE_INDEX = INDEX_TABLE_DIR / "episode_index.parquet"
 MODEL_SITE_INDEX = INDEX_TABLE_DIR / "model_site_index.parquet"
-ARTIFACT_INDEX = INDEX_TABLE_DIR / "artifact_index.parquet"
+ARTIFACT_INDEX = INDEX_TABLE_DIR / "dashboard_artifact_index.parquet"
 PROBE_PREDICTIONS = INDEX_TABLE_DIR / "probe_predictions.parquet"
 
 REQUIRED_EPISODE_COLUMNS = (
@@ -238,25 +238,12 @@ def validate_dataset_index(root: str | Path) -> dict[str, Any]:
                 root_path,
                 f"Dataset index schema mismatch: {manifest.get('schema_version')!r}",
             )
-        )
-    episode_path = root_path / EPISODE_INDEX
-    if not episode_path.exists():
-        raise DatasetIndexError(_rebuild_message(root_path, "Missing episode_index.parquet."))
-    episode_index = pd.read_parquet(episode_path)
-    missing = [column for column in REQUIRED_EPISODE_COLUMNS if column not in episode_index]
-    if missing:
-        raise DatasetIndexError(
-            _rebuild_message(root_path, f"Episode index missing columns: {', '.join(missing)}")
-        )
+    )
+    episode_index = _validate_manifest_tables(root_path, manifest)["episode_index"]
     indexed_count = int(len(episode_index))
-    manifest_count = int(manifest.get("tables", {}).get("episode_index", {}).get("rows", -1))
-    if manifest_count != indexed_count:
+    if episode_index["trace_id"].astype(str).duplicated().any():
         raise DatasetIndexError(
-            _rebuild_message(
-                root_path,
-                "Episode index row count mismatch: "
-                f"manifest={manifest_count} actual={indexed_count}",
-            )
+            _rebuild_message(root_path, "Episode index has duplicate trace IDs.")
         )
     if str(manifest.get("dataset_fingerprint") or "") != _dataset_fingerprint(
         root_path,
@@ -345,16 +332,34 @@ def _model_site_rows(bundle: Any) -> list[dict[str, Any]]:
 
 def _artifact_index_table(dataset: TraceDataset) -> pd.DataFrame:
     rows: list[dict[str, Any]] = []
-    table = dataset.artifact_index
-    if not table.empty:
+    dataset_table = _source_dataset_artifact_table(dataset)
+    for record in dataset_table.to_dict("records"):
+        enriched = dict(record)
+        enriched["trace_id"] = None
+        enriched["episode_id"] = None
+        enriched["artifact_scope"] = "dataset"
+        rows.append({column: _jsonable_scalar(enriched.get(column)) for column in ARTIFACT_COLUMNS})
+    for bundle in dataset.bundles:
+        table = bundle.artifact_index
+        if table.empty:
+            continue
         for record in table.to_dict("records"):
+            enriched = dict(record)
+            enriched["trace_id"] = bundle.manifest.trace_id
+            enriched["episode_id"] = bundle.manifest.episode_id
+            enriched["artifact_scope"] = "bundle"
             rows.append(
-                {
-                    column: _jsonable_scalar(record.get(column))
-                    for column in ARTIFACT_COLUMNS
-                }
+                {column: _jsonable_scalar(enriched.get(column)) for column in ARTIFACT_COLUMNS}
             )
     return _coerce_columns(pd.DataFrame.from_records(rows), ARTIFACT_COLUMNS)
+
+
+def _source_dataset_artifact_table(dataset: TraceDataset) -> pd.DataFrame:
+    table = dataset.dataset_artifact_index.copy()
+    if table.empty or "artifact_scope" not in table:
+        return table
+    artifact_scope = table["artifact_scope"].fillna("").astype(str).str.strip().str.lower()
+    return table.loc[(artifact_scope == "") | (artifact_scope == "dataset")].copy()
 
 
 def _probe_prediction_index_table(dataset: TraceDataset, artifacts: pd.DataFrame) -> pd.DataFrame:
@@ -514,6 +519,70 @@ def _declared_lerobot_episode_count(root: Path) -> int | None:
         except (TypeError, ValueError):
             continue
     return None
+
+
+def _validate_manifest_tables(root: Path, manifest: Mapping[str, Any]) -> dict[str, pd.DataFrame]:
+    tables = manifest.get("tables")
+    if not isinstance(tables, Mapping):
+        raise DatasetIndexError(_rebuild_message(root, "Dataset index manifest has no tables map."))
+    expected_tables: Mapping[str, tuple[Path, Sequence[str]]] = {
+        "episode_index": (EPISODE_INDEX, REQUIRED_EPISODE_COLUMNS),
+        "model_site_index": (MODEL_SITE_INDEX, MODEL_SITE_COLUMNS),
+        "artifact_index": (ARTIFACT_INDEX, ARTIFACT_COLUMNS),
+        "probe_predictions": (PROBE_PREDICTIONS, PROBE_PREDICTION_COLUMNS),
+    }
+    frames: dict[str, pd.DataFrame] = {}
+    for table_name, (expected_path, required_columns) in expected_tables.items():
+        table_info = tables.get(table_name)
+        if not isinstance(table_info, Mapping):
+            raise DatasetIndexError(
+                _rebuild_message(root, f"Dataset index manifest missing {table_name}.")
+            )
+        manifest_path = Path(str(table_info.get("path") or ""))
+        if manifest_path != expected_path:
+            raise DatasetIndexError(
+                _rebuild_message(
+                    root,
+                    f"Dataset index table path mismatch for {table_name}: {manifest_path}",
+                )
+            )
+        table_path = root / manifest_path
+        if not table_path.exists():
+            raise DatasetIndexError(
+                _rebuild_message(root, f"Missing index table: {manifest_path}.")
+            )
+        try:
+            frame = pd.read_parquet(table_path)
+        except Exception as exc:
+            raise DatasetIndexError(
+                _rebuild_message(root, f"Unreadable index table: {manifest_path}.")
+            ) from exc
+        missing = [column for column in required_columns if column not in frame]
+        if missing:
+            raise DatasetIndexError(
+                _rebuild_message(
+                    root,
+                    f"{table_name} missing columns: {', '.join(missing)}",
+                )
+            )
+        try:
+            manifest_rows = int(table_info.get("rows", -1))
+        except (TypeError, ValueError):
+            manifest_rows = -1
+        actual_rows = int(len(frame))
+        if manifest_rows != actual_rows:
+            reason = (
+                f"{table_name} row count mismatch: "
+                f"manifest={manifest_rows} actual={actual_rows}"
+            )
+            raise DatasetIndexError(
+                _rebuild_message(
+                    root,
+                    reason,
+                )
+            )
+        frames[table_name] = frame
+    return frames
 
 
 def _merge_append_table(

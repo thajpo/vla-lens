@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search, Target } from "lucide-react";
 import {
@@ -138,20 +138,6 @@ export function DatasetBrowser({
     enabled: episodePage.isFetched || episodePage.isError,
     staleTime: 60_000,
   });
-  useEffect(() => {
-    setPageOffset(0);
-  }, [
-    benchmarkFilter,
-    datasetFilter,
-    deferredQuery,
-    outcomeFilter,
-    probeCohortPreset,
-    probePredictionFilter,
-    probeSplitFilter,
-    profileFilter,
-    selectedProbe?.artifact_id,
-    taskFilter,
-  ]);
   const rankedProbes = useMemo(() => rankProbesForReview(probes), [probes]);
   const visibleProbeChoices = useMemo(
     () => filterProbeChoices(rankedProbes, deferredProbeQuery).slice(0, PROBE_LIST_LIMIT),
@@ -187,6 +173,7 @@ export function DatasetBrowser({
   const visibleTotal = episodePage.data?.total ?? 0;
   const pageStart = visibleTotal ? pageOffset + 1 : 0;
   const pageEnd = Math.min(pageOffset + (episodePage.data?.limit ?? 100), visibleTotal);
+  const resetPage = () => setPageOffset(0);
 
   return (
     <main className="dataset-browser-page">
@@ -224,33 +211,56 @@ export function DatasetBrowser({
             aria-label="Search dataset episodes"
             placeholder="Search trace, task, dataset, prompt"
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              resetPage();
+            }}
           />
         </div>
         <FilterSelect
           label="Dataset"
           value={datasetFilter}
           values={datasetIds}
-          onChange={setDatasetFilter}
+          onChange={(value) => {
+            setDatasetFilter(value);
+            resetPage();
+          }}
         />
         <FilterSelect
           label="Benchmark"
           value={benchmarkFilter}
           values={benchmarks}
-          onChange={setBenchmarkFilter}
+          onChange={(value) => {
+            setBenchmarkFilter(value);
+            resetPage();
+          }}
         />
-        <FilterSelect label="Task" value={taskFilter} values={tasks} onChange={setTaskFilter} />
+        <FilterSelect
+          label="Task"
+          value={taskFilter}
+          values={tasks}
+          onChange={(value) => {
+            setTaskFilter(value);
+            resetPage();
+          }}
+        />
         <FilterSelect
           label="Outcome"
           value={outcomeFilter}
           values={outcomes}
-          onChange={setOutcomeFilter}
+          onChange={(value) => {
+            setOutcomeFilter(value);
+            resetPage();
+          }}
         />
         <FilterSelect
           label="Profile"
           value={profileFilter}
           values={profiles}
-          onChange={setProfileFilter}
+          onChange={(value) => {
+            setProfileFilter(value);
+            resetPage();
+          }}
         />
       </section>
 
@@ -282,6 +292,7 @@ export function DatasetBrowser({
             onChange={(value) => {
               setProbeCohortPreset("all");
               setProbeSplitFilter(value);
+              resetPage();
             }}
           />
           <FilterSelect
@@ -293,6 +304,7 @@ export function DatasetBrowser({
             onChange={(value) => {
               setProbeCohortPreset("all");
               setProbePredictionFilter(value);
+              resetPage();
             }}
           />
           <button
@@ -304,6 +316,7 @@ export function DatasetBrowser({
               setProbeCohortPreset("all");
               setProbeSplitFilter("all");
               setProbePredictionFilter("all");
+              resetPage();
             }}
           >
             Clear probe
@@ -319,6 +332,7 @@ export function DatasetBrowser({
               setProbeCohortPreset("all");
               setProbeSplitFilter("all");
               setProbePredictionFilter("scored");
+              resetPage();
             }}
           />
           <ProbeEvidencePanel
@@ -332,15 +346,18 @@ export function DatasetBrowser({
               setProbeCohortPreset(preset);
               setProbeSplitFilter("all");
               setProbePredictionFilter("all");
+              resetPage();
             }}
             onOpenEpisode={onOpenEpisode}
             onPredictionFilterChange={(value) => {
               setProbeCohortPreset("all");
               setProbePredictionFilter(value);
+              resetPage();
             }}
             onSplitFilterChange={(value) => {
               setProbeCohortPreset("all");
               setProbeSplitFilter(value);
+              resetPage();
             }}
           />
         </div>

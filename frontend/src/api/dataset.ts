@@ -30,12 +30,6 @@ import type {
   SelectedPatch,
 } from "../types/dataset";
 
-export type DatasetSnapshotLookup = {
-  datasetId?: string;
-  fingerprint?: string;
-  root?: string;
-};
-
 export type EpisodePageParams = {
   benchmark?: string;
   dataset_id?: string;
@@ -52,11 +46,11 @@ export type EpisodePageParams = {
   task_id?: string;
 };
 
-export function fetchDataset(_identity: DatasetSnapshotLookup = {}): Promise<DatasetPayload> {
+export function fetchDataset(): Promise<DatasetPayload> {
   return getJson<DatasetPayload>("/api/dataset", noStore());
 }
 
-export function cachedDatasetSnapshot(_identity: DatasetSnapshotLookup = {}): DatasetPayload | undefined {
+export function cachedDatasetSnapshot(): DatasetPayload | undefined {
   return undefined;
 }
 

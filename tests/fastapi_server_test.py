@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -11,7 +12,13 @@ import vla_lens.server.indexed as indexed_api
 import vla_lens.server.state as state_api
 from vla_lens import create_synthetic_trace_dataset
 from vla_lens.dataset import DatasetIndexError
-from vla_lens.dataset.index import ARTIFACT_INDEX, PROBE_PREDICTIONS, index_manifest_path
+from vla_lens.dataset.index import (
+    ARTIFACT_COLUMNS,
+    ARTIFACT_INDEX,
+    PROBE_PREDICTION_COLUMNS,
+    PROBE_PREDICTIONS,
+    index_manifest_path,
+)
 from vla_lens.server import _dataset_signature
 from vla_lens.server.fastapi_app import create_dashboard_app
 
@@ -112,20 +119,26 @@ def test_fastapi_episode_page_payload_keeps_metadata_bounded(tmp_path):
 def test_fastapi_indexed_probe_episode_page_includes_split_record(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
     trace_id = dataset.bundles[0].manifest.trace_id
-    pd.DataFrame(
-        {
-            "probe_id": ["probe-a"],
-            "trace_id": [trace_id],
-            "split": ["heldout-validation"],
-            "split_category": ["validation"],
-            "actual": ["success"],
-            "predicted": ["failure"],
-            "confidence": [0.91],
-            "correct": [False],
-            "model": ["linear"],
-            "feature": ["action_head.layers.0"],
-        }
-    ).to_parquet(dataset.root / PROBE_PREDICTIONS, index=False)
+    _write_index_table(
+        dataset.root,
+        "probe_predictions",
+        PROBE_PREDICTIONS,
+        pd.DataFrame(
+            {
+                "probe_id": ["probe-a"],
+                "trace_id": [trace_id],
+                "split": ["heldout-validation"],
+                "split_category": ["validation"],
+                "actual": ["success"],
+                "predicted": ["failure"],
+                "confidence": [0.91],
+                "correct": [False],
+                "model": ["linear"],
+                "feature": ["action_head.layers.0"],
+            }
+        ),
+        PROBE_PREDICTION_COLUMNS,
+    )
     client = TestClient(create_dashboard_app(dataset.root))
 
     payload = client.get("/api/episodes", params={"limit": "1", "probe_id": "probe-a"}).json()
@@ -141,28 +154,40 @@ def test_fastapi_indexed_probe_episode_page_includes_split_record(tmp_path):
 def test_fastapi_probe_evidence_defaults_to_scored_split_records(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2, timesteps=2)
     trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
-    pd.DataFrame(
-        {
-            "artifact_id": ["probe-a"],
-            "artifact_type": ["probe_suite"],
-            "name": ["Probe A"],
-            "metrics": ['{"target":"outcome","best_model":"linear"}'],
-        }
-    ).to_parquet(dataset.root / ARTIFACT_INDEX, index=False)
-    pd.DataFrame(
-        {
-            "probe_id": ["probe-a"],
-            "trace_id": [trace_ids[1]],
-            "split": ["val_heldout_task"],
-            "split_category": ["validation"],
-            "actual": ["success"],
-            "predicted": ["failure"],
-            "confidence": [0.91],
-            "correct": [False],
-            "model": ["linear"],
-            "feature": ["action_head.layers.0"],
-        }
-    ).to_parquet(dataset.root / PROBE_PREDICTIONS, index=False)
+    _write_index_table(
+        dataset.root,
+        "artifact_index",
+        ARTIFACT_INDEX,
+        pd.DataFrame(
+            {
+                "artifact_id": ["probe-a"],
+                "artifact_type": ["probe_suite"],
+                "name": ["Probe A"],
+                "metrics": ['{"target":"outcome","best_model":"linear"}'],
+            }
+        ),
+        ARTIFACT_COLUMNS,
+    )
+    _write_index_table(
+        dataset.root,
+        "probe_predictions",
+        PROBE_PREDICTIONS,
+        pd.DataFrame(
+            {
+                "probe_id": ["probe-a"],
+                "trace_id": [trace_ids[1]],
+                "split": ["val_heldout_task"],
+                "split_category": ["validation"],
+                "actual": ["success"],
+                "predicted": ["failure"],
+                "confidence": [0.91],
+                "correct": [False],
+                "model": ["linear"],
+                "feature": ["action_head.layers.0"],
+            }
+        ),
+        PROBE_PREDICTION_COLUMNS,
+    )
     client = TestClient(create_dashboard_app(dataset.root))
 
     payload = client.get("/api/probes/probe-a/evidence", params={"limit": "1"}).json()
@@ -240,6 +265,29 @@ def test_fastapi_health_endpoint_is_gateway_readiness_probe(tmp_path):
     assert payload["api"] == "/api/dataset"
     assert payload["dataset"]["episodes"] == 1
     assert payload["dataset"]["activation_sites"] == len(dataset.model_site_index)
+
+
+def _write_index_table(
+    root: Path,
+    table_name: str,
+    relative_path: Path,
+    frame: pd.DataFrame,
+    columns: tuple[str, ...],
+) -> None:
+    out = frame.copy()
+    for column in columns:
+        if column not in out:
+            out[column] = pd.Series(dtype=object)
+    out = out.loc[:, list(columns)]
+    (root / relative_path).parent.mkdir(parents=True, exist_ok=True)
+    out.to_parquet(root / relative_path, index=False)
+    manifest_path = index_manifest_path(root)
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["tables"][table_name] = {
+        "path": str(relative_path),
+        "rows": int(len(out)),
+    }
+    manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
 
 
 def test_fastapi_client_errors_match_json_contract(tmp_path):

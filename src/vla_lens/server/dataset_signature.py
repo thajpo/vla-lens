@@ -8,6 +8,7 @@ from typing import Sequence
 
 import pandas as pd
 
+import vla_lens.dataset.index as dashboard_index
 from vla_lens.traces import TraceBundle
 
 
@@ -18,11 +19,11 @@ def _dataset_signature(root: Path) -> tuple[int, int]:
         trace_count = 1
     else:
         paths = [
-            root / "vla_lens" / "tables" / "index_manifest.json",
-            root / "vla_lens" / "tables" / "episode_index.parquet",
-            root / "vla_lens" / "tables" / "model_site_index.parquet",
-            root / "vla_lens" / "tables" / "artifact_index.parquet",
-            root / "vla_lens" / "tables" / "probe_predictions.parquet",
+            root / dashboard_index.INDEX_MANIFEST,
+            root / dashboard_index.EPISODE_INDEX,
+            root / dashboard_index.MODEL_SITE_INDEX,
+            root / dashboard_index.ARTIFACT_INDEX,
+            root / dashboard_index.PROBE_PREDICTIONS,
             *_workbench_signature_paths(root),
         ]
         trace_count = _dataset_trace_count_hint(root)

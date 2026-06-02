@@ -5,7 +5,6 @@ import {
   fetchActivationSites,
   fetchAttentionMap,
   fetchEpisode,
-  fetchEpisodeProbes,
   fetchImageTokenMap,
   fetchPolicyCalls,
 } from "../../api/dataset";
@@ -40,7 +39,6 @@ export function useEpisodePlayback({
 type UseAdjacentEpisodePrefetchParams = {
   hasModelSites: boolean;
   hasPolicyCalls: boolean;
-  hasProbeArtifacts: boolean;
   nextTraceId?: string;
   previousTraceId?: string;
   queryClient: QueryClient;
@@ -49,7 +47,6 @@ type UseAdjacentEpisodePrefetchParams = {
 export function useAdjacentEpisodePrefetch({
   hasModelSites,
   hasPolicyCalls,
-  hasProbeArtifacts,
   nextTraceId,
   previousTraceId,
   queryClient,
@@ -72,13 +69,6 @@ export function useAdjacentEpisodePrefetch({
             staleTime: 60_000,
           });
         }
-        if (hasProbeArtifacts) {
-          void queryClient.prefetchQuery({
-            queryKey: ["episode-probes", traceId],
-            queryFn: () => fetchEpisodeProbes(traceId),
-            staleTime: 60_000,
-          });
-        }
         if (hasModelSites) {
           void queryClient.prefetchQuery({
             queryKey: ["activation-sites", traceId],
@@ -92,7 +82,6 @@ export function useAdjacentEpisodePrefetch({
   }, [
     hasModelSites,
     hasPolicyCalls,
-    hasProbeArtifacts,
     nextTraceId,
     previousTraceId,
     queryClient,
