@@ -318,7 +318,7 @@ export function DatasetBrowser({
               setProbeFilter(artifactId);
               setProbeCohortPreset("all");
               setProbeSplitFilter("all");
-              setProbePredictionFilter("all");
+              setProbePredictionFilter("scored");
             }}
           />
           <ProbeEvidencePanel
@@ -802,7 +802,12 @@ function facetValues(values: EpisodeFacetValue[] | undefined): string[] {
 
 function ProbeEpisodeBadge({ record }: { record?: ProbeEpisodeIndex }) {
   if (!record) {
-    return <span className="probe-episode-badge muted">Select probe</span>;
+    return (
+      <span className="probe-episode-badge muted">
+        <strong>Not scored</strong>
+        <small>No probe row</small>
+      </span>
+    );
   }
   const tone = record.correct === true ? "correct" : record.correct === false ? "incorrect" : "";
   return (
