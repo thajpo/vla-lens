@@ -17,12 +17,11 @@ def _dataset_signature(root: Path) -> tuple[int, int]:
         trace_count = 1
     else:
         paths = [
-            root / TraceBundle.ARTIFACT_INDEX,
-            root / "vla_lens" / TraceBundle.ARTIFACT_INDEX,
-            root / "episode_plan.csv",
-            root / "episode_plan.json",
-            root / "capture_status.jsonl",
-            *list(_lerobot_signature_paths(root)),
+            root / "vla_lens" / "tables" / "index_manifest.json",
+            root / "vla_lens" / "tables" / "episode_index.parquet",
+            root / "vla_lens" / "tables" / "model_site_index.parquet",
+            root / "vla_lens" / "tables" / "artifact_index.parquet",
+            root / "vla_lens" / "tables" / "probe_predictions.parquet",
             *_workbench_signature_paths(root),
         ]
         trace_count = _dataset_trace_count_hint(root)
@@ -32,6 +31,11 @@ def _dataset_signature(root: Path) -> tuple[int, int]:
 
 
 def _lerobot_signature_paths(root: Path) -> list[Path]:
+    """Return source paths used by index builders and older diagnostics.
+
+    Normal dashboard cache signatures intentionally do not call this helper so
+    serving an indexed dataset does not recurse through all episode bundles.
+    """
     paths: list[Path] = []
     for pattern in (
         "meta/info.json",

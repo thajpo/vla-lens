@@ -13,6 +13,7 @@ from starlette.responses import Response
 import vla_lens.server.activation as activation_api
 import vla_lens.server.attention as attention_api
 import vla_lens.server.dataset as dataset_api
+import vla_lens.server.indexed as indexed_api
 import vla_lens.server.metrics as metrics_api
 import vla_lens.server.probes as probes_api
 import vla_lens.server.spatial as spatial_api
@@ -78,7 +79,7 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
             request,
             lambda state, _query: state.cached_payload(
                 "dataset",
-                lambda dataset: dataset_api._dataset_payload(dataset, include_workbench=False),
+                lambda _dataset: indexed_api.indexed_dataset_payload(state.root),
             ),
         )
 
@@ -88,7 +89,7 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
             request,
             lambda state, _query: state.cached_payload(
                 "counterfactual-pairs",
-                dataset_api._counterfactual_pairs_response,
+                lambda _dataset: indexed_api.counterfactual_pairs_from_index(state.root),
             ),
         )
 
@@ -217,7 +218,7 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
     async def artifacts_endpoint(request: Request) -> Response:
         return _handle_json(
             request,
-            lambda state, _query: dataset_api._artifacts_payload(state.dataset),
+            lambda state, _query: indexed_api.indexed_artifacts_payload(state.root),
             cache_control=NO_STORE_CACHE_CONTROL,
         )
 
@@ -227,6 +228,23 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
             request,
             lambda state, _query: dataset_api._artifact_detail_payload(state.dataset, artifact_id),
             cache_control=NO_STORE_CACHE_CONTROL,
+        )
+
+    @app.get("/api/episodes")
+    async def episodes_endpoint(request: Request) -> Response:
+        return _handle_json(
+            request,
+            lambda state, query: indexed_api.indexed_episodes_payload(state.root, query),
+        )
+
+    @app.get("/api/episodes/{trace_id}/neighbors")
+    async def episode_neighbors_endpoint(request: Request, trace_id: str) -> Response:
+        return _handle_json(
+            request,
+            lambda state, _query: indexed_api.indexed_episode_neighbors_payload(
+                state.root,
+                trace_id,
+            ),
         )
 
     @app.get("/api/episodes/{trace_id}")
@@ -299,7 +317,18 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
     async def probe_index_endpoint(request: Request) -> Response:
         return _handle_json(
             request,
-            lambda state, _query: probes_api._probe_index_payload(state.dataset),
+            lambda state, _query: indexed_api.indexed_probe_index_payload(state.root),
+        )
+
+    @app.get("/api/probes/{probe_id}/evidence")
+    async def probe_evidence_endpoint(request: Request, probe_id: str) -> Response:
+        return _handle_json(
+            request,
+            lambda state, query: indexed_api.indexed_probe_evidence_payload(
+                state.root,
+                probe_id,
+                query,
+            ),
         )
 
     @app.get("/api/activation-sites")

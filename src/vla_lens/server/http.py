@@ -65,8 +65,8 @@ def _handle_json(
     cache_control: str = JSON_CACHE_CONTROL,
 ) -> Response:
     state = _state(request)
-    state.refresh_dataset_if_needed()
     try:
+        state.refresh_dataset_if_needed()
         return _json_response(build(state, _query(request)), cache_control=cache_control)
     except (BrokenPipeError, ConnectionResetError):  # pragma: no cover - client boundary
         raise

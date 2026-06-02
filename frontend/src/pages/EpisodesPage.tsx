@@ -9,15 +9,16 @@ import {
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layers3 } from "lucide-react";
 import {
-  cachedDatasetSnapshot,
   fetchActivationSites,
   fetchDataset,
   fetchDatasetDiagnostics,
   fetchEpisode,
   fetchEpisodeAnnotation,
+  fetchEpisodeNeighbors,
   fetchEpisodeInteractions,
   fetchEpisodeMetrics,
   fetchEpisodeProbes,
+  fetchEpisodesPage,
   fetchPolicyCalls,
   saveEpisodeAnnotation,
 } from "../api/dataset";
@@ -32,7 +33,6 @@ import {
 import { EpisodeStageView } from "./episodes/EpisodeStageView";
 import {
   camerasFromManifest,
-  episodesFromManifest,
   frameVersionKey,
 } from "./episodes/episodeData";
 import {
@@ -98,15 +98,6 @@ export function EpisodesPage({
     queryKey: ["dataset", datasetIdentityKey],
     queryFn: () => fetchDataset({ fingerprint: datasetFingerprint }),
     enabled: datasetCacheReady,
-    initialData: () => {
-      if (!datasetCacheReady || !initialTraceId) {
-        return undefined;
-      }
-      return datasetFingerprint
-        ? cachedDatasetSnapshot({ fingerprint: datasetFingerprint })
-        : cachedDatasetSnapshot();
-    },
-    initialDataUpdatedAt: 0,
     staleTime: 30_000,
   });
   const capabilities = episodeCapabilityGates(dataset.data?.capabilities?.flags);
@@ -120,7 +111,13 @@ export function EpisodesPage({
     hasProbeArtifacts,
   } = capabilities;
 
-  const episodes = dataset.data?.episodes ?? episodesFromManifest(manifest);
+  const firstEpisodePage = useQuery({
+    queryKey: ["episodes-first", datasetIdentityKey],
+    queryFn: ({ signal }) => fetchEpisodesPage({ limit: 1 }, signal),
+    enabled: datasetCacheReady && !initialTraceId,
+    staleTime: 30_000,
+  });
+  const firstEpisode = firstEpisodePage.data?.episodes[0];
   const [timestep, setTimestep] = useState(0);
   const [isPlayingFrames, setIsPlayingFrames] = useState(false);
   const [playbackFps, setPlaybackFps] = useState(10);
@@ -142,7 +139,7 @@ export function EpisodesPage({
   const [selectedProbeArtifactId, setSelectedProbeArtifactId] = useState(initialProbeArtifactId);
   const appliedRouteContextRef = useRef("");
 
-  const activeTraceId = initialTraceId || episodes[0]?.trace_id || "";
+  const activeTraceId = initialTraceId || firstEpisode?.trace_id || "";
   const handlePatchSelect = useCallback((patch: SelectedPatch | null) => {
     setSelectedPatch((current) => {
       if (
@@ -156,17 +153,14 @@ export function EpisodesPage({
       return patch;
     });
   }, [setSelectedPatch]);
-  const selectedEpisode =
-    episodes.find((episode) => episode.trace_id === activeTraceId) ?? episodes[0];
-  const selectedEpisodeIndex = selectedEpisode
-    ? episodes.findIndex((episode) => episode.trace_id === selectedEpisode.trace_id)
-    : -1;
-  const previousEpisode =
-    selectedEpisodeIndex > 0 ? episodes[selectedEpisodeIndex - 1] : undefined;
-  const nextEpisode =
-    selectedEpisodeIndex >= 0 && selectedEpisodeIndex < episodes.length - 1
-      ? episodes[selectedEpisodeIndex + 1]
-      : undefined;
+  const episodeNeighbors = useQuery({
+    queryKey: ["episode-neighbors", activeTraceId],
+    queryFn: () => fetchEpisodeNeighbors(activeTraceId),
+    enabled: Boolean(activeTraceId),
+    staleTime: 30_000,
+  });
+  const previousTraceId = episodeNeighbors.data?.previous_trace_id ?? undefined;
+  const nextTraceId = episodeNeighbors.data?.next_trace_id ?? undefined;
   const navigateEpisode = useCallback((traceId: string | undefined) => {
     if (!traceId) {
       return;
@@ -191,12 +185,12 @@ export function EpisodesPage({
     ));
   }, [setSelectedPromptTokenIndex]);
   const navigatePreviousEpisode = useCallback(
-    () => navigateEpisode(previousEpisode?.trace_id),
-    [navigateEpisode, previousEpisode?.trace_id],
+    () => navigateEpisode(previousTraceId),
+    [navigateEpisode, previousTraceId],
   );
   const navigateNextEpisode = useCallback(
-    () => navigateEpisode(nextEpisode?.trace_id),
-    [navigateEpisode, nextEpisode?.trace_id],
+    () => navigateEpisode(nextTraceId),
+    [navigateEpisode, nextTraceId],
   );
   const activeCounterfactualPair = useMemo(
     () =>
@@ -210,6 +204,9 @@ export function EpisodesPage({
     queryFn: () => fetchEpisode(activeTraceId),
     enabled: Boolean(activeTraceId),
   });
+  const selectedEpisode = episodeDetail.data ?? firstEpisode;
+  const selectedEpisodeIndex = selectedEpisode?.episode_index ?? -1;
+  const episodeCount = dataset.data?.episode_count ?? firstEpisodePage.data?.total ?? 0;
   const episodeAnnotation = useQuery({
     queryKey: ["episode-annotation", activeTraceId],
     queryFn: () => fetchEpisodeAnnotation(activeTraceId),
@@ -442,8 +439,8 @@ export function EpisodesPage({
     hasModelSites,
     hasPolicyCalls,
     hasProbeArtifacts,
-    nextTraceId: nextEpisode?.trace_id,
-    previousTraceId: previousEpisode?.trace_id,
+    nextTraceId,
+    previousTraceId,
     queryClient,
   });
   useOverlayPrefetch({
@@ -523,10 +520,10 @@ export function EpisodesPage({
             cohortReturnHref={cohortReturnHref}
             episode={episodeDetail.data ?? selectedEpisode}
             episodeIndex={selectedEpisodeIndex}
-            episodeCount={episodes.length}
+            episodeCount={episodeCount}
             counterfactualPair={activeCounterfactualPair}
-            hasNext={Boolean(nextEpisode)}
-            hasPrevious={Boolean(previousEpisode)}
+            hasNext={Boolean(nextTraceId)}
+            hasPrevious={Boolean(previousTraceId)}
             isSavingAnnotation={saveAnnotation.isPending}
             onNext={navigateNextEpisode}
             onPrevious={navigatePreviousEpisode}

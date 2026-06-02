@@ -10,7 +10,7 @@ import pandas as pd
 
 from vla_lens.artifacts import LensArtifact
 from vla_lens.capture.records import TraceRecord
-from vla_lens.dataset import write_lerobot_trace_record
+from vla_lens.dataset import build_dataset_index, write_lerobot_trace_record
 from vla_lens.traces import ActivationSpec, ArraySpec, TraceDataset, TraceManifest
 
 
@@ -161,6 +161,7 @@ def create_synthetic_trace_dataset(
             outcome=outcome,
         )
 
+    build_dataset_index(root, overwrite=True)
     return TraceDataset.open(root)
 
 

@@ -78,7 +78,7 @@ export function matchesProbeFilters(
   if (!probe) {
     return splitFilter === "all" && predictionFilter === "all" && cohortPreset === "all";
   }
-  const record = probe.by_trace[episode.trace_id];
+  const record = probeRecordForEpisode(probe, episode);
   if (!record) {
     return (
       splitFilter === "all" &&
@@ -149,7 +149,7 @@ export function probeRecordForEpisode(
   probe: ProbeDatasetIndex | undefined,
   episode: DatasetEpisode,
 ): ProbeEpisodeIndex | undefined {
-  return probe?.by_trace[episode.trace_id];
+  return episode.probe_record ?? probe?.by_trace?.[episode.trace_id];
 }
 
 export function episodeOpenContextForProbe(
@@ -159,7 +159,7 @@ export function episodeOpenContextForProbe(
   if (!probe) {
     return undefined;
   }
-  const record = probe.by_trace[episode.trace_id];
+  const record = probeRecordForEpisode(probe, episode);
   return {
     fromCohort: true,
     policyCall: policyCallFromProbeFeature(record?.feature ?? probe.best_feature ?? ""),
@@ -176,7 +176,7 @@ export function probeCoverageRows(
   let incorrect = 0;
   const splits = new Map<string, number>();
   for (const episode of episodes) {
-    const record = probe.by_trace[episode.trace_id];
+    const record = probeRecordForEpisode(probe, episode);
     const category = canonicalProbeSplitCategory(record?.split_category);
     splits.set(category, (splits.get(category) ?? 0) + 1);
     if (record?.available) {
@@ -249,7 +249,20 @@ export function probeReviewStats(probe: ProbeDatasetIndex): ProbeReviewStats {
     validation: 0,
     wrong: 0,
   };
-  for (const record of Object.values(probe.by_trace)) {
+  if (probe.review_stats) {
+    return {
+      confidentWrong: numericProbeStat(probe.review_stats.confidentWrong),
+      heldoutScored: numericProbeStat(probe.review_stats.heldoutScored),
+      heldoutWrong: numericProbeStat(probe.review_stats.heldoutWrong),
+      scored: numericProbeStat(probe.review_stats.scored),
+      test: numericProbeStat(probe.review_stats.test),
+      train: numericProbeStat(probe.review_stats.train),
+      unscored: numericProbeStat(probe.review_stats.unscored),
+      validation: numericProbeStat(probe.review_stats.validation),
+      wrong: numericProbeStat(probe.review_stats.wrong),
+    };
+  }
+  for (const record of Object.values(probe.by_trace ?? {})) {
     const split = canonicalProbeSplitCategory(record.split_category);
     if (split === "train") stats.train += 1;
     if (split === "validation") stats.validation += 1;
@@ -277,6 +290,10 @@ export function probeReviewStats(probe: ProbeDatasetIndex): ProbeReviewStats {
   return stats;
 }
 
+function numericProbeStat(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
 export function probeSplitChartRows(probe: ProbeDatasetIndex): Array<{
   highConfWrong: number;
   id: "test" | "train" | "validation";
@@ -293,7 +310,16 @@ export function probeSplitChartRows(probe: ProbeDatasetIndex): Array<{
     ],
     ["test", { highConfWrong: 0, id: "test" as const, label: "Test", scored: 0, total: 0, wrong: 0 }],
   ]);
-  for (const record of Object.values(probe.by_trace)) {
+  const records = Object.values(probe.by_trace ?? {});
+  if (!records.length) {
+    for (const row of rows.values()) {
+      const total = Number(probe.split_summary[row.id] ?? 0);
+      row.total = Number.isFinite(total) ? total : 0;
+      row.scored = row.total;
+    }
+    return [...rows.values()];
+  }
+  for (const record of records) {
     const split = canonicalProbeSplitCategory(record.split_category);
     if (split !== "train" && split !== "validation" && split !== "test") {
       continue;
@@ -328,7 +354,7 @@ export function probeResultChartRows(probe: ProbeDatasetIndex): Array<{
   value: number;
 }> {
   const stats = probeReviewStats(probe);
-  const total = Object.keys(probe.by_trace).length || 1;
+  const total = Object.keys(probe.by_trace ?? {}).length || stats.scored + stats.unscored || 1;
   return [
     {
       active: (active) => active === "scored",
@@ -377,7 +403,7 @@ export function countProbeRecords(
   probe: ProbeDatasetIndex,
   predicate: (record: ProbeEpisodeIndex) => boolean,
 ): number {
-  return Object.values(probe.by_trace).filter(predicate).length;
+  return Object.values(probe.by_trace ?? {}).filter(predicate).length;
 }
 
 export function probeReviewScore(probe: ProbeDatasetIndex, stats: ProbeReviewStats): number {
@@ -419,8 +445,8 @@ export function probeReviewReasons(probe: ProbeDatasetIndex, stats: ProbeReviewS
 export function rankEpisodesForProbe(episodes: DatasetEpisode[], probe: ProbeDatasetIndex): DatasetEpisode[] {
   return [...episodes].sort((left, right) => {
     const delta =
-      probeEpisodeInterestScore(probe.by_trace[right.trace_id]) -
-      probeEpisodeInterestScore(probe.by_trace[left.trace_id]);
+      probeEpisodeInterestScore(probeRecordForEpisode(probe, right)) -
+      probeEpisodeInterestScore(probeRecordForEpisode(probe, left));
     if (delta !== 0) {
       return delta;
     }

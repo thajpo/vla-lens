@@ -34,6 +34,8 @@ def test_dashboard_script_serves_fastapi_backend(tmp_path):
     try:
         payload = _wait_for_json(f"http://127.0.0.1:{port}/api/dataset", process)
         assert payload["activation_sites"] == len(dataset.model_site_index)
+        assert payload["episode_count"] == 1
+        assert "episodes" not in payload
         assert "workbench" not in payload
 
         error = _http_error(f"http://127.0.0.1:{port}/api/frame")

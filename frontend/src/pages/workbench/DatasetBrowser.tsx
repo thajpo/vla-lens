@@ -1,13 +1,20 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search, Target } from "lucide-react";
 import {
-  cachedDatasetSnapshot,
+  type EpisodePageParams,
   fetchDataset,
   fetchDatasetDiagnostics,
+  fetchEpisodesPage,
+  fetchProbeEvidence,
   fetchProbeIndex,
 } from "../../api/dataset";
-import type { DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
+import type {
+  DatasetEpisode,
+  EpisodeFacetValue,
+  ProbeDatasetIndex,
+  ProbeEpisodeIndex,
+} from "../../types/dataset";
 import type { WorkbenchManifest } from "../../types/workbench";
 import { datasetBrowserCapabilityGates } from "../capabilityGating";
 import {
@@ -22,12 +29,10 @@ import {
   episodeBenchmark,
   episodeDatasetId,
   episodeOpenContextForProbe,
-  episodeProfile,
   episodeSeed,
   episodeTitle,
   filterProbeChoices,
   formatDatasetProbeConfidence,
-  matchesProbeFilters,
   percentOf,
   probeCoverageRows,
   probeEpisodeInterestLabel,
@@ -40,10 +45,8 @@ import {
   probeSplitLabel,
   probeTrustDetail,
   probeTrustLabel,
-  rankEpisodesForProbe,
   rankProbesForReview,
   shortTrace,
-  uniqueValues,
   type ProbeCohortPreset,
   type ProbeRankRecord,
 } from "./datasetBrowserModel";
@@ -69,15 +72,6 @@ export function DatasetBrowser({
     queryKey: ["dataset", datasetIdentityKey],
     queryFn: () => fetchDataset({ fingerprint: datasetFingerprint }),
     enabled: datasetCacheReady,
-    initialData: () => {
-      if (!datasetCacheReady) {
-        return undefined;
-      }
-      return datasetFingerprint
-        ? cachedDatasetSnapshot({ fingerprint: datasetFingerprint })
-        : cachedDatasetSnapshot();
-    },
-    initialDataUpdatedAt: 0,
     staleTime: 30_000,
   });
   const { hasProbeArtifacts } = datasetBrowserCapabilityGates(dataset.data?.capabilities?.flags);
@@ -87,7 +81,6 @@ export function DatasetBrowser({
     enabled: hasProbeArtifacts,
     staleTime: 60_000,
   });
-  const episodes = useMemo(() => dataset.data?.episodes ?? [], [dataset.data?.episodes]);
   const probes = useMemo(
     () => (hasProbeArtifacts ? probeIndex.data?.probes ?? [] : []),
     [hasProbeArtifacts, probeIndex.data?.probes],
@@ -105,76 +98,95 @@ export function DatasetBrowser({
   const [probeCohortPreset, setProbeCohortPreset] = useState<ProbeCohortPreset>("all");
   const [probeSplitFilter, setProbeSplitFilter] = useState("all");
   const [probePredictionFilter, setProbePredictionFilter] = useState("all");
+  const [pageOffset, setPageOffset] = useState(0);
   const selectedProbe = useMemo(
     () => probes.find((probe) => probe.artifact_id === probeFilter),
     [probeFilter, probes],
   );
+  const episodePageParams = useMemo<EpisodePageParams>(
+    () => ({
+      benchmark: benchmarkFilter,
+      dataset_id: datasetFilter,
+      limit: 100,
+      offset: pageOffset,
+      outcome: outcomeFilter,
+      profile: profileFilter,
+      probe_cohort_preset: probeCohortPreset,
+      probe_id: selectedProbe?.artifact_id,
+      probe_prediction: probePredictionFilter,
+      probe_split: probeSplitFilter,
+      q: deferredQuery,
+      task_id: taskFilter,
+    }),
+    [
+      benchmarkFilter,
+      datasetFilter,
+      deferredQuery,
+      outcomeFilter,
+      pageOffset,
+      probeCohortPreset,
+      probePredictionFilter,
+      probeSplitFilter,
+      profileFilter,
+      selectedProbe?.artifact_id,
+      taskFilter,
+    ],
+  );
+  const episodePage = useQuery({
+    queryKey: ["episodes", datasetIdentityKey, episodePageParams],
+    queryFn: ({ signal }) => fetchEpisodesPage(episodePageParams, signal),
+    enabled: datasetCacheReady,
+    staleTime: 15_000,
+  });
+  useEffect(() => {
+    setPageOffset(0);
+  }, [
+    benchmarkFilter,
+    datasetFilter,
+    deferredQuery,
+    outcomeFilter,
+    probeCohortPreset,
+    probePredictionFilter,
+    probeSplitFilter,
+    profileFilter,
+    selectedProbe?.artifact_id,
+    taskFilter,
+  ]);
   const rankedProbes = useMemo(() => rankProbesForReview(probes), [probes]);
   const visibleProbeChoices = useMemo(
     () => filterProbeChoices(rankedProbes, deferredProbeQuery).slice(0, PROBE_LIST_LIMIT),
     [deferredProbeQuery, rankedProbes],
   );
-
-  const datasetIds = useMemo(() => uniqueValues(episodes.map(episodeDatasetId)), [episodes]);
-  const benchmarks = useMemo(() => uniqueValues(episodes.map(episodeBenchmark)), [episodes]);
-  const tasks = useMemo(() => uniqueValues(episodes.map((episode) => episode.task_id)), [episodes]);
-  const outcomes = useMemo(
-    () => uniqueValues(episodes.map((episode) => episode.outcome)),
-    [episodes],
-  );
-  const profiles = useMemo(() => uniqueValues(episodes.map(episodeProfile)), [episodes]);
-  const episodeSearchText = useMemo(
-    () => new Map(episodes.map((episode) => [episode.trace_id, searchableEpisodeText(episode)])),
-    [episodes],
-  );
-  const searchNeedle = useMemo(() => deferredQuery.trim().toLowerCase(), [deferredQuery]);
-  const filteredEpisodes = useMemo(
-    () =>
-      episodes.filter((episode) => {
-        return (
-          (datasetFilter === "all" || episodeDatasetId(episode) === datasetFilter) &&
-          (benchmarkFilter === "all" || episodeBenchmark(episode) === benchmarkFilter) &&
-          (taskFilter === "all" || episode.task_id === taskFilter) &&
-          (outcomeFilter === "all" || episode.outcome === outcomeFilter) &&
-          (profileFilter === "all" || episodeProfile(episode) === profileFilter) &&
-          matchesProbeFilters(
-            episode,
-            selectedProbe,
-            probeCohortPreset,
-            probeSplitFilter,
-            probePredictionFilter,
-          ) &&
-          (!searchNeedle || episodeSearchText.get(episode.trace_id)?.includes(searchNeedle))
-        );
-      }),
-    [
-      datasetFilter,
-      benchmarkFilter,
-      episodes,
-      episodeSearchText,
-      outcomeFilter,
-      probeCohortPreset,
-      probePredictionFilter,
-      probeSplitFilter,
-      profileFilter,
-      searchNeedle,
-      selectedProbe,
-      taskFilter,
-    ],
-  );
-  const coverageRows = useMemo(() => datasetCoverageRows(filteredEpisodes), [filteredEpisodes]);
+  const episodes = useMemo(() => episodePage.data?.episodes ?? [], [episodePage.data?.episodes]);
+  const datasetIds = facetValues(episodePage.data?.facets.dataset_id);
+  const benchmarks = facetValues(episodePage.data?.facets.benchmark);
+  const tasks = facetValues(episodePage.data?.facets.task_id);
+  const outcomes = facetValues(episodePage.data?.facets.outcome);
+  const profiles = facetValues(episodePage.data?.facets.profile);
+  const coverageRows = useMemo(() => datasetCoverageRows(episodes), [episodes]);
   const probeVisibleRows = useMemo(
-    () => (selectedProbe ? probeCoverageRows(filteredEpisodes, selectedProbe) : []),
-    [filteredEpisodes, selectedProbe],
-  );
-  const rankedEpisodes = useMemo(
-    () => (selectedProbe ? rankEpisodesForProbe(filteredEpisodes, selectedProbe) : filteredEpisodes),
-    [filteredEpisodes, selectedProbe],
-  );
-  const evidenceEpisodes = useMemo(
-    () => (selectedProbe ? rankEpisodesForProbe(episodes, selectedProbe).slice(0, EVIDENCE_EPISODE_LIMIT) : []),
+    () => (selectedProbe ? probeCoverageRows(episodes, selectedProbe) : []),
     [episodes, selectedProbe],
   );
+  const evidenceParams = useMemo<EpisodePageParams>(
+    () => ({
+      limit: EVIDENCE_EPISODE_LIMIT,
+      probe_cohort_preset: probeCohortPreset,
+      probe_prediction: probePredictionFilter,
+      probe_split: probeSplitFilter,
+    }),
+    [probeCohortPreset, probePredictionFilter, probeSplitFilter],
+  );
+  const probeEvidence = useQuery({
+    queryKey: ["probe-evidence", selectedProbe?.artifact_id, evidenceParams],
+    queryFn: ({ signal }) => fetchProbeEvidence(selectedProbe?.artifact_id ?? "", evidenceParams, signal),
+    enabled: Boolean(selectedProbe),
+    staleTime: 15_000,
+  });
+  const totalEpisodes = dataset.data?.episode_count ?? episodePage.data?.total ?? 0;
+  const visibleTotal = episodePage.data?.total ?? 0;
+  const pageStart = visibleTotal ? pageOffset + 1 : 0;
+  const pageEnd = Math.min(pageOffset + (episodePage.data?.limit ?? 100), visibleTotal);
 
   return (
     <main className="dataset-browser-page">
@@ -189,8 +201,8 @@ export function DatasetBrowser({
       </header>
 
       <div className="dataset-browser-metrics">
-        <Metric label="Episodes" value={episodes.length} />
-        <Metric label="Visible" value={filteredEpisodes.length} />
+        <Metric label="Episodes" value={totalEpisodes} />
+        <Metric label="Visible" value={visibleTotal} />
         <Metric label="Datasets" value={datasetIds.length} />
         <Metric label="Benchmarks" value={benchmarks.length} />
         <Metric label="Tasks" value={tasks.length} />
@@ -240,6 +252,8 @@ export function DatasetBrowser({
 
       {!datasetCacheReady || dataset.isLoading ? <div className="app-message">Loading dataset...</div> : null}
       {dataset.isError ? <div className="empty-state">Dataset API unavailable.</div> : null}
+      {episodePage.isError ? <div className="empty-state compact">Episode index unavailable.</div> : null}
+      {episodePage.isFetching ? <div className="app-message compact">Loading episodes...</div> : null}
       {hasProbeArtifacts && probeIndex.isError ? (
         <div className="empty-state compact">Probe index unavailable.</div>
       ) : null}
@@ -306,7 +320,7 @@ export function DatasetBrowser({
           <ProbeEvidencePanel
             activePredictionFilter={probePredictionFilter}
             activeSplitFilter={probeSplitFilter}
-            episodes={evidenceEpisodes}
+            episodes={probeEvidence.data?.episodes ?? []}
             probe={selectedProbe}
             summaryRows={probeVisibleRows}
             cohortPreset={probeCohortPreset}
@@ -332,7 +346,9 @@ export function DatasetBrowser({
         <div className="dataset-browser-panel">
           <header>
             <h2>Episodes</h2>
-            <span>{filteredEpisodes.length}</span>
+            <span>
+              {pageStart}-{pageEnd} / {visibleTotal}
+            </span>
           </header>
           <div className="dataset-episode-table-wrap">
             <table className="compact-table dataset-episode-table">
@@ -350,7 +366,7 @@ export function DatasetBrowser({
                 </tr>
               </thead>
               <tbody>
-                {rankedEpisodes.map((episode) => (
+                {episodes.map((episode) => (
                   <tr key={episode.trace_id}>
                     <td>
                       <button
@@ -390,13 +406,31 @@ export function DatasetBrowser({
                     </td>
                   </tr>
                 ))}
-                {!filteredEpisodes.length ? (
+                {!episodes.length ? (
                   <tr>
                     <td colSpan={selectedProbe ? 9 : 8}>No episodes match the current filters.</td>
                   </tr>
                 ) : null}
               </tbody>
             </table>
+          </div>
+          <div className="dataset-pagination">
+            <button
+              className="text-command"
+              disabled={pageOffset <= 0}
+              type="button"
+              onClick={() => setPageOffset(Math.max(0, pageOffset - 100))}
+            >
+              Previous
+            </button>
+            <button
+              className="text-command"
+              disabled={episodePage.data?.next_offset === null || episodePage.data?.next_offset === undefined}
+              type="button"
+              onClick={() => setPageOffset(episodePage.data?.next_offset ?? pageOffset)}
+            >
+              Next
+            </button>
           </div>
         </div>
 
@@ -590,7 +624,7 @@ function ProbeEvidencePanel({
             </header>
             <div className="probe-evidence-episode-list">
               {episodes.map((episode) => {
-                const record = probe.by_trace[episode.trace_id];
+                const record = probeRecordForEpisode(probe, episode);
                 return (
                   <button
                     key={episode.trace_id}
@@ -758,21 +792,8 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
-function searchableEpisodeText(episode: DatasetEpisode): string {
-  return [
-    episode.trace_id,
-    episode.episode_id,
-    episode.task_id,
-    episode.prompt,
-    episode.outcome,
-    episodeDatasetId(episode),
-    episodeBenchmark(episode),
-    episodeProfile(episode),
-    episodeSeed(episode),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+function facetValues(values: EpisodeFacetValue[] | undefined): string[] {
+  return (values ?? []).map((item) => item.value).filter(Boolean);
 }
 
 function ProbeEpisodeBadge({ record }: { record?: ProbeEpisodeIndex }) {

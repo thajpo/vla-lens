@@ -6,6 +6,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from vla_lens import create_synthetic_trace_dataset
+from vla_lens.dataset import DatasetIndexError
+from vla_lens.dataset.index import index_manifest_path
 from vla_lens.server.fastapi_app import create_dashboard_app
 
 EXPECTED_DASHBOARD_ROUTE_METHODS = {
@@ -30,7 +32,9 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/dataset-diagnostics/run", "get"),
     ("/api/artifacts", "get"),
     ("/api/artifacts/{artifact_id}", "get"),
+    ("/api/episodes", "get"),
     ("/api/episodes/{trace_id}", "get"),
+    ("/api/episodes/{trace_id}/neighbors", "get"),
     ("/api/frame", "get"),
     ("/api/episode-video", "get"),
     ("/api/policy-calls", "get"),
@@ -40,6 +44,7 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/episode-interactions", "get"),
     ("/api/episode-probes", "get"),
     ("/api/probe-index", "get"),
+    ("/api/probes/{probe_id}/evidence", "get"),
     ("/api/activation-sites", "get"),
     ("/api/activation-slice", "get"),
     ("/api/image-token-map", "get"),
@@ -79,13 +84,41 @@ def test_fastapi_dataset_payload_reports_model_sites_without_workbench_payload(t
     assert response.status_code == 200
     assert response.headers["Content-Type"].startswith("application/json")
     assert response.headers["Cache-Control"] == "private, max-age=2"
+    assert "episodes" not in payload
+    assert payload["episode_count"] == 1
     assert payload["activation_sites"] == len(dataset.model_site_index)
     assert payload["capabilities"]["flags"]["robot_episodes"] is True
     assert payload["capabilities"]["flags"]["model_sites"] is True
     assert payload["capabilities"]["flags"]["action_generation"] is True
-    assert "synthetic" in payload["capabilities"]["model_families"]
     assert payload["capabilities"]["model_site_prefixes"] == ["action_head", "backbone"]
     assert "workbench" not in payload
+
+
+def test_fastapi_startup_requires_dataset_index(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
+    index_manifest_path(dataset.root).unlink()
+
+    with pytest.raises(DatasetIndexError) as exc_info:
+        create_dashboard_app(dataset.root)
+
+    message = str(exc_info.value)
+    assert "Dataset index is missing" in message
+    assert "scripts/build_vla_lens_index.py" in message
+
+
+def test_fastapi_runtime_refresh_reports_stale_dataset_index(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
+    client = TestClient(create_dashboard_app(dataset.root))
+    client.app.state.dashboard.dataset_signature_check_interval_s = 0
+    manifest_path = next((dataset.root / "vla_lens" / "episodes").glob("*/manifest.json"))
+    manifest_path.write_text(manifest_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+
+    response = client.get("/api/dataset")
+    payload = response.json()
+
+    assert response.status_code == 400
+    assert "fingerprint is stale" in payload["message"]
+    assert "scripts/build_vla_lens_index.py" in payload["message"]
 
 
 def test_fastapi_health_endpoint_is_gateway_readiness_probe(tmp_path):
@@ -261,7 +294,13 @@ def test_fastapi_representative_get_routes_return_legacy_payload_shapes(tmp_path
         ("/api/episode-annotations", {"trace_id": trace_id}, {"annotation"}),
         ("/api/dataset-diagnostics/run", {}, {"fingerprint", "artifact"}),
         (f"/api/artifacts/{artifact_id}", {}, {"artifact", "arrays"}),
+        ("/api/episodes", {"limit": "1"}, {"episodes", "total", "facets", "next_offset"}),
         (f"/api/episodes/{trace_id}", {}, {"trace_id", "cameras", "arrays"}),
+        (
+            f"/api/episodes/{trace_id}/neighbors",
+            {},
+            {"trace_id", "previous_trace_id", "next_trace_id"},
+        ),
         ("/api/policy-calls", {"trace_id": trace_id}, {"calls", "count"}),
         ("/api/action-norm", {"trace_id": trace_id}, {"values"}),
         ("/api/generation-commitment", {"trace_id": trace_id}, {"values"}),

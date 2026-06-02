@@ -12,6 +12,7 @@ from typing import Any
 import imageio.v2 as imageio
 import numpy as np
 
+from vla_lens.dataset import validate_dataset_index
 from vla_lens.server.common import _query_one
 from vla_lens.server.dataset import _dataset_signature
 from vla_lens.server.video import _episode_video_path, _trace_frame_file_path
@@ -34,6 +35,7 @@ class DashboardState:
 
     def __init__(self, root: str | Path):
         self.root = Path(root)
+        self.index_manifest = validate_dataset_index(self.root)
         self.dataset = TraceDataset.open(self.root)
         self.dataset_signature = _dataset_signature(self.root)
         self.dataset_signature_checked_at = monotonic()
@@ -50,9 +52,12 @@ class DashboardState:
                 return
             self.dataset_signature_checked_at = now
         signature = _dataset_signature(self.root)
+        index_manifest = validate_dataset_index(self.root)
         with self.dataset_lock:
             if self.dataset_signature == signature:
+                self.index_manifest = index_manifest
                 return
+            self.index_manifest = index_manifest
             self.dataset = TraceDataset.open(self.root)
             self.dataset_signature = signature
             self.payload_cache.clear()

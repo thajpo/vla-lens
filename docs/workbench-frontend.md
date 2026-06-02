@@ -94,3 +94,10 @@ uv run python scripts/serve_vla_lens_dashboard.py runs/vla_lens_demo --port 8765
 
 Do not start PI0.5 capture or install capture-only dependencies for frontend
 work.
+
+## Future Work
+
+- Add frontend regression tests for indexed dashboard browsing: episode query
+  parameter construction, pagination state, filter/search offset reset, empty
+  and loading states, direct episode open without full dataset preload, and stale
+  request cancellation.

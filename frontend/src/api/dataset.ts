@@ -11,6 +11,8 @@ import type {
   EpisodeAnnotation,
   EpisodeAnnotationResponse,
   EpisodeDetail,
+  EpisodeNeighborsResponse,
+  EpisodePageResponse,
   EpisodeInteractionsResponse,
   EpisodeMetricsResponse,
   EpisodeProbesResponse,
@@ -21,16 +23,12 @@ import type {
   ObservationalComparisonsResponse,
   PatchFeaturesResponse,
   PromptAttentionResponse,
+  ProbeEvidenceResponse,
   ProbeIndexResponse,
   NumericSeriesResponse,
   PolicyCallsResponse,
   SelectedPatch,
 } from "../types/dataset";
-
-const LEGACY_DATASET_CACHE_KEY = "vla-lens.dataset.v1";
-const DATASET_CACHE_PREFIX = "vla-lens.dataset.v2";
-const DATASET_CACHE_LATEST_KEY = `${DATASET_CACHE_PREFIX}.latest`;
-const DATASET_CACHE_VERSION = 2;
 
 export type DatasetSnapshotLookup = {
   datasetId?: string;
@@ -38,270 +36,28 @@ export type DatasetSnapshotLookup = {
   root?: string;
 };
 
-type DatasetSnapshotIdentity = {
-  datasetIds: string[];
-  fingerprint?: string;
-  root?: string;
+export type EpisodePageParams = {
+  benchmark?: string;
+  dataset_id?: string;
+  limit?: number;
+  offset?: number;
+  outcome?: string;
+  profile?: string;
+  probe_cohort_preset?: string;
+  probe_id?: string;
+  probe_prediction?: string;
+  probe_split?: string;
+  q?: string;
+  sort?: string;
+  task_id?: string;
 };
 
-type DatasetSnapshotPointer = {
-  identity: DatasetSnapshotIdentity;
-  key: string;
-  storedAt: number;
-  version: typeof DATASET_CACHE_VERSION;
-};
-
-type DatasetSnapshotEnvelope = DatasetSnapshotPointer & {
-  payload: DatasetPayload;
-};
-
-export function fetchDataset(identity: DatasetSnapshotLookup = {}): Promise<DatasetPayload> {
-  return getJson<DatasetPayload>("/api/dataset", noStore()).then((payload) => {
-    scheduleDatasetSnapshotCache(payload, identity);
-    return payload;
-  });
+export function fetchDataset(_identity: DatasetSnapshotLookup = {}): Promise<DatasetPayload> {
+  return getJson<DatasetPayload>("/api/dataset", noStore());
 }
 
-export function cachedDatasetSnapshot(identity: DatasetSnapshotLookup = {}): DatasetPayload | undefined {
-  if (typeof window === "undefined") {
-    return undefined;
-  }
-  for (const aliasKey of cacheAliasKeys(identity)) {
-    const envelope = readSnapshotEnvelope(aliasKey);
-    if (envelope && snapshotMatchesLookup(envelope, identity)) {
-      return envelope.payload;
-    }
-  }
-  if (hasScopedSnapshotLookup(identity)) {
-    return undefined;
-  }
-  const latest = readSnapshotEnvelope(DATASET_CACHE_LATEST_KEY);
-  if (latest) {
-    return latest.payload;
-  }
-  return readLegacyDatasetSnapshot();
-}
-
-function cacheDatasetSnapshot(payload: DatasetPayload, lookup: DatasetSnapshotLookup): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-  try {
-    const identity = snapshotIdentity(payload, lookup);
-    const key = snapshotStorageKey(identity, payload);
-    const envelope: DatasetSnapshotEnvelope = {
-      identity,
-      key,
-      payload,
-      storedAt: Date.now(),
-      version: DATASET_CACHE_VERSION,
-    };
-    const pointer: DatasetSnapshotPointer = {
-      identity,
-      key,
-      storedAt: envelope.storedAt,
-      version: DATASET_CACHE_VERSION,
-    };
-    window.localStorage.setItem(key, JSON.stringify(envelope));
-    window.localStorage.setItem(DATASET_CACHE_LATEST_KEY, JSON.stringify(pointer));
-    for (const aliasKey of cacheAliasKeys(identity)) {
-      window.localStorage.setItem(aliasKey, JSON.stringify(pointer));
-    }
-    window.localStorage.removeItem(LEGACY_DATASET_CACHE_KEY);
-  } catch {
-    // Local storage is a paint-speed hint only; network data remains authoritative.
-  }
-}
-
-function scheduleDatasetSnapshotCache(payload: DatasetPayload, identity: DatasetSnapshotLookup): void {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.setTimeout(() => cacheDatasetSnapshot(payload, identity), 0);
-}
-
-function readSnapshotEnvelope(pointerOrEnvelopeKey: string): DatasetSnapshotEnvelope | undefined {
-  try {
-    const raw = window.localStorage.getItem(pointerOrEnvelopeKey);
-    if (!raw) {
-      return undefined;
-    }
-    const value = JSON.parse(raw) as unknown;
-    if (!isSnapshotPointer(value)) {
-      return isSnapshotEnvelope(value) ? value : undefined;
-    }
-    const snapshotRaw = window.localStorage.getItem(value.key);
-    if (!snapshotRaw) {
-      return undefined;
-    }
-    const snapshot = JSON.parse(snapshotRaw) as unknown;
-    return isSnapshotEnvelope(snapshot) ? snapshot : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function readLegacyDatasetSnapshot(): DatasetPayload | undefined {
-  try {
-    const raw = window.localStorage.getItem(LEGACY_DATASET_CACHE_KEY);
-    return raw ? (JSON.parse(raw) as DatasetPayload) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function snapshotIdentity(
-  payload: DatasetPayload,
-  lookup: DatasetSnapshotLookup,
-): DatasetSnapshotIdentity {
-  return {
-    datasetIds: datasetIdsForSnapshot(payload, lookup.datasetId),
-    fingerprint: normalizedIdentityValue(
-      lookup.fingerprint ?? recordString(payload, "fingerprint") ?? recordString(payload, "dataset_fingerprint"),
-    ),
-    root: normalizedIdentityValue(lookup.root ?? payload.root),
-  };
-}
-
-function datasetIdsForSnapshot(payload: DatasetPayload, explicitDatasetId?: string): string[] {
-  const values = new Set<string>();
-  const explicit = normalizedIdentityValue(explicitDatasetId);
-  if (explicit) {
-    values.add(explicit);
-  }
-  const topLevel = normalizedIdentityValue(recordString(payload, "dataset_id"));
-  if (topLevel) {
-    values.add(topLevel);
-  }
-  const workbench = recordValue(payload, "workbench");
-  const workbenchDatasetId = isRecord(workbench)
-    ? normalizedIdentityValue(recordString(workbench, "dataset_id"))
-    : undefined;
-  if (workbenchDatasetId) {
-    values.add(workbenchDatasetId);
-  }
-  for (const episode of payload.episodes) {
-    const episodeDatasetId = normalizedIdentityValue(recordString(episode.metadata, "dataset_id"));
-    if (episodeDatasetId) {
-      values.add(episodeDatasetId);
-    }
-  }
-  return [...values].sort();
-}
-
-function snapshotStorageKey(identity: DatasetSnapshotIdentity, payload: DatasetPayload): string {
-  if (identity.fingerprint) {
-    return cacheKey("snapshot", "fingerprint", identity.fingerprint);
-  }
-  if (identity.root) {
-    return cacheKey("snapshot", "root", identity.root);
-  }
-  if (identity.datasetIds.length) {
-    return cacheKey("snapshot", "dataset-id", identity.datasetIds.join("|"));
-  }
-  return cacheKey(
-    "snapshot",
-    "content",
-    `${payload.episodes.length}:${payload.episodes[0]?.trace_id ?? ""}:${payload.activation_sites}`,
-  );
-}
-
-function cacheAliasKeys(identity: DatasetSnapshotLookup | DatasetSnapshotIdentity): string[] {
-  const keys: string[] = [];
-  const fingerprint = normalizedIdentityValue(identity.fingerprint);
-  const root = normalizedIdentityValue(identity.root);
-  if (fingerprint) {
-    keys.push(cacheKey("alias", "fingerprint", fingerprint));
-  }
-  if (root) {
-    keys.push(cacheKey("alias", "root", root));
-  }
-  if ("datasetIds" in identity) {
-    for (const datasetId of identity.datasetIds) {
-      keys.push(cacheKey("alias", "dataset-id", datasetId));
-    }
-  } else {
-    const datasetId = normalizedIdentityValue(identity.datasetId);
-    if (datasetId) {
-      keys.push(cacheKey("alias", "dataset-id", datasetId));
-    }
-  }
-  return keys;
-}
-
-function cacheKey(kind: "alias" | "snapshot", type: string, value: string): string {
-  return `${DATASET_CACHE_PREFIX}.${kind}.${type}.${hashString(value)}`;
-}
-
-function snapshotMatchesLookup(
-  envelope: DatasetSnapshotEnvelope,
-  lookup: DatasetSnapshotLookup,
-): boolean {
-  const fingerprint = normalizedIdentityValue(lookup.fingerprint);
-  if (fingerprint && envelope.identity.fingerprint !== fingerprint) {
-    return false;
-  }
-  const root = normalizedIdentityValue(lookup.root);
-  if (root && envelope.identity.root !== root) {
-    return false;
-  }
-  const datasetId = normalizedIdentityValue(lookup.datasetId);
-  if (datasetId && !envelope.identity.datasetIds.includes(datasetId)) {
-    return false;
-  }
-  return true;
-}
-
-function hasScopedSnapshotLookup(identity: DatasetSnapshotLookup): boolean {
-  return Boolean(
-    normalizedIdentityValue(identity.fingerprint) ||
-      normalizedIdentityValue(identity.root) ||
-      normalizedIdentityValue(identity.datasetId),
-  );
-}
-
-function isSnapshotPointer(value: unknown): value is DatasetSnapshotPointer {
-  return (
-    isRecord(value) &&
-    value.version === DATASET_CACHE_VERSION &&
-    typeof value.key === "string" &&
-    isRecord(value.identity)
-  );
-}
-
-function isSnapshotEnvelope(value: unknown): value is DatasetSnapshotEnvelope {
-  const record = isRecord(value) ? value : undefined;
-  return Boolean(record && isSnapshotPointer(value) && isRecord(record.payload));
-}
-
-function normalizedIdentityValue(value: unknown): string | undefined {
-  if (typeof value !== "string") {
-    return undefined;
-  }
-  const trimmed = value.trim();
-  return trimmed || undefined;
-}
-
-function recordValue(record: unknown, key: string): unknown {
-  return isRecord(record) ? record[key] : undefined;
-}
-
-function recordString(record: unknown, key: string): string | undefined {
-  const value = recordValue(record, key);
-  return typeof value === "string" ? value : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
-
-function hashString(value: string): string {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(36);
+export function cachedDatasetSnapshot(_identity: DatasetSnapshotLookup = {}): DatasetPayload | undefined {
+  return undefined;
 }
 
 function freshJsonInit(signal?: AbortSignal): RequestInit {
@@ -310,6 +66,30 @@ function freshJsonInit(signal?: AbortSignal): RequestInit {
 
 export function fetchDatasetDiagnostics(): Promise<DatasetDiagnostics> {
   return getJson<DatasetDiagnostics>("/api/dataset-diagnostics", freshJsonInit());
+}
+
+export function fetchEpisodesPage(
+  params: EpisodePageParams = {},
+  signal?: AbortSignal,
+): Promise<EpisodePageResponse> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "" || value === "all") {
+      continue;
+    }
+    search.set(key, String(value));
+  }
+  return getJson<EpisodePageResponse>(
+    `/api/episodes?${search.toString()}`,
+    freshJsonInit(signal),
+  );
+}
+
+export function fetchEpisodeNeighbors(traceId: string): Promise<EpisodeNeighborsResponse> {
+  return getJson<EpisodeNeighborsResponse>(
+    `/api/episodes/${encodeURIComponent(traceId)}/neighbors`,
+    freshJsonInit(),
+  );
 }
 
 export function fetchArtifacts(): Promise<ArtifactListResponse> {
@@ -384,6 +164,24 @@ export function fetchEpisodeProbes(traceId: string): Promise<EpisodeProbesRespon
 
 export function fetchProbeIndex(): Promise<ProbeIndexResponse> {
   return getJson<ProbeIndexResponse>("/api/probe-index", freshJsonInit());
+}
+
+export function fetchProbeEvidence(
+  probeId: string,
+  params: EpisodePageParams = {},
+  signal?: AbortSignal,
+): Promise<ProbeEvidenceResponse> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "" || value === "all") {
+      continue;
+    }
+    search.set(key, String(value));
+  }
+  return getJson<ProbeEvidenceResponse>(
+    `/api/probes/${encodeURIComponent(probeId)}/evidence?${search.toString()}`,
+    freshJsonInit(signal),
+  );
 }
 
 export function fetchObservationalComparisons(
@@ -634,7 +432,7 @@ export function frameUrl(
     trace_id: traceId,
     camera,
     timestep: String(Math.max(0, timestep)),
-    source: "trace",
+    source: "auto",
     v: cacheKey,
   });
   return `/api/frame?${params.toString()}`;

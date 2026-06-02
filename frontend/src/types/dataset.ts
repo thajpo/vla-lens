@@ -1,6 +1,7 @@
 export type DatasetEpisode = {
   trace_id: string;
   episode_id: string;
+  episode_index?: number | null;
   task_id?: string | null;
   prompt?: string | null;
   model_id?: string | null;
@@ -10,11 +11,12 @@ export type DatasetEpisode = {
   length?: number | null;
   schema_version?: string | null;
   metadata?: Record<string, unknown>;
+  probe_record?: ProbeEpisodeIndex;
 };
 
 export type DatasetPayload = {
   root: string;
-  episodes: DatasetEpisode[];
+  episode_count: number;
   activation_sites: number;
   capabilities?: {
     available: string[];
@@ -26,6 +28,17 @@ export type DatasetPayload = {
   artifacts: {
     total: number;
     counts: Record<string, number>;
+  };
+  probes?: {
+    total_predictions: number;
+    probe_count: number;
+  };
+  index?: {
+    schema_version?: string;
+    dataset_fingerprint?: string;
+    indexed_episode_count?: number;
+    updated_utc?: string;
+    tables?: Record<string, unknown>;
   };
   counterfactual_pairs?: CounterfactualPair[];
   workbench?: unknown;
@@ -59,7 +72,18 @@ export type ProbeDatasetIndex = {
   best_delta?: number | null;
   split_summary: Record<string, number>;
   prediction_summary: Record<string, number>;
-  by_trace: Record<string, ProbeEpisodeIndex>;
+  review_stats?: {
+    confidentWrong?: number;
+    heldoutScored?: number;
+    heldoutWrong?: number;
+    scored?: number;
+    test?: number;
+    train?: number;
+    unscored?: number;
+    validation?: number;
+    wrong?: number;
+  };
+  by_trace?: Record<string, ProbeEpisodeIndex>;
 };
 
 export type ProbeIndexResponse = {
@@ -67,6 +91,34 @@ export type ProbeIndexResponse = {
   total: number;
   trace_count: number;
   split_source?: string | null;
+};
+
+export type EpisodeFacetValue = {
+  value: string;
+  count: number;
+};
+
+export type EpisodePageResponse = {
+  episodes: DatasetEpisode[];
+  total: number;
+  limit: number;
+  offset: number;
+  next_offset?: number | null;
+  facets: Record<string, EpisodeFacetValue[]>;
+  sort: string;
+};
+
+export type EpisodeNeighborsResponse = {
+  trace_id: string;
+  previous_trace_id?: string | null;
+  next_trace_id?: string | null;
+};
+
+export type ProbeEvidenceResponse = {
+  probe: ProbeDatasetIndex;
+  episodes: DatasetEpisode[];
+  total: number;
+  limit: number;
 };
 
 export type CounterfactualPairMember = {

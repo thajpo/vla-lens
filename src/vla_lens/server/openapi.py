@@ -122,7 +122,9 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
     },
     ("get", "/api/dataset"): {
         "summary": "Dataset overview",
-        "description": "Returns episodes, capability flags, artifact counts, and dataset metadata.",
+        "description": (
+            "Returns bounded dataset counts, capability flags, artifact counts, and index metadata."
+        ),
     },
     ("get", "/api/counterfactual-pairs"): {
         "summary": "Counterfactual pair groups",
@@ -203,11 +205,21 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
     },
     ("get", "/api/artifacts/{artifact_id}"): {
         "summary": "Artifact detail",
-        "description": "Returns one artifact record plus lightweight array previews.",
+        "description": (
+            "Returns one artifact record plus array path, shape, dtype, and summary metadata."
+        ),
+    },
+    ("get", "/api/episodes"): {
+        "summary": "Paged episode index",
+        "description": "Returns a bounded page of indexed episode rows plus counts and facets.",
     },
     ("get", "/api/episodes/{trace_id}"): {
         "summary": "Episode detail",
         "description": "Returns per-episode cameras, model arrays, artifacts, and metadata.",
+    },
+    ("get", "/api/episodes/{trace_id}/neighbors"): {
+        "summary": "Episode neighbors",
+        "description": "Returns previous and next trace IDs in deterministic episode-index order.",
     },
     ("get", "/api/frame"): {
         "summary": "Episode frame JPEG",
@@ -269,7 +281,11 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
     },
     ("get", "/api/probe-index"): {
         "summary": "Probe artifact index",
-        "description": "Returns probe artifacts summarized by trace and split.",
+        "description": "Returns bounded probe artifact summaries without full per-trace maps.",
+    },
+    ("get", "/api/probes/{probe_id}/evidence"): {
+        "summary": "Probe evidence page",
+        "description": "Returns a bounded page of episode rows annotated for one selected probe.",
     },
     ("get", "/api/activation-sites"): {
         "summary": "Activation site catalog",

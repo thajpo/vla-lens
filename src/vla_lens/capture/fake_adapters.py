@@ -313,13 +313,14 @@ def write_fake_adapter_lerobot_dataset(
     dataset_adapter = FakeDatasetEpisodeAdapter(episode_count=episode_count, length=length)
     model_adapter = FakeModelCaptureAdapter()
 
-    from vla_lens.dataset import write_lerobot_trace_record
+    from vla_lens.dataset import build_dataset_index, write_lerobot_trace_record
 
     for episode_id in dataset_adapter.episode_ids():
         episode = dataset_adapter.load_episode(episode_id)
         model_trace = model_adapter.capture_episode(episode)
         record = merge_episode_and_model_trace(episode, model_trace)
         write_lerobot_trace_record(record, dataset_root, overwrite=overwrite)
+    build_dataset_index(dataset_root, overwrite=True)
     return TraceDataset.open(dataset_root)
 
 

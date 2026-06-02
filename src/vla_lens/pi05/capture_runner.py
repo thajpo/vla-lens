@@ -15,6 +15,7 @@ import numpy as np
 from vla_lens.capture import (
     validate_lerobot_v3_dataset,
 )
+from vla_lens.dataset import build_dataset_index
 from vla_lens.pi05.capture_predict import (
     _predict_action_chunk,
 )
@@ -58,6 +59,7 @@ def main(argv: list[str] | None = None) -> None:
     args.output_root.mkdir(parents=True, exist_ok=True)
 
     _run_capture(args)
+    build_dataset_index(args.output_root, overwrite=True)
     dataset = TraceDataset.open(args.output_root)
     validation = validate_lerobot_v3_dataset(args.output_root)
     if not validation.valid:

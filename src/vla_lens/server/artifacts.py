@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any
 
 from vla_lens.server.common import (
-    _array_preview,
     _array_summary,
     _json_parse,
     _json_scalar,
@@ -51,7 +50,6 @@ def _artifact_detail_payload(dataset: TraceDataset, artifact_id: str) -> dict[st
                 "shape": [int(item) for item in array.shape],
                 "dtype": str(array.dtype),
                 "summary": _array_summary(array),
-                "preview": _array_preview(array),
             }
         )
     return {
