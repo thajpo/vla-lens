@@ -1,14 +1,9 @@
 import { useEffect, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { fetchWorkbench } from "../api/workbench";
 import { AppShell, type AppPage } from "../components/layout/AppShell";
-import { LeftRail } from "../components/layout/LeftRail";
 import { ProbeSuitePreset } from "../components/workflows/ProbeSuitePreset";
-import { TargetObjectEncodingPreset } from "../components/workflows/TargetObjectEncodingPreset";
 import { EpisodesPage } from "./EpisodesPage";
-import { ArtifactsSummary, BackendUnavailable, DatasetBrowser } from "./workbench/DatasetBrowser";
+import { DatasetBrowser } from "./workbench/DatasetBrowser";
 import { useWorkbenchStore } from "../store/workbenchStore";
-import type { WorkbenchManifest } from "../types/workbench";
 import type { EpisodeOpenContext } from "./workbench/types";
 
 type EpisodeRouteState = {
@@ -24,32 +19,10 @@ export function WorkbenchPage() {
   const [activePage, setActivePage] = useState<AppPage>(initialRoute.page);
   const [episodeTraceId, setEpisodeTraceId] = useState(initialRoute.traceId);
   const [episodeRouteState, setEpisodeRouteState] = useState<EpisodeRouteState>(initialRoute.episodeState);
-  const needsWorkbench = activePage === "workbench" || activePage === "artifacts";
-  const workbench = useQuery({
-    queryKey: ["workbench"],
-    queryFn: fetchWorkbench,
-    enabled: needsWorkbench,
-    staleTime: 60_000,
-  });
   const {
-    activeWorkflowId,
     activeRunId,
-    activeMetric,
-    activeTokenKind,
-    setActiveWorkflowId,
     setActiveRunId,
-    setActiveMetric,
-    setActiveTokenKind,
   } = useWorkbenchStore();
-
-  const manifest = workbench.data;
-  const workflows = manifest?.workflow_presets ?? [];
-  const runs = manifest?.analysis_runs.filter((run) => run.workflow === activeWorkflowId) ?? [];
-  const selectedArray = manifest?.lens_arrays.find(
-    (array) => array.array_id === `artifact.${activeRunId || runs[0]?.run_id}.${activeMetric}`,
-  );
-  const tokenCoords = selectedArray?.coords.token_kind;
-  const tokenKinds = Array.isArray(tokenCoords) ? tokenCoords.map(String) : [];
 
   useEffect(() => {
     function syncRoute() {
@@ -85,29 +58,6 @@ export function WorkbenchPage() {
         <ProbeSuitePreset
           activeRunId={activeRunId}
           onRunChange={setActiveRunId}
-        />
-      ) : null}
-      {needsWorkbench && workbench.isLoading ? (
-        <div className="app-message">Loading workbench...</div>
-      ) : null}
-      {needsWorkbench && workbench.isError ? (
-        <BackendUnavailable />
-      ) : null}
-      {needsWorkbench && manifest ? (
-        <ActivePage
-          page={activePage}
-          manifest={manifest}
-          workflows={workflows}
-          runs={runs}
-          activeWorkflowId={activeWorkflowId}
-          activeRunId={activeRunId || runs[0]?.run_id || ""}
-          activeMetric={activeMetric}
-          activeTokenKind={activeTokenKind || tokenKinds[0] || ""}
-          tokenKinds={tokenKinds}
-          onWorkflowChange={setActiveWorkflowId}
-          onRunChange={setActiveRunId}
-          onMetricChange={setActiveMetric}
-          onTokenKindChange={setActiveTokenKind}
         />
       ) : null}
     </AppShell>
@@ -162,7 +112,7 @@ function initialPage(): { episodeState: EpisodeRouteState; page: AppPage; traceI
     const episodeState = parseEpisodeRoute(page.slice("dataset/".length));
     return { episodeState, page: "episode", traceId: episodeState.traceId };
   }
-  if (page === "dataset" || page === "probes" || page === "workbench" || page === "artifacts") {
+  if (page === "dataset" || page === "probes") {
     return { episodeState: emptyEpisodeRouteState(), page, traceId: "" };
   }
   if (page === "episode" || page === "episodes") {
@@ -229,73 +179,4 @@ function numberParam(value: string | null): number | undefined {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
-}
-
-type ActivePageProps = {
-  page: AppPage;
-  manifest: WorkbenchManifest;
-  workflows: WorkbenchManifest["workflow_presets"];
-  runs: WorkbenchManifest["analysis_runs"];
-  activeWorkflowId: string;
-  activeRunId: string;
-  activeMetric: string;
-  activeTokenKind: string;
-  tokenKinds: string[];
-  onWorkflowChange: (workflowId: string) => void;
-  onRunChange: (runId: string) => void;
-  onMetricChange: (metric: string) => void;
-  onTokenKindChange: (tokenKind: string) => void;
-};
-
-function ActivePage({
-  page,
-  manifest,
-  workflows,
-  runs,
-  activeWorkflowId,
-  activeRunId,
-  activeMetric,
-  activeTokenKind,
-  tokenKinds,
-  onWorkflowChange,
-  onRunChange,
-  onMetricChange,
-  onTokenKindChange,
-}: ActivePageProps) {
-  if (page === "episode") {
-    return null;
-  }
-  if (page === "artifacts") {
-    return <ArtifactsSummary manifest={manifest} />;
-  }
-  return (
-    <div className="workbench-shell">
-      <LeftRail
-        workflows={workflows}
-        runs={runs}
-        activeWorkflowId={activeWorkflowId}
-        activeRunId={activeRunId}
-        activeMetric={activeMetric}
-        activeTokenKind={activeTokenKind}
-        tokenKinds={tokenKinds}
-        onWorkflowChange={onWorkflowChange}
-        onRunChange={onRunChange}
-        onMetricChange={onMetricChange}
-        onTokenKindChange={onTokenKindChange}
-      />
-      {activeWorkflowId === "target_object_encoding" ? (
-        <TargetObjectEncodingPreset manifest={manifest} />
-      ) : activeWorkflowId === "probe_suite" ? (
-        <ProbeSuitePreset
-          activeRunId={activeRunId}
-          onRunChange={onRunChange}
-        />
-      ) : (
-        <div className="workflow-empty">
-          <h1>{activeWorkflowId}</h1>
-          <p>This workflow preset is not implemented in the React workbench yet.</p>
-        </div>
-      )}
-    </div>
-  );
 }
