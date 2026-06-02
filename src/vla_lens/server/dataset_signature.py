@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Sequence
 
@@ -67,12 +68,10 @@ def _workbench_signature_paths(root: Path) -> list[Path]:
 
 
 def _dataset_trace_count_hint(root: Path) -> int:
-    refs_paths = _unique_paths(
-        [
-            root / "vla_lens" / "tables" / "episode_refs.parquet",
-            *list(root.glob("**/vla_lens/tables/episode_refs.parquet")),
-        ]
-    )
+    manifest_count = _indexed_episode_count_hint(root)
+    if manifest_count:
+        return manifest_count
+    refs_paths = _unique_paths([root / "vla_lens" / "tables" / "episode_refs.parquet"])
     refs_count = 0
     for path in refs_paths:
         if not path.exists():
@@ -90,6 +89,27 @@ def _dataset_trace_count_hint(root: Path) -> int:
                 return max(0, sum(1 for _line in handle) - 1)
         except OSError:
             return 0
+    return 0
+
+
+def _indexed_episode_count_hint(root: Path) -> int:
+    manifest_path = root / "vla_lens" / "tables" / "index_manifest.json"
+    if not manifest_path.exists():
+        return 0
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return 0
+    tables = manifest.get("tables") if isinstance(manifest, dict) else {}
+    episode_table = tables.get("episode_index") if isinstance(tables, dict) else {}
+    for value in (
+        episode_table.get("rows") if isinstance(episode_table, dict) else None,
+        manifest.get("indexed_episode_count") if isinstance(manifest, dict) else None,
+    ):
+        try:
+            return max(0, int(value))
+        except (TypeError, ValueError):
+            continue
     return 0
 
 

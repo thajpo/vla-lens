@@ -79,7 +79,10 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
             request,
             lambda state, _query: state.cached_payload(
                 "dataset",
-                lambda _dataset: indexed_api.indexed_dataset_payload(state.root),
+                lambda _dataset: indexed_api.indexed_dataset_payload(
+                    state.root,
+                    state.index_manifest,
+                ),
             ),
         )
 

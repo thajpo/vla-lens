@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -11,10 +12,10 @@ import pandas as pd
 from vla_lens.dataset.index import (
     ARTIFACT_INDEX,
     EPISODE_INDEX,
+    INDEX_MANIFEST,
     INDEX_SCHEMA_VERSION,
     MODEL_SITE_INDEX,
     PROBE_PREDICTIONS,
-    validate_dataset_index,
 )
 from vla_lens.server.common import _json_parse, _json_scalar, _jsonable
 
@@ -40,8 +41,11 @@ EPISODE_SORT_COLUMNS = {
 }
 
 
-def indexed_dataset_payload(root: Path) -> dict[str, Any]:
-    manifest = validate_dataset_index(root)
+def indexed_dataset_payload(
+    root: Path,
+    manifest: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    manifest = manifest or _read_index_manifest(root)
     episodes = _read_table(root / EPISODE_INDEX)
     model_sites = _read_table(root / MODEL_SITE_INDEX)
     artifacts = _read_table(root / ARTIFACT_INDEX)
@@ -97,7 +101,6 @@ def indexed_dataset_payload(root: Path) -> dict[str, Any]:
 
 
 def indexed_episodes_payload(root: Path, query: Mapping[str, list[str]]) -> dict[str, Any]:
-    validate_dataset_index(root)
     limit = _clamped_int(_query_value(query, "limit"), DEFAULT_EPISODE_LIMIT, 1, MAX_EPISODE_LIMIT)
     offset = _clamped_int(_query_value(query, "offset"), 0, 0, 10**12)
     sort = _query_value(query, "sort") or "episode_index"
@@ -134,7 +137,6 @@ def indexed_episodes_payload(root: Path, query: Mapping[str, list[str]]) -> dict
 
 
 def indexed_episode_neighbors_payload(root: Path, trace_id: str) -> dict[str, Any]:
-    validate_dataset_index(root)
     path = _quote_literal(str(root / EPISODE_INDEX))
     con = duckdb.connect(database=":memory:")
     try:
@@ -165,7 +167,6 @@ def indexed_episode_neighbors_payload(root: Path, trace_id: str) -> dict[str, An
 
 
 def indexed_artifacts_payload(root: Path) -> dict[str, Any]:
-    validate_dataset_index(root)
     artifacts = _read_table(root / ARTIFACT_INDEX)
     if artifacts.empty:
         return {"artifacts": [], "counts": {}, "total": 0}
@@ -185,7 +186,6 @@ def indexed_artifact_summary(root: Path) -> dict[str, Any]:
 
 
 def indexed_probe_index_payload(root: Path) -> dict[str, Any]:
-    validate_dataset_index(root)
     artifacts = _read_table(root / ARTIFACT_INDEX)
     predictions = _read_table(root / PROBE_PREDICTIONS)
     probes: list[dict[str, Any]] = []
@@ -391,13 +391,15 @@ def _append_probe_filters(
 
 
 def _episode_payload_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    metadata = _json_parse(row.get("metadata")) or {}
-    if not isinstance(metadata, dict):
-        metadata = {}
-    for key in ("dataset_id", "benchmark", "profile", "seed"):
+    metadata = {}
+    for key in ("dataset_id", "benchmark", "seed"):
         value = row.get(key)
-        if value not in {None, ""} and key not in metadata:
+        if value not in {None, ""}:
             metadata[key] = value
+    profile = row.get("profile")
+    if profile not in {None, ""}:
+        metadata["profile"] = profile
+        metadata["capture_profile"] = profile
     payload = {
         "trace_id": str(row.get("trace_id") or ""),
         "episode_id": str(row.get("episode_id") or ""),
@@ -575,6 +577,13 @@ def _read_table(path: Path) -> pd.DataFrame:
         return pd.read_parquet(path)
     except Exception:
         return pd.DataFrame()
+
+
+def _read_index_manifest(root: Path) -> dict[str, Any]:
+    try:
+        return json.loads((root / INDEX_MANIFEST).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
 
 
 def _json_list_union(values: pd.Series) -> list[str]:

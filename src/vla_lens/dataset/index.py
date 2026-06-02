@@ -285,7 +285,7 @@ def _episode_index_row(dataset: TraceDataset, bundle: Any, fallback_index: int) 
         or fallback_index
     )
     dataset_id = _first_text(metadata, ("dataset_id", "batch_id")) or dataset.root.name
-    benchmark = _first_text(metadata, ("benchmark", "task_suite", "suite", "environment"))
+    benchmark = _first_text(metadata, ("benchmark", "task_suite", "suite"))
     profile = _first_text(metadata, ("capture_profile", "actual_profile", "requested_profile"))
     seed = _first_text(metadata, ("seed", "episode_seed", "start_seed"))
     return {

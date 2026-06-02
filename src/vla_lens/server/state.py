@@ -52,12 +52,10 @@ class DashboardState:
                 return
             self.dataset_signature_checked_at = now
         signature = _dataset_signature(self.root)
-        index_manifest = validate_dataset_index(self.root)
         with self.dataset_lock:
             if self.dataset_signature == signature:
-                self.index_manifest = index_manifest
                 return
-            self.index_manifest = index_manifest
+            self.index_manifest = validate_dataset_index(self.root)
             self.dataset = TraceDataset.open(self.root)
             self.dataset_signature = signature
             self.payload_cache.clear()

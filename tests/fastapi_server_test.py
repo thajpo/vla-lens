@@ -1,13 +1,17 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
+import vla_lens.server.indexed as indexed_api
+import vla_lens.server.state as state_api
 from vla_lens import create_synthetic_trace_dataset
 from vla_lens.dataset import DatasetIndexError
 from vla_lens.dataset.index import index_manifest_path
+from vla_lens.server import _dataset_signature
 from vla_lens.server.fastapi_app import create_dashboard_app
 
 EXPECTED_DASHBOARD_ROUTE_METHODS = {
@@ -94,6 +98,56 @@ def test_fastapi_dataset_payload_reports_model_sites_without_workbench_payload(t
     assert "workbench" not in payload
 
 
+def test_fastapi_episode_page_payload_keeps_metadata_bounded(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
+    client = TestClient(create_dashboard_app(dataset.root))
+
+    payload = client.get("/api/episodes?limit=1").json()
+    metadata = payload["episodes"][0]["metadata"]
+
+    assert set(metadata) <= {"benchmark", "capture_profile", "dataset_id", "profile", "seed"}
+
+
+def test_fastapi_indexed_pages_do_not_revalidate_index_on_request(tmp_path, monkeypatch):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
+    app = create_dashboard_app(dataset.root)
+    app.state.dashboard.dataset_signature_checked_at = 0.0
+    app.state.dashboard.dataset_signature_check_interval_s = -1.0
+
+    def fail_request_validation(_root):
+        raise AssertionError("indexed endpoints should trust startup index validation")
+
+    monkeypatch.setattr(state_api, "validate_dataset_index", fail_request_validation)
+    monkeypatch.setattr(
+        indexed_api,
+        "validate_dataset_index",
+        fail_request_validation,
+        raising=False,
+    )
+
+    response = TestClient(app).get("/api/episodes?limit=1")
+
+    assert response.status_code == 200
+    assert response.json()["total"] == 1
+
+
+def test_dataset_signature_uses_manifest_count_without_recursive_episode_ref_scan(
+    tmp_path,
+    monkeypatch,
+):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2, timesteps=2)
+    original_glob = Path.glob
+
+    def guarded_glob(self, pattern):
+        if str(pattern).startswith("**/"):
+            raise AssertionError("dataset signatures must not recursively scan episode refs")
+        return original_glob(self, pattern)
+
+    monkeypatch.setattr(Path, "glob", guarded_glob)
+
+    assert _dataset_signature(dataset.root)[0] == 2
+
+
 def test_fastapi_startup_requires_dataset_index(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
     index_manifest_path(dataset.root).unlink()
@@ -104,21 +158,6 @@ def test_fastapi_startup_requires_dataset_index(tmp_path):
     message = str(exc_info.value)
     assert "Dataset index is missing" in message
     assert "scripts/build_vla_lens_index.py" in message
-
-
-def test_fastapi_runtime_refresh_reports_stale_dataset_index(tmp_path):
-    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
-    client = TestClient(create_dashboard_app(dataset.root))
-    client.app.state.dashboard.dataset_signature_check_interval_s = 0
-    manifest_path = next((dataset.root / "vla_lens" / "episodes").glob("*/manifest.json"))
-    manifest_path.write_text(manifest_path.read_text(encoding="utf-8") + "\n", encoding="utf-8")
-
-    response = client.get("/api/dataset")
-    payload = response.json()
-
-    assert response.status_code == 400
-    assert "fingerprint is stale" in payload["message"]
-    assert "scripts/build_vla_lens_index.py" in payload["message"]
 
 
 def test_fastapi_health_endpoint_is_gateway_readiness_probe(tmp_path):
