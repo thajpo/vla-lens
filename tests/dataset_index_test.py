@@ -12,7 +12,9 @@ from vla_lens.dataset.index import (
     INDEX_MANIFEST,
     INDEX_SCHEMA_VERSION,
     MODEL_SITE_INDEX,
+    PROBE_EPISODE_INDEX,
     REQUIRED_EPISODE_COLUMNS,
+    _probe_episode_index_table,
 )
 from vla_lens.traces import TraceBundle
 
@@ -29,6 +31,36 @@ def test_dataset_index_overwrite_rebuild_is_deterministic(tmp_path):
     pd.testing.assert_frame_equal(before, after)
     manifest = validate_dataset_index(dataset.root)
     assert manifest["indexed_episode_count"] == 2
+    assert (dataset.root / PROBE_EPISODE_INDEX).exists()
+    assert manifest["tables"]["probe_episode_index"]["rows"] == 0
+
+
+def test_probe_episode_index_prefers_failed_then_heldout_then_confidence():
+    rows = pd.DataFrame(
+        {
+            "probe_id": ["probe-a", "probe-a", "probe-a", "probe-a"],
+            "trace_id": ["trace-a", "trace-a", "trace-a", "trace-a"],
+            "split": ["train", "test", "validation", "test"],
+            "split_category": ["train", "test", "validation", "test"],
+            "actual": ["red", "red", "red", "red"],
+            "predicted": ["blue", "red", "green", "yellow"],
+            "confidence": [0.99, 0.95, 0.70, 0.80],
+            "correct": [False, True, False, False],
+            "model": ["linear", "linear", "linear", "linear"],
+            "feature": ["call=0", "call=1", "call=2", "call=3"],
+            "policy_call_index": [0, 1, 2, 3],
+        }
+    )
+
+    episode_index = _probe_episode_index_table(rows)
+    representative = episode_index.iloc[0].to_dict()
+
+    assert len(episode_index) == 1
+    assert representative["predicted"] == "yellow"
+    assert representative["correct"] is False
+    assert representative["split_category"] == "test"
+    assert representative["policy_call_index"] == 3
+    assert representative["row_count"] == 4
 
 
 def test_dataset_index_artifact_table_does_not_reenter_source_artifacts(tmp_path):

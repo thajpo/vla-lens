@@ -24,6 +24,7 @@ def _dataset_signature(root: Path) -> tuple[int, int]:
             root / dashboard_index.MODEL_SITE_INDEX,
             root / dashboard_index.ARTIFACT_INDEX,
             root / dashboard_index.PROBE_PREDICTIONS,
+            root / dashboard_index.PROBE_EPISODE_INDEX,
             *_workbench_signature_paths(root),
         ]
         trace_count = _dataset_trace_count_hint(root)

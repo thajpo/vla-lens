@@ -11,6 +11,7 @@ import pandas as pd
 import sklearn
 
 from vla_lens.artifacts import LensArtifact, make_artifact_id
+from vla_lens.dataset import build_dataset_index
 from vla_lens.probes.suite import run_probe_suite
 from vla_lens.probes.workflow_artifacts import (
     _array_fingerprint,
@@ -308,6 +309,7 @@ def train_probe_artifact(
             provenance={"artifact_id": saved.artifact_id},
         ),
     )
+    build_dataset_index(dataset.root, overwrite=True)
     return SavedProbeSuite(artifact=saved, results=results, rows=rows)
 
 

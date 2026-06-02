@@ -14,6 +14,7 @@ import vla_lens.server.activation as activation_api
 import vla_lens.server.attention as attention_api
 import vla_lens.server.dataset as dataset_api
 import vla_lens.server.indexed as indexed_api
+import vla_lens.server.indexed_probes as indexed_probes_api
 import vla_lens.server.metrics as metrics_api
 import vla_lens.server.probes as probes_api
 import vla_lens.server.spatial as spatial_api
@@ -313,21 +314,24 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
     async def episode_probes_endpoint(request: Request) -> Response:
         return _handle_json(
             request,
-            lambda state, query: probes_api._episode_probes_payload(state.dataset, query),
+            lambda state, query: indexed_probes_api.indexed_episode_probes_payload(
+                state.root,
+                query,
+            ),
         )
 
     @app.get("/api/probe-index")
     async def probe_index_endpoint(request: Request) -> Response:
         return _handle_json(
             request,
-            lambda state, _query: indexed_api.indexed_probe_index_payload(state.root),
+            lambda state, _query: indexed_probes_api.indexed_probe_index_payload(state.root),
         )
 
     @app.get("/api/probes/{probe_id}/evidence")
     async def probe_evidence_endpoint(request: Request, probe_id: str) -> Response:
         return _handle_json(
             request,
-            lambda state, query: indexed_api.indexed_probe_evidence_payload(
+            lambda state, query: indexed_probes_api.indexed_probe_evidence_payload(
                 state.root,
                 probe_id,
                 query,

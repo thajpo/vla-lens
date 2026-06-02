@@ -15,6 +15,7 @@ from vla_lens.dataset.index import (
     INDEX_MANIFEST,
     INDEX_SCHEMA_VERSION,
     MODEL_SITE_INDEX,
+    PROBE_EPISODE_INDEX,
     PROBE_PREDICTIONS,
 )
 from vla_lens.server.common import _json_parse, _json_scalar, _jsonable
@@ -50,6 +51,7 @@ def indexed_dataset_payload(
     model_sites = _read_table(root / MODEL_SITE_INDEX)
     artifacts = _read_table(root / ARTIFACT_INDEX)
     probes = _read_table(root / PROBE_PREDICTIONS)
+    probe_episodes = _read_table(root / PROBE_EPISODE_INDEX)
     artifact_counts = _value_counts(artifacts, "artifact_type")
     camera_names = _json_list_union(episodes.get("camera_names", pd.Series(dtype=object)))
     model_site_prefixes = sorted(
@@ -82,12 +84,13 @@ def indexed_dataset_payload(
             "available": sorted(name for name, available in flags.items() if available),
             "flags": flags,
             "camera_names": camera_names,
-            "model_families": [],
+            "model_families": _model_families_from_index(episodes),
             "model_site_prefixes": model_site_prefixes,
         },
         "artifacts": {"total": int(len(artifacts)), "counts": artifact_counts},
         "probes": {
             "total_predictions": int(len(probes)),
+            "total_episode_records": int(len(probe_episodes)),
             "probe_count": int(probes["probe_id"].nunique()) if "probe_id" in probes else 0,
         },
         "index": {
@@ -185,62 +188,6 @@ def indexed_artifact_summary(root: Path) -> dict[str, Any]:
     return {"total": int(len(artifacts)), "counts": _value_counts(artifacts, "artifact_type")}
 
 
-def indexed_probe_index_payload(root: Path) -> dict[str, Any]:
-    artifacts = _read_table(root / ARTIFACT_INDEX)
-    predictions = _read_table(root / PROBE_PREDICTIONS)
-    probes: list[dict[str, Any]] = []
-    for artifact in artifacts.loc[
-        artifacts.get("artifact_type", pd.Series(dtype=object)).astype(str) == "probe_suite"
-    ].to_dict("records"):
-        probe_id = str(artifact.get("artifact_id") or "")
-        rows = (
-            predictions.loc[predictions["probe_id"].astype(str) == probe_id]
-            if not predictions.empty and "probe_id" in predictions
-            else pd.DataFrame()
-        )
-        probes.append(_probe_summary_payload(artifact, rows))
-    probes.sort(key=lambda item: (-_probe_review_score(item), str(item.get("name") or "")))
-    return {
-        "probes": probes,
-        "total": len(probes),
-        "trace_count": _episode_count(root),
-        "split_source": None,
-    }
-
-
-def indexed_probe_evidence_payload(
-    root: Path,
-    probe_id: str,
-    query: Mapping[str, list[str]],
-) -> dict[str, Any]:
-    limit = _clamped_int(_query_value(query, "limit"), 12, 1, 100)
-    evidence_query = {key: list(value) for key, value in query.items()}
-    evidence_query["probe_id"] = [probe_id]
-    evidence_query["limit"] = [str(limit)]
-    evidence_query.setdefault("probe_prediction", ["scored"])
-    evidence_query.setdefault("sort", ["probe_interest"])
-    episodes_payload = indexed_episodes_payload(
-        root,
-        evidence_query,
-    )
-    probe = next(
-        (
-            item
-            for item in indexed_probe_index_payload(root)["probes"]
-            if str(item.get("artifact_id")) == probe_id
-        ),
-        None,
-    )
-    if probe is None:
-        raise KeyError(probe_id)
-    return {
-        "probe": probe,
-        "episodes": episodes_payload["episodes"],
-        "total": episodes_payload["total"],
-        "limit": limit,
-    }
-
-
 def counterfactual_pairs_from_index(root: Path) -> dict[str, Any]:
     episodes = _read_table(root / EPISODE_INDEX)
     groups: dict[str, list[dict[str, Any]]] = {}
@@ -304,32 +251,28 @@ def _episode_query_parts(
     params: list[Any] = []
     probe_id = _query_value(query, "probe_id")
     if probe_id:
-        predictions = f"read_parquet({_quote_literal(str(root / PROBE_PREDICTIONS))})"
+        probe_episodes = f"read_parquet({_quote_literal(str(root / PROBE_EPISODE_INDEX))})"
         source_sql = f"""
         SELECT e.*, p.probe_available, p.probe_row_count, p.probe_split, p.probe_split_category,
                p.probe_confidence, p.probe_correct, p.probe_actual, p.probe_predicted,
-               p.probe_model, p.probe_feature
+               p.probe_correct_rate, p.probe_model, p.probe_feature, p.probe_policy_call_index
         FROM {episodes} AS e
         LEFT JOIN (
           SELECT trace_id,
                  true AS probe_available,
-                 count(*) AS probe_row_count,
-                 first(split) AS probe_split,
-                 first(split_category) AS probe_split_category,
-                 avg(try_cast(confidence AS DOUBLE)) AS probe_confidence,
-                 avg(
-                   CASE WHEN correct THEN 1.0 WHEN correct = false THEN 0.0 ELSE NULL END
-                 ) AS probe_correct_rate,
-                 avg(
-                   CASE WHEN correct THEN 1.0 WHEN correct = false THEN 0.0 ELSE NULL END
-                 ) >= 0.5 AS probe_correct,
-                 first(actual) AS probe_actual,
-                 first(predicted) AS probe_predicted,
-                 first(model) AS probe_model,
-                 first(feature) AS probe_feature
-          FROM {predictions}
+                 row_count AS probe_row_count,
+                 split AS probe_split,
+                 split_category AS probe_split_category,
+                 try_cast(confidence AS DOUBLE) AS probe_confidence,
+                 try_cast(correct_rate AS DOUBLE) AS probe_correct_rate,
+                 correct AS probe_correct,
+                 actual AS probe_actual,
+                 predicted AS probe_predicted,
+                 model AS probe_model,
+                 feature AS probe_feature,
+                 try_cast(policy_call_index AS INTEGER) AS probe_policy_call_index
+          FROM {probe_episodes}
           WHERE probe_id = ?
-          GROUP BY trace_id
         ) AS p
         ON e.trace_id = p.trace_id
         """
@@ -454,6 +397,9 @@ def _probe_record_from_row(row: Mapping[str, Any]) -> dict[str, Any] | None:
     correct = _bool_or_none(row.get("probe_correct"))
     if available is not True and _none_if_missing(row.get("probe_row_count")) is None:
         return None
+    correct_rate = _float_or_none(row.get("probe_correct_rate"))
+    if correct_rate is None:
+        correct_rate = 1.0 if correct is True else 0.0 if correct is False else None
     return {
         "trace_id": str(row.get("trace_id") or ""),
         "split": _none_if_missing(row.get("probe_split")),
@@ -465,9 +411,10 @@ def _probe_record_from_row(row: Mapping[str, Any]) -> dict[str, Any] | None:
         "predicted": _json_scalar(row.get("probe_predicted")),
         "confidence": _float_or_none(row.get("probe_confidence")),
         "correct": correct,
-        "correct_rate": 1.0 if correct is True else 0.0 if correct is False else None,
+        "correct_rate": correct_rate,
         "model": _none_if_missing(row.get("probe_model")),
         "feature": _none_if_missing(row.get("probe_feature")),
+        "policy_call_index": _int_or_none(row.get("probe_policy_call_index")),
     }
 
 
@@ -491,53 +438,6 @@ def _episode_facets(con: duckdb.DuckDBPyConnection, root: Path) -> dict[str, lis
     return facets
 
 
-def _probe_summary_payload(artifact: Mapping[str, Any], rows: pd.DataFrame) -> dict[str, Any]:
-    metrics = _json_parse(artifact.get("metrics")) or {}
-    prediction_summary = _probe_prediction_summary(rows)
-    split_summary = _value_counts(rows, "split_category")
-    stats = {
-        "scored": prediction_summary.get("scored", 0),
-        "unscored": max(0, _episode_count_from_rows(rows) - prediction_summary.get("scored", 0)),
-        "correct": prediction_summary.get("correct", 0),
-        "wrong": prediction_summary.get("incorrect", 0),
-        "heldoutScored": _count_probe_rows(rows, heldout=True, scored=True),
-        "heldoutWrong": _count_probe_rows(rows, heldout=True, correct=False),
-        "confidentWrong": _count_probe_rows(rows, correct=False, min_confidence=0.8),
-        "train": int(split_summary.get("train", 0)),
-        "validation": int(split_summary.get("validation", 0)),
-        "test": int(split_summary.get("test", 0)),
-    }
-    return {
-        "artifact_id": str(artifact.get("artifact_id") or ""),
-        "name": str(artifact.get("name") or artifact.get("artifact_id") or ""),
-        "target": metrics.get("target") if isinstance(metrics, Mapping) else None,
-        "best_model": metrics.get("best_model") if isinstance(metrics, Mapping) else None,
-        "best_feature": metrics.get("best_feature") if isinstance(metrics, Mapping) else None,
-        "best_score": _float_or_none(metrics.get("best_score"))
-        if isinstance(metrics, Mapping)
-        else None,
-        "best_delta": _float_or_none(metrics.get("best_delta"))
-        if isinstance(metrics, Mapping)
-        else None,
-        "split_summary": split_summary,
-        "prediction_summary": prediction_summary,
-        "review_stats": stats,
-    }
-
-
-def _probe_prediction_summary(rows: pd.DataFrame) -> dict[str, int]:
-    if rows.empty:
-        return {"scored": 0, "unscored": 0, "correct": 0, "incorrect": 0, "unknown": 0}
-    correct = rows.get("correct", pd.Series(dtype=object))
-    return {
-        "scored": int(len(rows)),
-        "unscored": 0,
-        "correct": int((correct == True).sum()),  # noqa: E712
-        "incorrect": int((correct == False).sum()),  # noqa: E712
-        "unknown": int((correct.isna()).sum()) if hasattr(correct, "isna") else 0,
-    }
-
-
 def _artifact_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     payload = {str(key): _json_scalar(value) for key, value in row.items()}
     for key in ["selector", "method", "metrics", "arrays", "display", "tags", "source_trace_ids"]:
@@ -550,50 +450,6 @@ def _value_counts(frame: pd.DataFrame, column: str) -> dict[str, int]:
         return {}
     counts = frame[column].dropna().astype(str).value_counts().sort_index()
     return {str(key): int(value) for key, value in counts.items() if str(key)}
-
-
-def _count_probe_rows(
-    rows: pd.DataFrame,
-    *,
-    heldout: bool | None = None,
-    scored: bool | None = None,
-    correct: bool | None = None,
-    min_confidence: float | None = None,
-) -> int:
-    if rows.empty:
-        return 0
-    mask = pd.Series(True, index=rows.index)
-    if heldout is True and "split_category" in rows:
-        mask = mask & rows["split_category"].astype(str).isin({"validation", "test"})
-    if scored is True:
-        mask = mask & rows["trace_id"].notna()
-    if correct is not None and "correct" in rows:
-        mask = mask & (rows["correct"] == correct)
-    if min_confidence is not None and "confidence" in rows:
-        mask = mask & (pd.to_numeric(rows["confidence"], errors="coerce") >= min_confidence)
-    return int(mask.sum())
-
-
-def _probe_review_score(probe: Mapping[str, Any]) -> float:
-    stats = probe.get("review_stats") if isinstance(probe.get("review_stats"), Mapping) else {}
-    return (
-        float(stats.get("heldoutWrong") or 0) * 80
-        + float(stats.get("confidentWrong") or 0) * 70
-        + float(stats.get("heldoutScored") or 0) * 8
-        + float(stats.get("wrong") or 0) * 12
-        + float(probe.get("best_delta") or 0) * 120
-        + float(probe.get("best_score") or 0) * 12
-    )
-
-
-def _episode_count(root: Path) -> int:
-    return int(len(_read_table(root / EPISODE_INDEX)))
-
-
-def _episode_count_from_rows(rows: pd.DataFrame) -> int:
-    if rows.empty or "trace_id" not in rows:
-        return 0
-    return int(rows["trace_id"].nunique())
 
 
 def _read_table(path: Path) -> pd.DataFrame:
@@ -619,6 +475,32 @@ def _json_list_union(values: pd.Series) -> list[str]:
         if isinstance(parsed, list):
             out.update(str(item) for item in parsed if str(item).strip())
     return sorted(out)
+
+
+def _model_families_from_index(episodes: pd.DataFrame) -> list[str]:
+    families: set[str] = set()
+    for value in episodes.get("metadata", pd.Series(dtype=object)).dropna().tolist():
+        metadata = _json_parse(value)
+        if not isinstance(metadata, Mapping):
+            continue
+        _add_model_family(families, metadata.get("model_family"))
+        model = metadata.get("model")
+        if isinstance(model, Mapping):
+            _add_model_family(families, model.get("model_family"))
+        descriptor = metadata.get("model_descriptor")
+        if isinstance(descriptor, Mapping):
+            _add_model_family(families, descriptor.get("model_family"))
+    return sorted(families)
+
+
+def _add_model_family(families: set[str], value: Any) -> None:
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            _add_model_family(families, item)
+        return
+    text = str(value or "").strip()
+    if text:
+        families.add(text)
 
 
 def _numeric_sum(frame: pd.DataFrame, column: str) -> float:
@@ -698,6 +580,4 @@ __all__ = [
     "indexed_dataset_payload",
     "indexed_episode_neighbors_payload",
     "indexed_episodes_payload",
-    "indexed_probe_evidence_payload",
-    "indexed_probe_index_payload",
 ]

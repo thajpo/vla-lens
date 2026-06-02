@@ -32,7 +32,6 @@ from vla_lens.server.common import (
     _optional_float,
     _optional_int,
     _optional_text,
-    _query_one,
     _safe_filename,
 )
 from vla_lens.traces import TraceDataset
@@ -144,51 +143,15 @@ def _artifact_output_path(dataset: TraceDataset, relative_path: str) -> Path:
         return dataset_path
     return dataset._dataset_artifact_root() / path
 
+
 def _episode_probes_payload(
     dataset: TraceDataset,
     query: Mapping[str, list[str]],
 ) -> dict[str, Any]:
-    from vla_lens.server.dataset import _artifact_records
+    from vla_lens.server.indexed_probes import indexed_episode_probes_payload
 
-    trace_id = _query_one(query, "trace_id")
-    probes: list[dict[str, Any]] = []
-    for record in _artifact_records(dataset):
-        if str(record.get("artifact_type")) != "probe_suite":
-            continue
-        artifact_id = str(record.get("artifact_id"))
-        try:
-            artifact = dataset.load_artifact(artifact_id)
-        except (FileNotFoundError, KeyError, ValueError):
-            continue
-        predictions = _probe_prediction_table(dataset, artifact)
-        if predictions.empty or "trace_id" not in predictions:
-            episode_predictions = pd.DataFrame()
-        else:
-            episode_predictions = predictions.loc[predictions["trace_id"].astype(str) == trace_id]
-        if episode_predictions.empty:
-            episode_predictions = _saved_episode_probe_predictions(dataset, artifact, trace_id)
-        if episode_predictions.empty:
-            episode_predictions = _score_and_save_episode_probe(dataset, artifact, trace_id)
-        probes.append(
-            {
-                "artifact_id": artifact.artifact_id,
-                "name": artifact.name,
-                "target": artifact.metrics.get("target") or artifact.display.get("target"),
-                "metrics": _jsonable(artifact.metrics),
-                "best_result": _jsonable(artifact.display.get("best_result_details") or {}),
-                "target_distribution": _jsonable(artifact.display.get("target_distribution") or {}),
-                "episode_summary": _probe_episode_summary(episode_predictions, artifact),
-                "rows": _probe_prediction_rows(episode_predictions),
-                "row_count": int(len(episode_predictions)),
-                "available": bool(len(episode_predictions)),
-            }
-        )
-    return {
-        "trace_id": trace_id,
-        "probes": probes,
-        "available_count": sum(1 for probe in probes if probe["available"]),
-        "total": len(probes),
-    }
+    return indexed_episode_probes_payload(dataset.root, query)
+
 
 def _probe_index_payload(dataset: TraceDataset) -> dict[str, Any]:
     from vla_lens.server.dataset import _artifact_records

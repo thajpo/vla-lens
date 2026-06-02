@@ -31,6 +31,7 @@ export type DatasetPayload = {
   };
   probes?: {
     total_predictions: number;
+    total_episode_records?: number;
     probe_count: number;
   };
   index?: {
@@ -60,6 +61,7 @@ export type ProbeEpisodeIndex = {
   eval_split?: string | null;
   model?: string | null;
   feature?: string | null;
+  policy_call_index?: number | null;
 };
 
 export type ProbeDatasetIndex = {

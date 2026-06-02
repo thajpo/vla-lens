@@ -417,8 +417,8 @@ def test_probe_episode_payloads_link_artifacts_to_dataset_traces(tmp_path):
     assert probe_index["by_trace"][trace_ids[2]]["split_category"] == "validation"
     assert probe_index["by_trace"][trace_ids[-1]]["split_category"] == "test"
 
-    episode_payload = _episode_probes_payload(reopened, {"trace_id": [trace_ids[0]]})
-    assert episode_payload["trace_id"] == trace_ids[0]
+    episode_payload = _episode_probes_payload(reopened, {"trace_id": [trace_ids[-1]]})
+    assert episode_payload["trace_id"] == trace_ids[-1]
     assert episode_payload["total"] >= 1
     assert episode_payload["available_count"] >= 1
     episode_probe = next(

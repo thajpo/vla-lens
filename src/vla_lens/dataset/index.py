@@ -21,13 +21,14 @@ from vla_lens.artifacts import LensArtifact
 from vla_lens.capture.lerobot_v3 import LEROBOT_INFO_PATH
 from vla_lens.traces import TraceDataset
 
-INDEX_SCHEMA_VERSION = "0.1.1"
+INDEX_SCHEMA_VERSION = "0.2.0"
 INDEX_TABLE_DIR = Path("vla_lens") / "tables"
 INDEX_MANIFEST = INDEX_TABLE_DIR / "index_manifest.json"
 EPISODE_INDEX = INDEX_TABLE_DIR / "episode_index.parquet"
 MODEL_SITE_INDEX = INDEX_TABLE_DIR / "model_site_index.parquet"
 ARTIFACT_INDEX = INDEX_TABLE_DIR / "dashboard_artifact_index.parquet"
 PROBE_PREDICTIONS = INDEX_TABLE_DIR / "probe_predictions.parquet"
+PROBE_EPISODE_INDEX = INDEX_TABLE_DIR / "probe_episode_index.parquet"
 
 REQUIRED_EPISODE_COLUMNS = (
     "trace_id",
@@ -105,14 +106,29 @@ PROBE_PREDICTION_COLUMNS = (
     "split_category",
     "actual",
     "predicted",
+    "target_name",
+    "target_value",
+    "prediction_value",
     "confidence",
     "correct",
     "correct_rate",
     "model",
     "feature",
+    "layer",
     "policy_call_index",
     "timestep",
+    "target_timestep",
     "generation_step",
+    "model_site_id",
+    "token_space_id",
+    "eval_split",
+    "primary_metric",
+)
+PROBE_EPISODE_COLUMNS = (
+    *PROBE_PREDICTION_COLUMNS,
+    "row_count",
+    "aggregate_policy",
+    "representative_rank",
 )
 
 
@@ -124,6 +140,7 @@ class IndexBuildResult:
     model_site_count: int
     artifact_count: int
     probe_prediction_count: int
+    probe_episode_count: int
     dataset_fingerprint: str
     mode: str
 
@@ -135,6 +152,7 @@ class IndexBuildResult:
             "model_site_count": self.model_site_count,
             "artifact_count": self.artifact_count,
             "probe_prediction_count": self.probe_prediction_count,
+            "probe_episode_count": self.probe_episode_count,
             "dataset_fingerprint": self.dataset_fingerprint,
             "mode": self.mode,
         }
@@ -197,12 +215,14 @@ def build_dataset_index(root: str | Path, *, overwrite: bool = False) -> IndexBu
 
     artifact_index = _artifact_index_table(dataset)
     probe_predictions = _probe_prediction_index_table(dataset, artifact_index)
+    probe_episode_index = _probe_episode_index_table(probe_predictions)
     dataset_fingerprint = _dataset_fingerprint(root_path, episode_index)
 
     _write_table(root_path / EPISODE_INDEX, episode_index, EPISODE_COLUMNS)
     _write_table(root_path / MODEL_SITE_INDEX, model_site_index, MODEL_SITE_COLUMNS)
     _write_table(root_path / ARTIFACT_INDEX, artifact_index, ARTIFACT_COLUMNS)
     _write_table(root_path / PROBE_PREDICTIONS, probe_predictions, PROBE_PREDICTION_COLUMNS)
+    _write_table(root_path / PROBE_EPISODE_INDEX, probe_episode_index, PROBE_EPISODE_COLUMNS)
     manifest = _index_manifest(
         root_path,
         dataset_fingerprint=dataset_fingerprint,
@@ -210,6 +230,7 @@ def build_dataset_index(root: str | Path, *, overwrite: bool = False) -> IndexBu
         model_site_index=model_site_index,
         artifact_index=artifact_index,
         probe_predictions=probe_predictions,
+        probe_episode_index=probe_episode_index,
     )
     _write_json(root_path / INDEX_MANIFEST, manifest)
     return IndexBuildResult(
@@ -219,6 +240,7 @@ def build_dataset_index(root: str | Path, *, overwrite: bool = False) -> IndexBu
         model_site_count=int(len(model_site_index)),
         artifact_count=int(len(artifact_index)),
         probe_prediction_count=int(len(probe_predictions)),
+        probe_episode_count=int(len(probe_episode_index)),
         dataset_fingerprint=dataset_fingerprint,
         mode="append" if append_mode else "rebuild",
     )
@@ -388,6 +410,8 @@ def _probe_prediction_row(artifact: LensArtifact, row: Mapping[str, Any]) -> dic
     correct = _optional_bool(row.get("correct"))
     split = _optional_str(row.get("split") or row.get("eval_split")) or ""
     target = str(artifact.metrics.get("target") or artifact.display.get("target") or "")
+    actual = _probe_value(row.get("actual", row.get("target_value")))
+    predicted = _probe_value(row.get("predicted", row.get("prediction_value")))
     return {
         "probe_id": artifact.artifact_id,
         "probe_name": artifact.name,
@@ -397,17 +421,104 @@ def _probe_prediction_row(artifact: LensArtifact, row: Mapping[str, Any]) -> dic
         "task_id": _optional_str(row.get("task_id")),
         "split": split,
         "split_category": _probe_split_category(split),
-        "actual": _jsonable_scalar(row.get("actual", row.get("target_value"))),
-        "predicted": _jsonable_scalar(row.get("predicted", row.get("prediction_value"))),
+        "actual": actual,
+        "predicted": predicted,
+        "target_name": _optional_str(row.get("target_name")) or target,
+        "target_value": _probe_value(row.get("target_value", actual)),
+        "prediction_value": _probe_value(row.get("prediction_value", predicted)),
         "confidence": confidence,
         "correct": correct,
         "correct_rate": None if correct is None else float(bool(correct)),
         "model": _optional_str(row.get("model")),
         "feature": _optional_str(row.get("feature")),
+        "layer": _optional_int(row.get("layer")),
         "policy_call_index": _optional_int(row.get("policy_call_index")),
         "timestep": _optional_int(row.get("timestep", row.get("target_timestep"))),
-        "generation_step": _jsonable_scalar(row.get("generation_step")),
+        "target_timestep": _optional_int(row.get("target_timestep")),
+        "generation_step": _probe_value(row.get("generation_step")),
+        "model_site_id": _optional_str(row.get("model_site_id")),
+        "token_space_id": _optional_str(row.get("token_space_id")),
+        "eval_split": _optional_str(row.get("eval_split")) or split,
+        "primary_metric": _optional_str(row.get("primary_metric")),
     }
+
+
+def _probe_episode_index_table(probe_predictions: pd.DataFrame) -> pd.DataFrame:
+    if probe_predictions.empty:
+        return _empty_table(PROBE_EPISODE_COLUMNS)
+    predictions = _coerce_columns(probe_predictions, PROBE_PREDICTION_COLUMNS)
+    rows: list[dict[str, Any]] = []
+    for (_probe_id, _trace_id), group in predictions.groupby(
+        [predictions["probe_id"].astype(str), predictions["trace_id"].astype(str)],
+        sort=False,
+    ):
+        if group.empty:
+            continue
+        ranked = _rank_probe_episode_predictions(group)
+        representative = ranked.iloc[0].to_dict()
+        representative["row_count"] = int(len(group))
+        representative["aggregate_policy"] = "prefer_failed_then_heldout_then_confidence"
+        representative["representative_rank"] = 0
+        rows.append(
+            {
+                column: _jsonable_scalar(representative.get(column))
+                for column in PROBE_EPISODE_COLUMNS
+            }
+        )
+    return _coerce_columns(pd.DataFrame.from_records(rows), PROBE_EPISODE_COLUMNS)
+
+
+def _rank_probe_episode_predictions(group: pd.DataFrame) -> pd.DataFrame:
+    ranked = _coerce_columns(group, PROBE_PREDICTION_COLUMNS).copy()
+    ranked["__failed"] = ranked["correct"].map(lambda value: _optional_bool(value) is False)
+    ranked["__split_priority"] = ranked["split_category"].map(_probe_episode_split_priority)
+    ranked["__confidence"] = pd.to_numeric(ranked["confidence"], errors="coerce").fillna(-1.0)
+    ranked["__policy_call_index"] = pd.to_numeric(
+        ranked["policy_call_index"],
+        errors="coerce",
+    ).fillna(10**12)
+    ranked["__timestep"] = pd.to_numeric(ranked["timestep"], errors="coerce").fillna(10**12)
+    ranked["__feature"] = ranked["feature"].fillna("").astype(str)
+    return ranked.sort_values(
+        [
+            "__failed",
+            "__split_priority",
+            "__confidence",
+            "__policy_call_index",
+            "__timestep",
+            "__feature",
+        ],
+        ascending=[False, False, False, True, True, True],
+        kind="mergesort",
+    ).drop(
+        columns=[
+            "__failed",
+            "__split_priority",
+            "__confidence",
+            "__policy_call_index",
+            "__timestep",
+            "__feature",
+        ],
+    )
+
+
+def _probe_episode_split_priority(value: Any) -> int:
+    category = _probe_split_category(str(value or ""))
+    return {
+        "test": 3,
+        "validation": 2,
+        "unknown": 1,
+        "train": 0,
+    }.get(category, 1)
+
+
+def _probe_value(value: Any) -> str | None:
+    scalar = _jsonable_scalar(value)
+    if scalar is None:
+        return None
+    if isinstance(scalar, (Mapping, list)):
+        return json.dumps(scalar, sort_keys=True, separators=(",", ":"))
+    return str(scalar)
 
 
 def _probe_prediction_table(dataset: TraceDataset, artifact: LensArtifact) -> pd.DataFrame:
@@ -434,12 +545,17 @@ def _index_manifest(
     model_site_index: pd.DataFrame,
     artifact_index: pd.DataFrame,
     probe_predictions: pd.DataFrame,
+    probe_episode_index: pd.DataFrame,
 ) -> dict[str, Any]:
     tables = {
         "episode_index": {"path": str(EPISODE_INDEX), "rows": int(len(episode_index))},
         "model_site_index": {"path": str(MODEL_SITE_INDEX), "rows": int(len(model_site_index))},
         "artifact_index": {"path": str(ARTIFACT_INDEX), "rows": int(len(artifact_index))},
         "probe_predictions": {"path": str(PROBE_PREDICTIONS), "rows": int(len(probe_predictions))},
+        "probe_episode_index": {
+            "path": str(PROBE_EPISODE_INDEX),
+            "rows": int(len(probe_episode_index)),
+        },
     }
     return {
         "schema_version": INDEX_SCHEMA_VERSION,
@@ -530,6 +646,7 @@ def _validate_manifest_tables(root: Path, manifest: Mapping[str, Any]) -> dict[s
         "model_site_index": (MODEL_SITE_INDEX, MODEL_SITE_COLUMNS),
         "artifact_index": (ARTIFACT_INDEX, ARTIFACT_COLUMNS),
         "probe_predictions": (PROBE_PREDICTIONS, PROBE_PREDICTION_COLUMNS),
+        "probe_episode_index": (PROBE_EPISODE_INDEX, PROBE_EPISODE_COLUMNS),
     }
     frames: dict[str, pd.DataFrame] = {}
     for table_name, (expected_path, required_columns) in expected_tables.items():
@@ -758,6 +875,8 @@ __all__ = [
     "INDEX_TABLE_DIR",
     "IndexBuildResult",
     "MODEL_SITE_INDEX",
+    "PROBE_EPISODE_COLUMNS",
+    "PROBE_EPISODE_INDEX",
     "PROBE_PREDICTIONS",
     "REQUIRED_EPISODE_COLUMNS",
     "build_dataset_index",

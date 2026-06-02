@@ -162,7 +162,7 @@ export function episodeOpenContextForProbe(
   const record = probeRecordForEpisode(probe, episode);
   return {
     fromCohort: true,
-    policyCall: policyCallFromProbeFeature(record?.feature ?? probe.best_feature ?? ""),
+    policyCall: record?.policy_call_index ?? policyCallFromProbeFeature(record?.feature ?? probe.best_feature ?? ""),
     probeId: probe.artifact_id,
   };
 }
