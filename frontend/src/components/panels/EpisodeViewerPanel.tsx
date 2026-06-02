@@ -12,7 +12,7 @@ export function EpisodeViewerPanel({ resolution }: EpisodeViewerPanelProps) {
   const traceId = String(example?.trace_id ?? "");
   const timestep = Number(example?.timestep ?? resolution?.valid_references.timestep ?? 0);
   const src = traceId
-    ? `/api/frame?trace_id=${encodeURIComponent(traceId)}&camera=main&timestep=${Math.max(0, timestep)}&source=trace`
+    ? `/api/frame?trace_id=${encodeURIComponent(traceId)}&camera=main&timestep=${Math.max(0, timestep)}&source=auto`
     : "";
   return (
     <PanelCard title="Episode Viewer">

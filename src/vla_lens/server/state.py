@@ -90,11 +90,11 @@ class DashboardState:
         timestep = int(_query_one(query, "timestep"))
         source = query.get("source", ["auto"])[0]
         timestep = max(0, min(timestep, bundle.manifest.length - 1))
-        if source == "trace":
-            frame_path = _trace_frame_file_path(bundle, camera=camera, timestep=timestep)
+        if source in {"auto", "trace"}:
+            frame_path = self.single_frame_file_path(bundle, camera=camera, timestep=timestep)
             if frame_path is not None:
                 return frame_path.read_bytes()
-        frame = self._frame(bundle, camera=camera, timestep=timestep, source=source)
+        frame = self.read_single_frame(bundle, camera=camera, timestep=timestep, source=source)
         buffer = io.BytesIO()
         imageio.imwrite(buffer, np.asarray(frame), format="jpg", quality=90)
         return buffer.getvalue()
@@ -105,9 +105,9 @@ class DashboardState:
         timestep = int(_query_one(query, "timestep"))
         source = query.get("source", ["auto"])[0]
         timestep = max(0, min(timestep, bundle.manifest.length - 1))
-        if source != "trace":
+        if source not in {"auto", "trace"}:
             return None
-        return _trace_frame_file_path(bundle, camera=camera, timestep=timestep)
+        return self.single_frame_file_path(bundle, camera=camera, timestep=timestep)
 
     def episode_video_bytes(self, query: dict[str, list[str]]) -> bytes:
         return self.episode_video_path(query).read_bytes()
@@ -124,7 +124,23 @@ class DashboardState:
             max_width=max_width,
         )
 
-    def _frame(self, bundle: TraceBundle, *, camera: str, timestep: int, source: str) -> np.ndarray:
+    def single_frame_file_path(
+        self,
+        bundle: TraceBundle,
+        *,
+        camera: str,
+        timestep: int,
+    ) -> Path | None:
+        return _trace_frame_file_path(bundle, camera=camera, timestep=timestep)
+
+    def read_single_frame(
+        self,
+        bundle: TraceBundle,
+        *,
+        camera: str,
+        timestep: int,
+        source: str,
+    ) -> np.ndarray:
         if source in {"auto", "sparse"} and read_sparse_image is not None:
             try:
                 sparse = read_sparse_image(bundle, camera=camera, timestep=timestep)
@@ -143,6 +159,12 @@ class DashboardState:
             frame_reader = getattr(bundle, "frame", None)
             if callable(frame_reader):
                 return np.asarray(frame_reader(camera, timestep))
+        if source == "trace":
+            frame_reader = getattr(bundle, "frame", None)
+            if callable(frame_reader):
+                return np.asarray(frame_reader(camera, timestep))
+        # Legacy fallback for old array-backed traces. The intended path is a
+        # single-frame file or bundle.frame() reader.
         frames = bundle.frames(camera, mmap=True)
         return np.asarray(frames[timestep])
 

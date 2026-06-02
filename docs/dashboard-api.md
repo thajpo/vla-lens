@@ -132,3 +132,10 @@ table/slice requests /api/tables/query and /api/lens-arrays/{array_id}/slice
 Keep payload examples in tests or typed frontend fixtures when possible. The
 OpenAPI schema describes route intent and common parameters; it is not yet a
 complete generated client contract.
+
+## Future Work
+
+- Complete the `/api/frame` single-frame migration after the current direct-file
+  and `bundle.frame(...)` tests have stabilized: route all normal frame reads
+  through the single-frame API, then remove the legacy full-array `frames()`
+  fallback once current dataset writers no longer need it.
