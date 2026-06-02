@@ -11,7 +11,6 @@ import { Layers3 } from "lucide-react";
 import {
   fetchActivationSites,
   fetchDataset,
-  fetchDatasetDiagnostics,
   fetchEpisode,
   fetchEpisodeAnnotation,
   fetchEpisodeNeighbors,
@@ -83,23 +82,17 @@ export function EpisodesPage({
   onTraceChange,
 }: EpisodesPageProps) {
   const queryClient = useQueryClient();
-  const diagnostics = useQuery({
-    queryKey: ["dataset-diagnostics"],
-    queryFn: fetchDatasetDiagnostics,
-  });
-  const datasetFingerprint = diagnostics.data?.fingerprint;
-  const datasetCacheReady = diagnostics.isFetched || diagnostics.isError;
-  const datasetIdentityKey = datasetFingerprint
-    ? `fingerprint:${datasetFingerprint}`
-    : datasetCacheReady
-      ? "unknown"
-      : "pending";
   const dataset = useQuery({
-    queryKey: ["dataset", datasetIdentityKey],
-    queryFn: () => fetchDataset({ fingerprint: datasetFingerprint }),
-    enabled: datasetCacheReady,
+    queryKey: ["dataset"],
+    queryFn: () => fetchDataset(),
     staleTime: 30_000,
   });
+  const datasetFingerprint = dataset.data?.index?.dataset_fingerprint;
+  const datasetIdentityKey = datasetFingerprint
+    ? `fingerprint:${datasetFingerprint}`
+    : dataset.isFetched
+      ? "unknown"
+      : "pending";
   const capabilities = episodeCapabilityGates(dataset.data?.capabilities?.flags);
   const {
     hasPolicyCalls,
@@ -114,7 +107,7 @@ export function EpisodesPage({
   const firstEpisodePage = useQuery({
     queryKey: ["episodes-first", datasetIdentityKey],
     queryFn: ({ signal }) => fetchEpisodesPage({ limit: 1 }, signal),
-    enabled: datasetCacheReady && !initialTraceId,
+    enabled: dataset.isFetched && !initialTraceId,
     staleTime: 30_000,
   });
   const firstEpisode = firstEpisodePage.data?.episodes[0];
@@ -264,7 +257,7 @@ export function EpisodesPage({
   const cameras = episodeDetail.data?.cameras.length
     ? episodeDetail.data.cameras
     : camerasFromManifest(manifest, activeTraceId);
-  const frameCacheKey = frameVersionKey(episodeDetail.data ?? selectedEpisode, diagnostics.data?.fingerprint);
+  const frameCacheKey = frameVersionKey(episodeDetail.data ?? selectedEpisode, datasetFingerprint);
   const maxTimestep = Math.max(0, Number(selectedEpisode?.length ?? episodeDetail.data?.length ?? 1) - 1);
   const metrics = episodeMetrics.data?.metrics ?? [];
   const {

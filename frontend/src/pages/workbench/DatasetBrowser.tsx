@@ -57,28 +57,22 @@ export function DatasetBrowser({
 }: {
   onOpenEpisode: (traceId: string, context?: EpisodeOpenContext) => void;
 }) {
-  const diagnostics = useQuery({
-    queryKey: ["dataset-diagnostics"],
-    queryFn: fetchDatasetDiagnostics,
-  });
-  const datasetFingerprint = diagnostics.data?.fingerprint;
-  const datasetCacheReady = diagnostics.isFetched || diagnostics.isError;
-  const datasetIdentityKey = datasetFingerprint
-    ? `fingerprint:${datasetFingerprint}`
-    : datasetCacheReady
-      ? "unknown"
-      : "pending";
   const dataset = useQuery({
-    queryKey: ["dataset", datasetIdentityKey],
-    queryFn: () => fetchDataset({ fingerprint: datasetFingerprint }),
-    enabled: datasetCacheReady,
+    queryKey: ["dataset"],
+    queryFn: () => fetchDataset(),
     staleTime: 30_000,
   });
+  const datasetFingerprint = dataset.data?.index?.dataset_fingerprint;
+  const datasetIdentityKey = datasetFingerprint
+    ? `fingerprint:${datasetFingerprint}`
+    : dataset.isFetched
+      ? "unknown"
+      : "pending";
   const { hasProbeArtifacts } = datasetBrowserCapabilityGates(dataset.data?.capabilities?.flags);
   const probeIndex = useQuery({
     queryKey: ["probe-index"],
     queryFn: fetchProbeIndex,
-    enabled: hasProbeArtifacts,
+    enabled: dataset.isFetched && hasProbeArtifacts,
     staleTime: 60_000,
   });
   const probes = useMemo(
@@ -135,8 +129,14 @@ export function DatasetBrowser({
   const episodePage = useQuery({
     queryKey: ["episodes", datasetIdentityKey, episodePageParams],
     queryFn: ({ signal }) => fetchEpisodesPage(episodePageParams, signal),
-    enabled: datasetCacheReady,
+    enabled: dataset.isFetched,
     staleTime: 15_000,
+  });
+  const diagnostics = useQuery({
+    queryKey: ["dataset-diagnostics", datasetIdentityKey],
+    queryFn: fetchDatasetDiagnostics,
+    enabled: episodePage.isFetched || episodePage.isError,
+    staleTime: 60_000,
   });
   useEffect(() => {
     setPageOffset(0);
@@ -196,7 +196,11 @@ export function DatasetBrowser({
           <p>{dataset.data?.root ?? "Dataset"}</p>
         </div>
         <div className={diagnostics.data?.stale ? "diagnostic-chip stale" : "diagnostic-chip"}>
-          {diagnostics.data?.stale ? "Diagnostics stale" : "Diagnostics current"}
+          {diagnostics.isLoading
+            ? "Diagnostics checking"
+            : diagnostics.data?.stale
+              ? "Diagnostics stale"
+              : "Diagnostics current"}
         </div>
       </header>
 
@@ -250,7 +254,7 @@ export function DatasetBrowser({
         />
       </section>
 
-      {!datasetCacheReady || dataset.isLoading ? <div className="app-message">Loading dataset...</div> : null}
+      {dataset.isLoading ? <div className="app-message">Loading dataset...</div> : null}
       {dataset.isError ? <div className="empty-state">Dataset API unavailable.</div> : null}
       {episodePage.isError ? <div className="empty-state compact">Episode index unavailable.</div> : null}
       {episodePage.isFetching ? <div className="app-message compact">Loading episodes...</div> : null}
