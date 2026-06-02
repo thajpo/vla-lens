@@ -104,8 +104,8 @@ def indexed_episodes_payload(root: Path, query: Mapping[str, list[str]]) -> dict
     limit = _clamped_int(_query_value(query, "limit"), DEFAULT_EPISODE_LIMIT, 1, MAX_EPISODE_LIMIT)
     offset = _clamped_int(_query_value(query, "offset"), 0, 0, 10**12)
     sort = _query_value(query, "sort") or "episode_index"
-    sort_sql = EPISODE_SORT_COLUMNS.get(sort, "episode_index")
     params, where_sql, source_sql = _episode_query_parts(root, query)
+    sort_sql = _episode_sort_sql(sort, probe_query=bool(_query_value(query, "probe_id")))
     con = duckdb.connect(database=":memory:")
     try:
         total = con.execute(
@@ -217,6 +217,8 @@ def indexed_probe_evidence_payload(
     evidence_query = {key: list(value) for key, value in query.items()}
     evidence_query["probe_id"] = [probe_id]
     evidence_query["limit"] = [str(limit)]
+    evidence_query.setdefault("probe_prediction", ["scored"])
+    evidence_query.setdefault("sort", ["probe_interest"])
     episodes_payload = indexed_episodes_payload(
         root,
         evidence_query,
@@ -390,6 +392,33 @@ def _append_probe_filters(
         clauses.append("probe_split_category = 'train'")
 
 
+def _episode_sort_sql(sort: str, *, probe_query: bool) -> str:
+    if sort == "probe_interest" and probe_query:
+        return """
+            (
+              CASE
+                WHEN probe_split_category = 'test' THEN 110
+                WHEN probe_split_category = 'validation' THEN 80
+                WHEN probe_split_category = 'train' THEN -90
+                ELSE -10
+              END
+              + CASE WHEN probe_available = true THEN 0 ELSE -40 END
+              + CASE WHEN probe_correct = false THEN 260 ELSE 0 END
+              + CASE
+                  WHEN probe_correct = false AND probe_confidence >= 0.8 THEN 140
+                  ELSE 0
+                END
+              + CASE
+                  WHEN probe_correct IS NULL AND probe_available = true THEN 45
+                  ELSE 0
+                END
+              + least(40, coalesce(probe_row_count, 0) * 4)
+            ) DESC,
+            episode_index
+        """
+    return EPISODE_SORT_COLUMNS.get(sort, "episode_index")
+
+
 def _episode_payload_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
     metadata = {}
     for key in ("dataset_id", "benchmark", "seed"):
@@ -421,25 +450,22 @@ def _episode_payload_from_row(row: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _probe_record_from_row(row: Mapping[str, Any]) -> dict[str, Any] | None:
-    if (
-        row.get("probe_available") is not True
-        and _none_if_missing(row.get("probe_row_count")) is None
-    ):
+    available = _bool_or_none(row.get("probe_available"))
+    correct = _bool_or_none(row.get("probe_correct"))
+    if available is not True and _none_if_missing(row.get("probe_row_count")) is None:
         return None
     return {
         "trace_id": str(row.get("trace_id") or ""),
         "split": _none_if_missing(row.get("probe_split")),
         "split_category": _none_if_missing(row.get("probe_split_category")),
-        "available": bool(row.get("probe_available")),
+        "available": available is True,
         "row_count": _int_or_none(row.get("probe_row_count")) or 0,
         "best_row_count": _int_or_none(row.get("probe_row_count")) or 0,
         "actual": _json_scalar(row.get("probe_actual")),
         "predicted": _json_scalar(row.get("probe_predicted")),
         "confidence": _float_or_none(row.get("probe_confidence")),
-        "correct": _bool_or_none(row.get("probe_correct")),
-        "correct_rate": 1.0 if row.get("probe_correct") is True else 0.0
-        if row.get("probe_correct") is False
-        else None,
+        "correct": correct,
+        "correct_rate": 1.0 if correct is True else 0.0 if correct is False else None,
         "model": _none_if_missing(row.get("probe_model")),
         "feature": _none_if_missing(row.get("probe_feature")),
     }

@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
@@ -10,7 +11,7 @@ import vla_lens.server.indexed as indexed_api
 import vla_lens.server.state as state_api
 from vla_lens import create_synthetic_trace_dataset
 from vla_lens.dataset import DatasetIndexError
-from vla_lens.dataset.index import index_manifest_path
+from vla_lens.dataset.index import ARTIFACT_INDEX, PROBE_PREDICTIONS, index_manifest_path
 from vla_lens.server import _dataset_signature
 from vla_lens.server.fastapi_app import create_dashboard_app
 
@@ -106,6 +107,71 @@ def test_fastapi_episode_page_payload_keeps_metadata_bounded(tmp_path):
     metadata = payload["episodes"][0]["metadata"]
 
     assert set(metadata) <= {"benchmark", "capture_profile", "dataset_id", "profile", "seed"}
+
+
+def test_fastapi_indexed_probe_episode_page_includes_split_record(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
+    trace_id = dataset.bundles[0].manifest.trace_id
+    pd.DataFrame(
+        {
+            "probe_id": ["probe-a"],
+            "trace_id": [trace_id],
+            "split": ["heldout-validation"],
+            "split_category": ["validation"],
+            "actual": ["success"],
+            "predicted": ["failure"],
+            "confidence": [0.91],
+            "correct": [False],
+            "model": ["linear"],
+            "feature": ["action_head.layers.0"],
+        }
+    ).to_parquet(dataset.root / PROBE_PREDICTIONS, index=False)
+    client = TestClient(create_dashboard_app(dataset.root))
+
+    payload = client.get("/api/episodes", params={"limit": "1", "probe_id": "probe-a"}).json()
+    probe_record = payload["episodes"][0]["probe_record"]
+
+    assert probe_record["available"] is True
+    assert probe_record["split"] == "heldout-validation"
+    assert probe_record["split_category"] == "validation"
+    assert probe_record["correct"] is False
+    assert probe_record["correct_rate"] == 0.0
+
+
+def test_fastapi_probe_evidence_defaults_to_scored_split_records(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2, timesteps=2)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    pd.DataFrame(
+        {
+            "artifact_id": ["probe-a"],
+            "artifact_type": ["probe_suite"],
+            "name": ["Probe A"],
+            "metrics": ['{"target":"outcome","best_model":"linear"}'],
+        }
+    ).to_parquet(dataset.root / ARTIFACT_INDEX, index=False)
+    pd.DataFrame(
+        {
+            "probe_id": ["probe-a"],
+            "trace_id": [trace_ids[1]],
+            "split": ["val_heldout_task"],
+            "split_category": ["validation"],
+            "actual": ["success"],
+            "predicted": ["failure"],
+            "confidence": [0.91],
+            "correct": [False],
+            "model": ["linear"],
+            "feature": ["action_head.layers.0"],
+        }
+    ).to_parquet(dataset.root / PROBE_PREDICTIONS, index=False)
+    client = TestClient(create_dashboard_app(dataset.root))
+
+    payload = client.get("/api/probes/probe-a/evidence", params={"limit": "1"}).json()
+    episode = payload["episodes"][0]
+
+    assert payload["total"] == 1
+    assert episode["trace_id"] == trace_ids[1]
+    assert episode["probe_record"]["split_category"] == "validation"
+    assert episode["probe_record"]["correct"] is False
 
 
 def test_fastapi_indexed_pages_do_not_revalidate_index_on_request(tmp_path, monkeypatch):
