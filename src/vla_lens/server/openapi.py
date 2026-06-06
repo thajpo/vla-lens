@@ -444,6 +444,14 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
         "description": "Persists an intervention/replay run record.",
         "requestBody": _json_body("InterventionRunSpec-shaped object."),
     },
+    ("post", "/api/interventions/preflight"): {
+        "summary": "Intervention preflight",
+        "description": (
+            "Checks saved trace metadata, artifacts, target sites, action basis metadata, "
+            "and runtime declarations without importing or loading model runtimes."
+        ),
+        "requestBody": _json_body("Intervention request or intervention_record-shaped object."),
+    },
     ("post", "/api/workspaces"): {
         "summary": "Save workspace",
         "description": "Persists dashboard panel layout, linked selection, and run references.",

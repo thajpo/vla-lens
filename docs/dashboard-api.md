@@ -2,7 +2,7 @@
 
 Status: active API contract.
 
-Last updated: May 27, 2026.
+Last updated: June 6, 2026.
 
 ## Position
 
@@ -75,6 +75,7 @@ has a dataset/media version and wants immutable media caching.
 | Media | `/api/frame`, `/api/episode-video` | Camera frames and cached episode videos. |
 | Workbench manifest | `/api/workbench`, `/api/workbench/validate`, `/api/spatial-overlays`, `/api/lens-arrays`, `/api/lens-arrays/{array_id}` | Axes, arrays, panels, workflows, and contract validation. |
 | Saved workbench state | `/api/cohorts`, `/api/analysis-runs`, `/api/workspaces`, `/api/intervention-runs`, `/api/intervention-runs/{run_id}` | Persisted cohorts, runs, workspaces, and intervention records. |
+| Intervention checks | `/api/interventions/preflight` | Runtime-free readiness checks for intervention requests and saved records. |
 | Selection and views | `/api/selections/resolve`, `/api/projection`, `/api/graph`, `/api/tables/query`, `/api/lens-arrays/{array_id}/slice` | Linked-selection resolution and bounded data previews. |
 | Episode evidence | `/api/policy-calls`, `/api/action-norm`, `/api/generation-commitment`, `/api/episode-metrics`, `/api/episode-interactions`, `/api/episode-probes` | Time-aligned behavior, action-generation, interaction, and probe evidence. |
 | Model internals | `/api/activation-sites`, `/api/activation-slice`, `/api/image-token-map`, `/api/object-camera-overlay`, `/api/attention-map`, `/api/patch-features`, `/api/prompt-attention`, `/api/prompt-feature-map`, `/api/expert-token-activations`, `/api/expert-token-details` | Activation, attention, token, camera, and object overlays. |
@@ -125,9 +126,17 @@ SelectionState       /api/selections/resolve
 CohortSpec           /api/cohorts
 AnalysisRunSpec      /api/analysis-runs
 InterventionRunSpec  /api/intervention-runs and /api/intervention-runs/{run_id}
+Intervention preflight request /api/interventions/preflight
 SavedWorkspace       /api/workspaces
 table/slice requests /api/tables/query and /api/lens-arrays/{array_id}/slice
 ```
+
+`/api/interventions/preflight` checks only saved metadata and artifact records:
+policy-call rows, stored action arrays, source artifacts, model-site and token
+space declarations, action decoder/basis metadata, runtime adapter declarations,
+and whether the live model runtime is available. In the normal dashboard
+environment it reports model runtime as unavailable rather than importing PI0.5,
+Torch, LeRobot, LIBERO, or simulator dependencies.
 
 Keep payload examples in tests or typed frontend fixtures when possible. The
 OpenAPI schema describes route intent and common parameters; it is not yet a

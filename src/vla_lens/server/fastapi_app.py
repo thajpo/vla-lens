@@ -15,6 +15,7 @@ import vla_lens.server.attention as attention_api
 import vla_lens.server.dataset as dataset_api
 import vla_lens.server.indexed as indexed_api
 import vla_lens.server.indexed_probes as indexed_probes_api
+import vla_lens.server.interventions as interventions_api
 import vla_lens.server.metrics as metrics_api
 import vla_lens.server.probes as probes_api
 import vla_lens.server.spatial as spatial_api
@@ -473,6 +474,16 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
         return await _handle_post_body_json(
             request,
             lambda state, body: dataset_api._save_intervention_run_payload(state.dataset, body),
+        )
+
+    @app.post("/api/interventions/preflight")
+    async def intervention_preflight_endpoint(request: Request) -> Response:
+        return await _handle_post_body_json(
+            request,
+            lambda state, body: interventions_api._intervention_preflight_payload(
+                state.dataset,
+                body,
+            ),
         )
 
     @app.post("/api/workspaces")

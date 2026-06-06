@@ -70,6 +70,7 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/cohorts/compare", "post"),
     ("/api/analysis-runs", "post"),
     ("/api/intervention-runs", "post"),
+    ("/api/interventions/preflight", "post"),
     ("/api/workspaces", "post"),
     ("/api/projection", "post"),
     ("/api/graph", "post"),
@@ -429,6 +430,12 @@ def test_fastapi_representative_post_routes_return_legacy_payload_shapes(tmp_pat
     trace_id = dataset.bundles[0].manifest.trace_id
     lens_arrays = client.get("/api/lens-arrays").json()["lens_arrays"]
     array_id = next(array["array_id"] for array in lens_arrays if array["kind"] == "tensor")
+    artifacts = client.get("/api/artifacts").json()["artifacts"]
+    source_artifact_id = next(
+        artifact["artifact_id"]
+        for artifact in artifacts
+        if artifact["artifact_type"] == "probe_suite"
+    )
     selection = {"selection_id": "episode_selection", "axis_values": {"episode": [trace_id]}}
 
     cases: list[tuple[str, dict[str, Any], set[str]]] = [
@@ -462,6 +469,33 @@ def test_fastapi_representative_post_routes_return_legacy_payload_shapes(tmp_pat
                 "target": {},
             },
             {"intervention_run", "intervention_runs", "total"},
+        ),
+        (
+            "/api/interventions/preflight",
+            {
+                "runtime_adapter": "synthetic",
+                "target": {
+                    "kind": "probe_direction",
+                    "source_artifact_id": source_artifact_id,
+                    "source_artifact_type": "probe_suite",
+                    "model_site": "action_head.layers.0.resid",
+                    "token_space": "synthetic.action_suffix",
+                    "model_family": "synthetic",
+                },
+                "baseline": {
+                    "context": {
+                        "trace_id": trace_id,
+                        "policy_call_index": 0,
+                    },
+                },
+                "intervention": {
+                    "request": {
+                        "schedule": {"policy_calls": [0], "tokens": "action"},
+                        "outcome": {"kind": "action", "basis": ["raw", "gripper"]},
+                    },
+                },
+            },
+            {"preflight"},
         ),
         (
             "/api/workspaces",
