@@ -1,5 +1,13 @@
 """Runtime-free intervention evidence contracts."""
 
+from vla_lens.interventions.action_basis import (
+    ActionBasisResolution,
+    ActionBasisResult,
+    ActionNormalizationSpec,
+    ActionSchemaRef,
+    action_delta_metrics,
+    resolve_action_basis,
+)
 from vla_lens.interventions.artifacts import intervention_run_to_lens_artifact
 from vla_lens.interventions.preflight import intervention_preflight
 from vla_lens.interventions.results import (
@@ -31,6 +39,10 @@ from vla_lens.interventions.specs import (
 
 __all__ = [
     "ActionBasisRequest",
+    "ActionBasisResolution",
+    "ActionBasisResult",
+    "ActionNormalizationSpec",
+    "ActionSchemaRef",
     "ActionOutcomeResult",
     "ContextSpec",
     "ControlResult",
@@ -52,6 +64,8 @@ __all__ = [
     "TargetSpec",
     "TokenOutcomeResult",
     "TraceRef",
+    "action_delta_metrics",
     "intervention_preflight",
     "intervention_run_to_lens_artifact",
+    "resolve_action_basis",
 ]

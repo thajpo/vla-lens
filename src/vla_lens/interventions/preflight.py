@@ -14,8 +14,10 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from vla_lens.interventions.action_basis import resolve_action_basis
 from vla_lens.interventions.specs import (
     ARTIFACT_DERIVED_TARGET_KINDS,
+    ActionBasisRequest,
     PreflightCheck,
     RuntimePreflightResult,
 )
@@ -463,51 +465,33 @@ def _action_basis_check(
     outcome: Mapping[str, Any],
     action_chunk_available: bool,
 ) -> tuple[dict[str, Any], PreflightCheck]:
+    del action_chunk_available
     requested = _requested_basis(outcome)
-    metadata = _action_basis_metadata(bundle)
-    basis_status: dict[str, Any] = {}
-    missing_named: list[str] = []
+    basis_result = resolve_action_basis(bundle, ActionBasisRequest(basis=requested))
+    basis_payload = basis_result.to_dict()
+    basis_status = dict(basis_payload["basis_status"])
 
-    for basis in requested:
-        if basis in {"raw", "normalized", "action_chunks"}:
-            available = action_chunk_available
-            basis_status[basis] = {
-                "available": available,
-                "source": "action_chunks" if available else None,
-            }
-            if not available:
-                missing_named.append(basis)
-            continue
-        available = basis.lower() in metadata["labels"]
-        basis_status[basis] = {
-            "available": available,
-            "source": "action_normalization" if available else None,
-            "available_labels": sorted(metadata["labels"]),
-        }
-        if not available:
-            missing_named.append(basis)
-
-    if not missing_named:
+    if basis_result.status == "ok":
         return basis_status, _check(
             "action_basis_metadata_available",
             "ok",
             "Requested action basis metadata is available.",
-            metadata={"basis": requested, "basis_status": basis_status},
+            metadata=basis_payload,
         )
-    if any(basis in {"raw", "normalized", "action_chunks"} for basis in missing_named):
+    if basis_result.status == "failed":
         return basis_status, _check(
             "action_basis_metadata_available",
             "failed",
-            "Raw action basis is unavailable because action_chunks are missing.",
-            errors=("Missing raw action basis.",),
-            metadata={"basis": requested, "basis_status": basis_status},
+            "Requested action basis metadata is unavailable.",
+            errors=basis_result.errors or ("Missing action basis metadata.",),
+            metadata=basis_payload,
         )
     return basis_status, _check(
         "action_basis_metadata_available",
         "partial",
         "Raw actions are inspectable, but requested named action basis metadata is incomplete.",
-        warnings=(f"Missing named action basis metadata: {', '.join(missing_named)}.",),
-        metadata={"basis": requested, "basis_status": basis_status},
+        warnings=basis_result.warnings,
+        metadata=basis_payload,
     )
 
 
@@ -716,43 +700,6 @@ def _requested_basis(outcome: Mapping[str, Any]) -> tuple[str, ...]:
         out = tuple(_text(item) for item in basis if _text(item))
         return out or ("raw",)
     return ("raw",)
-
-
-def _action_basis_metadata(bundle: TraceBundle | None) -> dict[str, Any]:
-    labels: set[str] = set()
-    if bundle is None:
-        return {"labels": labels}
-    table = bundle.action_normalization
-    if table.empty:
-        return {"labels": labels}
-    for record in table.to_dict("records"):
-        for key in ("action_dim_names", "action_labels", "basis", "basis_names"):
-            labels.update(_label_tokens(record.get(key)))
-        metadata = _json_parse(record.get("metadata"))
-        if isinstance(metadata, Mapping):
-            for key in ("action_dim_names", "action_labels", "basis", "basis_names"):
-                labels.update(_label_tokens(metadata.get(key)))
-    return {"labels": {label.lower() for label in labels if label}}
-
-
-def _label_tokens(value: Any) -> set[str]:
-    parsed = _json_parse(value)
-    if isinstance(parsed, Mapping):
-        values = parsed.values()
-    elif isinstance(parsed, (list, tuple, set)):
-        values = parsed
-    elif parsed is None or _missing(parsed):
-        values = ()
-    else:
-        values = (parsed,)
-    labels: set[str] = set()
-    for item in values:
-        text = _text(item).lower()
-        if not text:
-            continue
-        labels.add(text)
-        labels.update(part for part in text.replace("-", "_").split("_") if part)
-    return labels
 
 
 def _array_names(bundle: TraceBundle | None) -> set[str]:
