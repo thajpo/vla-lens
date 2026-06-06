@@ -1,5 +1,6 @@
 """Runtime-free intervention evidence contracts."""
 
+from vla_lens.interventions.artifacts import intervention_run_to_lens_artifact
 from vla_lens.interventions.results import (
     ActionOutcomeResult,
     ControlResult,
@@ -50,4 +51,5 @@ __all__ = [
     "TargetSpec",
     "TokenOutcomeResult",
     "TraceRef",
+    "intervention_run_to_lens_artifact",
 ]
