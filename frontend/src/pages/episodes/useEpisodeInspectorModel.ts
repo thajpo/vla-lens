@@ -37,6 +37,7 @@ import {
   EMPTY_ACTIVATION_SITES,
   type CameraOverlayPayload,
   type InspectionMode,
+  type InspectorContext,
 } from "./shared";
 
 const EMPTY_POLICY_CALLS: PolicyCall[] = [];
@@ -115,17 +116,19 @@ export function useEpisodeInspectorModel({
   const architecture = activationSitesData?.architecture;
   const defaultSite = preferredPipelineSite(sites);
   const selectedSite = sites.find((site) => site.name === selectedSiteName) ?? defaultSite;
-  const inspectorContext = inspectorContextForSite(selectedSite);
+  const selectedSiteContext = inspectorContextForSite(selectedSite);
   const generation = useQuery({
     queryKey: ["generation-commitment", activeTraceId],
     queryFn: () => fetchGenerationCommitment(activeTraceId),
-    enabled: Boolean(activeTraceId && hasActionGeneration && inspectorContext === "expert"),
+    enabled: Boolean(activeTraceId && hasActionGeneration && selectedSiteContext === "expert"),
   });
   const selectedSiteHasFeatures = isFeatureActivationSite(selectedSite);
   const expertTokenSite = expertTokenSiteForSite(sites, selectedSite);
   const expertTokenSiteName = expertTokenSite?.name ?? "";
   const attentionSite = attentionSiteForSite(sites, selectedSite);
   const attentionSiteName = attentionSite?.name ?? "";
+  const inspectorContext: InspectorContext =
+    inspectionMode === "attention" && attentionSiteName ? "attention" : selectedSiteContext;
   const generationStepCount = generationStepCountForSite(selectedSite);
   const activeGenerationStep = Math.max(0, Math.min(generationStep, Math.max(0, generationStepCount - 1)));
   const activeSelectedSiteName = selectedSite?.name ?? selectedSiteName;
