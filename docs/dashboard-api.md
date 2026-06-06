@@ -74,7 +74,7 @@ has a dataset/media version and wants immutable media caching.
 | Dataset | `/api/dataset`, `/api/episodes/{trace_id}` | Dataset overview and per-episode detail. |
 | Media | `/api/frame`, `/api/episode-video` | Camera frames and cached episode videos. |
 | Workbench manifest | `/api/workbench`, `/api/workbench/validate`, `/api/spatial-overlays`, `/api/lens-arrays`, `/api/lens-arrays/{array_id}` | Axes, arrays, panels, workflows, and contract validation. |
-| Saved workbench state | `/api/cohorts`, `/api/analysis-runs`, `/api/workspaces`, `/api/intervention-runs` | Persisted cohorts, runs, workspaces, and intervention records. |
+| Saved workbench state | `/api/cohorts`, `/api/analysis-runs`, `/api/workspaces`, `/api/intervention-runs`, `/api/intervention-runs/{run_id}` | Persisted cohorts, runs, workspaces, and intervention records. |
 | Selection and views | `/api/selections/resolve`, `/api/projection`, `/api/graph`, `/api/tables/query`, `/api/lens-arrays/{array_id}/slice` | Linked-selection resolution and bounded data previews. |
 | Episode evidence | `/api/policy-calls`, `/api/action-norm`, `/api/generation-commitment`, `/api/episode-metrics`, `/api/episode-interactions`, `/api/episode-probes` | Time-aligned behavior, action-generation, interaction, and probe evidence. |
 | Model internals | `/api/activation-sites`, `/api/activation-slice`, `/api/image-token-map`, `/api/object-camera-overlay`, `/api/attention-map`, `/api/patch-features`, `/api/prompt-attention`, `/api/prompt-feature-map`, `/api/expert-token-activations`, `/api/expert-token-details` | Activation, attention, token, camera, and object overlays. |
@@ -124,7 +124,7 @@ The important body families are:
 SelectionState       /api/selections/resolve
 CohortSpec           /api/cohorts
 AnalysisRunSpec      /api/analysis-runs
-InterventionRunSpec  /api/intervention-runs
+InterventionRunSpec  /api/intervention-runs and /api/intervention-runs/{run_id}
 SavedWorkspace       /api/workspaces
 table/slice requests /api/tables/query and /api/lens-arrays/{array_id}/slice
 ```

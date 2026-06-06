@@ -100,6 +100,13 @@ def _intervention_runs_payload(dataset: TraceDataset) -> dict[str, Any]:
     return {"intervention_runs": runs, "total": len(runs)}
 
 
+def _intervention_run_payload(dataset: TraceDataset, run_id: str) -> dict[str, Any]:
+    for run in list_intervention_runs(dataset):
+        if run.run_id == run_id:
+            return {"intervention_run": run.to_dict()}
+    raise KeyError(f"Unknown intervention run '{run_id}'")
+
+
 def _save_analysis_run_payload(dataset: TraceDataset, payload: dict[str, Any]) -> dict[str, Any]:
     run_payload = payload.get("analysis_run", payload.get("run", payload))
     if not isinstance(run_payload, dict):

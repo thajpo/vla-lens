@@ -32,6 +32,7 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/workspaces", "get"),
     ("/api/workspaces/{workspace_id}/resolve", "get"),
     ("/api/intervention-runs", "get"),
+    ("/api/intervention-runs/{run_id}", "get"),
     ("/api/unit-profile", "get"),
     ("/api/dataset-diagnostics", "get"),
     ("/api/episode-annotations", "get"),
@@ -489,6 +490,76 @@ def test_fastapi_representative_post_routes_return_legacy_payload_shapes(tmp_pat
         assert keys <= set(payload), path
 
 
+def test_fastapi_intervention_run_detail_route_saves_lists_and_reloads(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
+    body = {
+        "run_id": "detail_intervention",
+        "intervention_type": "intervention_record",
+        "target": {
+            "kind": "manual",
+            "model_site": "pi05.expert.layers.12.hidden_tokens",
+        },
+        "baseline": {
+            "context": {
+                "dataset_id": "demo",
+                "dataset_fingerprint": "fingerprint-1",
+                "trace_id": "trace-1",
+                "policy_call_index": 0,
+            }
+        },
+        "intervention": {
+            "request": {
+                "operator": {"operator": "add_direction", "strength": 1.0},
+                "schedule": {"policy_calls": [0], "tokens": "action"},
+                "outcome": {"kind": "action", "basis": ["raw"]},
+            }
+        },
+        "readouts": {
+            "status": "inspected_only",
+            "title": "Saved inspected record",
+            "preflight": {"status": "inspected_only"},
+            "trials": [],
+            "outcomes": [],
+            "claim": {"claim_strength": ["observation"]},
+        },
+        "outputs": ["array://stored-original"],
+        "provenance": {
+            "schema_kind": "vla_lens.intervention_run",
+            "schema_version": "0.1.0",
+            "dataset_id": "demo",
+            "dataset_fingerprint": "fingerprint-1",
+            "trace_id": "trace-1",
+            "policy_call_index": 0,
+            "created_utc": "2026-06-06T00:00:00+00:00",
+        },
+    }
+    client = TestClient(create_dashboard_app(dataset.root))
+
+    saved = client.post("/api/intervention-runs", json=body)
+    listed = client.get("/api/intervention-runs")
+    opened = client.get("/api/intervention-runs/detail_intervention")
+    restarted = TestClient(create_dashboard_app(dataset.root))
+    reopened = restarted.get("/api/intervention-runs/detail_intervention")
+    missing = restarted.get("/api/intervention-runs/missing")
+
+    assert saved.status_code == 200
+    assert listed.status_code == 200
+    assert opened.status_code == 200
+    assert reopened.status_code == 200
+    assert missing.status_code == 404
+    assert listed.json()["total"] == 1
+    detail = opened.json()["intervention_run"]
+    assert detail["run_id"] == "detail_intervention"
+    assert detail["intervention_type"] == "intervention_record"
+    assert detail["baseline"]["context"]["trace_id"] == "trace-1"
+    assert detail["target"]["kind"] == "manual"
+    assert detail["intervention"]["request"]["operator"]["operator"] == "add_direction"
+    assert detail["readouts"]["status"] == "inspected_only"
+    assert detail["readouts"]["claim"]["claim_strength"] == ["observation"]
+    assert detail["provenance"]["schema_kind"] == "vla_lens.intervention_run"
+    assert reopened.json()["intervention_run"] == detail
+
+
 @pytest.mark.parametrize(
     "path",
     [
@@ -521,14 +592,26 @@ def test_fastapi_mutable_read_detail_routes_are_no_store(tmp_path):
         "/api/workspaces",
         json={"workspace_id": "cache_workspace", "dataset_id": "demo", "panels": []},
     )
+    client.post(
+        "/api/intervention-runs",
+        json={
+            "run_id": "cache_intervention",
+            "intervention_type": "intervention_record",
+            "target": {"kind": "manual"},
+            "readouts": {"status": "inspected_only"},
+        },
+    )
 
     artifact_response = client.get(f"/api/artifacts/{artifact_id}")
     workspace_response = client.get("/api/workspaces/cache_workspace/resolve")
+    intervention_response = client.get("/api/intervention-runs/cache_intervention")
 
     assert artifact_response.status_code == 200
     assert artifact_response.headers["Cache-Control"] == "no-store"
     assert workspace_response.status_code == 200
     assert workspace_response.headers["Cache-Control"] == "no-store"
+    assert intervention_response.status_code == 200
+    assert intervention_response.headers["Cache-Control"] == "no-store"
 
 
 def test_fastapi_openapi_includes_dashboard_routes(tmp_path):

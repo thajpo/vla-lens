@@ -184,6 +184,14 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
             cache_control=NO_STORE_CACHE_CONTROL,
         )
 
+    @app.get("/api/intervention-runs/{run_id}")
+    async def intervention_run_endpoint(request: Request, run_id: str) -> Response:
+        return _handle_json(
+            request,
+            lambda state, _query: dataset_api._intervention_run_payload(state.dataset, run_id),
+            cache_control=NO_STORE_CACHE_CONTROL,
+        )
+
     @app.get("/api/unit-profile")
     async def unit_profile_endpoint(request: Request) -> Response:
         return _handle_json(

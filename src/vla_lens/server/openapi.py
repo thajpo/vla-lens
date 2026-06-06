@@ -182,6 +182,10 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
         "summary": "Saved intervention runs",
         "description": "Lists recorded intervention or replay run metadata.",
     },
+    ("get", "/api/intervention-runs/{run_id}"): {
+        "summary": "Saved intervention run detail",
+        "description": "Returns one saved intervention evidence record by run id.",
+    },
     ("get", "/api/unit-profile"): {
         "summary": "Unit profile",
         "description": "Returns available evidence for a selected model unit or direction.",
