@@ -446,6 +446,9 @@ class AnalysisRunSpec:
             provenance=dict(payload.get("provenance") or {}),
         )
 
+INTERVENTION_RECORD_TYPE = "intervention_record"
+INTERVENTION_RECORD_TYPES = {INTERVENTION_RECORD_TYPE}
+
 @dataclass(frozen=True, slots=True)
 class InterventionRunSpec:
     """Saved intervention/ablation readout record, not a live execution request."""
@@ -466,9 +469,14 @@ class InterventionRunSpec:
 
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "InterventionRunSpec":
+        if "intervention_type" not in payload:
+            raise ValueError("intervention_type is required")
+        intervention_type = str(payload["intervention_type"])
+        if intervention_type not in INTERVENTION_RECORD_TYPES:
+            raise ValueError(f"Unsupported intervention_type '{intervention_type}'")
         return cls(
             run_id=str(payload["run_id"]),
-            intervention_type=str(payload.get("intervention_type") or "intervention_delta"),
+            intervention_type=intervention_type,
             target=dict(payload.get("target") or {}),
             baseline=dict(payload.get("baseline") or {}),
             intervention=dict(payload.get("intervention") or {}),

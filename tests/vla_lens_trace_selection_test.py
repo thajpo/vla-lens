@@ -167,8 +167,9 @@ def test_non_intervention_edges_are_not_marked_causal(tmp_path):
     assert edge_types["attention_weight"] is False
     assert edge_types["gradient_attribution"] is False
     assert edge_types["correlation"] is False
-    assert edge_types["intervention_delta"] is True
+    assert edge_types["intervention_record"] is False
     assert overlay_types["probe_contribution"] is False
+    assert overlay_types["intervention_record"] is False
     assert overlay_types["patch_ablation_delta"] is True
 
 
@@ -396,12 +397,12 @@ def test_intervention_records_are_saved_readouts_not_live_execution(tmp_path):
         dataset,
         InterventionRunSpec(
             run_id="saved_intervention",
-            intervention_type="intervention_delta",
+            intervention_type="intervention_record",
             target={"site_id": "policy.layer12", "unit": 3},
             baseline={"cohort_id": "baseline"},
             intervention={"cohort_id": "patched"},
-            readouts={"success_delta": 0.25},
-            outputs=("intervention_delta",),
+            readouts={"status": "inspected_only", "success_delta": 0.25},
+            outputs=("intervention_record",),
             provenance={"source": "saved_readout"},
         ),
     )
@@ -409,12 +410,13 @@ def test_intervention_records_are_saved_readouts_not_live_execution(tmp_path):
         dataset,
         {
             "run_id": "saved_ablation",
-            "intervention_type": "ablation_effect",
+            "intervention_type": "intervention_record",
             "target": {"site_id": "policy.layer8"},
-            "outputs": ["ablation_effect"],
+            "readouts": {"status": "inspected_only"},
+            "outputs": ["intervention_record"],
         },
     )
 
-    assert run.intervention_type == "intervention_delta"
-    assert payload["intervention_run"]["intervention_type"] == "ablation_effect"
+    assert run.intervention_type == "intervention_record"
+    assert payload["intervention_run"]["intervention_type"] == "intervention_record"
     assert any(item.run_id == "saved_intervention" for item in list_analysis_runs(dataset))

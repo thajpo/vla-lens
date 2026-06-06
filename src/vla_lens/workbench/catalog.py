@@ -710,10 +710,10 @@ def overlay_score_types() -> tuple[OverlayScoreSpec, ...]:
             notes="Output change after removing or replacing a spatial patch.",
         ),
         OverlayScoreSpec(
-            "intervention_delta",
-            "Intervention Delta",
-            causal=True,
-            notes="Output or behavior change after an explicit model intervention.",
+            "intervention_record",
+            "Intervention Record",
+            causal=False,
+            notes="Saved intervention evidence record; causal strength is interpreted from fields.",
         ),
         OverlayScoreSpec(
             "ablation_effect",
@@ -732,7 +732,7 @@ def graph_edge_types() -> list[dict[str, Any]]:
         {"edge_type": "attention_weight", "causal": False},
         {"edge_type": "patch_ablation_delta", "causal": True},
         {"edge_type": "activation_patch_delta", "causal": True},
-        {"edge_type": "intervention_delta", "causal": True},
+        {"edge_type": "intervention_record", "causal": False},
         {"edge_type": "ablation_effect", "causal": True},
         {"edge_type": "temporal_precedes", "causal": False},
         {"edge_type": "same_example", "causal": False},

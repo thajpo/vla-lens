@@ -61,6 +61,11 @@ from vla_lens.workbench.validation import (
     validate_workbench_contracts,
 )
 
+CAUSAL_CLAIM_LABELS = {"causal_local", "causal_cohort", "behavioral"}
+INTERVENTION_TRIAL_KINDS = {"intervention"}
+SUCCESSFUL_TRIAL_STATUSES = {"ok", "partial"}
+CAUSAL_RUN_STATUSES = {"ok", "partial"}
+
 
 def workbench_manifest(dataset: TraceDataset) -> dict[str, Any]:
     """Return the axis-native contract consumed by visual workbench frontends."""
@@ -149,12 +154,42 @@ def save_intervention_run(
         outputs=run.outputs,
         provenance={
             **dict(run.provenance),
-            "causal_evidence": run.intervention_type
-            in {"intervention_delta", "ablation_effect", "patch_ablation_delta"},
+            "causal_evidence": _intervention_causal_evidence(run),
         },
     )
     save_analysis_run(dataset, analysis_run)
     return run
+
+def _intervention_causal_evidence(run: InterventionRunSpec) -> bool:
+    """Conservatively interpret whether a saved record contains causal evidence."""
+    readouts = dict(run.readouts)
+    if str(readouts.get("status", "")) not in CAUSAL_RUN_STATUSES:
+        return False
+    if not (_claim_labels(readouts) & CAUSAL_CLAIM_LABELS):
+        return False
+    trials = readouts.get("trials", ())
+    outcomes = readouts.get("outcomes") or readouts.get("outcome_results") or ()
+    has_intervention_trial = any(
+        isinstance(trial, Mapping)
+        and str(trial.get("trial_kind")) in INTERVENTION_TRIAL_KINDS
+        and str(trial.get("status", "ok")) in SUCCESSFUL_TRIAL_STATUSES
+        for trial in trials
+    )
+    return has_intervention_trial and bool(outcomes)
+
+def _claim_labels(readouts: Mapping[str, Any]) -> set[str]:
+    claim = readouts.get("claim")
+    labels: list[Any] = []
+    if isinstance(claim, Mapping):
+        raw = claim.get("claim_strength", claim.get("claim_strengths", ()))
+        labels.extend(raw if isinstance(raw, (list, tuple, set, frozenset)) else [raw])
+    raw_readout_labels = readouts.get("claim_strengths", ())
+    labels.extend(
+        raw_readout_labels
+        if isinstance(raw_readout_labels, (list, tuple, set, frozenset))
+        else [raw_readout_labels]
+    )
+    return {str(label) for label in labels if label}
 
 def cohort_from_selection(
     dataset: TraceDataset,

@@ -455,7 +455,11 @@ def test_fastapi_representative_post_routes_return_legacy_payload_shapes(tmp_pat
         ),
         (
             "/api/intervention-runs",
-            {"run_id": "intervention_1", "intervention_type": "ablation_effect", "target": {}},
+            {
+                "run_id": "intervention_1",
+                "intervention_type": "intervention_record",
+                "target": {},
+            },
             {"intervention_run", "intervention_runs", "total"},
         ),
         (

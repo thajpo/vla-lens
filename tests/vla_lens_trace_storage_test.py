@@ -147,7 +147,7 @@ def test_workbench_manifest_exposes_axis_native_handles(tmp_path):
     assert {table["storage"]["format"] for table in manifest["tables"]} == {"parquet"}
     assert payload["tables"] == manifest["tables"]
     assert any(
-        score["score_type"] == "intervention_delta" for score in manifest["overlay_score_types"]
+        score["score_type"] == "intervention_record" for score in manifest["overlay_score_types"]
     )
     assert any(edge["edge_type"] == "attention_weight" for edge in manifest["graph_edge_types"])
     assert payload["dataset_id"] == manifest["dataset_id"]

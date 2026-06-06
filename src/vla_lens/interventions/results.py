@@ -306,6 +306,48 @@ class InterventionRun:
             "provenance": jsonable(self.provenance),
         }
 
+    def to_workbench_spec(self):
+        """Map this typed run into the current workbench compatibility shell."""
+        from vla_lens.workbench.schema import InterventionRunSpec
+
+        provenance = {
+            **jsonable(self.provenance),
+            "schema_kind": "vla_lens.intervention_run",
+            "schema_version": self.schema_version,
+            "dataset_id": self.context.dataset_id,
+            "dataset_root_id": self.context.dataset_root_id,
+            "dataset_fingerprint": self.context.dataset_fingerprint,
+            "trace_id": self.context.trace_id,
+            "episode_id": self.context.episode_id,
+            "policy_call_index": self.context.policy_call_index,
+            "source_artifact_id": self.target.source_artifact_id,
+            "created_utc": self.created_utc,
+        }
+        return InterventionRunSpec(
+            run_id=self.run_id,
+            intervention_type="intervention_record",
+            target=self.target.to_dict(),
+            baseline={"context": self.context.to_dict()},
+            intervention={"request": jsonable(self.request)},
+            readouts={
+                "schema_version": self.schema_version,
+                "title": self.title,
+                "status": self.status,
+                "created_utc": self.created_utc,
+                "preflight": self.preflight.to_dict(),
+                "runtime_resolution": (
+                    self.runtime_resolution.to_dict() if self.runtime_resolution else None
+                ),
+                "trials": [trial.to_dict() for trial in self.trials],
+                "outcomes": [jsonable(outcome) for outcome in self.outcomes],
+                "controls": [jsonable(control) for control in self.controls],
+                "display": jsonable(self.display),
+                "claim": jsonable(self.claim),
+            },
+            outputs=self.outputs,
+            provenance=provenance,
+        )
+
     @classmethod
     def from_dict(cls, payload: Mapping[str, Any]) -> "InterventionRun":
         data = required_mapping(payload, field="InterventionRun")
@@ -339,6 +381,52 @@ class InterventionRun:
             display=mapping_from(data.get("display"), field="display"),
             claim=mapping_from(data.get("claim"), field="claim"),
             provenance=mapping_from(data.get("provenance"), field="provenance"),
+        )
+
+    @classmethod
+    def from_workbench_spec(cls, spec: Any) -> "InterventionRun":
+        """Reconstruct a typed run from an `InterventionRunSpec` shell."""
+        if spec.intervention_type != "intervention_record":
+            raise ValueError("Only intervention_record workbench specs are supported")
+        readouts = mapping_from(spec.readouts, field="readouts")
+        baseline = mapping_from(spec.baseline, field="baseline")
+        intervention = mapping_from(spec.intervention, field="intervention")
+        context = baseline.get("context")
+        preflight = readouts.get("preflight")
+        runtime_resolution = readouts.get("runtime_resolution")
+        return cls(
+            schema_version=str(
+                readouts.get("schema_version")
+                or spec.provenance.get("schema_version")
+                or SCHEMA_VERSION
+            ),
+            run_id=spec.run_id,
+            title=str(readouts.get("title") or spec.run_id),
+            status=str(readouts["status"]),
+            created_utc=str(readouts.get("created_utc") or spec.provenance.get("created_utc")),
+            context=ContextSpec.from_dict(required_mapping(context, field="baseline.context")),
+            target=TargetSpec.from_dict(spec.target),
+            request=mapping_from(intervention.get("request"), field="intervention.request"),
+            preflight=RuntimePreflightResult.from_dict(
+                required_mapping(preflight, field="readouts.preflight")
+            ),
+            runtime_resolution=(
+                RuntimeResolution.from_dict(
+                    required_mapping(runtime_resolution, field="runtime_resolution")
+                )
+                if runtime_resolution is not None
+                else None
+            ),
+            trials=tuple(
+                InterventionTrial.from_dict(required_mapping(item, field="trial"))
+                for item in readouts.get("trials", ())
+            ),
+            outcomes=tuple_of_mappings(readouts.get("outcomes"), field="outcomes"),
+            controls=tuple_of_mappings(readouts.get("controls"), field="controls"),
+            outputs=spec.outputs,
+            display=mapping_from(readouts.get("display"), field="display"),
+            claim=mapping_from(readouts.get("claim"), field="claim"),
+            provenance=mapping_from(spec.provenance, field="provenance"),
         )
 
 
