@@ -5,19 +5,28 @@ import type {
 } from "../../types/interventions";
 
 export function buildInterventionRequest(draft: InterventionLabDraft): Record<string, unknown> {
+  const target = draft.target
+    ? {
+        ...draft.target,
+        metadata: {
+          ...record(draft.target.metadata),
+          intended_basis: draft.basis.includes("gripper") ? "gripper" : "raw",
+        },
+      }
+    : {
+        kind: draft.artifactId ? "probe_direction" : "manual",
+        source_artifact_id: draft.artifactId || undefined,
+        source_artifact_type: draft.artifactType || undefined,
+        model_family: draft.modelFamily || "pi05",
+        model_site: draft.modelSite,
+        token_space: draft.tokenSpace,
+        metadata: {
+          intended_basis: draft.basis.includes("gripper") ? "gripper" : "raw",
+        },
+      };
   return {
     runtime_adapter: "pi05",
-    target: {
-      kind: draft.artifactId ? "probe_direction" : "manual",
-      source_artifact_id: draft.artifactId || undefined,
-      source_artifact_type: draft.artifactType || undefined,
-      model_family: draft.modelFamily || "pi05",
-      model_site: draft.modelSite,
-      token_space: draft.tokenSpace,
-      metadata: {
-        intended_basis: draft.basis.includes("gripper") ? "gripper" : "raw",
-      },
-    },
+    target,
     baseline: {
       context: {
         dataset_id: draft.datasetId,

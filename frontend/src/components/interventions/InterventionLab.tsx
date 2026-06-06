@@ -1,5 +1,5 @@
 import { AlertTriangle, FlaskConical, Play, Save } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchArtifacts, fetchDataset, fetchEpisodesPage } from "../../api/dataset";
 import {
@@ -10,6 +10,7 @@ import { fetchWorkbench } from "../../api/workbench";
 import type { ArtifactRecord, DatasetEpisode } from "../../types/dataset";
 import type {
   InterventionLabDraft,
+  InterventionLabSeed,
   InterventionPreflightResult,
 } from "../../types/interventions";
 import type { ModelSiteSpec } from "../../types/workbench";
@@ -21,10 +22,11 @@ import {
 import { statusClass } from "./interventionDisplay";
 
 type InterventionLabProps = {
+  initialDraft?: InterventionLabSeed;
   onSavedRun: (runId: string) => void;
 };
 
-export function InterventionLab({ onSavedRun }: InterventionLabProps) {
+export function InterventionLab({ initialDraft, onSavedRun }: InterventionLabProps) {
   const queryClient = useQueryClient();
   const dataset = useQuery({ queryKey: ["dataset"], queryFn: fetchDataset, staleTime: 15_000 });
   const workbench = useQuery({ queryKey: ["workbench"], queryFn: fetchWorkbench, staleTime: 15_000 });
@@ -42,15 +44,44 @@ export function InterventionLab({ onSavedRun }: InterventionLabProps) {
     () => preferredModelSites(workbench.data?.model_sites ?? []),
     [workbench.data],
   );
-  const [artifactId, setArtifactId] = useState("");
-  const [traceId, setTraceId] = useState("");
-  const [policyCallIndex, setPolicyCallIndex] = useState(0);
-  const [modelSite, setModelSite] = useState("");
+  const [artifactId, setArtifactId] = useState(initialDraft?.artifactId ?? "");
+  const [traceId, setTraceId] = useState(initialDraft?.traceId ?? "");
+  const [policyCallIndex, setPolicyCallIndex] = useState(initialDraft?.policyCallIndex ?? 0);
+  const [modelSite, setModelSite] = useState(initialDraft?.modelSite ?? "");
   const [operator, setOperator] = useState("add_direction");
   const [strength, setStrength] = useState(1);
   const [basis, setBasis] = useState(["raw", "gripper"]);
   const [includeRandomControl, setIncludeRandomControl] = useState(true);
   const [message, setMessage] = useState("");
+  const [seedTarget, setSeedTarget] = useState<Record<string, unknown> | undefined>(initialDraft?.target);
+  const initialDraftKey = useMemo(
+    () => [
+      initialDraft?.artifactId ?? "",
+      initialDraft?.traceId ?? "",
+      initialDraft?.policyCallIndex ?? "",
+      initialDraft?.modelSite ?? "",
+      initialDraft?.tokenSpace ?? "",
+    ].join("|"),
+    [
+      initialDraft?.artifactId,
+      initialDraft?.modelSite,
+      initialDraft?.policyCallIndex,
+      initialDraft?.tokenSpace,
+      initialDraft?.traceId,
+    ],
+  );
+
+  useEffect(() => {
+    if (!initialDraft) {
+      return;
+    }
+    setArtifactId(initialDraft.artifactId ?? "");
+    setTraceId(initialDraft.traceId ?? "");
+    setPolicyCallIndex(initialDraft.policyCallIndex ?? 0);
+    setModelSite(initialDraft.modelSite ?? "");
+    setSeedTarget(initialDraft.target);
+    setMessage("");
+  }, [initialDraft, initialDraftKey]);
 
   const activeArtifactId = artifactId || String(probeArtifacts[0]?.artifact_id ?? "");
   const selectedArtifact = probeArtifacts.find(
@@ -71,6 +102,7 @@ export function InterventionLab({ onSavedRun }: InterventionLabProps) {
     policyCallIndex,
     site: selectedModelSite,
     strength,
+    target: seedTarget,
     traceId: activeTraceId,
   });
   const canPreflight = Boolean(draft.traceId && draft.modelSite && draft.artifactId);
@@ -136,7 +168,10 @@ export function InterventionLab({ onSavedRun }: InterventionLabProps) {
       <div className="intervention-lab-grid">
         <LabeledSelect
           label="Signal"
-          onChange={setArtifactId}
+          onChange={(value) => {
+            setArtifactId(value);
+            setSeedTarget(undefined);
+          }}
           options={probeArtifacts.map((artifact) => ({
             label: artifact.name ?? artifact.artifact_id ?? "probe",
             value: String(artifact.artifact_id ?? ""),
@@ -145,7 +180,10 @@ export function InterventionLab({ onSavedRun }: InterventionLabProps) {
         />
         <LabeledSelect
           label="Episode"
-          onChange={setTraceId}
+          onChange={(value) => {
+            setTraceId(value);
+            setSeedTarget(undefined);
+          }}
           options={episodeOptions(episodes.data?.episodes ?? [], selectedArtifact)}
           value={activeTraceId}
         />
@@ -153,14 +191,20 @@ export function InterventionLab({ onSavedRun }: InterventionLabProps) {
           <span>Policy Call</span>
           <input
             min={0}
-            onChange={(event) => setPolicyCallIndex(Number(event.target.value) || 0)}
+            onChange={(event) => {
+              setPolicyCallIndex(Number(event.target.value) || 0);
+              setSeedTarget(undefined);
+            }}
             type="number"
             value={policyCallIndex}
           />
         </label>
         <LabeledSelect
           label="Site"
-          onChange={setModelSite}
+          onChange={(value) => {
+            setModelSite(value);
+            setSeedTarget(undefined);
+          }}
           options={modelSites.map((site) => ({
             label: site.site_id,
             value: site.site_id,
@@ -283,6 +327,7 @@ function buildDraft({
   policyCallIndex,
   site,
   strength,
+  target,
   traceId,
 }: {
   artifact?: ArtifactRecord;
@@ -295,6 +340,7 @@ function buildDraft({
   policyCallIndex: number;
   site?: ModelSiteSpec;
   strength: number;
+  target?: Record<string, unknown>;
   traceId: string;
 }): InterventionLabDraft {
   return {
@@ -309,6 +355,7 @@ function buildDraft({
     operator,
     policyCallIndex,
     strength,
+    target,
     title: artifact?.name ? `Intervene with ${artifact.name}` : undefined,
     tokenSpace: String(site?.token_space_id ?? "synthetic.action_suffix"),
     traceId,

@@ -123,6 +123,58 @@ export type ProbeEvidenceResponse = {
   limit: number;
 };
 
+export type DiscoveryArtifactFamily = {
+  available: true;
+  artifact_type: string;
+  target_kind: string;
+  operators: string[];
+  outcomes: string[];
+  required_controls: Record<string, string[]>;
+  representation_kind: string;
+  description: string;
+  reason: string;
+};
+
+export type DiscoveryArtifactUnavailableFamily = {
+  available: false;
+  artifact_type: string;
+  reason: string;
+};
+
+export type DiscoveryArtifactFamiliesResponse = {
+  families: DiscoveryArtifactFamily[];
+  total: number;
+};
+
+export type DiscoveryArtifactEpisodesResponse = EpisodePageResponse & {
+  artifact: ArtifactRecord;
+  available: boolean;
+  family: DiscoveryArtifactFamily | DiscoveryArtifactUnavailableFamily;
+  rank_by: string;
+  reason: string;
+};
+
+export type DiscoveryArtifactReadoutResponse = {
+  artifact: ArtifactRecord;
+  available: boolean;
+  family: DiscoveryArtifactFamily | DiscoveryArtifactUnavailableFamily;
+  readout_type: string;
+  reason: string;
+  row_count: number;
+  rows: Record<string, unknown>[];
+  summary: Record<string, unknown>;
+  target_hint: Record<string, unknown>;
+  trace_id: string;
+};
+
+export type DiscoveryArtifactTargetResponse = {
+  artifact: ArtifactRecord;
+  available: boolean;
+  family: DiscoveryArtifactFamily | DiscoveryArtifactUnavailableFamily;
+  reason: string;
+  target: Record<string, unknown> | null;
+};
+
 export type CounterfactualPairMember = {
   trace_id: string;
   episode_id?: string;

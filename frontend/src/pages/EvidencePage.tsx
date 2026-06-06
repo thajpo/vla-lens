@@ -4,13 +4,15 @@ import { fetchInterventionRun, fetchInterventionRuns } from "../api/intervention
 import { EvidenceLibrary } from "../components/interventions/EvidenceLibrary";
 import { InterventionLab } from "../components/interventions/InterventionLab";
 import { InterventionRunDetail } from "../components/interventions/InterventionRunDetail";
+import type { InterventionLabSeed } from "../types/interventions";
 
 type EvidencePageProps = {
+  interventionSeed?: InterventionLabSeed;
   selectedRunId: string;
   onRunChange: (runId: string) => void;
 };
 
-export function EvidencePage({ selectedRunId, onRunChange }: EvidencePageProps) {
+export function EvidencePage({ interventionSeed, selectedRunId, onRunChange }: EvidencePageProps) {
   const runs = useQuery({
     queryKey: ["intervention-runs"],
     queryFn: fetchInterventionRuns,
@@ -41,7 +43,7 @@ export function EvidencePage({ selectedRunId, onRunChange }: EvidencePageProps) 
         onOpenRun={onRunChange}
       />
       <section className="evidence-workspace">
-        <InterventionLab onSavedRun={onRunChange} />
+        <InterventionLab initialDraft={interventionSeed} onSavedRun={onRunChange} />
         {runs.isLoading ? <p className="app-message">Loading saved records.</p> : null}
         {runs.isError ? <p className="app-message">Unable to load saved records.</p> : null}
         {!records.length && !runs.isLoading ? (

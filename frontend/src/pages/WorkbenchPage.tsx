@@ -5,6 +5,7 @@ import { EvidencePage } from "./EvidencePage";
 import { EpisodesPage } from "./EpisodesPage";
 import { DatasetBrowser } from "./workbench/DatasetBrowser";
 import { useWorkbenchStore } from "../store/workbenchStore";
+import type { InterventionLabSeed } from "../types/interventions";
 import type { EpisodeOpenContext } from "./workbench/types";
 
 type EpisodeRouteState = {
@@ -19,6 +20,7 @@ export function WorkbenchPage() {
   const initialRoute = initialPage();
   const [activePage, setActivePage] = useState<AppPage>(initialRoute.page);
   const [evidenceRunId, setEvidenceRunId] = useState(initialRoute.evidenceRunId);
+  const [interventionSeed, setInterventionSeed] = useState<InterventionLabSeed | undefined>(undefined);
   const [episodeTraceId, setEpisodeTraceId] = useState(initialRoute.traceId);
   const [episodeRouteState, setEpisodeRouteState] = useState<EpisodeRouteState>(initialRoute.episodeState);
   const {
@@ -60,6 +62,7 @@ export function WorkbenchPage() {
           initialSiteName={episodeRouteState.siteName}
           initialTraceId={episodeTraceId}
           key={episodeRouteKey(episodeRouteState)}
+          onSendToIntervention={handleSendToIntervention}
           onTraceChange={handleEpisodeTraceChange}
         />
       ) : null}
@@ -71,6 +74,7 @@ export function WorkbenchPage() {
       ) : null}
       {activePage === "evidence" ? (
         <EvidencePage
+          interventionSeed={interventionSeed}
           selectedRunId={evidenceRunId}
           onRunChange={handleEvidenceRunChange}
         />
@@ -86,6 +90,7 @@ export function WorkbenchPage() {
     }
     if (page === "evidence") {
       setEvidenceRunId("");
+      setInterventionSeed(undefined);
     }
     window.history.replaceState(null, "", `#${page}`);
   }
@@ -116,6 +121,13 @@ export function WorkbenchPage() {
     setEpisodeTraceId(traceId);
     setEpisodeRouteState(nextRoute);
     window.history.replaceState(null, "", buildEpisodeHash(nextRoute));
+  }
+
+  function handleSendToIntervention(seed: InterventionLabSeed) {
+    setActivePage("evidence");
+    setEvidenceRunId("");
+    setInterventionSeed(seed);
+    window.history.replaceState(null, "", "#evidence");
   }
 
 }

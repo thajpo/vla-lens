@@ -51,6 +51,26 @@ test("intervention lab builds a typed request from a probe artifact", () => {
   assert.deepEqual(request.intervention.request.controls, [{ kind: "random_direction" }]);
 });
 
+test("intervention lab preserves a backend-normalized target seed", () => {
+  const request = buildInterventionRequest({
+    ...draft,
+    target: {
+      kind: "probe_direction",
+      source_artifact_id: "probe-a",
+      source_artifact_type: "probe_suite",
+      model_site: "pi05.action_head.input",
+      token_space: "pi05.action_horizon",
+      metadata: { artifact_family: "probe_suite", policy_call_index: "2" },
+    },
+  });
+
+  assert.equal(request.target.kind, "probe_direction");
+  assert.equal(request.target.model_site, "pi05.action_head.input");
+  assert.equal(request.target.token_space, "pi05.action_horizon");
+  assert.equal(request.target.metadata.artifact_family, "probe_suite");
+  assert.equal(request.target.metadata.intended_basis, "gripper");
+});
+
 test("intervention lab saves unavailable runtime as inspected evidence", () => {
   const record = buildInspectedInterventionRecord(draft, preflight, "2026-06-06T00:00:00Z");
 

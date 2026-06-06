@@ -1,4 +1,5 @@
 import { getJson, noStore, postJson } from "./client";
+import { discoveryArtifactEpisodeSearchParams } from "./discoveryArtifactParams";
 import type {
   ActivationSitesResponse,
   ArtifactDetailResponse,
@@ -8,6 +9,10 @@ import type {
   ExpertTokenDetailsResponse,
   DatasetDiagnostics,
   DatasetPayload,
+  DiscoveryArtifactEpisodesResponse,
+  DiscoveryArtifactFamiliesResponse,
+  DiscoveryArtifactReadoutResponse,
+  DiscoveryArtifactTargetResponse,
   EpisodeAnnotation,
   EpisodeAnnotationResponse,
   EpisodeDetail,
@@ -44,6 +49,21 @@ export type EpisodePageParams = {
   q?: string;
   sort?: string;
   task_id?: string;
+};
+
+export type DiscoveryArtifactEpisodeParams = EpisodePageParams & {
+  cohort_preset?: string;
+  prediction?: string;
+  rank_by?: string;
+  split?: string;
+};
+
+export type DiscoveryArtifactTargetParams = {
+  model_site?: string;
+  policy_call?: number | string | null;
+  site?: string;
+  token_space?: string;
+  trace_id?: string;
 };
 
 export function fetchDataset(): Promise<DatasetPayload> {
@@ -175,6 +195,55 @@ export function fetchProbeEvidence(
   return getJson<ProbeEvidenceResponse>(
     `/api/probes/${encodeURIComponent(probeId)}/evidence?${search.toString()}`,
     freshJsonInit(signal),
+  );
+}
+
+export { discoveryArtifactEpisodeSearchParams };
+
+export function fetchDiscoveryArtifactFamilies(): Promise<DiscoveryArtifactFamiliesResponse> {
+  return getJson<DiscoveryArtifactFamiliesResponse>(
+    "/api/discovery-artifact-families",
+    freshJsonInit(),
+  );
+}
+
+export function fetchDiscoveryArtifactEpisodes(
+  artifactId: string,
+  params: DiscoveryArtifactEpisodeParams = {},
+  signal?: AbortSignal,
+): Promise<DiscoveryArtifactEpisodesResponse> {
+  const search = discoveryArtifactEpisodeSearchParams(params);
+  return getJson<DiscoveryArtifactEpisodesResponse>(
+    `/api/discovery-artifacts/${encodeURIComponent(artifactId)}/episodes?${search.toString()}`,
+    freshJsonInit(signal),
+  );
+}
+
+export function fetchDiscoveryArtifactReadout(
+  artifactId: string,
+  traceId: string,
+): Promise<DiscoveryArtifactReadoutResponse> {
+  const search = new URLSearchParams({ trace_id: traceId });
+  return getJson<DiscoveryArtifactReadoutResponse>(
+    `/api/discovery-artifacts/${encodeURIComponent(artifactId)}/readout?${search.toString()}`,
+    freshJsonInit(),
+  );
+}
+
+export function fetchDiscoveryArtifactTarget(
+  artifactId: string,
+  params: DiscoveryArtifactTargetParams = {},
+): Promise<DiscoveryArtifactTargetResponse> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    search.set(key, String(value));
+  }
+  return getJson<DiscoveryArtifactTargetResponse>(
+    `/api/discovery-artifacts/${encodeURIComponent(artifactId)}/target?${search.toString()}`,
+    freshJsonInit(),
   );
 }
 

@@ -11,6 +11,8 @@ import { Layers3 } from "lucide-react";
 import {
   fetchActivationSites,
   fetchDataset,
+  fetchDiscoveryArtifactReadout,
+  fetchDiscoveryArtifactTarget,
   fetchEpisode,
   fetchEpisodeAnnotation,
   fetchEpisodeNeighbors,
@@ -22,6 +24,7 @@ import {
   saveEpisodeAnnotation,
 } from "../api/dataset";
 import type { SelectedPatch } from "../types/dataset";
+import type { InterventionLabSeed } from "../types/interventions";
 import type { WorkbenchManifest } from "../types/workbench";
 import { episodeCapabilityGates, episodeQueryGates } from "./capabilityGating";
 import { EpisodeNavigationBar } from "./episodes/EpisodeNavigation";
@@ -58,6 +61,7 @@ type EpisodesPageProps = {
   initialSiteName?: string;
   manifest?: WorkbenchManifest;
   initialTraceId?: string;
+  onSendToIntervention?: (seed: InterventionLabSeed) => void;
   onTraceChange?: (traceId: string, context?: EpisodeTraceChangeContext) => void;
 };
 
@@ -79,6 +83,7 @@ export function EpisodesPage({
   initialSiteName = "",
   manifest,
   initialTraceId = "",
+  onSendToIntervention,
   onTraceChange,
 }: EpisodesPageProps) {
   const queryClient = useQueryClient();
@@ -311,6 +316,12 @@ export function EpisodesPage({
     timestep,
     topChannelCount,
   });
+  const artifactReadout = useQuery({
+    queryKey: ["discovery-artifact-readout", activeSelectedProbeArtifactId, activeTraceId],
+    queryFn: () => fetchDiscoveryArtifactReadout(activeSelectedProbeArtifactId, activeTraceId),
+    enabled: Boolean(hasProbeArtifacts && activeTraceId && activeSelectedProbeArtifactId),
+    staleTime: 15_000,
+  });
   const openComparisonCandidate = useCallback((traceId: string) => {
     setIsPlayingFrames(false);
     setTimestep(0);
@@ -395,6 +406,50 @@ export function EpisodesPage({
       jumpToPolicyCall(selectedProbePolicyCall);
     }
   }, [jumpToPolicyCall, selectedProbePolicyCall]);
+  const sendProbeToIntervention = useCallback(async () => {
+    if (!onSendToIntervention || !activeSelectedProbeArtifactId) {
+      return;
+    }
+    const policyCallIndex = selectedProbePolicyCall ?? selectedProbeRef?.policyCall ?? 0;
+    const modelSiteName =
+      selectedProbeSite?.name ?? selectedProbeRef?.modelSiteId ?? activeSelectedSiteName;
+    const tokenSpace = selectedProbeSite?.token_space_id ?? "synthetic.action_suffix";
+    let target: Record<string, unknown> | undefined;
+    try {
+      const response = await fetchDiscoveryArtifactTarget(activeSelectedProbeArtifactId, {
+        model_site: modelSiteName,
+        policy_call: policyCallIndex,
+        token_space: tokenSpace,
+        trace_id: activeTraceId,
+      });
+      target = response.target ?? undefined;
+    } catch {
+      target = undefined;
+    }
+    onSendToIntervention({
+      artifactId: activeSelectedProbeArtifactId,
+      artifactType: "probe_suite",
+      modelFamily: selectedProbeSite?.family ?? "pi05",
+      modelSite: modelSiteName,
+      policyCallIndex,
+      target,
+      title: selectedProbe?.name ? `Intervene with ${selectedProbe.name}` : undefined,
+      tokenSpace,
+      traceId: activeTraceId,
+    });
+  }, [
+    activeSelectedProbeArtifactId,
+    activeSelectedSiteName,
+    activeTraceId,
+    onSendToIntervention,
+    selectedProbe?.name,
+    selectedProbePolicyCall,
+    selectedProbeRef?.modelSiteId,
+    selectedProbeRef?.policyCall,
+    selectedProbeSite?.family,
+    selectedProbeSite?.name,
+    selectedProbeSite?.token_space_id,
+  ]);
 
   useEpisodeRouteContext({
     activeSelectedProbeArtifactId,
@@ -578,6 +633,7 @@ export function EpisodesPage({
               onTimestepChange: handleInteractionTimestepChange,
             }}
             episodeProbePanel={{
+              artifactReadout: artifactReadout.data,
               comparisons: observationalComparisons.data,
               probes: hasProbeArtifacts ? episodeProbes.data : undefined,
               selectedProbe,
@@ -587,9 +643,11 @@ export function EpisodesPage({
               isComparisonError: observationalComparisons.isError,
               isComparisonLoading: observationalComparisons.isFetching,
               canInspectProbe: Boolean(selectedProbeSite),
+              canIntervene: Boolean(onSendToIntervention && activeSelectedProbeArtifactId),
               canJumpToProbeCall: Boolean(selectedProbeCall),
               onOpenComparison: openComparisonCandidate,
               onInspectProbe: inspectProbeSite,
+              onIntervene: sendProbeToIntervention,
               onJumpToProbeCall: jumpToProbeCall,
               onJumpToPolicyCall: jumpToPolicyCall,
               onProbeChange: setSelectedProbeArtifactId,

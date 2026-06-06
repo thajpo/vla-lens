@@ -2,11 +2,12 @@ import { useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search, Target } from "lucide-react";
 import {
+  type DiscoveryArtifactEpisodeParams,
   type EpisodePageParams,
+  fetchDiscoveryArtifactEpisodes,
   fetchDataset,
   fetchDatasetDiagnostics,
   fetchEpisodesPage,
-  fetchProbeEvidence,
   fetchProbeIndex,
 } from "../../api/dataset";
 import type {
@@ -97,19 +98,19 @@ export function DatasetBrowser({
     () => probes.find((probe) => probe.artifact_id === probeFilter),
     [probeFilter, probes],
   );
-  const episodePageParams = useMemo<EpisodePageParams>(
+  const episodePageParams = useMemo<DiscoveryArtifactEpisodeParams>(
     () => ({
       benchmark: benchmarkFilter,
+      cohort_preset: selectedProbe ? probeCohortPreset : undefined,
       dataset_id: datasetFilter,
       limit: 100,
       offset: pageOffset,
       outcome: outcomeFilter,
+      prediction: selectedProbe ? probePredictionFilter : undefined,
       profile: profileFilter,
-      probe_cohort_preset: probeCohortPreset,
-      probe_id: selectedProbe?.artifact_id,
-      probe_prediction: probePredictionFilter,
-      probe_split: probeSplitFilter,
       q: deferredQuery,
+      rank_by: selectedProbe ? "interest" : undefined,
+      split: selectedProbe ? probeSplitFilter : undefined,
       task_id: taskFilter,
     }),
     [
@@ -128,7 +129,9 @@ export function DatasetBrowser({
   );
   const episodePage = useQuery({
     queryKey: ["episodes", datasetIdentityKey, episodePageParams],
-    queryFn: ({ signal }) => fetchEpisodesPage(episodePageParams, signal),
+    queryFn: ({ signal }) => selectedProbe
+      ? fetchDiscoveryArtifactEpisodes(selectedProbe.artifact_id, episodePageParams, signal)
+      : fetchEpisodesPage(episodePageParams as EpisodePageParams, signal),
     enabled: dataset.isFetched,
     staleTime: 15_000,
   });
@@ -154,18 +157,20 @@ export function DatasetBrowser({
     () => (selectedProbe ? probeCoverageRows(episodes, selectedProbe) : []),
     [episodes, selectedProbe],
   );
-  const evidenceParams = useMemo<EpisodePageParams>(
+  const evidenceParams = useMemo<DiscoveryArtifactEpisodeParams>(
     () => ({
+      cohort_preset: probeCohortPreset,
       limit: EVIDENCE_EPISODE_LIMIT,
-      probe_cohort_preset: probeCohortPreset,
-      probe_prediction: probePredictionFilter,
-      probe_split: probeSplitFilter,
+      prediction: probePredictionFilter,
+      rank_by: "interest",
+      split: probeSplitFilter,
     }),
     [probeCohortPreset, probePredictionFilter, probeSplitFilter],
   );
-  const probeEvidence = useQuery({
-    queryKey: ["probe-evidence", selectedProbe?.artifact_id, evidenceParams],
-    queryFn: ({ signal }) => fetchProbeEvidence(selectedProbe?.artifact_id ?? "", evidenceParams, signal),
+  const artifactEvidence = useQuery({
+    queryKey: ["discovery-artifact-evidence", selectedProbe?.artifact_id, evidenceParams],
+    queryFn: ({ signal }) =>
+      fetchDiscoveryArtifactEpisodes(selectedProbe?.artifact_id ?? "", evidenceParams, signal),
     enabled: Boolean(selectedProbe),
     staleTime: 15_000,
   });
@@ -338,7 +343,7 @@ export function DatasetBrowser({
           <ProbeEvidencePanel
             activePredictionFilter={probePredictionFilter}
             activeSplitFilter={probeSplitFilter}
-            episodes={probeEvidence.data?.episodes ?? []}
+            episodes={artifactEvidence.data?.episodes ?? []}
             probe={selectedProbe}
             summaryRows={probeVisibleRows}
             cohortPreset={probeCohortPreset}

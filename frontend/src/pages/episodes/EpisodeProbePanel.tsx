@@ -1,5 +1,6 @@
 import { memo, type CSSProperties, useState } from "react";
 import type {
+  DiscoveryArtifactReadoutResponse,
   EpisodeProbePrediction,
   EpisodeProbeSummary,
   EpisodeProbesResponse,
@@ -41,7 +42,9 @@ import {
 } from "./episodeProbeModel";
 
 function EpisodeProbePanelImpl({
+  artifactReadout,
   canInspectProbe,
+  canIntervene,
   canJumpToProbeCall,
   comparisons,
   isComparisonError,
@@ -49,6 +52,7 @@ function EpisodeProbePanelImpl({
   isError,
   isLoading,
   onInspectProbe,
+  onIntervene,
   onOpenComparison,
   onJumpToProbeCall,
   onJumpToPolicyCall,
@@ -57,7 +61,9 @@ function EpisodeProbePanelImpl({
   selectedProbe,
   selectedProbeRef,
 }: {
+  artifactReadout?: DiscoveryArtifactReadoutResponse;
   canInspectProbe: boolean;
+  canIntervene: boolean;
   canJumpToProbeCall: boolean;
   comparisons?: ObservationalComparisonsResponse;
   isComparisonError: boolean;
@@ -65,6 +71,7 @@ function EpisodeProbePanelImpl({
   isError: boolean;
   isLoading: boolean;
   onInspectProbe: () => void;
+  onIntervene: () => void;
   onOpenComparison: (traceId: string) => void;
   onJumpToProbeCall: () => void;
   onJumpToPolicyCall: (policyCallIndex: number) => void;
@@ -158,8 +165,18 @@ function EpisodeProbePanelImpl({
           >
             Jump
           </button>
+          <button
+            disabled={!canIntervene}
+            title="Send this artifact, episode, policy call, and model site to the Intervention Lab"
+            type="button"
+            onClick={onIntervene}
+          >
+            Intervene
+          </button>
         </div>
       </section>
+
+      <ArtifactReadoutPanel readout={artifactReadout} />
 
       <section className="episode-probe-audit-strip" aria-label="Probe audit">
         <ProbeAuditPill label="Signal" value={trajectoryAudit.value} detail={trajectoryAudit.detail} />
@@ -229,6 +246,62 @@ function EpisodeProbePanelImpl({
 }
 
 export const EpisodeProbePanel = memo(EpisodeProbePanelImpl);
+
+function ArtifactReadoutPanel({
+  readout,
+}: {
+  readout?: DiscoveryArtifactReadoutResponse;
+}) {
+  if (!readout) {
+    return null;
+  }
+  if (!readout.available) {
+    return (
+      <section className="episode-artifact-readout unavailable">
+        <span>Artifact readout</span>
+        <strong>Unavailable</strong>
+        <small>{readout.reason || "No readout for this artifact and trace."}</small>
+      </section>
+    );
+  }
+  const summary = readout.summary ?? {};
+  return (
+    <section className="episode-artifact-readout">
+      <div>
+        <span>Artifact readout</span>
+        <strong>{readout.readout_type.replaceAll("_", " ")}</strong>
+      </div>
+      <div>
+        <span>Prediction</span>
+        <strong>{formatProbeValue(summary.predicted)}</strong>
+        <small>actual {formatProbeValue(summary.actual)}</small>
+      </div>
+      <div>
+        <span>Confidence</span>
+        <strong>{formatMaybeNumber(numberValue(summary.confidence))}</strong>
+        <small>{summary.correct === false ? "incorrect" : summary.correct === true ? "correct" : "unknown"}</small>
+      </div>
+      <div>
+        <span>Target</span>
+        <strong>{textValue(summary.model_site) || "-"}</strong>
+        <small>{[
+          textValue(summary.feature),
+          summary.policy_call_index === null || summary.policy_call_index === undefined
+            ? ""
+            : `call ${summary.policy_call_index}`,
+        ].filter(Boolean).join(" · ")}</small>
+      </div>
+    </section>
+  );
+}
+
+function numberValue(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function textValue(value: unknown): string {
+  return value === null || value === undefined ? "" : String(value);
+}
 
 function EpisodeProbeStack({
   onProbeChange,

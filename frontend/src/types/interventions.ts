@@ -65,10 +65,13 @@ export type InterventionLabDraft = {
   policyCallIndex: number;
   runId?: string;
   strength: number;
+  target?: Record<string, unknown>;
   title?: string;
   tokenSpace: string;
   traceId: string;
 };
+
+export type InterventionLabSeed = Partial<InterventionLabDraft>;
 
 export type InterventionSummary = {
   claimLabels: string[];

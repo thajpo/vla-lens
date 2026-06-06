@@ -47,6 +47,63 @@
   padding-top: 8px;
 }
 
+.episode-artifact-readout {
+  border-top: 1px solid var(--line);
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  padding-top: 8px;
+}
+
+.episode-artifact-readout.unavailable {
+  grid-template-columns: minmax(0, 0.34fr) minmax(0, 0.66fr);
+}
+
+.episode-artifact-readout > div,
+.episode-artifact-readout.unavailable {
+  min-width: 0;
+}
+
+.episode-artifact-readout > div {
+  border-right: 1px solid var(--line);
+  display: grid;
+  gap: 3px;
+  padding: 0 8px;
+}
+
+.episode-artifact-readout > div:first-child {
+  padding-left: 0;
+}
+
+.episode-artifact-readout > div:last-child {
+  border-right: 0;
+  padding-right: 0;
+}
+
+.episode-artifact-readout span {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.episode-artifact-readout strong {
+  color: var(--ink);
+  font-size: 11px;
+  font-weight: 900;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.episode-artifact-readout small {
+  color: var(--muted);
+  font-size: 9px;
+  font-weight: 750;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .episode-probe-audit-pill {
   background: var(--paper);
   border-right: 1px solid var(--line);
