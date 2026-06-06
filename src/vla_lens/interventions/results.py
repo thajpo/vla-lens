@@ -255,6 +255,139 @@ class ControlResult:
 
 
 @dataclass(frozen=True, slots=True)
+class SweepAxis:
+    """One dimension varied across a sweep."""
+
+    name: str
+    values: tuple[Any, ...]
+    source: str = "request"
+    path: tuple[str, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_nonempty(self.name, field="sweep axis name")
+        if not self.values:
+            raise ValueError("sweep axis values are required")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "values": [jsonable(value) for value in self.values],
+            "source": self.source,
+            "path": list(self.path),
+            "metadata": jsonable(self.metadata),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "SweepAxis":
+        data = required_mapping(payload, field="SweepAxis")
+        return cls(
+            name=str(data["name"]),
+            values=tuple_from(data.get("values"), cast=jsonable, field="values"),
+            source=str(data.get("source", "request")),
+            path=tuple_from(data.get("path"), cast=str, field="path"),
+            metadata=mapping_from(data.get("metadata"), field="metadata"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AggregateOutcomeResult:
+    """Numeric aggregate over one metric collected from multiple runs."""
+
+    metric: str
+    count: int
+    mean: float | None = None
+    median: float | None = None
+    minimum: float | None = None
+    maximum: float | None = None
+    std: float | None = None
+    coverage: float | None = None
+    monotonicity: str | None = None
+    values: tuple[float, ...] = ()
+    metadata: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_nonempty(self.metric, field="aggregate metric")
+        if self.count < 0:
+            raise ValueError("aggregate count must be non-negative")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "metric": self.metric,
+            "count": self.count,
+            "mean": self.mean,
+            "median": self.median,
+            "minimum": self.minimum,
+            "maximum": self.maximum,
+            "std": self.std,
+            "coverage": self.coverage,
+            "monotonicity": self.monotonicity,
+            "values": list(self.values),
+            "metadata": jsonable(self.metadata),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "AggregateOutcomeResult":
+        data = required_mapping(payload, field="AggregateOutcomeResult")
+        return cls(
+            metric=str(data["metric"]),
+            count=int(data.get("count", 0)),
+            mean=optional_float(data.get("mean")),
+            median=optional_float(data.get("median")),
+            minimum=optional_float(data.get("minimum")),
+            maximum=optional_float(data.get("maximum")),
+            std=optional_float(data.get("std")),
+            coverage=optional_float(data.get("coverage")),
+            monotonicity=optional_str(data.get("monotonicity")),
+            values=tuple_from(data.get("values"), cast=float, field="values"),
+            metadata=mapping_from(data.get("metadata"), field="metadata"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class CohortInterventionRequest:
+    """Runtime-free request shell for applying one intervention spec over a cohort."""
+
+    request_id: str
+    base_run_id: str | None = None
+    cohort: Mapping[str, Any] = field(default_factory=dict)
+    axes: tuple[SweepAxis, ...] = ()
+    controls: tuple[Mapping[str, Any], ...] = ()
+    splits: Mapping[str, Any] = field(default_factory=dict)
+    provenance: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        require_nonempty(self.request_id, field="cohort intervention request_id")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "request_id": self.request_id,
+            "base_run_id": self.base_run_id,
+            "cohort": jsonable(self.cohort),
+            "axes": [axis.to_dict() for axis in self.axes],
+            "controls": [jsonable(control) for control in self.controls],
+            "splits": jsonable(self.splits),
+            "provenance": jsonable(self.provenance),
+        }
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "CohortInterventionRequest":
+        data = required_mapping(payload, field="CohortInterventionRequest")
+        return cls(
+            request_id=str(data["request_id"]),
+            base_run_id=optional_str(data.get("base_run_id")),
+            cohort=mapping_from(data.get("cohort"), field="cohort"),
+            axes=tuple(
+                SweepAxis.from_dict(required_mapping(item, field="axis"))
+                for item in data.get("axes", ())
+            ),
+            controls=tuple_of_mappings(data.get("controls"), field="controls"),
+            splits=mapping_from(data.get("splits"), field="splits"),
+            provenance=mapping_from(data.get("provenance"), field="provenance"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class InterventionRun:
     """Canonical saved evidence payload for one intervention record."""
 
@@ -437,19 +570,29 @@ class InterventionSweep:
     sweep_id: str
     run_ids: tuple[str, ...]
     schema_version: str = SCHEMA_VERSION
-    axes: Mapping[str, Any] = field(default_factory=dict)
+    axes: tuple[SweepAxis, ...] | Mapping[str, Any] = field(default_factory=dict)
+    aggregate_outcomes: tuple[AggregateOutcomeResult, ...] = ()
+    controls: tuple[Mapping[str, Any], ...] = ()
+    cohort: Mapping[str, Any] = field(default_factory=dict)
     summary: Mapping[str, Any] = field(default_factory=dict)
     provenance: Mapping[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         require_nonempty(self.sweep_id, field="sweep_id")
+        if not self.run_ids:
+            raise ValueError("sweep run_ids are required")
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "schema_version": self.schema_version,
             "sweep_id": self.sweep_id,
             "run_ids": list(self.run_ids),
-            "axes": jsonable(self.axes),
+            "axes": _axes_to_dict(self.axes),
+            "aggregate_outcomes": [
+                aggregate.to_dict() for aggregate in self.aggregate_outcomes
+            ],
+            "controls": [jsonable(control) for control in self.controls],
+            "cohort": jsonable(self.cohort),
             "summary": jsonable(self.summary),
             "provenance": jsonable(self.provenance),
         }
@@ -461,7 +604,15 @@ class InterventionSweep:
             schema_version=str(data.get("schema_version", SCHEMA_VERSION)),
             sweep_id=str(data["sweep_id"]),
             run_ids=tuple_from(data.get("run_ids"), cast=str, field="run_ids"),
-            axes=mapping_from(data.get("axes"), field="axes"),
+            axes=_axes_from_payload(data.get("axes")),
+            aggregate_outcomes=tuple(
+                AggregateOutcomeResult.from_dict(
+                    required_mapping(item, field="aggregate outcome")
+                )
+                for item in data.get("aggregate_outcomes", ())
+            ),
+            controls=tuple_of_mappings(data.get("controls"), field="controls"),
+            cohort=mapping_from(data.get("cohort"), field="cohort"),
             summary=mapping_from(data.get("summary"), field="summary"),
             provenance=mapping_from(data.get("provenance"), field="provenance"),
         )
@@ -474,8 +625,11 @@ class InterventionStudy:
     study_id: str
     sweep_ids: tuple[str, ...] = ()
     run_ids: tuple[str, ...] = ()
+    request_ids: tuple[str, ...] = ()
     schema_version: str = SCHEMA_VERSION
     cohort: Mapping[str, Any] = field(default_factory=dict)
+    controls: tuple[Mapping[str, Any], ...] = ()
+    aggregate_outcomes: tuple[AggregateOutcomeResult, ...] = ()
     summary: Mapping[str, Any] = field(default_factory=dict)
     provenance: Mapping[str, Any] = field(default_factory=dict)
 
@@ -488,7 +642,12 @@ class InterventionStudy:
             "study_id": self.study_id,
             "sweep_ids": list(self.sweep_ids),
             "run_ids": list(self.run_ids),
+            "request_ids": list(self.request_ids),
             "cohort": jsonable(self.cohort),
+            "controls": [jsonable(control) for control in self.controls],
+            "aggregate_outcomes": [
+                aggregate.to_dict() for aggregate in self.aggregate_outcomes
+            ],
             "summary": jsonable(self.summary),
             "provenance": jsonable(self.provenance),
         }
@@ -501,7 +660,36 @@ class InterventionStudy:
             study_id=str(data["study_id"]),
             sweep_ids=tuple_from(data.get("sweep_ids"), cast=str, field="sweep_ids"),
             run_ids=tuple_from(data.get("run_ids"), cast=str, field="run_ids"),
+            request_ids=tuple_from(
+                data.get("request_ids"),
+                cast=str,
+                field="request_ids",
+            ),
             cohort=mapping_from(data.get("cohort"), field="cohort"),
+            controls=tuple_of_mappings(data.get("controls"), field="controls"),
+            aggregate_outcomes=tuple(
+                AggregateOutcomeResult.from_dict(
+                    required_mapping(item, field="aggregate outcome")
+                )
+                for item in data.get("aggregate_outcomes", ())
+            ),
             summary=mapping_from(data.get("summary"), field="summary"),
             provenance=mapping_from(data.get("provenance"), field="provenance"),
         )
+
+
+def _axes_to_dict(axes: tuple[SweepAxis, ...] | Mapping[str, Any]) -> Any:
+    if isinstance(axes, Mapping):
+        return jsonable(axes)
+    return [axis.to_dict() for axis in axes]
+
+
+def _axes_from_payload(value: Any) -> tuple[SweepAxis, ...] | dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, Mapping):
+        return mapping_from(value, field="axes")
+    return tuple(
+        SweepAxis.from_dict(required_mapping(item, field="axis"))
+        for item in value or ()
+    )

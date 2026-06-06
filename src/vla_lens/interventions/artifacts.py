@@ -7,10 +7,11 @@ import json
 from typing import Any, Mapping
 
 from vla_lens.artifacts import LensArtifact
-from vla_lens.interventions.results import InterventionRun
+from vla_lens.interventions.results import InterventionRun, InterventionSweep
 from vla_lens.interventions.serialization import jsonable
 
 ARTIFACT_TYPE = "intervention_run"
+SWEEP_ARTIFACT_TYPE = "intervention_sweep"
 
 
 def intervention_run_to_lens_artifact(run: InterventionRun) -> LensArtifact:
@@ -71,6 +72,51 @@ def intervention_run_to_lens_artifact(run: InterventionRun) -> LensArtifact:
         display=display,
         tags=_tags(run, operator, outcome),
         source_trace_ids=_source_trace_ids(run),
+    )
+
+
+def intervention_sweep_to_lens_artifact(sweep: InterventionSweep) -> LensArtifact:
+    """Create an artifact-browser shell for a sweep aggregate."""
+    selector = {
+        "sweep_id": sweep.sweep_id,
+        "run_ids": list(sweep.run_ids),
+        "cohort": jsonable(sweep.cohort),
+    }
+    aggregate_metrics = {
+        aggregate.metric: aggregate.to_dict() for aggregate in sweep.aggregate_outcomes
+    }
+    display = {
+        "kind": "intervention_sweep_card",
+        "sweep_id": sweep.sweep_id,
+        "run_ids": list(sweep.run_ids),
+        "axes": jsonable(sweep.axes),
+        "cohort": jsonable(sweep.cohort),
+        "summary": jsonable(sweep.summary),
+        "claim": {
+            "claim_strength": _summary_claim_labels(sweep.summary),
+        },
+        "controls": [jsonable(control) for control in sweep.controls],
+        "aggregate_outcomes": aggregate_metrics,
+        "provenance": {
+            "schema_version": sweep.schema_version,
+            "created_utc": sweep.provenance.get("created_utc"),
+        },
+    }
+    return LensArtifact.create(
+        artifact_type=SWEEP_ARTIFACT_TYPE,
+        name=f"Intervention sweep {sweep.sweep_id}",
+        group_id=sweep.sweep_id,
+        scope="dataset",
+        selector=selector,
+        method={
+            "axes": jsonable(sweep.axes),
+            "controls": [jsonable(control) for control in sweep.controls],
+            "run_count": len(sweep.run_ids),
+        },
+        metrics=_sweep_metrics(sweep, aggregate_metrics),
+        display=display,
+        tags=_sweep_tags(sweep),
+        source_trace_ids=_sweep_source_trace_ids(sweep),
     )
 
 
@@ -210,3 +256,51 @@ def _claim_labels(claim: Mapping[str, Any]) -> tuple[str, ...]:
 
 def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
+
+
+def _sweep_metrics(
+    sweep: InterventionSweep,
+    aggregate_metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    return {
+        "run_count": len(sweep.run_ids),
+        "failure_count": sweep.summary.get("failure_count", 0),
+        "coverage": sweep.summary.get("coverage"),
+        "aggregate_outcomes": jsonable(aggregate_metrics),
+    }
+
+
+def _sweep_tags(sweep: InterventionSweep) -> tuple[str, ...]:
+    tags = {SWEEP_ARTIFACT_TYPE, "sweep"}
+    if sweep.cohort:
+        tags.add("cohort")
+    for label in _summary_claim_labels(sweep.summary):
+        tags.add(label)
+    return tuple(sorted(tag for tag in tags if tag))
+
+
+def _summary_claim_labels(summary: Mapping[str, Any]) -> tuple[str, ...]:
+    labels = summary.get("claim_labels", ())
+    if isinstance(labels, str):
+        return (labels,)
+    if isinstance(labels, (list, tuple, set, frozenset)):
+        return tuple(str(label) for label in labels if label)
+    return ()
+
+
+def _sweep_source_trace_ids(sweep: InterventionSweep) -> tuple[str, ...]:
+    cohort = _mapping(sweep.cohort)
+    members = _mapping(cohort.get("members"))
+    trace_ids = members.get("trace_id", ())
+    if isinstance(trace_ids, str):
+        return (trace_ids,)
+    if isinstance(trace_ids, (list, tuple, set, frozenset)):
+        return tuple(dict.fromkeys(str(trace_id) for trace_id in trace_ids if trace_id))
+    provenance_trace_ids = sweep.provenance.get("source_trace_ids", ())
+    if isinstance(provenance_trace_ids, str):
+        return (provenance_trace_ids,)
+    if isinstance(provenance_trace_ids, (list, tuple, set, frozenset)):
+        return tuple(
+            dict.fromkeys(str(trace_id) for trace_id in provenance_trace_ids if trace_id)
+        )
+    return ()

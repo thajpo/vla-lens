@@ -8,16 +8,22 @@ from vla_lens.interventions.action_basis import (
     action_delta_metrics,
     resolve_action_basis,
 )
-from vla_lens.interventions.artifacts import intervention_run_to_lens_artifact
+from vla_lens.interventions.artifacts import (
+    intervention_run_to_lens_artifact,
+    intervention_sweep_to_lens_artifact,
+)
 from vla_lens.interventions.preflight import intervention_preflight
 from vla_lens.interventions.results import (
     ActionOutcomeResult,
+    AggregateOutcomeResult,
+    CohortInterventionRequest,
     ControlResult,
     InterventionRun,
     InterventionStudy,
     InterventionSweep,
     InterventionTrial,
     RolloutOutcomeResult,
+    SweepAxis,
     TokenOutcomeResult,
 )
 from vla_lens.interventions.runtime import ActionInterventionExecutor, RuntimeTrialOutput
@@ -37,6 +43,12 @@ from vla_lens.interventions.specs import (
     TargetSpec,
     TraceRef,
 )
+from vla_lens.interventions.sweeps import (
+    aggregate_outcome_metric,
+    build_intervention_study,
+    build_intervention_sweep,
+    promote_run_to_sweep,
+)
 
 __all__ = [
     "ActionBasisRequest",
@@ -45,7 +57,9 @@ __all__ = [
     "ActionInterventionExecutor",
     "ActionNormalizationSpec",
     "ActionSchemaRef",
+    "AggregateOutcomeResult",
     "ActionOutcomeResult",
+    "CohortInterventionRequest",
     "ContextSpec",
     "ControlResult",
     "ControlSpec",
@@ -64,11 +78,17 @@ __all__ = [
     "RuntimePreflightResult",
     "RuntimeResolution",
     "RuntimeTrialOutput",
+    "SweepAxis",
     "TargetSpec",
     "TokenOutcomeResult",
     "TraceRef",
     "action_delta_metrics",
+    "aggregate_outcome_metric",
+    "build_intervention_study",
+    "build_intervention_sweep",
     "intervention_preflight",
     "intervention_run_to_lens_artifact",
+    "intervention_sweep_to_lens_artifact",
+    "promote_run_to_sweep",
     "resolve_action_basis",
 ]

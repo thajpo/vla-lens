@@ -8,7 +8,9 @@ from vla_lens.interventions import (
     InterventionTrial,
     RuntimePreflightResult,
     TargetSpec,
+    build_intervention_sweep,
     intervention_run_to_lens_artifact,
+    intervention_sweep_to_lens_artifact,
 )
 from vla_lens.workbench import save_intervention_run
 
@@ -135,3 +137,29 @@ def test_saved_typed_run_creates_listable_lens_artifact(tmp_path):
     assert intervention_records[0]["artifact_id"] == saved.artifact_id
     assert artifact.display["workbench_run_id"] == run.run_id
     assert artifact.selector["workbench_run_id"] == run.run_id
+
+
+def test_intervention_sweep_creates_listable_lens_artifact(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=2)
+    run = _run()
+    sweep = build_intervention_sweep(
+        sweep_id="sweep-artifact-index",
+        runs=(run,),
+        controls=({"control_kind": "random_direction", "status": "ok"},),
+    )
+    saved = dataset.save_artifact(intervention_sweep_to_lens_artifact(sweep))
+    reopened = TraceDataset.open(dataset.root)
+
+    records = reopened.artifact_index.to_dict("records")
+    sweep_records = [
+        record for record in records if record["artifact_type"] == "intervention_sweep"
+    ]
+    artifact = reopened.load_artifact(saved.artifact_id)
+
+    assert len(sweep_records) == 1
+    assert sweep_records[0]["artifact_id"] == saved.artifact_id
+    assert artifact.group_id == "sweep-artifact-index"
+    assert artifact.selector["run_ids"] == [run.run_id]
+    assert artifact.metrics["run_count"] == 1
+    assert artifact.display["kind"] == "intervention_sweep_card"
+    assert {"intervention_sweep", "sweep", "action_level", "specific"} <= set(artifact.tags)
