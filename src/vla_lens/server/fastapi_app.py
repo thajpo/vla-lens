@@ -13,6 +13,7 @@ from starlette.responses import Response
 import vla_lens.server.activation as activation_api
 import vla_lens.server.attention as attention_api
 import vla_lens.server.dataset as dataset_api
+import vla_lens.server.discovery_artifacts as discovery_artifacts_api
 import vla_lens.server.indexed as indexed_api
 import vla_lens.server.indexed_probes as indexed_probes_api
 import vla_lens.server.interventions as interventions_api
@@ -240,6 +241,50 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
         return _handle_json(
             request,
             lambda state, _query: dataset_api._artifact_detail_payload(state.dataset, artifact_id),
+            cache_control=NO_STORE_CACHE_CONTROL,
+        )
+
+    @app.get("/api/discovery-artifact-families")
+    async def discovery_artifact_families_endpoint(request: Request) -> Response:
+        return _handle_json(
+            request,
+            lambda _state, _query: discovery_artifacts_api.discovery_artifact_families_payload(),
+            cache_control=NO_STORE_CACHE_CONTROL,
+        )
+
+    @app.get("/api/discovery-artifacts/{artifact_id}/episodes")
+    async def discovery_artifact_episodes_endpoint(request: Request, artifact_id: str) -> Response:
+        return _handle_json(
+            request,
+            lambda state, query: discovery_artifacts_api.discovery_artifact_episodes_payload(
+                state.root,
+                artifact_id,
+                query,
+            ),
+            cache_control=NO_STORE_CACHE_CONTROL,
+        )
+
+    @app.get("/api/discovery-artifacts/{artifact_id}/readout")
+    async def discovery_artifact_readout_endpoint(request: Request, artifact_id: str) -> Response:
+        return _handle_json(
+            request,
+            lambda state, query: discovery_artifacts_api.discovery_artifact_readout_payload(
+                state.root,
+                artifact_id,
+                query,
+            ),
+            cache_control=NO_STORE_CACHE_CONTROL,
+        )
+
+    @app.get("/api/discovery-artifacts/{artifact_id}/target")
+    async def discovery_artifact_target_endpoint(request: Request, artifact_id: str) -> Response:
+        return _handle_json(
+            request,
+            lambda state, query: discovery_artifacts_api.discovery_artifact_target_payload(
+                state.dataset,
+                artifact_id,
+                query,
+            ),
             cache_control=NO_STORE_CACHE_CONTROL,
         )
 

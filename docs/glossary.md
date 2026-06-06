@@ -77,6 +77,22 @@ claim labels, and provenance.
   feature, transcoder feature, or crosscoder feature. Discovery artifacts are
   not causal evidence by themselves.
 
+`DiscoveryArtifactFamily`:
+  The contract for one class of discovery artifacts. It defines how artifacts
+  of that type map into a `TargetSpec`, which operators and outcomes are legal,
+  and which controls are expected for stronger evidence labels.
+
+`ArtifactRanking`:
+  An artifact-conditioned ordering or filtering of dataset examples, timesteps,
+  objects, features, or model sites. For v0, probe-suite rankings prioritize
+  heldout, wrong, high-confidence, and otherwise review-worthy episodes.
+
+`ArtifactReadout`:
+  The compact answer a discovery artifact gives for one selected context, such
+  as a probe prediction for one episode, an activation score at one timestep, or
+  an attribution score for one patch. Readouts are inspection evidence, not
+  causal evidence by themselves.
+
 ## Intervention Terms
 
 `Operator`:

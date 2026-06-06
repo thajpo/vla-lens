@@ -213,6 +213,23 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
             "Returns one artifact record plus array path, shape, dtype, and summary metadata."
         ),
     },
+    ("get", "/api/discovery-artifact-families"): {
+        "summary": "Discovery artifact families",
+        "description": "Lists artifact-family contracts that can rank examples or map to targets.",
+    },
+    ("get", "/api/discovery-artifacts/{artifact_id}/episodes"): {
+        "summary": "Discovery artifact episode ranking",
+        "description": "Returns episodes ranked or filtered through one discovery artifact.",
+    },
+    ("get", "/api/discovery-artifacts/{artifact_id}/readout"): {
+        "summary": "Discovery artifact episode readout",
+        "description": "Returns what one discovery artifact says about a selected trace.",
+        "parameters": [TRACE_ID_PARAM],
+    },
+    ("get", "/api/discovery-artifacts/{artifact_id}/target"): {
+        "summary": "Discovery artifact target",
+        "description": "Normalizes one discovery artifact into a candidate intervention TargetSpec.",
+    },
     ("get", "/api/episodes"): {
         "summary": "Paged episode index",
         "description": "Returns a bounded page of indexed episode rows plus counts and facets.",
