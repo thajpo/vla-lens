@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { Database, LayoutDashboard, Microscope } from "lucide-react";
+import { Database, FileText, LayoutDashboard, Microscope } from "lucide-react";
 
-export type AppPage = "dataset" | "episode" | "probes";
+export type AppPage = "dataset" | "episode" | "evidence" | "probes";
 
 type AppShellProps = {
   activePage: AppPage;
@@ -35,6 +35,14 @@ export function AppShell({ activePage, onPageChange, children }: AppShellProps) 
           >
             <Microscope size={16} />
             Probes
+          </button>
+          <button
+            className={activePage === "evidence" ? "active" : ""}
+            type="button"
+            onClick={() => onPageChange("evidence")}
+          >
+            <FileText size={16} />
+            Evidence
           </button>
         </nav>
       </header>

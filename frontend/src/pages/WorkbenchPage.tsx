@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { AppShell, type AppPage } from "../components/layout/AppShell";
 import { ProbeSuitePreset } from "../components/workflows/ProbeSuitePreset";
+import { EvidencePage } from "./EvidencePage";
 import { EpisodesPage } from "./EpisodesPage";
 import { DatasetBrowser } from "./workbench/DatasetBrowser";
 import { useWorkbenchStore } from "../store/workbenchStore";
@@ -17,6 +18,7 @@ type EpisodeRouteState = {
 export function WorkbenchPage() {
   const initialRoute = initialPage();
   const [activePage, setActivePage] = useState<AppPage>(initialRoute.page);
+  const [evidenceRunId, setEvidenceRunId] = useState(initialRoute.evidenceRunId);
   const [episodeTraceId, setEpisodeTraceId] = useState(initialRoute.traceId);
   const [episodeRouteState, setEpisodeRouteState] = useState<EpisodeRouteState>(initialRoute.episodeState);
   const {
@@ -28,11 +30,18 @@ export function WorkbenchPage() {
     function syncRoute() {
       const route = initialPage();
       setActivePage(route.page);
+      setEvidenceRunId(route.evidenceRunId);
       setEpisodeTraceId(route.traceId);
       setEpisodeRouteState(route.episodeState);
     }
     window.addEventListener("hashchange", syncRoute);
     return () => window.removeEventListener("hashchange", syncRoute);
+  }, []);
+
+  const handleEvidenceRunChange = useCallback((runId: string) => {
+    setActivePage("evidence");
+    setEvidenceRunId(runId);
+    window.history.replaceState(null, "", buildEvidenceHash(runId));
   }, []);
 
   return (
@@ -60,6 +69,12 @@ export function WorkbenchPage() {
           onRunChange={setActiveRunId}
         />
       ) : null}
+      {activePage === "evidence" ? (
+        <EvidencePage
+          selectedRunId={evidenceRunId}
+          onRunChange={handleEvidenceRunChange}
+        />
+      ) : null}
     </AppShell>
   );
 
@@ -68,6 +83,9 @@ export function WorkbenchPage() {
     if (page === "dataset") {
       setEpisodeTraceId("");
       setEpisodeRouteState(emptyEpisodeRouteState());
+    }
+    if (page === "evidence") {
+      setEvidenceRunId("");
     }
     window.history.replaceState(null, "", `#${page}`);
   }
@@ -102,23 +120,51 @@ export function WorkbenchPage() {
 
 }
 
-function initialPage(): { episodeState: EpisodeRouteState; page: AppPage; traceId: string } {
+function initialPage(): {
+  episodeState: EpisodeRouteState;
+  evidenceRunId: string;
+  page: AppPage;
+  traceId: string;
+} {
   const page = window.location.hash.replace("#", "");
   if (page.startsWith("episode/")) {
     const episodeState = parseEpisodeRoute(page.slice("episode/".length));
-    return { episodeState, page: "episode", traceId: episodeState.traceId };
+    return {
+      episodeState,
+      evidenceRunId: "",
+      page: "episode",
+      traceId: episodeState.traceId,
+    };
   }
   if (page.startsWith("dataset/")) {
     const episodeState = parseEpisodeRoute(page.slice("dataset/".length));
-    return { episodeState, page: "episode", traceId: episodeState.traceId };
+    return {
+      episodeState,
+      evidenceRunId: "",
+      page: "episode",
+      traceId: episodeState.traceId,
+    };
   }
-  if (page === "dataset" || page === "probes") {
-    return { episodeState: emptyEpisodeRouteState(), page, traceId: "" };
+  if (page.startsWith("evidence/")) {
+    return {
+      episodeState: emptyEpisodeRouteState(),
+      evidenceRunId: decodeURIComponent(page.slice("evidence/".length)),
+      page: "evidence",
+      traceId: "",
+    };
+  }
+  if (page === "dataset" || page === "evidence" || page === "probes") {
+    return { episodeState: emptyEpisodeRouteState(), evidenceRunId: "", page, traceId: "" };
   }
   if (page === "episode" || page === "episodes") {
-    return { episodeState: emptyEpisodeRouteState(), page: "episode", traceId: "" };
+    return {
+      episodeState: emptyEpisodeRouteState(),
+      evidenceRunId: "",
+      page: "episode",
+      traceId: "",
+    };
   }
-  return { episodeState: emptyEpisodeRouteState(), page: "dataset", traceId: "" };
+  return { episodeState: emptyEpisodeRouteState(), evidenceRunId: "", page: "dataset", traceId: "" };
 }
 
 function emptyEpisodeRouteState(): EpisodeRouteState {
@@ -161,6 +207,10 @@ function buildEpisodeHash(route: EpisodeRouteState): string {
   }
   const query = params.toString();
   return `#episode/${encodeURIComponent(route.traceId)}${query ? `?${query}` : ""}`;
+}
+
+function buildEvidenceHash(runId: string): string {
+  return runId ? `#evidence/${encodeURIComponent(runId)}` : "#evidence";
 }
 
 function episodeRouteKey(route: EpisodeRouteState): string {

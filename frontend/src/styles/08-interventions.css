@@ -1,0 +1,254 @@
+.evidence-page {
+  display: grid;
+  grid-template-columns: minmax(280px, 380px) minmax(0, 1fr);
+  min-height: calc(100vh - 44px);
+}
+
+.evidence-library {
+  background: #eef3f8;
+  border-right: 1px solid #d4deea;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+}
+
+.evidence-library header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.evidence-library h2 {
+  font-size: 16px;
+  margin: 0;
+}
+
+.evidence-library header span {
+  color: #64748b;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.evidence-search {
+  align-items: center;
+  display: flex;
+  gap: 8px;
+}
+
+.evidence-search input {
+  min-height: 34px;
+  min-width: 0;
+  padding: 6px 8px;
+  width: 100%;
+}
+
+.evidence-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  overflow: auto;
+}
+
+.intervention-card {
+  align-items: stretch;
+  border-radius: 8px;
+  display: grid;
+  gap: 7px;
+  justify-items: start;
+  min-height: 0;
+  padding: 12px;
+  text-align: left;
+  white-space: normal;
+  width: 100%;
+}
+
+.intervention-card.selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px #2563eb inset;
+}
+
+.intervention-card-title {
+  align-items: center;
+  display: flex;
+  font-weight: 800;
+  gap: 8px;
+  min-width: 0;
+}
+
+.intervention-card-meta {
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.intervention-label-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.evidence-label,
+.intervention-status {
+  border-radius: 999px;
+  display: inline-flex;
+  font-size: 11px;
+  font-weight: 800;
+  gap: 5px;
+  line-height: 1;
+  padding: 5px 7px;
+}
+
+.evidence-label {
+  background: #e0f2fe;
+  color: #075985;
+}
+
+.evidence-label.muted {
+  background: #e2e8f0;
+  color: #64748b;
+}
+
+.intervention-status {
+  align-items: center;
+  background: #e2e8f0;
+  color: #334155;
+  text-transform: lowercase;
+}
+
+.intervention-status.ok {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.intervention-status.partial {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.intervention-status.failed {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.intervention-status.inspected_only {
+  background: #e0e7ff;
+  color: #3730a3;
+}
+
+.evidence-workspace {
+  min-width: 0;
+  overflow: auto;
+  padding: 18px;
+}
+
+.intervention-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
+}
+
+.intervention-detail.empty {
+  color: #64748b;
+}
+
+.intervention-detail-header {
+  align-items: start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+}
+
+.intervention-detail-header h1 {
+  font-size: 22px;
+  line-height: 1.2;
+  margin: 8px 0 4px;
+}
+
+.intervention-detail-header p {
+  color: #64748b;
+  margin: 0;
+}
+
+.intervention-notice {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 8px;
+  color: #9a3412;
+  font-size: 12px;
+  font-weight: 800;
+  padding: 8px 10px;
+}
+
+.intervention-detail-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.intervention-summary-block {
+  background: #ffffff;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.intervention-summary-block span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.intervention-summary-block strong {
+  font-size: 13px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.intervention-payload-section {
+  background: #ffffff;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.intervention-payload-section summary {
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 800;
+  padding: 10px 12px;
+}
+
+.intervention-payload-section pre {
+  background: #f8fafc;
+  border-top: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 12px;
+  line-height: 1.45;
+  margin: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+@media (max-width: 900px) {
+  .evidence-page {
+    grid-template-columns: 1fr;
+  }
+
+  .evidence-library {
+    border-bottom: 1px solid #d4deea;
+    border-right: 0;
+    max-height: 46vh;
+  }
+
+  .intervention-detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
