@@ -1,57 +1,20 @@
-import {
-  type CSSProperties,
-  type PointerEvent as ReactPointerEvent,
-  useCallback,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Layers3 } from "lucide-react";
-import {
-  fetchActivationSites,
-  fetchDataset,
-  fetchDiscoveryArtifactReadout,
-  fetchDiscoveryArtifactTarget,
-  fetchEpisode,
-  fetchEpisodeAnnotation,
-  fetchEpisodeNeighbors,
-  fetchEpisodeInteractions,
-  fetchEpisodeMetrics,
-  fetchEpisodeProbes,
-  fetchEpisodesPage,
-  fetchPolicyCalls,
-  saveEpisodeAnnotation,
-} from "../api/dataset";
+import { fetchActivationSites, fetchDataset, fetchDiscoveryArtifactReadout, fetchEpisode, fetchEpisodeAnnotation, fetchEpisodeNeighbors, fetchEpisodeInteractions, fetchEpisodeMetrics, fetchEpisodeProbes, fetchEpisodesPage, fetchPolicyCalls, saveEpisodeAnnotation } from "../api/dataset";
 import type { SelectedPatch } from "../types/dataset";
 import type { InterventionLabSeed } from "../types/interventions";
 import type { WorkbenchManifest } from "../types/workbench";
 import { episodeCapabilityGates, episodeQueryGates } from "./capabilityGating";
 import { EpisodeNavigationBar } from "./episodes/EpisodeNavigation";
-import {
-  ActivationSitePanel,
-  InspectorDebugSections,
-} from "./episodes/InspectorPanels";
+import { ActivationSitePanel, InspectorDebugSections } from "./episodes/InspectorPanels";
 import { EpisodeStageView } from "./episodes/EpisodeStageView";
-import {
-  camerasFromManifest,
-  frameVersionKey,
-} from "./episodes/episodeData";
-import {
-  attentionSiteForSite,
-  axisCountForSite,
-  isAttentionSite,
-} from "./episodes/siteModel";
-import {
-  type EpisodePlotTab,
-  type InspectionMode,
-} from "./episodes/shared";
+import { camerasFromManifest, frameVersionKey } from "./episodes/episodeData";
+import { attentionSiteForSite, axisCountForSite, isAttentionSite } from "./episodes/siteModel";
+import { buildProbeInterventionSeed } from "./episodes/interventionSeed";
+import { type EpisodePlotTab, type InspectionMode } from "./episodes/shared";
 import { useEpisodeInspectorModel } from "./episodes/useEpisodeInspectorModel";
-import {
-  useAdjacentEpisodePrefetch,
-  useEpisodePlayback,
-  useOverlayPrefetch,
-} from "./episodes/useEpisodePrefetch";
+import { useAdjacentEpisodePrefetch, useEpisodePlayback, useOverlayPrefetch } from "./episodes/useEpisodePrefetch";
 import { useEpisodeRouteContext } from "./episodes/useEpisodeRouteContext";
 
 type EpisodesPageProps = {
@@ -410,45 +373,25 @@ export function EpisodesPage({
     if (!onSendToIntervention || !activeSelectedProbeArtifactId) {
       return;
     }
-    const policyCallIndex = selectedProbePolicyCall ?? selectedProbeRef?.policyCall ?? 0;
-    const modelSiteName =
-      selectedProbeSite?.name ?? selectedProbeRef?.modelSiteId ?? activeSelectedSiteName;
-    const tokenSpace = selectedProbeSite?.token_space_id ?? "synthetic.action_suffix";
-    let target: Record<string, unknown> | undefined;
-    try {
-      const response = await fetchDiscoveryArtifactTarget(activeSelectedProbeArtifactId, {
-        model_site: modelSiteName,
-        policy_call: policyCallIndex,
-        token_space: tokenSpace,
-        trace_id: activeTraceId,
-      });
-      target = response.target ?? undefined;
-    } catch {
-      target = undefined;
-    }
-    onSendToIntervention({
-      artifactId: activeSelectedProbeArtifactId,
-      artifactType: "probe_suite",
-      modelFamily: selectedProbeSite?.family ?? "pi05",
-      modelSite: modelSiteName,
-      policyCallIndex,
-      target,
-      title: selectedProbe?.name ? `Intervene with ${selectedProbe.name}` : undefined,
-      tokenSpace,
-      traceId: activeTraceId,
+    const seed = await buildProbeInterventionSeed({
+      activeSelectedProbeArtifactId,
+      activeSelectedSiteName,
+      activeTraceId,
+      selectedProbe,
+      selectedProbePolicyCall,
+      selectedProbeRef,
+      selectedProbeSite,
     });
+    onSendToIntervention(seed);
   }, [
     activeSelectedProbeArtifactId,
     activeSelectedSiteName,
     activeTraceId,
     onSendToIntervention,
-    selectedProbe?.name,
+    selectedProbe,
     selectedProbePolicyCall,
-    selectedProbeRef?.modelSiteId,
-    selectedProbeRef?.policyCall,
-    selectedProbeSite?.family,
-    selectedProbeSite?.name,
-    selectedProbeSite?.token_space_id,
+    selectedProbeRef,
+    selectedProbeSite,
   ]);
 
   useEpisodeRouteContext({

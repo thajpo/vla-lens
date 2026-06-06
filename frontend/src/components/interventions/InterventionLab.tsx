@@ -1,5 +1,5 @@
 import { AlertTriangle, FlaskConical, Play, Save } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { fetchArtifacts, fetchDataset, fetchEpisodesPage } from "../../api/dataset";
 import {
@@ -54,34 +54,6 @@ export function InterventionLab({ initialDraft, onSavedRun }: InterventionLabPro
   const [includeRandomControl, setIncludeRandomControl] = useState(true);
   const [message, setMessage] = useState("");
   const [seedTarget, setSeedTarget] = useState<Record<string, unknown> | undefined>(initialDraft?.target);
-  const initialDraftKey = useMemo(
-    () => [
-      initialDraft?.artifactId ?? "",
-      initialDraft?.traceId ?? "",
-      initialDraft?.policyCallIndex ?? "",
-      initialDraft?.modelSite ?? "",
-      initialDraft?.tokenSpace ?? "",
-    ].join("|"),
-    [
-      initialDraft?.artifactId,
-      initialDraft?.modelSite,
-      initialDraft?.policyCallIndex,
-      initialDraft?.tokenSpace,
-      initialDraft?.traceId,
-    ],
-  );
-
-  useEffect(() => {
-    if (!initialDraft) {
-      return;
-    }
-    setArtifactId(initialDraft.artifactId ?? "");
-    setTraceId(initialDraft.traceId ?? "");
-    setPolicyCallIndex(initialDraft.policyCallIndex ?? 0);
-    setModelSite(initialDraft.modelSite ?? "");
-    setSeedTarget(initialDraft.target);
-    setMessage("");
-  }, [initialDraft, initialDraftKey]);
 
   const activeArtifactId = artifactId || String(probeArtifacts[0]?.artifact_id ?? "");
   const selectedArtifact = probeArtifacts.find(

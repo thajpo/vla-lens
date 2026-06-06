@@ -228,7 +228,9 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
     },
     ("get", "/api/discovery-artifacts/{artifact_id}/target"): {
         "summary": "Discovery artifact target",
-        "description": "Normalizes one discovery artifact into a candidate intervention TargetSpec.",
+        "description": (
+            "Normalizes one discovery artifact into a candidate intervention TargetSpec."
+        ),
     },
     ("get", "/api/episodes"): {
         "summary": "Paged episode index",

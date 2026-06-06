@@ -13,6 +13,13 @@ type EvidencePageProps = {
 };
 
 export function EvidencePage({ interventionSeed, selectedRunId, onRunChange }: EvidencePageProps) {
+  const interventionSeedKey = [
+    interventionSeed?.artifactId ?? "",
+    interventionSeed?.traceId ?? "",
+    interventionSeed?.policyCallIndex ?? "",
+    interventionSeed?.modelSite ?? "",
+    interventionSeed?.tokenSpace ?? "",
+  ].join("|");
   const runs = useQuery({
     queryKey: ["intervention-runs"],
     queryFn: fetchInterventionRuns,
@@ -43,7 +50,11 @@ export function EvidencePage({ interventionSeed, selectedRunId, onRunChange }: E
         onOpenRun={onRunChange}
       />
       <section className="evidence-workspace">
-        <InterventionLab initialDraft={interventionSeed} onSavedRun={onRunChange} />
+        <InterventionLab
+          initialDraft={interventionSeed}
+          key={interventionSeedKey || "manual-intervention"}
+          onSavedRun={onRunChange}
+        />
         {runs.isLoading ? <p className="app-message">Loading saved records.</p> : null}
         {runs.isError ? <p className="app-message">Unable to load saved records.</p> : null}
         {!records.length && !runs.isLoading ? (

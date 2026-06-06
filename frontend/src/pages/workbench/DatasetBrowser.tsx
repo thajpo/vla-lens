@@ -123,7 +123,7 @@ export function DatasetBrowser({
       probePredictionFilter,
       probeSplitFilter,
       profileFilter,
-      selectedProbe?.artifact_id,
+      selectedProbe,
       taskFilter,
     ],
   );
