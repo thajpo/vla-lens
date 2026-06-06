@@ -2,6 +2,7 @@ import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchInterventionRun, fetchInterventionRuns } from "../api/interventions";
 import { EvidenceLibrary } from "../components/interventions/EvidenceLibrary";
+import { InterventionLab } from "../components/interventions/InterventionLab";
 import { InterventionRunDetail } from "../components/interventions/InterventionRunDetail";
 
 type EvidencePageProps = {
@@ -40,6 +41,7 @@ export function EvidencePage({ selectedRunId, onRunChange }: EvidencePageProps) 
         onOpenRun={onRunChange}
       />
       <section className="evidence-workspace">
+        <InterventionLab onSavedRun={onRunChange} />
         {runs.isLoading ? <p className="app-message">Loading saved records.</p> : null}
         {runs.isError ? <p className="app-message">Unable to load saved records.</p> : null}
         {!records.length && !runs.isLoading ? (

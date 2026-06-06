@@ -20,6 +20,56 @@ export type InterventionRunResponse = {
   intervention_run: InterventionRunRecord;
 };
 
+export type InterventionRunSaveResponse = InterventionRunsResponse & {
+  intervention_run: InterventionRunRecord;
+};
+
+export type PreflightCheck = {
+  name: string;
+  status: string;
+  message: string;
+  ok?: boolean | null;
+  warnings: string[];
+  errors: string[];
+  metadata: Record<string, unknown>;
+};
+
+export type InterventionPreflightResult = {
+  status: InterventionStatus;
+  ok: boolean;
+  checks: PreflightCheck[];
+  warnings: string[];
+  errors: string[];
+  runtime_resolution: Record<string, unknown>;
+  missing_capabilities: string[];
+  capability_status: Record<string, boolean>;
+  target_resolution: Record<string, unknown>;
+  action_basis_status: Record<string, unknown>;
+  runtime_environment: Record<string, unknown>;
+};
+
+export type InterventionPreflightResponse = {
+  preflight: InterventionPreflightResult;
+};
+
+export type InterventionLabDraft = {
+  artifactId: string;
+  artifactType: string;
+  basis: string[];
+  controls: string[];
+  datasetFingerprint: string;
+  datasetId: string;
+  modelFamily: string;
+  modelSite: string;
+  operator: string;
+  policyCallIndex: number;
+  runId?: string;
+  strength: number;
+  title?: string;
+  tokenSpace: string;
+  traceId: string;
+};
+
 export type InterventionSummary = {
   claimLabels: string[];
   context: Record<string, unknown>;

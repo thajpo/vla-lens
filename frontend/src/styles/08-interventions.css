@@ -139,9 +139,183 @@
 }
 
 .evidence-workspace {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
   min-width: 0;
   overflow: auto;
   padding: 18px;
+}
+
+.intervention-lab {
+  background: #f8fafc;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-width: 0;
+  padding: 14px;
+}
+
+.intervention-lab-header {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+}
+
+.intervention-lab-header h2 {
+  font-size: 17px;
+  line-height: 1.2;
+  margin: 3px 0 0;
+}
+
+.intervention-lab-header span {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.intervention-lab-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.intervention-lab-actions button {
+  align-items: center;
+  display: inline-flex;
+  gap: 6px;
+  min-height: 34px;
+}
+
+.intervention-lab-actions .primary-button {
+  background: #2563eb;
+  border-color: #2563eb;
+  color: #ffffff;
+}
+
+.intervention-lab-actions .secondary-button {
+  background: #ffffff;
+}
+
+.intervention-lab-actions .primary-button:disabled {
+  background: #bfdbfe;
+  border-color: #bfdbfe;
+  color: #eff6ff;
+}
+
+.intervention-lab-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.lab-field {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+}
+
+.lab-field span {
+  color: #475569;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.lab-field input,
+.lab-field select {
+  min-height: 34px;
+  min-width: 0;
+  width: 100%;
+}
+
+.intervention-lab-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.intervention-lab-toggles label {
+  align-items: center;
+  color: #334155;
+  display: inline-flex;
+  font-size: 13px;
+  font-weight: 700;
+  gap: 6px;
+}
+
+.intervention-preflight-panel {
+  background: #ffffff;
+  border: 1px solid #dbe3ed;
+  border-radius: 8px;
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.intervention-preflight-panel header {
+  align-items: center;
+  display: flex;
+  justify-content: space-between;
+}
+
+.intervention-preflight-panel header strong {
+  color: #64748b;
+  font-size: 12px;
+}
+
+.preflight-checks {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.preflight-check {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.preflight-check span,
+.preflight-check strong {
+  display: block;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.preflight-check span {
+  color: #475569;
+  font-weight: 800;
+}
+
+.preflight-check strong {
+  margin-top: 3px;
+}
+
+.preflight-check p {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.35;
+  margin: 5px 0 0;
+}
+
+.preflight-errors,
+.intervention-lab-message {
+  align-items: center;
+  color: #9a3412;
+  display: flex;
+  font-size: 12px;
+  font-weight: 800;
+  gap: 6px;
+  margin: 0;
 }
 
 .intervention-detail {
@@ -249,6 +423,20 @@
   }
 
   .intervention-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .intervention-lab-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .intervention-lab-actions {
+    justify-content: flex-start;
+  }
+
+  .intervention-lab-grid,
+  .preflight-checks {
     grid-template-columns: 1fr;
   }
 }
