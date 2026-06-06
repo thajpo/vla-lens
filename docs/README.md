@@ -29,6 +29,12 @@ experiment notes when deciding what to run or implement.
 - [model-dataset-sim-agnosticity.md](model-dataset-sim-agnosticity.md):
   target architecture for supporting multiple VLA models, robot datasets, and
   simulators through adapters and dataset capabilities.
+- [intervention-evidence-layer.md](intervention-evidence-layer.md): focused
+  implementation artifact for turning episodes plus discovery artifacts into
+  intervention targets, action/rollout outcomes, and saved evidence.
+- [glossary.md](glossary.md): term definitions for evidence context, targets,
+  runtime hooks, outcomes, controls, evidence labels, and action-basis
+  provenance.
 - [pi05-capture-profiles.md](pi05-capture-profiles.md): what each PI0.5 capture
   profile is for in interpretability terms.
 - [pi05-rocm-capture-env.md](pi05-rocm-capture-env.md): how the dedicated ROCm

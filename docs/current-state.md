@@ -2,7 +2,7 @@
 
 Status: active operational summary.
 
-Last updated: May 26, 2026.
+Last updated: June 6, 2026.
 
 ## Direction
 
@@ -277,16 +277,26 @@ balance, and saved artifact freshness before treating the root as probe-grade.
 
 Do not start by collecting more audit data.
 
-The next useful research implementation should pick one concrete question, for
-example:
+The next useful implementation focus is the
+[Intervention Evidence Layer](intervention-evidence-layer.md): the layer that
+turns existing episodes plus discovery artifacts into intervention targets,
+action/rollout outcome records, and saved evidence.
+
+The first slice should stay narrow:
 
 ```text
-Can an Expert MLP skip transcoder at layer 8 explain a gripper/action change?
-Can an audit_windowed pair show that Expert L8 writes a feature consumed by L9?
-Can object-grounded attention routing predict action direction without causal overclaim?
+TargetSpec
+InterventionSpec
+OutcomeSpec
+typed InterventionRun payload
+LensArtifact(type="intervention_run")
+saved-record tests before live model execution
 ```
 
-Then choose the cheapest profile that supports that question.
+After the saved evidence path exists, choose one concrete PI0.5 runtime question
+for the first live direction intervention. Use the cheapest existing capture
+profile that already supports that question; do not add a new profile unless
+preflight proves a specific missing field.
 
 ## Documentation Hygiene
 

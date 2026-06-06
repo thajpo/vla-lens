@@ -189,6 +189,11 @@ flowchart TB
 
 ## Workflow 6: Offline Patching And Intervention Results
 
+See [intervention-evidence-layer.md](intervention-evidence-layer.md) for the
+focused implementation artifact that turns episodes plus discovery artifacts
+into intervention targets, outcome records, and saved evidence without requiring
+new capture profiles for v0.
+
 ```mermaid
 sequenceDiagram
     participant R as Researcher
