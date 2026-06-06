@@ -20,6 +20,7 @@ from vla_lens.interventions.results import (
     RolloutOutcomeResult,
     TokenOutcomeResult,
 )
+from vla_lens.interventions.runtime import ActionInterventionExecutor, RuntimeTrialOutput
 from vla_lens.interventions.specs import (
     ActionBasisRequest,
     ContextSpec,
@@ -41,6 +42,7 @@ __all__ = [
     "ActionBasisRequest",
     "ActionBasisResolution",
     "ActionBasisResult",
+    "ActionInterventionExecutor",
     "ActionNormalizationSpec",
     "ActionSchemaRef",
     "ActionOutcomeResult",
@@ -61,6 +63,7 @@ __all__ = [
     "RolloutOutcomeResult",
     "RuntimePreflightResult",
     "RuntimeResolution",
+    "RuntimeTrialOutput",
     "TargetSpec",
     "TokenOutcomeResult",
     "TraceRef",
