@@ -30,6 +30,7 @@ TARGET_KINDS = {
     "subspace",
     "head",
     "edge",
+    "path",
     "manual",
 }
 ARTIFACT_DERIVED_TARGET_KINDS = {
@@ -39,13 +40,21 @@ ARTIFACT_DERIVED_TARGET_KINDS = {
     "subspace",
     "head",
     "edge",
+    "path",
 }
 OPERATOR_KINDS = {
     "add_direction",
+    "add_decoder_direction",
+    "attention_patch",
     "project_out_direction",
     "replace",
     "ablate",
     "clamp",
+    "feature_ablate",
+    "feature_boost",
+    "feature_clamp",
+    "head_ablate",
+    "path_patch",
     "source_patch",
     "mean_replace",
 }
@@ -55,11 +64,27 @@ CONTROL_KINDS = {
     "wrong_layer",
     "wrong_time",
     "wrong_token",
+    "wrong_feature",
+    "wrong_head",
+    "wrong_edge",
     "shuffled_donor",
+    "matched_cohort",
+    "placebo_target",
+    "heldout_split",
+    "strength_sweep",
     "source_patch",
     "manual",
 }
-OUTCOME_KINDS = {"action", "rollout", "token", "probe", "metric"}
+OUTCOME_KINDS = {
+    "action",
+    "rollout",
+    "token",
+    "probe",
+    "metric",
+    "activation",
+    "attention",
+    "pathway",
+}
 
 
 @dataclass(frozen=True, slots=True)

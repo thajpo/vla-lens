@@ -12,6 +12,15 @@ from vla_lens.interventions.artifacts import (
     intervention_run_to_lens_artifact,
     intervention_sweep_to_lens_artifact,
 )
+from vla_lens.interventions.families import (
+    ArtifactFamilyContract,
+    artifact_family_for_type,
+    artifact_family_registry,
+    legal_operators_for_artifact,
+    legal_outcomes_for_artifact,
+    required_controls_for_artifact_claim,
+    target_from_discovery_artifact,
+)
 from vla_lens.interventions.preflight import intervention_preflight
 from vla_lens.interventions.results import (
     ActionOutcomeResult,
@@ -57,6 +66,7 @@ __all__ = [
     "ActionInterventionExecutor",
     "ActionNormalizationSpec",
     "ActionSchemaRef",
+    "ArtifactFamilyContract",
     "AggregateOutcomeResult",
     "ActionOutcomeResult",
     "CohortInterventionRequest",
@@ -84,11 +94,17 @@ __all__ = [
     "TraceRef",
     "action_delta_metrics",
     "aggregate_outcome_metric",
+    "artifact_family_for_type",
+    "artifact_family_registry",
     "build_intervention_study",
     "build_intervention_sweep",
     "intervention_preflight",
     "intervention_run_to_lens_artifact",
     "intervention_sweep_to_lens_artifact",
+    "legal_operators_for_artifact",
+    "legal_outcomes_for_artifact",
     "promote_run_to_sweep",
+    "required_controls_for_artifact_claim",
     "resolve_action_basis",
+    "target_from_discovery_artifact",
 ]
