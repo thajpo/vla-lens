@@ -339,7 +339,7 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
     ]:
         assert key in method
     assert method["split"]["group_key"] == "trace_id"
-    assert method["prediction_retention"]["mode"] == "row_level_eval"
+    assert method["prediction_retention"]["mode"] == "row_level_eval_plus_all_source_scoring"
     assert method["source"]["source_episodes"]
     assert method["source"]["source_episodes"][0]["trace_fingerprint"].startswith("sha256:")
     assert method["source"]["source_collection_fingerprint"].startswith("sha256:")
@@ -351,6 +351,9 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
     predictions_path = artifact_dir / "predictions.parquet"
     assert predictions_path.exists()
     predictions = pd.read_parquet(predictions_path)
+    scored_predictions_path = artifact_dir / "scored_predictions.parquet"
+    assert scored_predictions_path.exists()
+    scored_predictions = pd.read_parquet(scored_predictions_path)
     assert {
         "example_id",
         "split",
@@ -364,6 +367,11 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
         "primary_metric",
     }.issubset(predictions.columns)
     assert len(predictions) == saved.artifact.metrics["prediction_row_count"]
+    assert len(scored_predictions) == saved.artifact.metrics["scored_prediction_row_count"]
+    assert set(saved.rows["trace_id"].dropna().astype(str)).issubset(
+        set(scored_predictions["trace_id"].dropna().astype(str))
+    )
+    assert set(scored_predictions["split"].dropna().astype(str)).issuperset({"train", "test"})
     assert "weights" in saved.artifact.arrays
     assert "feature_mean" in saved.artifact.arrays
     for output_path in method["outputs"].values():
@@ -414,8 +422,10 @@ def test_probe_episode_payloads_link_artifacts_to_dataset_traces(tmp_path):
         probe for probe in index_payload["probes"] if probe["name"] == "Episode UI outcome probe"
     )
     assert probe_index["by_trace"][trace_ids[0]]["split_category"] == "train"
+    assert probe_index["by_trace"][trace_ids[0]]["available"] is True
     assert probe_index["by_trace"][trace_ids[2]]["split_category"] == "validation"
     assert probe_index["by_trace"][trace_ids[-1]]["split_category"] == "test"
+    assert probe_index["prediction_summary"]["unscored"] == 0
 
     episode_payload = _episode_probes_payload(reopened, {"trace_id": [trace_ids[-1]]})
     assert episode_payload["trace_id"] == trace_ids[-1]
@@ -430,6 +440,20 @@ def test_probe_episode_payloads_link_artifacts_to_dataset_traces(tmp_path):
     assert {"actual", "predicted", "confidence", "correct"}.issubset(
         episode_probe["episode_summary"]
     )
+    train_episode_payload = _episode_probes_payload(reopened, {"trace_id": [trace_ids[0]]})
+    train_episode_probe = next(
+        probe
+        for probe in train_episode_payload["probes"]
+        if probe["name"] == "Episode UI outcome probe"
+    )
+    assert train_episode_probe["available"] is True
+    assert train_episode_probe["episode_summary"]["best_row"]
+
+
+
+
+
+
 
 
 def test_observational_comparisons_rank_real_probe_candidates(tmp_path):

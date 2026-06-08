@@ -143,6 +143,9 @@ from vla_lens.server.dataset import (
     _workbench_signature_paths,
     _workspaces_payload,
 )
+from vla_lens.server.discovery_artifacts import (
+    discovery_artifact_episode_lens_view_payload as _discovery_artifact_episode_lens_view_payload,
+)
 from vla_lens.server.metrics import (
     _action_metric_metadata,
     _action_norm_payload,
@@ -233,6 +236,7 @@ __all__ = [
     "_api_exception_status",
     "_api_exception_message",
     "_dataset_payload",
+    "_discovery_artifact_episode_lens_view_payload",
     "_counterfactual_pairs_response",
     "_counterfactual_pairs_payload",
     "_counterfactual_metadata_from_manifest",

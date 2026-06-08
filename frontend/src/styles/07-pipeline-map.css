@@ -182,6 +182,17 @@
   grid-template-columns: minmax(246px, max-content) minmax(168px, 0.62fr);
 }
 
+.attention-token-hint {
+  border-left: 2px solid var(--accent);
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+  grid-column: 1 / -1;
+  line-height: 1.35;
+  margin: 0;
+  padding: 3px 0 3px 8px;
+}
+
 .attention-token-ruler {
   border: 1px solid var(--line);
   display: grid;
@@ -377,6 +388,10 @@
 .node-probe-chip-row button.active {
   border-color: #b7791f;
   box-shadow: inset 2px 0 0 #b7791f;
+}
+
+.node-probe-chip-row button.current {
+  background: #fff9e9;
 }
 
 .node-probe-chip-row strong {
@@ -734,7 +749,12 @@
   .probe-suite-grid.lower,
   .panel-grid.two-col,
   .dataset-browser-controls,
+  .dataset-lens-bar,
+  .dataset-lens-strip,
+  .dataset-table-controls,
   .dataset-browser-metrics,
+  .selected-lens-summary,
+  .selected-lens-facts,
   .probe-workbench-grid,
   .episodes-page {
     grid-template-columns: 1fr;
@@ -765,9 +785,17 @@
     grid-column: 1 / -1;
   }
 
-  .ranked-probe-panel {
+  .dataset-lens-select,
+  .selected-lens-title {
     border-right: 0;
     border-bottom: 1px solid #e2e8f0;
+  }
+
+  .dataset-table-controls .dataset-filter,
+  .dataset-table-controls .dataset-search,
+  .dataset-table-controls .text-command {
+    flex-basis: 100%;
+    max-width: none;
   }
 
   .dataset-browser-header {

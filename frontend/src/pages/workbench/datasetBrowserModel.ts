@@ -1,4 +1,4 @@
-import type { DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
+import type { ArtifactRecord, DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
 import type { EpisodeOpenContext } from "./types";
 
 export type CoverageRow = {
@@ -21,6 +21,7 @@ export type ProbeReviewStats = {
   confidentWrong: number;
   heldoutScored: number;
   heldoutWrong: number;
+  highConfidence: number;
   scored: number;
   test: number;
   train: number;
@@ -33,6 +34,21 @@ export type ProbeRankRecord = {
   reasons: string[];
   score: number;
   stats: ProbeReviewStats;
+};
+export type ProbeTrainingDetailRow = {
+  detail?: string;
+  label: string;
+  value: string;
+};
+export type ProbeTrainingDetails = {
+  rows: ProbeTrainingDetailRow[];
+  unavailable: boolean;
+};
+export type ProbeLensSpec = {
+  input: ProbeTrainingDetailRow;
+  objective: ProbeTrainingDetailRow;
+  output: ProbeTrainingDetailRow;
+  prediction: ProbeTrainingDetailRow;
 };
 
 export const PROBE_LIST_LIMIT = 80;
@@ -242,6 +258,7 @@ export function probeReviewStats(probe: ProbeDatasetIndex): ProbeReviewStats {
     confidentWrong: 0,
     heldoutScored: 0,
     heldoutWrong: 0,
+    highConfidence: 0,
     scored: 0,
     test: 0,
     train: 0,
@@ -254,6 +271,7 @@ export function probeReviewStats(probe: ProbeDatasetIndex): ProbeReviewStats {
       confidentWrong: numericProbeStat(probe.review_stats.confidentWrong),
       heldoutScored: numericProbeStat(probe.review_stats.heldoutScored),
       heldoutWrong: numericProbeStat(probe.review_stats.heldoutWrong),
+      highConfidence: numericProbeStat(probe.review_stats.highConfidence),
       scored: numericProbeStat(probe.review_stats.scored),
       test: numericProbeStat(probe.review_stats.test),
       train: numericProbeStat(probe.review_stats.train),
@@ -276,12 +294,15 @@ export function probeReviewStats(probe: ProbeDatasetIndex): ProbeReviewStats {
     if (record.available && heldout) {
       stats.heldoutScored += 1;
     }
+    const confidence = probeConfidenceValue(record);
+    if (confidence !== null && confidence >= 0.8) {
+      stats.highConfidence += 1;
+    }
     if (record.correct === false) {
       stats.wrong += 1;
       if (heldout) {
         stats.heldoutWrong += 1;
       }
-      const confidence = probeConfidenceValue(record);
       if (confidence !== null && confidence >= 0.8) {
         stats.confidentWrong += 1;
       }
@@ -295,14 +316,22 @@ function numericProbeStat(value: number | undefined): number {
 }
 
 export function probeSplitChartRows(probe: ProbeDatasetIndex): Array<{
-  highConfWrong: number;
+  highConfWrong: number | null;
   id: "test" | "train" | "validation";
   label: string;
   scored: number;
   total: number;
-  wrong: number;
+  wrong: number | null;
 }> {
-  const rows = new Map([
+  type ProbeSplitChartRow = {
+    highConfWrong: number | null;
+    id: "test" | "train" | "validation";
+    label: string;
+    scored: number;
+    total: number;
+    wrong: number | null;
+  };
+  const rows = new Map<"test" | "train" | "validation", ProbeSplitChartRow>([
     ["train", { highConfWrong: 0, id: "train" as const, label: "Train", scored: 0, total: 0, wrong: 0 }],
     [
       "validation",
@@ -310,12 +339,31 @@ export function probeSplitChartRows(probe: ProbeDatasetIndex): Array<{
     ],
     ["test", { highConfWrong: 0, id: "test" as const, label: "Test", scored: 0, total: 0, wrong: 0 }],
   ]);
+  if (probe.review_stats_by_split) {
+    for (const [split, stats] of Object.entries(probe.review_stats_by_split)) {
+      const splitKey = canonicalProbeSplitCategory(split);
+      if (splitKey !== "train" && splitKey !== "validation" && splitKey !== "test") {
+        continue;
+      }
+      const row = rows.get(splitKey);
+      if (!row) {
+        continue;
+      }
+      row.total = numericProbeStat(stats.total);
+      row.scored = numericProbeStat(stats.scored);
+      row.wrong = numericProbeStat(stats.wrong);
+      row.highConfWrong = numericProbeStat(stats.highConfWrong);
+    }
+    return [...rows.values()];
+  }
   const records = Object.values(probe.by_trace ?? {});
   if (!records.length) {
     for (const row of rows.values()) {
       const total = Number(probe.split_summary[row.id] ?? 0);
       row.total = Number.isFinite(total) ? total : 0;
       row.scored = row.total;
+      row.wrong = null;
+      row.highConfWrong = null;
     }
     return [...rows.values()];
   }
@@ -333,9 +381,9 @@ export function probeSplitChartRows(probe: ProbeDatasetIndex): Array<{
       row.scored += 1;
     }
     if (record.correct === false) {
-      row.wrong += 1;
+      row.wrong = (row.wrong ?? 0) + 1;
       if ((probeConfidenceValue(record) ?? 0) >= 0.8) {
-        row.highConfWrong += 1;
+        row.highConfWrong = (row.highConfWrong ?? 0) + 1;
       }
     }
   }
@@ -386,7 +434,7 @@ export function probeResultChartRows(probe: ProbeDatasetIndex): Array<{
       id: "high_confidence",
       label: "High confidence",
       total,
-      value: countProbeRecords(probe, (record) => (probeConfidenceValue(record) ?? 0) >= 0.8),
+      value: stats.highConfidence,
     },
     {
       active: (active) => active === "unscored",
@@ -537,6 +585,107 @@ export function probeTrustDetail(stats: ProbeReviewStats | undefined): string {
   return "No split metadata or scored rows were returned";
 }
 
+export function probeScoredCohortDetail(stats: ProbeReviewStats, rankedEpisodeTotal: number): string {
+  if (rankedEpisodeTotal > 0 && rankedEpisodeTotal !== stats.scored) {
+    return `${stats.scored} compatible scored / ${rankedEpisodeTotal} ranked episodes`;
+  }
+  return `${stats.scored} compatible scored episodes`;
+}
+
+export function probeTrainingDetails(
+  probe: ProbeDatasetIndex,
+  artifact?: ArtifactRecord,
+): ProbeTrainingDetails {
+  const method = recordValue(artifact?.method);
+  const input = recordValue(method?.input);
+  const selector = recordValue(input?.selector) ?? recordValue(artifact?.selector);
+  const target = recordValue(method?.target);
+  const probeMethod = recordValue(method?.probe);
+  const split = recordValue(method?.split);
+  const evaluation = recordValue(method?.evaluation);
+  const examples = recordValue(method?.examples);
+  const display = recordValue(artifact?.display);
+
+  const rows = [
+    {
+      detail: featureInputDetail(input, selector, display),
+      label: "X",
+      value: featureInputSummary(selector, input, probe),
+    },
+    {
+      detail: targetDetail(target),
+      label: "Y",
+      value: targetSummary(target, probe),
+    },
+    {
+      detail: modelObjectiveDetail(probeMethod),
+      label: "Objective",
+      value: modelObjectiveLabel(probeMethod, target),
+    },
+    {
+      detail: splitDetail(method, split, evaluation, probeMethod),
+      label: "Split",
+      value: splitSummary(method, split),
+    },
+    {
+      detail: metricDetail(evaluation),
+      label: "Metric",
+      value: metricSummary(evaluation),
+    },
+    {
+      detail: examplesDetail(examples),
+      label: "Rows",
+      value: examplesSummary(examples, input, display),
+    },
+    {
+      detail: probe.best_feature || "No selected feature recorded",
+      label: "Scoring site",
+      value: probe.best_model || "model site unavailable",
+    },
+    {
+      detail: "Training/evaluation metrics stay fixed; compatible new episodes can be scored from saved weights.",
+      label: "Frozen",
+      value: "frozen metrics + refreshable scores",
+    },
+  ];
+
+  return {
+    rows: rows.filter((row) => row.value && row.value !== "-"),
+    unavailable: !method,
+  };
+}
+
+export function probeLensSpec(probe: ProbeDatasetIndex, artifact?: ArtifactRecord): ProbeLensSpec {
+  const method = recordValue(artifact?.method);
+  const input = recordValue(method?.input);
+  const selector = recordValue(input?.selector) ?? recordValue(artifact?.selector);
+  const target = recordValue(method?.target);
+  const probeMethod = recordValue(method?.probe);
+  const evaluation = recordValue(method?.evaluation);
+  return {
+    input: {
+      detail: simpleInputDetail(selector, input),
+      label: "Input",
+      value: simpleInputLabel(selector, input, probe),
+    },
+    objective: {
+      detail: simpleObjectiveDetail(evaluation),
+      label: "Objective",
+      value: simpleObjectiveLabel(probeMethod, target),
+    },
+    output: {
+      detail: simpleOutputDetail(target, probe),
+      label: "Output",
+      value: simpleOutputLabel(probeMethod, target),
+    },
+    prediction: {
+      detail: simplePredictionDetail(target),
+      label: "Prediction",
+      value: simplePredictionLabel(target, probe),
+    },
+  };
+}
+
 export function probeConfidenceValue(record: ProbeEpisodeIndex): number | null {
   return typeof record.confidence === "number" && Number.isFinite(record.confidence)
     ? record.confidence
@@ -564,12 +713,382 @@ export function probeQuestionLabel(probe: ProbeDatasetIndex): string {
   const labels: Record<string, string> = {
     first_moved_is_target: "Was the first moved object the target?",
     outcome: "How did this episode end?",
+    target_contacted: "Did the target object get contacted?",
     target_moved: "Did the target object move?",
   };
   if (target && labels[target]) {
     return labels[target];
   }
   return target ? labelFromSnake(target) : "Probe readout";
+}
+
+function simplePredictionLabel(target: Record<string, unknown> | undefined, probe: ProbeDatasetIndex): string {
+  const name = stringValue(target?.name) || stringValue(target?.resolved_column) || probe.target || "";
+  const labels: Record<string, string> = {
+    first_moved_is_target: "First moved object is target",
+    outcome: "Episode outcome",
+    target_contacted: "Target contacted",
+    target_moved: "Target moved",
+  };
+  return labels[name] ?? (name ? labelFromSnake(name) : "Probe readout");
+}
+
+function simplePredictionDetail(target: Record<string, unknown> | undefined): string {
+  const source = stringValue(target?.source);
+  if (source === "row") {
+    return "episode label";
+  }
+  return source ? `${labelFromSnake(source)} label` : "";
+}
+
+function simpleInputLabel(
+  selector: Record<string, unknown> | undefined,
+  input: Record<string, unknown> | undefined,
+  probe: ProbeDatasetIndex,
+): string {
+  const moduleName = stringValue(selector?.module) || firstString(listValue(input?.model_site_ids)) || probe.best_model || "";
+  const tensor = stringValue(selector?.tensor_type);
+  const prefix = moduleName.includes("expert") ? "Expert" : moduleName.includes("policy") ? "Policy" : "";
+  if (tensor.includes("hidden")) {
+    return compactJoin([prefix, "hidden states"], " ");
+  }
+  if (tensor) {
+    return labelFromSnake(tensor);
+  }
+  return moduleName ? humanModuleLabel(moduleName) : "Activation features";
+}
+
+function simpleInputDetail(
+  selector: Record<string, unknown> | undefined,
+  input: Record<string, unknown> | undefined,
+): string {
+  const selection = recordValue(input?.selection);
+  const tokenKind = stringValue(selector?.token_kind) || stringValue(selection?.token_kind);
+  return compactJoin(
+    [
+      tokenKind ? `${tokenKind} tokens` : "",
+      shortLayerLabel(selector?.layers),
+      stringValue(selector?.generation_step) === "final" || stringValue(selection?.generation_step) === "final"
+        ? "final step"
+        : "",
+    ],
+    " · ",
+  );
+}
+
+function simpleOutputLabel(
+  probeMethod: Record<string, unknown> | undefined,
+  target: Record<string, unknown> | undefined,
+): string {
+  const bestState = recordValue(probeMethod?.best_model_state);
+  const classes = listValue(bestState?.classes);
+  const kind = (stringValue(target?.kind) || stringValue(probeMethod?.type) || stringValue(bestState?.probe_type)).toLowerCase();
+  if (kind.includes("regression") || kind === "continuous") {
+    return "Number";
+  }
+  if (classes.length && classes.length <= 3) {
+    return classes.join(" / ");
+  }
+  if (kind.includes("classification")) {
+    return "Class label";
+  }
+  return kind ? labelFromSnake(kind) : "Prediction";
+}
+
+function simpleOutputDetail(target: Record<string, unknown> | undefined, probe: ProbeDatasetIndex): string {
+  const name = stringValue(target?.resolved_column) || stringValue(target?.name) || probe.target || "";
+  return name ? labelFromSnake(name) : "";
+}
+
+function simpleObjectiveLabel(
+  probeMethod: Record<string, unknown> | undefined,
+  target: Record<string, unknown> | undefined,
+): string {
+  const objective = modelObjectiveLabel(probeMethod, target).replace(" classification", "");
+  return objective.replace(/^\w/, (letter) => letter.toUpperCase());
+}
+
+function simpleObjectiveDetail(evaluation: Record<string, unknown> | undefined): string {
+  const metric = metricSummary(evaluation);
+  return metric === "evaluation metric" ? "" : `metric: ${metric}`;
+}
+
+function humanModuleLabel(moduleName: string): string {
+  if (moduleName.includes("expert")) {
+    return "Expert activations";
+  }
+  return moduleName.replace(/^pi05\./, "").replaceAll(".", " ");
+}
+
+function shortLayerLabel(value: unknown): string {
+  const layers = listValue(value);
+  if (!layers.length) {
+    return "";
+  }
+  if (layers.length > 5) {
+    return `${layers.length} layers`;
+  }
+  return `layers ${rangeOrList(layers)}`;
+}
+
+function featureInputSummary(
+  selector: Record<string, unknown> | undefined,
+  input: Record<string, unknown> | undefined,
+  probe: ProbeDatasetIndex,
+): string {
+  const selection = recordValue(input?.selection);
+  const moduleName =
+    stringValue(selector?.module) ||
+    stringValue(selector?.name) ||
+    firstString(listValue(input?.model_site_ids)) ||
+    probe.best_model ||
+    "activation features";
+  const layers = listLabel(selector?.layers, "layers");
+  const tensor = stringValue(selector?.tensor_type);
+  const tokenKind = stringValue(selector?.token_kind) || stringValue(selection?.token_kind);
+  const policyCalls = listLabel(selector?.policy_calls ?? selection?.policy_calls, "policy calls");
+  return compactJoin(
+    [
+      moduleName,
+      layers,
+      tensor,
+      tokenKind ? `${tokenKind} tokens` : "",
+      policyCalls,
+    ],
+    " · ",
+  );
+}
+
+function featureInputDetail(
+  input: Record<string, unknown> | undefined,
+  selector: Record<string, unknown> | undefined,
+  display: Record<string, unknown> | undefined,
+): string {
+  const selection = recordValue(input?.selection);
+  const featureDim = numberValue(input?.feature_dim) ?? numberValue(display?.feature_dim);
+  const shape = listValue(input?.feature_shape).join(" x ");
+  return compactJoin(
+    [
+      stringValue(selector?.generation_step) || stringValue(selection?.generation_step),
+      stringValue(input?.pooling) || stringValue(selector?.reduce_tokens),
+      featureDim ? `${formatInteger(featureDim)} dims` : "",
+      stringValue(input?.dtype),
+      shape ? `shape ${shape}` : "",
+    ],
+    " · ",
+  );
+}
+
+function targetSummary(target: Record<string, unknown> | undefined, probe: ProbeDatasetIndex): string {
+  const name = stringValue(target?.name) || stringValue(target?.resolved_column) || probe.target || "probe target";
+  const kind = stringValue(target?.kind);
+  return compactJoin([name, kind], " · ");
+}
+
+function targetDetail(target: Record<string, unknown> | undefined): string {
+  const selector = recordValue(target?.selector);
+  return compactJoin(
+    [
+      stringValue(target?.source) ? `source ${stringValue(target?.source)}` : "",
+      stringValue(target?.resolved_column) ? `column ${stringValue(target?.resolved_column)}` : "",
+      stringValue(selector?.object) ? `object ${stringValue(selector?.object)}` : "",
+    ],
+    " · ",
+  );
+}
+
+function modelObjectiveLabel(
+  probeMethod: Record<string, unknown> | undefined,
+  target: Record<string, unknown> | undefined,
+): string {
+  const bestState = recordValue(probeMethod?.best_model_state);
+  const model = (stringValue(probeMethod?.primary_model) || stringValue(bestState?.model)).toLowerCase();
+  const kind = (
+    stringValue(target?.kind) ||
+    stringValue(probeMethod?.type) ||
+    stringValue(bestState?.probe_type)
+  ).toLowerCase();
+  const regression = kind.includes("regression") || kind === "continuous";
+  if (model.includes("linear")) {
+    return regression ? "ridge regression" : "logistic regression classification";
+  }
+  if (model.includes("mlp")) {
+    return regression ? "MLP regression" : "MLP classification";
+  }
+  if (model) {
+    return regression ? `${model} regression` : `${model} classification`;
+  }
+  return regression ? "regression probe" : "classification probe";
+}
+
+function modelObjectiveDetail(probeMethod: Record<string, unknown> | undefined): string {
+  const models = listValue(probeMethod?.models);
+  return compactJoin(
+    [
+      stringValue(probeMethod?.library),
+      stringValue(probeMethod?.trained_on_split) ? `trained on ${stringValue(probeMethod?.trained_on_split)}` : "",
+      models.length ? `candidates ${models.join(", ")}` : "",
+    ],
+    " · ",
+  );
+}
+
+function splitSummary(
+  method: Record<string, unknown> | undefined,
+  split: Record<string, unknown> | undefined,
+): string {
+  return (
+    stringValue(split?.kind) ||
+    stringValue(split?.strategy) ||
+    stringValue(split?.split_kind) ||
+    (listValue(method?.eval_values).length ? "heldout evaluation" : "split metadata")
+  );
+}
+
+function splitDetail(
+  method: Record<string, unknown> | undefined,
+  split: Record<string, unknown> | undefined,
+  evaluation: Record<string, unknown> | undefined,
+  probeMethod: Record<string, unknown> | undefined,
+): string {
+  const evalValues = listValue(split?.eval_values).length
+    ? listValue(split?.eval_values)
+    : listValue(method?.eval_values).length
+      ? listValue(method?.eval_values)
+      : listValue(evaluation?.eval_splits);
+  return compactJoin(
+    [
+      stringValue(split?.train_value) || stringValue(probeMethod?.trained_on_split)
+        ? `train ${stringValue(split?.train_value) || stringValue(probeMethod?.trained_on_split)}`
+        : "",
+      evalValues.length ? `eval ${evalValues.join(", ")}` : "",
+      stringValue(split?.selection_value) ||
+      stringValue(method?.selection_value) ||
+      stringValue(evaluation?.selection_split)
+        ? `select ${
+            stringValue(split?.selection_value) ||
+            stringValue(method?.selection_value) ||
+            stringValue(evaluation?.selection_split)
+          }`
+        : "",
+    ],
+    " · ",
+  );
+}
+
+function metricSummary(evaluation: Record<string, unknown> | undefined): string {
+  const metric = stringValue(evaluation?.primary_metric) || stringValue(evaluation?.metric) || "evaluation metric";
+  return metric.replaceAll("_", " ");
+}
+
+function metricDetail(evaluation: Record<string, unknown> | undefined): string {
+  return compactJoin(
+    [
+      stringValue(evaluation?.primary_split) ? `primary ${stringValue(evaluation?.primary_split)}` : "",
+      stringValue(evaluation?.selection_split) ? `selected on ${stringValue(evaluation?.selection_split)}` : "",
+      stringValue(evaluation?.aggregation),
+      stringValue(evaluation?.grain) ? `${stringValue(evaluation?.grain)} grain` : "",
+    ],
+    " · ",
+  );
+}
+
+function examplesSummary(
+  examples: Record<string, unknown> | undefined,
+  input: Record<string, unknown> | undefined,
+  display: Record<string, unknown> | undefined,
+): string {
+  const rowCount =
+    numberValue(examples?.count) ??
+    numberValue(display?.row_count) ??
+    numberValue(input?.feature_shape, 0);
+  const featureDim = numberValue(input?.feature_dim) ?? numberValue(display?.feature_dim);
+  return compactJoin(
+    [
+      rowCount ? `${formatInteger(rowCount)} rows` : "",
+      featureDim ? `${formatInteger(featureDim)} features` : "",
+    ],
+    " · ",
+  ) || "row metadata unavailable";
+}
+
+function examplesDetail(examples: Record<string, unknown> | undefined): string {
+  const countBySplit = recordValue(examples?.count_by_split);
+  if (!countBySplit) {
+    return "";
+  }
+  return Object.entries(countBySplit)
+    .map(([split, count]) => `${split} ${formatInteger(numberValue(count) ?? 0)}`)
+    .join(" · ");
+}
+
+function recordValue(value: unknown): Record<string, unknown> | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return undefined;
+  }
+  return value as Record<string, unknown>;
+}
+
+function stringValue(value: unknown): string {
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (typeof value === "number" || typeof value === "boolean") {
+    return String(value);
+  }
+  return "";
+}
+
+function numberValue(value: unknown, arrayIndex?: number): number | undefined {
+  const candidate = arrayIndex !== undefined && Array.isArray(value) ? value[arrayIndex] : value;
+  if (typeof candidate === "number" && Number.isFinite(candidate)) {
+    return candidate;
+  }
+  return undefined;
+}
+
+function listValue(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((item) => stringValue(item)).filter(Boolean);
+  }
+  const item = stringValue(value);
+  return item ? [item] : [];
+}
+
+function listLabel(value: unknown, label: string): string {
+  const items = listValue(value);
+  if (!items.length) {
+    return "";
+  }
+  return `${label} ${rangeOrList(items)}`;
+}
+
+function rangeOrList(items: string[]): string {
+  const numbers = items.map((item) => Number(item));
+  const allNumbers = numbers.every((item) => Number.isInteger(item));
+  if (allNumbers && numbers.length > 2) {
+    const sorted = [...numbers].sort((left, right) => left - right);
+    const consecutive = sorted.every((item, index) => index === 0 || item === sorted[index - 1] + 1);
+    if (consecutive) {
+      return `${sorted[0]}-${sorted[sorted.length - 1]}`;
+    }
+  }
+  return items.join(", ");
+}
+
+function firstString(items: string[]): string {
+  return items[0] ?? "";
+}
+
+function compactJoin(parts: Array<string | null | undefined>, separator: string): string {
+  return parts
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean)
+    .join(separator);
+}
+
+function formatInteger(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
 }
 
 export function labelFromSnake(value: string): string {

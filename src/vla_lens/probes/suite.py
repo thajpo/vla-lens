@@ -40,6 +40,7 @@ class ProbeResult:
     primary_metric: str = "score"
     details: dict[str, Any] = field(default_factory=dict)
     prediction_records: list[dict[str, Any]] = field(default_factory=list)
+    all_prediction_records: list[dict[str, Any]] = field(default_factory=list)
     model_state: dict[str, Any] = field(default_factory=dict)
 
     def to_record(self) -> dict[str, Any]:
@@ -57,6 +58,7 @@ class ProbeResult:
             "primary_metric": self.primary_metric,
             "details": self.details,
             "prediction_records": self.prediction_records,
+            "all_prediction_records": self.all_prediction_records,
             "model_state": self.model_state,
         }
 
@@ -101,6 +103,7 @@ def run_probe_suite(
                             feature_name,
                             target,
                             metadata_baseline_columns,
+                            split_column=split_column,
                             eval_value=eval_value,
                             model_name=model_name,
                         )
@@ -113,6 +116,7 @@ def run_probe_suite(
                             eval_mask,
                             feature_name,
                             target,
+                            split_column=split_column,
                             eval_value=eval_value,
                             model_name=model_name,
                         )
@@ -132,6 +136,7 @@ def _classification_result(
     feature_name: str,
     target: str,
     metadata_columns: list[str],
+    split_column: str,
     eval_value: str,
     model_name: str,
 ) -> ProbeResult | None:
@@ -142,11 +147,13 @@ def _classification_result(
     probe = _classification_probe(model_name)
     probe.fit(X[train_mask], y_train)
     y_pred = probe.predict(X[eval_mask])
+    y_all_pred = probe.predict(X)
     score = float(balanced_accuracy_score(y_eval, y_pred))
     accuracy = float(accuracy_score(y_eval, y_pred))
     macro_f1 = float(f1_score(y_eval, y_pred, average="macro", zero_division=0))
     per_class_recall = _per_class_recall(y_eval, y_pred)
     confidence = _prediction_confidence(probe, X[eval_mask])
+    all_confidence = _prediction_confidence(probe, X)
     proba = _prediction_proba(probe, X[eval_mask])
     label_log_loss = _safe_log_loss(y_eval, proba, _probe_classes(probe))
 
@@ -172,6 +179,16 @@ def _classification_result(
         confidence,
         target=target,
         split_value=eval_value,
+        split_column=split_column,
+    )
+    all_prediction_records = _prediction_records(
+        rows.reset_index(drop=True),
+        y,
+        y_all_pred,
+        all_confidence,
+        target=target,
+        split_value=None,
+        split_column=split_column,
     )
     return ProbeResult(
         feature=feature_name,
@@ -205,6 +222,7 @@ def _classification_result(
             ),
         },
         prediction_records=prediction_records,
+        all_prediction_records=all_prediction_records,
         model_state=_linear_model_state(
             probe,
             probe_type="classification",
@@ -221,6 +239,7 @@ def _regression_result(
     eval_mask: np.ndarray,
     feature_name: str,
     target: str,
+    split_column: str,
     eval_value: str,
     model_name: str,
 ) -> ProbeResult | None:
@@ -231,6 +250,7 @@ def _regression_result(
     probe = _regression_probe(model_name)
     probe.fit(X[train_mask], y_train)
     pred = np.asarray(probe.predict(X[eval_mask]), dtype=np.float32)
+    all_pred = np.asarray(probe.predict(X), dtype=np.float32)
     r2 = float(r2_score(y_eval, pred))
     mae = float(mean_absolute_error(y_eval, pred))
     baseline = np.full_like(y_eval, float(np.mean(y_train)), dtype=np.float32)
@@ -244,6 +264,15 @@ def _regression_result(
         pred,
         target=target,
         split_value=eval_value,
+        split_column=split_column,
+    )
+    all_prediction_records = _regression_prediction_records(
+        rows.reset_index(drop=True),
+        y,
+        all_pred,
+        target=target,
+        split_value=None,
+        split_column=split_column,
     )
     return ProbeResult(
         feature=feature_name,
@@ -268,6 +297,7 @@ def _regression_result(
             "test_predictions": prediction_records[:50],
         },
         prediction_records=prediction_records,
+        all_prediction_records=all_prediction_records,
         model_state=_linear_model_state(probe, probe_type="regression", model_name=model_name),
     )
 
@@ -413,13 +443,19 @@ def _prediction_records(
     confidence: np.ndarray,
     *,
     target: str,
-    split_value: str,
+    split_value: str | None,
+    split_column: str,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for index, row in rows.iterrows():
         records.append(
             {
-                **_prediction_join_keys(row, target=target, split_value=split_value),
+                **_prediction_join_keys(
+                    row,
+                    target=target,
+                    split_value=split_value,
+                    split_column=split_column,
+                ),
                 "target_kind": "classification",
                 "target_dim": 0,
                 "target_value": str(y_true[index]),
@@ -474,13 +510,19 @@ def _regression_prediction_records(
     y_pred: np.ndarray,
     *,
     target: str,
-    split_value: str,
+    split_value: str | None,
+    split_column: str,
 ) -> list[dict[str, Any]]:
     records: list[dict[str, Any]] = []
     for index, row in rows.iterrows():
         records.append(
             {
-                **_prediction_join_keys(row, target=target, split_value=split_value),
+                **_prediction_join_keys(
+                    row,
+                    target=target,
+                    split_value=split_value,
+                    split_column=split_column,
+                ),
                 "target_kind": "regression",
                 "target_dim": 0,
                 "target_value": _optional_float(y_true[index]),
@@ -501,7 +543,8 @@ def _prediction_join_keys(
     row: pd.Series,
     *,
     target: str,
-    split_value: str,
+    split_value: str | None,
+    split_column: str,
 ) -> dict[str, Any]:
     trace_id = str(row.get("trace_id", ""))
     policy_call = _optional_int(row.get("policy_call_index", row.get("policy_call")))
@@ -520,9 +563,17 @@ def _prediction_join_keys(
         target,
     ]
     example_id = hashlib.sha256("|".join(parts).encode("utf-8")).hexdigest()[:24]
+    record_split = (
+        split_value
+        if split_value is not None
+        else _optional_str(row.get(split_column))
+        or _optional_str(row.get("split"))
+        or _optional_str(row.get("eval_split"))
+        or ""
+    )
     return {
         "example_id": example_id,
-        "split": split_value,
+        "split": record_split,
         "task_id": _optional_str(row.get("task_id")),
         "target_name": target,
         "target_timestep": timestep,

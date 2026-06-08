@@ -86,6 +86,24 @@ export function isAttentionMapSite(site?: ActivationSite): boolean {
   );
 }
 
+export function attentionKindForSite(site?: ActivationSite): "vlm" | "expert" {
+  const name = String(site?.name ?? "");
+  const segment = String(site?.segment ?? "");
+  const tokenSpace = String(site?.token_space_id ?? "");
+  const querySpace = String(site?.query_token_space_id ?? "");
+  const keySpace = String(site?.key_token_space_id ?? "");
+  if (
+    name.includes(".vlm.") ||
+    segment === "vlm_prefix" ||
+    tokenSpace === "pi05.prefix" ||
+    querySpace === "pi05.prefix" ||
+    (keySpace === "pi05.prefix" && !name.includes(".expert."))
+  ) {
+    return "vlm";
+  }
+  return "expert";
+}
+
 export function siteLayerNumber(site?: ActivationSite): number | null {
   const value = episodeProbeNumber(site?.layer);
   return value === null ? null : value;
@@ -170,6 +188,7 @@ export function probeToneForRefs(refs: ProbeLayerRef[]): ProbeTone {
 
 export function probeLayerTitle(ref: ProbeLayerRef): string {
   return [
+    ref.selected || ref.default ? "Current probe site" : "Probe trained here",
     ref.target || ref.name,
     ref.layer === null ? "" : `L${formatLayerNumber(ref.layer)}`,
     ref.policyCall === null ? "" : `call ${ref.policyCall}`,

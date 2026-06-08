@@ -2,13 +2,14 @@ import { useEffect, useState } from "react";
 import { Eye, EyeOff, Layers3, Pause, Play, RotateCcw } from "lucide-react";
 
 import { episodeVideoUrl } from "../../api/dataset";
-import type { PolicyCall } from "../../types/dataset";
+import type { PolicyCall, TimelineLensAnnotation } from "../../types/dataset";
 
 export function FramePlaybackControls({
   cacheKey,
   fps,
   isPlaying,
   maxTimestep,
+  lensTimelineMarks = [],
   policyCalls,
   onAttentionOverlayToggle,
   onFpsChange,
@@ -25,6 +26,7 @@ export function FramePlaybackControls({
   fps: number;
   isPlaying: boolean;
   maxTimestep: number;
+  lensTimelineMarks?: TimelineLensAnnotation[];
   policyCalls: PolicyCall[];
   onAttentionOverlayToggle: () => void;
   onFpsChange: (fps: number) => void;
@@ -113,6 +115,7 @@ export function FramePlaybackControls({
         timestep={timestep}
         maxTimestep={maxTimestep}
         onChange={onTimestepChange}
+        lensTimelineMarks={lensTimelineMarks}
         policyCalls={policyCalls}
       />
     </div>
@@ -122,11 +125,13 @@ export function FramePlaybackControls({
 function TimelineControl({
   timestep,
   maxTimestep,
+  lensTimelineMarks = [],
   onChange,
   policyCalls = [],
 }: {
   timestep: number;
   maxTimestep: number;
+  lensTimelineMarks?: TimelineLensAnnotation[];
   onChange: (timestep: number) => void;
   policyCalls?: PolicyCall[];
 }) {
@@ -182,8 +187,64 @@ function TimelineControl({
               );
             })}
           </div>
+          {lensTimelineMarks.length ? (
+            <div className="timeline-lens-markers" aria-label="Lens timeline marks">
+              {lensTimelineMarks.map((mark, index) => {
+                const markerTimestep = timestepForLensMark(mark, policyCalls);
+                if (markerTimestep === null) {
+                  return null;
+                }
+                const left = Math.max(0, Math.min(100, (markerTimestep / boundedMax) * 100));
+                const active = Math.abs(draftTimestep - markerTimestep) <= 1;
+                return (
+                  <button
+                    aria-label={mark.label ?? `Jump to lens mark ${index + 1}`}
+                    className={[
+                      "timeline-lens-marker",
+                      active ? "active" : "",
+                      mark.selected ? "selected" : "",
+                      mark.verdict ? `verdict-${String(mark.verdict).replaceAll("_", "-")}` : "",
+                      mark.kind ? `kind-${String(mark.kind).replaceAll("_", "-")}` : "",
+                    ].filter(Boolean).join(" ")}
+                    key={`${mark.kind}-${mark.policy_call_index ?? ""}-${mark.timestep ?? ""}-${index}`}
+                    style={{ left: `${left}%` }}
+                    title={lensMarkTitle(mark, markerTimestep)}
+                    type="button"
+                    onClick={() => commitImmediate(markerTimestep)}
+                  />
+                );
+              })}
+            </div>
+          ) : null}
         </div>
       </div>
     </div>
   );
+}
+
+function timestepForLensMark(
+  mark: TimelineLensAnnotation,
+  policyCalls: PolicyCall[],
+): number | null {
+  if (typeof mark.timestep === "number" && Number.isFinite(mark.timestep)) {
+    return mark.timestep;
+  }
+  if (typeof mark.policy_call_index === "number") {
+    const call = policyCalls.find((item) => Number(item.index) === Number(mark.policy_call_index));
+    if (call) {
+      return call.env_timestep ?? call.segment_start;
+    }
+  }
+  return null;
+}
+
+function lensMarkTitle(mark: TimelineLensAnnotation, timestep: number): string {
+  return [
+    mark.label || mark.kind || "Lens mark",
+    mark.policy_call_index === undefined || mark.policy_call_index === null
+      ? ""
+      : `policy call ${mark.policy_call_index}`,
+    `t=${timestep}`,
+    mark.verdict ? String(mark.verdict).replaceAll("_", " ") : "",
+  ].filter(Boolean).join(" · ");
 }

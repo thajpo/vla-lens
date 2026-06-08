@@ -10,6 +10,7 @@ import {
 } from "../../api/dataset";
 import type { ActivationSite, PolicyCall } from "../../types/dataset";
 import { imageTokenMapQueryKey } from "./episodeData";
+import { attentionKindForSite } from "./siteModel";
 import type { InspectorContext } from "./shared";
 
 type UseEpisodePlaybackParams = {
@@ -163,13 +164,13 @@ export function useOverlayPrefetch({
       });
     }
     if (hasAttentionMaps && hasTokenSpaces && inspectorContext === "attention" && attentionSiteName) {
-      const kind = attentionSite?.name.includes(".vlm.") ? "vlm" : "expert";
+      const kind = attentionKindForSite(attentionSite);
       void queryClient.prefetchQuery({
         queryKey: [
           "attention-map",
           activeTraceId,
           nextPolicyCall.index,
-          inspectorContext,
+          kind,
           attentionSiteName,
           activeGenerationStep,
           attentionHead,
@@ -194,6 +195,7 @@ export function useOverlayPrefetch({
     activeTraceId,
     attentionHead,
     attentionQueryToken,
+    attentionSite,
     attentionSite?.name,
     attentionSiteName,
     clampedFeature,

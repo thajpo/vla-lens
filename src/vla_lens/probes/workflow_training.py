@@ -128,6 +128,12 @@ def train_probe_artifact(
 
     artifact_id = make_artifact_id(name, "probe_suite")
     prediction_records = _prediction_frame(results)
+    scored_prediction_records = _prediction_frame(
+        results,
+        record_column="all_prediction_records",
+    )
+    if scored_prediction_records.empty:
+        scored_prediction_records = prediction_records
     model_arrays, model_state_summary = _best_model_arrays(
         results,
         selection_value=selection_value or test_value,
@@ -136,6 +142,7 @@ def train_probe_artifact(
     outputs = {
         "metrics": str(output_dir / "metrics.json"),
         "predictions": str(output_dir / "predictions.parquet"),
+        "scored_predictions": str(output_dir / "scored_predictions.parquet"),
         "per_split_metrics": str(output_dir / "per_split_metrics.parquet"),
         "per_group_metrics": str(output_dir / "per_group_metrics.parquet"),
         "null_metrics": str(output_dir / "null_metrics.parquet"),
@@ -200,9 +207,18 @@ def train_probe_artifact(
             "metric_definitions": _metric_definitions(results),
         },
         "prediction_retention": {
-            "mode": "row_level_eval",
-            "splits": list(eval_values or [test_value]),
-            "row_count": int(len(prediction_records)),
+            "mode": "row_level_eval_plus_all_source_scoring",
+            "eval_splits": list(eval_values or [test_value]),
+            "eval_row_count": int(len(prediction_records)),
+            "scored_split_values": sorted(
+                str(value)
+                for value in scored_prediction_records.get("split", pd.Series(dtype=object))
+                .dropna()
+                .unique()
+            )
+            if "split" in scored_prediction_records
+            else [],
+            "scored_row_count": int(len(scored_prediction_records)),
         },
         "outputs": {key: value for key, value in outputs.items() if value is not None},
         "split_kind": split_kind,
@@ -226,6 +242,7 @@ def train_probe_artifact(
     )
     metrics["probe_artifact_schema_version"] = PROBE_ARTIFACT_SCHEMA_VERSION
     metrics["prediction_row_count"] = int(len(prediction_records))
+    metrics["scored_prediction_row_count"] = int(len(scored_prediction_records))
     metrics["feature_matrix_fingerprint"] = _array_fingerprint(X)
     per_split_metrics = _per_split_metrics(prediction_records)
     per_group_metrics = _per_group_metrics(
@@ -292,6 +309,10 @@ def train_probe_artifact(
     artifact_dir = _artifact_dir(dataset, saved)
     artifact_dir.mkdir(parents=True, exist_ok=True)
     prediction_records.to_parquet(artifact_dir / "predictions.parquet", index=False)
+    scored_prediction_records.to_parquet(
+        artifact_dir / "scored_predictions.parquet",
+        index=False,
+    )
     per_split_metrics.to_parquet(artifact_dir / "per_split_metrics.parquet", index=False)
     per_group_metrics.to_parquet(artifact_dir / "per_group_metrics.parquet", index=False)
     null_metrics.to_parquet(artifact_dir / "null_metrics.parquet", index=False)

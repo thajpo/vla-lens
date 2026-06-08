@@ -1,46 +1,31 @@
-import { type CSSProperties, type PointerEvent as ReactPointerEvent, useCallback, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Layers3 } from "lucide-react";
 import { fetchActivationSites, fetchDataset, fetchDiscoveryArtifactReadout, fetchEpisode, fetchEpisodeAnnotation, fetchEpisodeNeighbors, fetchEpisodeInteractions, fetchEpisodeMetrics, fetchEpisodeProbes, fetchEpisodesPage, fetchPolicyCalls, saveEpisodeAnnotation } from "../api/dataset";
 import type { SelectedPatch } from "../types/dataset";
-import type { InterventionLabSeed } from "../types/interventions";
-import type { WorkbenchManifest } from "../types/workbench";
 import { episodeCapabilityGates, episodeQueryGates } from "./capabilityGating";
+import { EpisodeColumnResizer } from "./episodes/EpisodeColumnResizer";
+import { EpisodeInspectorColumn } from "./episodes/EpisodeInspectorColumn";
 import { EpisodeNavigationBar } from "./episodes/EpisodeNavigation";
-import { ActivationSitePanel, InspectorDebugSections } from "./episodes/InspectorPanels";
 import { EpisodeStageView } from "./episodes/EpisodeStageView";
 import { camerasFromManifest, frameVersionKey } from "./episodes/episodeData";
-import { attentionSiteForSite, axisCountForSite, isAttentionSite } from "./episodes/siteModel";
+import { attentionSiteForSite, axisCountForSite, inspectionModeForSite, isAttentionSite } from "./episodes/siteModel";
+import { artifactReadoutParams as buildArtifactReadoutParams } from "./episodes/artifactReadoutParams";
 import { buildProbeInterventionSeed } from "./episodes/interventionSeed";
 import { type EpisodePlotTab, type InspectionMode } from "./episodes/shared";
+import { lensTimelineMarks } from "./episodes/episodeLensModel";
 import { useEpisodeInspectorModel } from "./episodes/useEpisodeInspectorModel";
+import { useEpisodeHashSync } from "./episodes/useEpisodeHashSync";
+import { useEpisodeLensView } from "./episodes/useEpisodeLensView";
 import { useAdjacentEpisodePrefetch, useEpisodePlayback, useOverlayPrefetch } from "./episodes/useEpisodePrefetch";
 import { useEpisodeRouteContext } from "./episodes/useEpisodeRouteContext";
+import type { EpisodesPageProps } from "./episodes/EpisodesPageTypes";
 
-type EpisodesPageProps = {
-  cohortReturnHref?: string;
-  initialPolicyCall?: number;
-  initialProbeArtifactId?: string;
-  initialSiteName?: string;
-  manifest?: WorkbenchManifest;
-  initialTraceId?: string;
-  onSendToIntervention?: (seed: InterventionLabSeed) => void;
-  onTraceChange?: (traceId: string, context?: EpisodeTraceChangeContext) => void;
-};
-
-type EpisodeTraceChangeContext = {
-  fromCohort?: boolean;
-  policyCall?: number | null;
-  probeId?: string;
-  siteName?: string;
-};
-
-const EMPTY_ARTIFACTS: Record<string, unknown>[] = [];
-const EMPTY_GENERATION_VALUES: (number | null)[][] = [];
-
-
+const EMPTY_ARTIFACTS: Record<string, unknown>[] = [], EMPTY_GENERATION_VALUES: (number | null)[][] = [];
 export function EpisodesPage({
   cohortReturnHref,
+  initialFeature,
+  initialInspectionMode,
+  initialLensRankingMode,
   initialPolicyCall,
   initialProbeArtifactId = "",
   initialSiteName = "",
@@ -85,10 +70,10 @@ export function EpisodesPage({
   const [showObjectOverlay, setShowObjectOverlay] = useState(true);
   const [showAttentionOverlay, setShowAttentionOverlay] = useState(true);
   const [selectedSiteName, setSelectedSiteName] = useState(initialSiteName);
-  const [inspectionMode, setInspectionMode] = useState<InspectionMode>("features");
+  const [inspectionMode, setInspectionMode] = useState<InspectionMode>(initialInspectionMode ?? "features");
   const [attentionHead, setAttentionHead] = useState<number | null>(null);
   const [attentionQueryToken, setAttentionQueryToken] = useState<number | null>(null);
-  const [feature, setFeature] = useState(0);
+  const [feature, setFeature] = useState(initialFeature ?? 0);
   const [activationClipPercent, setActivationClipPercent] = useState(0);
   const [topChannelCount, setTopChannelCount] = useState(12);
   const [inspectorWidthPct, setInspectorWidthPct] = useState(38);
@@ -96,7 +81,7 @@ export function EpisodesPage({
   const [selectedExpertToken, setSelectedExpertToken] = useState<number | null>(null);
   const [selectedPromptTokenIndex, setSelectedPromptTokenIndex] = useState<number | null>(null);
   const [generationStep, setGenerationStep] = useState(0);
-  const [episodePlotTab, setEpisodePlotTab] = useState<EpisodePlotTab>("probes");
+  const [episodePlotTab, setEpisodePlotTab] = useState<EpisodePlotTab>("episode");
   const [selectedProbeArtifactId, setSelectedProbeArtifactId] = useState(initialProbeArtifactId);
   const appliedRouteContextRef = useRef("");
 
@@ -227,9 +212,11 @@ export function EpisodesPage({
     : camerasFromManifest(manifest, activeTraceId);
   const frameCacheKey = frameVersionKey(episodeDetail.data ?? selectedEpisode, datasetFingerprint);
   const maxTimestep = Math.max(0, Number(selectedEpisode?.length ?? episodeDetail.data?.length ?? 1) - 1);
+  const currentTimestep = Math.min(timestep, maxTimestep);
   const metrics = episodeMetrics.data?.metrics ?? [];
   const {
     activationSlice,
+    activeCall,
     activeGenerationStep,
     activeSelectedProbeArtifactId,
     activeSelectedSiteName,
@@ -279,9 +266,16 @@ export function EpisodesPage({
     timestep,
     topChannelCount,
   });
+  const artifactReadoutParams = buildArtifactReadoutParams({
+    activeSelectedSiteName,
+    activeTraceId,
+    selectedProbePolicyCall,
+    selectedProbeRef,
+    selectedProbeSite,
+  });
   const artifactReadout = useQuery({
-    queryKey: ["discovery-artifact-readout", activeSelectedProbeArtifactId, activeTraceId],
-    queryFn: () => fetchDiscoveryArtifactReadout(activeSelectedProbeArtifactId, activeTraceId),
+    queryKey: ["discovery-artifact-readout", activeSelectedProbeArtifactId, artifactReadoutParams],
+    queryFn: () => fetchDiscoveryArtifactReadout(activeSelectedProbeArtifactId, artifactReadoutParams),
     enabled: Boolean(hasProbeArtifacts && activeTraceId && activeSelectedProbeArtifactId),
     staleTime: 15_000,
   });
@@ -293,12 +287,17 @@ export function EpisodesPage({
     setSelectedPromptTokenIndex(null);
     onTraceChange?.(traceId, {
       fromCohort: true,
+      feature: clampedFeature,
+      inspectionMode,
       policyCall: selectedProbePolicyCall,
       probeId: activeSelectedProbeArtifactId,
+      rankingMode: undefined,
       siteName: selectedProbeSite?.name ?? selectedProbeRef?.modelSiteId ?? "",
     });
   }, [
     activeSelectedProbeArtifactId,
+    clampedFeature,
+    inspectionMode,
     onTraceChange,
     selectedProbePolicyCall,
     selectedProbeRef?.modelSiteId,
@@ -310,7 +309,6 @@ export function EpisodesPage({
     setTimestep,
   ]);
 
-  const currentTimestep = Math.min(timestep, maxTimestep);
   const handleInspectionModeChange = useCallback((mode: InspectionMode) => {
     setInspectionMode(mode);
     if (
@@ -325,6 +323,7 @@ export function EpisodesPage({
     const nextSite = sites.find((site) => site.name === siteName);
     const nextAttentionSite = nextSite ? attentionSiteForSite(sites, nextSite) ?? nextSite : undefined;
     setSelectedSiteName(siteName);
+    setInspectionMode(inspectionModeForSite(nextSite));
     setAttentionHead(null);
     setAttentionQueryToken(
       nextAttentionSite && isAttentionSite(nextAttentionSite) && axisCountForSite(nextAttentionSite, "query_token") > 0
@@ -341,6 +340,7 @@ export function EpisodesPage({
     setAttentionQueryToken,
     setFeature,
     setGenerationStep,
+    setInspectionMode,
     setSelectedExpertToken,
     setSelectedPatch,
     setSelectedPromptTokenIndex,
@@ -399,6 +399,8 @@ export function EpisodesPage({
     activeTraceId,
     activationSitesIsLoading: activationSites.isLoading,
     appliedRouteContextRef,
+    initialFeature,
+    initialInspectionMode,
     initialPolicyCall,
     initialProbeArtifactId,
     initialSiteName,
@@ -458,16 +460,6 @@ export function EpisodesPage({
     "--features-width": `${inspectorWidthPct}%`,
   } as CSSProperties;
   const preloadFrameCount = Math.min(10, Math.max(2, Math.ceil(playbackFps * 0.75)));
-  const handleInspectorResize = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    const root = event.currentTarget.closest(".episodes-workspace");
-    const rect = root?.getBoundingClientRect();
-    if (!rect) {
-      return;
-    }
-    const rightWidth = rect.right - event.clientX;
-    const nextPct = (rightWidth / rect.width) * 100;
-    setInspectorWidthPct(Math.max(30, Math.min(62, nextPct)));
-  };
   const resetPlayback = useCallback(() => {
     setIsPlayingFrames(false);
     setTimestep(0);
@@ -499,6 +491,48 @@ export function EpisodesPage({
     setIsPlayingFrames(false);
     setTimestep(Math.max(0, Math.min(maxTimestep, nextTimestep)));
   }, [maxTimestep, setIsPlayingFrames, setTimestep]);
+  const {
+    activeEpisodeLensView,
+    jumpToLensDefault,
+    lensRankingMode,
+    sendLensToIntervention,
+    setLensRankingMode,
+  } = useEpisodeLensView({
+    activeSelectedProbeArtifactId,
+    activeSelectedSiteName,
+    activeTraceId,
+    clampedFeature,
+    currentTimestep,
+    handleFeatureChange,
+    handleInspectionModeChange,
+    handleSiteChange,
+    hasProbeArtifacts,
+    initialLensRankingMode,
+    jumpToPolicyCall,
+    maxTimestep,
+    onSendToIntervention,
+    policyCallIndex: activeCall?.index,
+    selectedProbePolicyCall,
+    sendProbeToIntervention,
+    setIsPlayingFrames,
+    setTimestep,
+    suppressInitialLensDefault: Boolean(
+      initialSiteName || initialInspectionMode || typeof initialPolicyCall === "number" || typeof initialFeature === "number",
+    ),
+    topChannelCount,
+  });
+
+  useEpisodeHashSync({
+    activeSelectedProbeArtifactId,
+    activeSelectedSiteName,
+    activeTraceId,
+    clampedFeature,
+    cohortReturnHref,
+    isPlayingFrames,
+    lensRankingMode,
+    inspectionMode,
+    policyCallIndex: activeCall?.index,
+  });
 
   return (
     <main className="episodes-workspace episode-main" style={workspaceStyle}>
@@ -551,6 +585,7 @@ export function EpisodesPage({
               fps: playbackFps,
               cacheKey: frameCacheKey,
               isPlaying: isPlayingFrames,
+              lensTimelineMarks: lensTimelineMarks(activeEpisodeLensView),
               maxTimestep,
               policyCalls: policyCallList,
               showAttentionOverlay,
@@ -595,93 +630,68 @@ export function EpisodesPage({
               onJumpToPolicyCall: jumpToPolicyCall,
               onProbeChange: setSelectedProbeArtifactId,
             }}
+            showProbePanel={!activeSelectedProbeArtifactId || activeEpisodeLensView?.available === false}
           />
 
-          <button
-            aria-label="Resize model inspector"
-            className="episode-column-resizer"
-            type="button"
-            onPointerDown={(event) => {
-              event.currentTarget.setPointerCapture(event.pointerId);
-              handleInspectorResize(event);
-            }}
-            onPointerMove={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                handleInspectorResize(event);
-              }
-            }}
-            onPointerUp={(event) => {
-              if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-                event.currentTarget.releasePointerCapture(event.pointerId);
-              }
-            }}
-            onDoubleClick={() => setInspectorWidthPct(38)}
-          />
+          <EpisodeColumnResizer onResizePctChange={setInspectorWidthPct} />
 
-          <section className="inspector">
-            <div className="head">
-              <div className="inspector-title">
-                <Layers3 size={17} />
-                <span>Model Inspector</span>
-              </div>
-            </div>
-            <div className="body">
-              {hasModelSites ? (
-                <ActivationSitePanel
-                  architecture={architecture}
-                  sites={sites}
-                  activationSlice={activationSlice.data}
-                  feature={clampedFeature}
-                  cameraOverlay={cameraOverlay}
-                  episodeProbes={hasProbeArtifacts ? episodeProbes.data : undefined}
-                  selectedProbeArtifactId={activeSelectedProbeArtifactId}
-                  patchFeatures={patchFeatures.data}
-                  expertTokenActivations={expertTokenActivations.data}
-                  expertTokenDetails={expertTokenDetails.data}
-                  activationSliceFetching={activationSlice.isFetching}
-                  activationSlicePlaceholder={activationSlice.isPlaceholderData}
-                  activationClipPercent={activationClipPercent}
-                  attentionHead={attentionHead}
-                  attentionQueryToken={attentionQueryToken}
-                  selectedPatch={selectedPatch}
-                  selectedExpertToken={effectiveSelectedExpertToken}
-                  selectedPromptToken={selectedPromptTokenIndex}
-                  onFeatureChange={handleFeatureChange}
-                  generationStep={activeGenerationStep}
-                  generationStepCount={generationStepCount}
-                  expertTokenSiteName={expertTokenSiteName}
-                  inspectorContext={inspectorContext}
-                  inspectionMode={inspectionMode}
-                  onGenerationStepChange={handleGenerationStepChange}
-                  onAttentionHeadChange={setAttentionHead}
-                  onAttentionQueryTokenChange={setAttentionQueryToken}
-                  onExpertTokenChange={setSelectedExpertToken}
-                  onPatchSelect={handlePatchSelect}
-                  onPromptTokenSelect={handlePromptTokenSelect}
-                  onActivationClipPercentChange={setActivationClipPercent}
-                  onInspectionModeChange={handleInspectionModeChange}
-                  onProbeSelect={setSelectedProbeArtifactId}
-                  onTopChannelCountChange={setTopChannelCount}
-                  selectedSite={selectedSite}
-                  selectedSiteName={activeSelectedSiteName}
-                  topChannelCount={topChannelCount}
-                  onSiteChange={handleSiteChange}
-                />
-              ) : (
-                <div className="empty-state">No model-site overlay is available for this dataset.</div>
-              )}
-              {hasPolicyCalls || hasActionGeneration ? (
-                <InspectorDebugSections
-                  artifacts={episodeDetail.data?.artifacts ?? EMPTY_ARTIFACTS}
-                  calls={policyCallList}
-                  generationValues={generation.data?.values ?? EMPTY_GENERATION_VALUES}
-                  inspectorContext={inspectorContext}
-                  onTimestepChange={setTimestep}
-                  timestep={currentTimestep}
-                />
-              ) : null}
-            </div>
-          </section>
+          <EpisodeInspectorColumn
+            hasModelSites={hasModelSites}
+            showDebugSections={hasPolicyCalls || hasActionGeneration}
+            activationSitePanel={{
+              architecture,
+              sites,
+              activationSlice: activationSlice.data,
+              feature: clampedFeature,
+              cameraOverlay,
+              episodeLensView: activeEpisodeLensView,
+              episodeProbes: hasProbeArtifacts ? episodeProbes.data : undefined,
+              selectedProbeArtifactId: activeSelectedProbeArtifactId,
+              patchFeatures: patchFeatures.data,
+              expertTokenActivations: expertTokenActivations.data,
+              expertTokenDetails: expertTokenDetails.data,
+              activationSliceFetching: activationSlice.isFetching,
+              activationSlicePlaceholder: activationSlice.isPlaceholderData,
+              activationClipPercent,
+              attentionHead,
+              attentionQueryToken,
+              selectedPatch,
+              selectedExpertToken: effectiveSelectedExpertToken,
+              selectedPromptToken: selectedPromptTokenIndex,
+              onFeatureChange: handleFeatureChange,
+              lensRankingMode,
+              generationStep: activeGenerationStep,
+              generationStepCount,
+              expertTokenSiteName,
+              inspectorContext,
+              inspectionMode,
+              onGenerationStepChange: handleGenerationStepChange,
+              onAttentionHeadChange: setAttentionHead,
+              onAttentionQueryTokenChange: setAttentionQueryToken,
+              onExpertTokenChange: setSelectedExpertToken,
+              onPatchSelect: handlePatchSelect,
+              onPromptTokenSelect: handlePromptTokenSelect,
+              onActivationClipPercentChange: setActivationClipPercent,
+              onInspectionModeChange: handleInspectionModeChange,
+              onLensDefaultJump: jumpToLensDefault,
+              onLensRankingModeChange: setLensRankingMode,
+              onLensSendToIntervention: sendLensToIntervention,
+              onProbeSelect: setSelectedProbeArtifactId,
+              onTopChannelCountChange: setTopChannelCount,
+              selectedSite,
+              selectedSiteName: activeSelectedSiteName,
+              topChannelCount,
+              onSiteChange: handleSiteChange,
+            }}
+            debugSections={{
+              artifacts: episodeDetail.data?.artifacts ?? EMPTY_ARTIFACTS,
+              calls: policyCallList,
+              generationValues: generation.data?.values ?? EMPTY_GENERATION_VALUES,
+              inspectorContext,
+              onTimestepChange: setTimestep,
+              timestep: currentTimestep,
+            }}
+          />
         </>
       ) : null}
     </main>

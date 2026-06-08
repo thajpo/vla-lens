@@ -57,6 +57,7 @@ from vla_lens.server import (
     _create_target_object_probe_payload,
     _dataset_diagnostics_payload,
     _dataset_payload,
+    _discovery_artifact_episode_lens_view_payload,
     _episode_interactions_payload,
     _episode_metrics_payload,
     _episode_probes_payload,

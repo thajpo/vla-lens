@@ -68,7 +68,10 @@ def indexed_dataset_payload(
         "policy_calls": _numeric_sum(episodes, "policy_call_count") > 0,
         "model_sites": len(model_sites) > 0,
         "token_spaces": _numeric_sum(episodes, "token_space_count") > 0,
-        "image_token_maps": _column_has_value(model_sites, "token_kind", "image_patch"),
+        "image_token_maps": _has_indexed_image_token_maps(
+            model_sites,
+            _numeric_sum(episodes, "token_space_count"),
+        ),
         "attention_maps": _column_has_value(model_sites, "tensor_type", "attention"),
         "action_chunks": "action_chunks" in array_names,
         "action_generation": "generation_actions" in array_names,
@@ -511,6 +514,21 @@ def _numeric_sum(frame: pd.DataFrame, column: str) -> float:
 
 def _column_has_value(frame: pd.DataFrame, column: str, value: str) -> bool:
     return column in frame and bool((frame[column].astype(str) == value).any())
+
+
+def _has_indexed_image_token_maps(model_sites: pd.DataFrame, token_space_count: float) -> bool:
+    if model_sites.empty or "axes" not in model_sites or "token_kind" not in model_sites:
+        return False
+    token_kinds = model_sites["token_kind"].astype(str)
+    axes_text = model_sites["axes"].astype(str)
+    has_token_channel_site = axes_text.str.contains("token", na=False) & axes_text.str.contains(
+        "channel", na=False
+    )
+    has_direct_image_site = token_kinds.isin({"image", "image_patch", "image_patches"})
+    has_prefix_site_with_layout = token_kinds.isin({"prefix", "image"}) & (token_space_count > 0)
+    return bool(
+        (has_token_channel_site & (has_direct_image_site | has_prefix_site_with_layout)).any()
+    )
 
 
 def _query_value(query: Mapping[str, list[str]], name: str) -> str:

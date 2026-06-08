@@ -10,6 +10,7 @@ import {
   attentionSiteForSite,
   axisCountForSite,
   isAttentionSite,
+  inspectionModeForSite,
 } from "./siteModel";
 import type { InspectionMode } from "./shared";
 
@@ -18,6 +19,8 @@ type UseEpisodeRouteContextParams = {
   activeTraceId: string;
   activationSitesIsLoading: boolean;
   appliedRouteContextRef: MutableRefObject<string> | RefObject<string>;
+  initialFeature?: number;
+  initialInspectionMode?: InspectionMode;
   initialPolicyCall?: number;
   initialProbeArtifactId: string;
   initialSiteName: string;
@@ -45,6 +48,8 @@ export function useEpisodeRouteContext({
   activeTraceId,
   activationSitesIsLoading,
   appliedRouteContextRef,
+  initialFeature,
+  initialInspectionMode,
   initialPolicyCall,
   initialProbeArtifactId,
   initialSiteName,
@@ -67,11 +72,19 @@ export function useEpisodeRouteContext({
   setTimestep,
 }: UseEpisodeRouteContextParams) {
   useEffect(() => {
-    if (!initialProbeArtifactId && typeof initialPolicyCall !== "number" && !initialSiteName) {
+    if (
+      !initialProbeArtifactId &&
+      typeof initialPolicyCall !== "number" &&
+      typeof initialFeature !== "number" &&
+      !initialInspectionMode &&
+      !initialSiteName
+    ) {
       return;
     }
     const routeKey = [
       activeTraceId,
+      initialFeature ?? "",
+      initialInspectionMode ?? "",
       initialProbeArtifactId,
       initialPolicyCall ?? "",
       initialSiteName,
@@ -87,10 +100,18 @@ export function useEpisodeRouteContext({
     }
     const targetPolicyCall =
       typeof initialPolicyCall === "number" ? initialPolicyCall : selectedProbePolicyCall;
-    const targetCallReady =
-      typeof targetPolicyCall !== "number" ||
-      policyCalls.some((call) => Number(call.index) === targetPolicyCall);
-    if (!targetCallReady) {
+    const targetCall = typeof targetPolicyCall === "number"
+      ? policyCalls.find((call) => Number(call.index) === targetPolicyCall)
+      : undefined;
+    if (typeof targetPolicyCall === "number" && !targetCall) {
+      return;
+    }
+    const targetCallTimestep = targetCall?.env_timestep ?? targetCall?.segment_start;
+    if (
+      typeof targetCallTimestep === "number" &&
+      targetCallTimestep > maxTimestep &&
+      maxTimestep <= 0
+    ) {
       return;
     }
     if ((initialSiteName || initialProbeArtifactId) && activationSitesIsLoading) {
@@ -101,14 +122,14 @@ export function useEpisodeRouteContext({
       : selectedProbeSite;
     const targetSiteName = targetSite?.name;
     const targetCallIndex = typeof targetPolicyCall === "number" ? targetPolicyCall : undefined;
-    appliedRouteContextRef.current = routeKey;
     const frame = window.requestAnimationFrame(() => {
+      appliedRouteContextRef.current = routeKey;
       if (targetSiteName) {
         const nextSite = sites.find((site) => site.name === targetSiteName);
         const nextAttentionSite = nextSite
           ? attentionSiteForSite(sites, nextSite) ?? nextSite
           : undefined;
-        setInspectionMode("features");
+        setInspectionMode(initialInspectionMode ?? inspectionModeForSite(nextSite));
         setSelectedSiteName(targetSiteName);
         setAttentionHead(null);
         setAttentionQueryToken(
@@ -118,17 +139,20 @@ export function useEpisodeRouteContext({
             ? 0
             : null,
         );
-        setFeature(0);
+        setFeature(initialFeature ?? 0);
         setSelectedPatch(null);
         setSelectedExpertToken(null);
         setSelectedPromptTokenIndex(null);
         setGenerationStep(0);
+      } else if (typeof initialFeature === "number") {
+        setFeature(initialFeature);
+      } else if (initialInspectionMode) {
+        setInspectionMode(initialInspectionMode);
       }
       if (typeof targetCallIndex === "number") {
-        const call = policyCalls.find((item) => Number(item.index) === Number(targetCallIndex));
-        if (call) {
+        if (targetCall) {
           setIsPlayingFrames(false);
-          setTimestep(Math.max(0, Math.min(maxTimestep, call.env_timestep ?? call.segment_start)));
+          setTimestep(Math.max(0, Math.min(maxTimestep, targetCall.env_timestep ?? targetCall.segment_start)));
         }
       }
     });
@@ -138,6 +162,8 @@ export function useEpisodeRouteContext({
     activeTraceId,
     activationSitesIsLoading,
     appliedRouteContextRef,
+    initialFeature,
+    initialInspectionMode,
     initialPolicyCall,
     initialProbeArtifactId,
     initialSiteName,

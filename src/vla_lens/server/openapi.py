@@ -226,6 +226,41 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
         "description": "Returns what one discovery artifact says about a selected trace.",
         "parameters": [TRACE_ID_PARAM],
     },
+    ("get", "/api/discovery-artifacts/{artifact_id}/episode-lens-view"): {
+        "summary": "Discovery artifact episode LensView",
+        "description": (
+            "Returns an episode-conditioned view model that annotates and ranks the "
+            "existing model inspector for one discovery artifact."
+        ),
+        "parameters": [
+            TRACE_ID_PARAM,
+            TIMESTEP_PARAM | {"required": False},
+            _query_param(
+                "policy_call_index",
+                "Optional current policy-call index from the episode inspector.",
+                schema={"type": "integer", "minimum": 0},
+            ),
+            _query_param(
+                "model_site_id",
+                "Optional current model-site name from the episode inspector.",
+            ),
+            FEATURE_PARAM | {"required": False},
+            _query_param(
+                "ranking_mode",
+                "Feature ranking mode for the inspector.",
+                schema={
+                    "type": "string",
+                    "enum": ["probe_contribution", "raw_activation"],
+                    "default": "probe_contribution",
+                },
+            ),
+            _query_param(
+                "top_k",
+                "Maximum feature rows to return.",
+                schema={"type": "integer", "minimum": 1, "maximum": 100, "default": 25},
+            ),
+        ],
+    },
     ("get", "/api/discovery-artifacts/{artifact_id}/target"): {
         "summary": "Discovery artifact target",
         "description": (
@@ -510,6 +545,7 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
     },
 }
 
+
 def _openapi_schema(app: FastAPI) -> dict[str, Any]:
     if app.openapi_schema:
         return app.openapi_schema
@@ -550,9 +586,7 @@ def _append_openapi_parameters(
 ) -> None:
     existing = operation.setdefault("parameters", [])
     seen = {
-        (str(item.get("in")), str(item.get("name")))
-        for item in existing
-        if isinstance(item, dict)
+        (str(item.get("in")), str(item.get("name"))) for item in existing if isinstance(item, dict)
     }
     for parameter in parameters:
         key = (str(parameter.get("in")), str(parameter.get("name")))

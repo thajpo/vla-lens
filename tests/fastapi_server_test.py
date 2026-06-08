@@ -42,6 +42,7 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/discovery-artifact-families", "get"),
     ("/api/discovery-artifacts/{artifact_id}/episodes", "get"),
     ("/api/discovery-artifacts/{artifact_id}/readout", "get"),
+    ("/api/discovery-artifacts/{artifact_id}/episode-lens-view", "get"),
     ("/api/discovery-artifacts/{artifact_id}/target", "get"),
     ("/api/episodes", "get"),
     ("/api/episodes/{trace_id}", "get"),

@@ -1,5 +1,8 @@
 import { getJson, noStore, postJson } from "./client";
-import { discoveryArtifactEpisodeSearchParams } from "./discoveryArtifactParams";
+import {
+  discoveryArtifactEpisodeSearchParams,
+  episodeLensViewSearchParams,
+} from "./discoveryArtifactParams";
 import type {
   ActivationSitesResponse,
   ArtifactDetailResponse,
@@ -11,6 +14,7 @@ import type {
   DatasetPayload,
   DiscoveryArtifactEpisodesResponse,
   DiscoveryArtifactFamiliesResponse,
+  EpisodeLensViewResponse,
   DiscoveryArtifactReadoutResponse,
   DiscoveryArtifactTargetResponse,
   EpisodeAnnotation,
@@ -62,8 +66,22 @@ export type DiscoveryArtifactTargetParams = {
   model_site?: string;
   policy_call?: number | string | null;
   site?: string;
-  token_space?: string;
+  token_space?: string | null;
   trace_id?: string;
+};
+
+export type DiscoveryArtifactReadoutParams = DiscoveryArtifactTargetParams & {
+  trace_id: string;
+};
+
+export type EpisodeLensViewParams = {
+  trace_id: string;
+  timestep?: number | string | null;
+  policy_call_index?: number | string | null;
+  model_site_id?: string | null;
+  feature?: number | string | null;
+  ranking_mode?: "probe_contribution" | "raw_activation";
+  top_k?: number | string | null;
 };
 
 export function fetchDataset(): Promise<DatasetPayload> {
@@ -199,6 +217,7 @@ export function fetchProbeEvidence(
 }
 
 export { discoveryArtifactEpisodeSearchParams };
+export { episodeLensViewSearchParams };
 
 export function fetchDiscoveryArtifactFamilies(): Promise<DiscoveryArtifactFamiliesResponse> {
   return getJson<DiscoveryArtifactFamiliesResponse>(
@@ -221,11 +240,28 @@ export function fetchDiscoveryArtifactEpisodes(
 
 export function fetchDiscoveryArtifactReadout(
   artifactId: string,
-  traceId: string,
+  params: DiscoveryArtifactReadoutParams,
 ): Promise<DiscoveryArtifactReadoutResponse> {
-  const search = new URLSearchParams({ trace_id: traceId });
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "") {
+      continue;
+    }
+    search.set(key, String(value));
+  }
   return getJson<DiscoveryArtifactReadoutResponse>(
     `/api/discovery-artifacts/${encodeURIComponent(artifactId)}/readout?${search.toString()}`,
+    freshJsonInit(),
+  );
+}
+
+export function fetchDiscoveryArtifactEpisodeLensView(
+  artifactId: string,
+  params: EpisodeLensViewParams,
+): Promise<EpisodeLensViewResponse> {
+  const search = episodeLensViewSearchParams(params);
+  return getJson<EpisodeLensViewResponse>(
+    `/api/discovery-artifacts/${encodeURIComponent(artifactId)}/episode-lens-view?${search.toString()}`,
     freshJsonInit(),
   );
 }

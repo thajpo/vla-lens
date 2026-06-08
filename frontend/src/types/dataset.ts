@@ -78,6 +78,7 @@ export type ProbeDatasetIndex = {
     confidentWrong?: number;
     heldoutScored?: number;
     heldoutWrong?: number;
+    highConfidence?: number;
     scored?: number;
     test?: number;
     train?: number;
@@ -85,6 +86,19 @@ export type ProbeDatasetIndex = {
     validation?: number;
     wrong?: number;
   };
+  review_stats_by_split?: Record<
+    string,
+    {
+      correct?: number;
+      highConfidence?: number;
+      highConfWrong?: number;
+      scored?: number;
+      total?: number;
+      unknown?: number;
+      unscored?: number;
+      wrong?: number;
+    }
+  >;
   by_trace?: Record<string, ProbeEpisodeIndex>;
 };
 
@@ -173,6 +187,302 @@ export type DiscoveryArtifactTargetResponse = {
   family: DiscoveryArtifactFamily | DiscoveryArtifactUnavailableFamily;
   reason: string;
   target: Record<string, unknown> | null;
+};
+
+export type LensFamily =
+  | "probe_suite"
+  | "sae_feature"
+  | "attribution"
+  | "transcoder_feature"
+  | "crosscoder_feature"
+  | "intervention_result"
+  | string;
+
+export type EpisodeInspectorSelection = {
+  trace_id: string;
+  timestep?: number | null;
+  policy_call_index?: number | null;
+  model_site_id?: string | null;
+  layer?: number | null;
+  feature?: number | null;
+  mode?: string | null;
+};
+
+export type LensReadoutSummary = {
+  predicted?: string | boolean | number | null;
+  actual?: string | boolean | number | null;
+  confidence?: number | null;
+  score?: number | null;
+  correct?: boolean | null;
+  split?: string | null;
+  verdict:
+    | "correct"
+    | "wrong"
+    | "high_conf_wrong"
+    | "ambiguous"
+    | "unscored"
+    | "unknown"
+    | string;
+  policy_call_index?: number | null;
+  timestep?: number | null;
+  model_site_id?: string | null;
+};
+
+export type PipelineLensAnnotation = {
+  model_site_id: string;
+  site_id?: string | null;
+  layer?: number | null;
+  role: "source" | "target" | "intermediate" | "selected" | "unavailable" | string;
+  trained?: boolean;
+  available?: boolean;
+  selected?: boolean;
+  default?: boolean;
+  severity?: "neutral" | "correct" | "wrong" | "high_conf_wrong" | "missing" | string;
+  label?: string | null;
+  short_label?: string | null;
+};
+
+export type TimelineLensAnnotation = {
+  timestep?: number | null;
+  policy_call_index?: number | null;
+  kind: string;
+  value?: string | boolean | number | null;
+  verdict?: LensReadoutSummary["verdict"];
+  label?: string | null;
+  selected?: boolean;
+};
+
+export type OverlayLensAnnotation = {
+  kind: string;
+  target_id?: string | null;
+  feature?: number | null;
+  value?: number | null;
+  label?: string | null;
+};
+
+export type LensCallout = {
+  severity: "info" | "warning" | "error" | string;
+  text: string;
+};
+
+export type LensAnnotations = {
+  pipeline: PipelineLensAnnotation[];
+  timeline: TimelineLensAnnotation[];
+  overlays: OverlayLensAnnotation[];
+  callouts: LensCallout[];
+};
+
+export type LensInspectorRanking = {
+  id: string;
+  label: string;
+  kind: "feature_ranking" | string;
+  available: boolean;
+  unavailable_reason?: string | null;
+  basis?: string | null;
+  normalization?: string | null;
+  units?: string | null;
+  default?: boolean;
+  model_site_id?: string | null;
+  policy_call_index?: number | null;
+  row_count?: number | null;
+};
+
+export type LensInspectorDirectives = {
+  default_mode?: string | null;
+  default_ranking_id?: string | null;
+  recommended_selection?: EpisodeInspectorSelection | null;
+  pipeline_marks: PipelineLensAnnotation[];
+  timeline_marks: TimelineLensAnnotation[];
+  overlay_marks: OverlayLensAnnotation[];
+  rankings: LensInspectorRanking[];
+  callouts: (LensCallout & { applies_to?: string | null })[];
+};
+
+export type InterventionSeedActionPayload = {
+  trace_id: string;
+  artifact_id: string;
+  family: "probe_suite" | string;
+  probe_id?: string;
+  policy_call_index: number;
+  timestep?: number | null;
+  model_site_id: string;
+  layer?: number | null;
+  feature?: number | null;
+  suggested_operator?: "ablate" | "steer" | "replace" | "patch" | string;
+};
+
+export type LensAction =
+  | {
+      kind: "jump_to_lens_default";
+      label: string;
+      enabled: boolean;
+      selection: EpisodeInspectorSelection | null;
+    }
+  | {
+      kind: "send_to_intervention";
+      label: string;
+      enabled: boolean;
+      seed: InterventionSeedActionPayload | null;
+      unavailable_reason?: string | null;
+    }
+  | {
+      kind: "compare_raw_activations" | "open_artifact_debug" | string;
+      label: string;
+      enabled: boolean;
+    };
+
+export type ProbeFeatureContribution = {
+  feature: number;
+  weight?: number | null;
+  activation?: number | null;
+  normalized_activation?: number | null;
+  contribution?: number | null;
+  abs_contribution?: number | null;
+  rank: number;
+  abs_rank?: number | null;
+  raw_activation_abs_rank?: number | null;
+  direction: "positive" | "negative" | "neutral" | "unknown" | string;
+  sign_label?: string | null;
+  supports_class?: string | boolean | number | null;
+  opposes_class?: string | boolean | number | null;
+  label?: string | null;
+  overlay_available?: boolean;
+  feature_ref?: {
+    model_site_id: string;
+    feature: number;
+  };
+};
+
+export type RawActivationRankingRow = {
+  feature: number;
+  activation: number;
+  abs_activation?: number | null;
+  rank: number;
+  feature_ref?: {
+    model_site_id?: string;
+    feature: number;
+  };
+};
+
+export type ProbeSiteReadout = {
+  available: boolean;
+  unavailable_reason?: string | null;
+  model_site_id?: string | null;
+  layer?: number | null;
+  policy_call_index?: number | null;
+  timestep?: number | null;
+  ranking_basis: string;
+  ranking_order?: string;
+  top_k?: number;
+  total_features?: number | null;
+  units?: string | null;
+  normalization?: string | null;
+  site_readout_available?: boolean;
+  feature_contributors_available: boolean;
+  feature_contributors_unavailable_reason?: string | null;
+  probe_contribution_ranking_available: boolean;
+  raw_activation_ranking_available: boolean;
+  temporal_readout_available?: boolean;
+  intervention_seed_available?: boolean;
+  feature_contributors: ProbeFeatureContribution[];
+  raw_activation_ranking?: RawActivationRankingRow[];
+  default_feature?: number | null;
+  logit_reconstruction?: Record<string, number | null> | null;
+};
+
+export type ProbeSourceSite = {
+  model_site_id: string;
+  site_id?: string | null;
+  layer?: number | null;
+  tensor_type?: string | null;
+  token_kind?: string | null;
+  token_space_id?: string | null;
+  trained: boolean;
+  available: boolean;
+  selected: boolean;
+  default: boolean;
+  best?: boolean;
+  policy_calls?: number[];
+  label?: string | null;
+  short_label?: string | null;
+};
+
+export type ProbeSuiteLensPayload = {
+  probe: {
+    suite_id: string;
+    probe_id: string;
+    probe_key?: string | null;
+    probe_name: string;
+    prediction_target?: string | null;
+    input_space?: string | null;
+    output_space?: string | null;
+    objective?: string | null;
+    trained_layers: number[];
+    trained_token_kinds?: string[];
+    trained_policy_call_scope?: string | null;
+    training_spec?: {
+      model?: string | null;
+      probe_type?: string | null;
+      target_column?: string | null;
+      feature_space?: string | null;
+      layers?: number[];
+      policy_calls?: "all" | "unknown" | number[] | { start: number; end: number } | string | null;
+      token_kinds?: string[];
+      split_column?: string | null;
+    };
+    classification?: Record<string, unknown>;
+    metric?: {
+      name?: string | null;
+      value?: number | null;
+      split?: string | null;
+    };
+  };
+  source_scope: {
+    default_policy_call_index?: number | null;
+    default_model_site_id?: string | null;
+    default_layer?: number | null;
+    default_feature?: number | null;
+    sites: ProbeSourceSite[];
+  };
+  episode_readout: LensReadoutSummary;
+  site_readout: ProbeSiteReadout;
+  temporal_readout?: {
+    available?: boolean;
+    temporal_readout_available?: boolean;
+    unavailable_reason?: string | null;
+    rows: Record<string, unknown>[];
+  } | null;
+};
+
+export type EpisodeLensView = {
+  schema_version: "episode_lens_view.v1";
+  family: LensFamily;
+  available: boolean;
+  unavailable_reason?: string | null;
+  lens: {
+    artifact_id: string;
+    artifact_type: string;
+    family: LensFamily;
+    display_name: string;
+    spec: Record<string, string | number | boolean | null | undefined>;
+  };
+  episode: {
+    trace_id: string;
+    dataset_id?: string | null;
+    episode_index?: number | null;
+  };
+  current_selection: EpisodeInspectorSelection;
+  resolved_selection: EpisodeInspectorSelection;
+  recommended_selection: EpisodeInspectorSelection | null;
+  readout?: LensReadoutSummary | null;
+  annotations: LensAnnotations;
+  inspector?: LensInspectorDirectives;
+  view: ProbeSuiteLensPayload | Record<string, unknown>;
+  actions: LensAction[];
+};
+
+export type EpisodeLensViewResponse = {
+  view: EpisodeLensView;
 };
 
 export type CounterfactualPairMember = {

@@ -106,7 +106,7 @@
 }
 
 .dataset-episode-table-wrap {
-  max-height: calc(100vh - 410px);
+  max-height: calc(100vh - 300px);
   min-height: 260px;
   overflow: auto;
 }

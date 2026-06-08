@@ -128,11 +128,14 @@ export type ProbeLayerRef = {
   artifactId: string;
   confidence?: number | null;
   correct?: boolean | null;
+  default?: boolean;
   layer: number | null;
   modelSiteId?: string;
   name: string;
   policyCall: number | null;
   predicted?: string | boolean | number | null;
+  selected?: boolean;
   target?: string | null;
+  trained?: boolean;
 };
 export type ProbeTone = "correct" | "incorrect" | "unscored";

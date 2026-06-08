@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+from vla_lens.probes.score_cache import (
+    ProbeScoreCacheResult,
+    refresh_all_probe_score_caches,
+    refresh_probe_score_cache,
+)
 from vla_lens.probes.suite import ProbeResult, run_probe_suite
 from vla_lens.probes.workflow import (
     SavedProbeSuite,
@@ -13,11 +18,14 @@ from vla_lens.probes.workflow import (
 )
 
 __all__ = [
+    "ProbeScoreCacheResult",
     "ProbeResult",
     "SavedProbeSuite",
     "dump_probe_spec",
     "load_probe_spec",
     "normalize_probe_spec",
+    "refresh_all_probe_score_caches",
+    "refresh_probe_score_cache",
     "run_probe_suite",
     "train_probe_artifact",
     "train_probe_artifact_from_spec",

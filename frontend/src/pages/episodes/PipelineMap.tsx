@@ -31,6 +31,7 @@ export function ModelPipelineMap({
   architecture,
   feature,
   inspectionMode,
+  lensContextPanel,
   onInspectionModeChange,
   onProbeSelect,
   onSiteChange,
@@ -44,6 +45,7 @@ export function ModelPipelineMap({
   architecture?: ArchitectureMetadata;
   feature: number;
   inspectionMode: InspectionMode;
+  lensContextPanel?: ReactNode;
   onInspectionModeChange: (mode: InspectionMode) => void;
   onProbeSelect: (artifactId: string) => void;
   onSiteChange: (siteName: string) => void;
@@ -146,6 +148,7 @@ export function ModelPipelineMap({
         selectedProbeArtifactId={selectedProbeArtifactId}
         selectedSiteName={selectedSiteName}
       />
+      {lensContextPanel ? <div className="pipeline-lens-context">{lensContextPanel}</div> : null}
       {topChannelPanel ? <div className="pipeline-top-channels">{topChannelPanel}</div> : null}
     </div>
   );
@@ -219,6 +222,7 @@ function PipelineSelectedNodePanel({
                 <button
                   className={inspectionMode === mode ? "active" : ""}
                   key={mode}
+                  title={inspectionModeHint(mode)}
                   type="button"
                   onClick={() => chooseMode(mode)}
                 >
@@ -299,6 +303,7 @@ function NodeProbeChips({
             className={[
               probeRefTone(ref),
               ref.artifactId === selectedProbeArtifactId ? "active" : "",
+              ref.selected || ref.default ? "current" : "",
             ].filter(Boolean).join(" ")}
             key={ref.artifactId}
             title={probeLayerTitle(ref)}
@@ -308,8 +313,8 @@ function NodeProbeChips({
             <strong>{ref.target || ref.name}</strong>
             <span>
               {[
-                ref.predicted === undefined ? "" : `pred ${formatProbeValue(ref.predicted)}`,
-                ref.confidence === null || ref.confidence === undefined ? "" : `conf ${formatMaybeNumber(ref.confidence)}`,
+                ref.predicted === undefined ? "" : `Prediction ${formatProbeValue(ref.predicted)}`,
+                ref.confidence === null || ref.confidence === undefined ? "" : `confidence ${formatMaybeNumber(ref.confidence)}`,
               ].filter(Boolean).join(" · ")}
             </span>
           </button>
@@ -385,10 +390,21 @@ function PipelineLegend({ probeCount }: { probeCount: number }) {
       <span><i className="legend-swatch action" />Head / state</span>
       <span><i className="legend-swatch missing" />Uncaptured</span>
       <span><i className="legend-swatch active" />Current layer</span>
-      {probeCount ? <span><i className="legend-probe source" />Probe source</span> : null}
-      {probeCount ? <span><i className="legend-probe selected" />Selected probe source</span> : null}
+      {probeCount ? <span><i className="legend-probe source" />Probe trained here</span> : null}
+      {probeCount ? <span><i className="legend-probe selected" />Current probe site</span> : null}
     </div>
   );
+}
+
+function inspectionModeHint(mode: InspectionMode): string {
+  const hints: Record<InspectionMode, string> = {
+    advanced: "Show every captured tensor for this node. Useful for debugging the capture, not the default research path.",
+    attention: "Inspect attention heads and query tokens, then project their key mass onto the episode view.",
+    computation: "Inspect MLP, normalization, and conditioning captures inside the layer.",
+    features: "Inspect hidden-state features/channels and their image or token overlays.",
+    saved_state: "Inspect cached keys, values, masks, positions, and RoPE state.",
+  };
+  return hints[mode];
 }
 
 function PipelineMapModal({
@@ -590,12 +606,20 @@ function PipelineMap2D({
               inspectionMode,
             );
             const nodeProbeRefs = probeRefsForNode(entry.node, probeLayerRefs);
-            const nodeHasSelectedProbe = Boolean(
+            const nodeHasActiveProbe = Boolean(
               selectedProbeArtifactId &&
                 nodeProbeRefs.some((ref) => ref.artifactId === selectedProbeArtifactId),
             );
+            const nodeHasSelectedProbe = Boolean(
+              selectedProbeArtifactId &&
+                nodeProbeRefs.some(
+                  (ref) =>
+                    ref.artifactId === selectedProbeArtifactId &&
+                    (ref.selected || ref.default),
+                ),
+            );
             const markerRefs =
-              selectedProbeArtifactId && nodeHasSelectedProbe
+              selectedProbeArtifactId && nodeHasActiveProbe
                 ? nodeProbeRefs.filter((ref) => ref.artifactId === selectedProbeArtifactId)
                 : nodeProbeRefs;
             return (

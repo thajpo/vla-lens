@@ -14,6 +14,14 @@ from vla_lens.interventions.families import (
     target_from_discovery_artifact,
 )
 from vla_lens.server.common import _json_parse, _jsonable
+from vla_lens.server.episode_lens_common import (
+    _episode_lens_selection_from_query,
+    _first_present,
+)
+from vla_lens.server.episode_lens_probe import (
+    _probe_suite_episode_lens_view,
+    _unavailable_episode_lens_view,
+)
 from vla_lens.server.indexed import _query_value, _read_table, indexed_episodes_payload
 from vla_lens.server.indexed_probes import indexed_episode_probes_payload
 from vla_lens.traces import TraceDataset
@@ -21,7 +29,10 @@ from vla_lens.traces import TraceDataset
 
 def discovery_artifact_families_payload() -> dict[str, Any]:
     """Return discovery-artifact family contracts exposed to the dashboard."""
-    families = [contract.to_dict() for contract in artifact_family_registry()]
+    families = [
+        {"available": True, **contract.to_dict(), "reason": ""}
+        for contract in artifact_family_registry()
+    ]
     return {"families": families, "total": len(families)}
 
 
@@ -109,15 +120,14 @@ def discovery_artifact_readout_payload(
     )
     best_row = best_row if isinstance(best_row, Mapping) else {}
     summary = (
-        probe.get("episode_summary")
-        if isinstance(probe.get("episode_summary"), Mapping)
-        else {}
+        probe.get("episode_summary") if isinstance(probe.get("episode_summary"), Mapping) else {}
     )
     policy_call = _first_present(
+        _query_value(query, "policy_call") or _query_value(query, "policy_call_index"),
         best_row.get("policy_call_index"),
-        query.get("policy_call", [None])[0],
     )
     model_site = _first_present(
+        _query_value(query, "model_site") or _query_value(query, "site"),
         best_row.get("model_site_id"),
         best_row.get("model"),
         artifact.get("best_model"),
@@ -151,7 +161,7 @@ def discovery_artifact_readout_payload(
             "policy_call_index": policy_call,
             "model_site": model_site,
             "feature": feature,
-            "token_space": best_row.get("token_space_id"),
+            "token_space": _query_value(query, "token_space") or best_row.get("token_space_id"),
         },
         "rows": probe.get("rows") if isinstance(probe.get("rows"), list) else [],
         "row_count": int(probe.get("row_count") or 0),
@@ -195,6 +205,58 @@ def discovery_artifact_target_payload(
         "available": True,
         "reason": "",
         "target": target.to_dict(),
+    }
+
+
+def discovery_artifact_episode_lens_view_payload(
+    dataset: TraceDataset,
+    artifact_id: str,
+    query: Mapping[str, list[str]],
+) -> dict[str, Any]:
+    """Return an episode-conditioned view model for one discovery artifact."""
+    trace_id = _query_value(query, "trace_id") or ""
+    if not trace_id:
+        raise KeyError("Missing query parameter: trace_id")
+    artifact = _discovery_artifact_payload(dataset.root, artifact_id)
+    family = _family_payload(artifact)
+    current_selection = _episode_lens_selection_from_query(trace_id, query)
+    if not family["available"]:
+        return {
+            "view": _unavailable_episode_lens_view(
+                dataset,
+                artifact,
+                family,
+                trace_id,
+                current_selection,
+                family["reason"],
+            )
+        }
+    if artifact.get("artifact_type") != "probe_suite":
+        return {
+            "view": _unavailable_episode_lens_view(
+                dataset,
+                artifact,
+                family,
+                trace_id,
+                current_selection,
+                (
+                    f"Discovery artifact type '{artifact.get('artifact_type')}' does not "
+                    "support episode LensViews yet."
+                ),
+            )
+        }
+
+    artifact_object = dataset.load_artifact(artifact_id)
+    return {
+        "view": _probe_suite_episode_lens_view(
+            dataset,
+            artifact,
+            artifact_object,
+            family,
+            trace_id,
+            current_selection,
+            query,
+        )
     }
 
 
@@ -242,7 +304,8 @@ def _probe_episode_query(
     mapped: dict[str, list[str]] = {key: list(value) for key, value in query.items()}
     mapped["probe_id"] = [artifact_id]
     mapped.setdefault("sort", ["probe_interest"])
-    if _query_value(query, "rank_by") in {"interest", "", None}:
+    rank_by = _query_value(query, "rank_by")
+    if rank_by == "interest" or (rank_by in {"", None} and not _query_value(query, "sort")):
         mapped["sort"] = ["probe_interest"]
     for generic, probe_specific in (
         ("split", "probe_split"),
@@ -289,11 +352,100 @@ def _unavailable_readout(
     }
 
 
-def _first_present(*values: Any) -> Any:
-    for value in values:
-        if value not in {None, ""}:
-            return value
-    return None
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 def _is_missing(value: Any) -> bool:
@@ -306,6 +458,7 @@ def _is_missing(value: Any) -> bool:
 
 __all__ = [
     "discovery_artifact_episodes_payload",
+    "discovery_artifact_episode_lens_view_payload",
     "discovery_artifact_families_payload",
     "discovery_artifact_readout_payload",
     "discovery_artifact_target_payload",

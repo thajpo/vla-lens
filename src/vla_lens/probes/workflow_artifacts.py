@@ -215,10 +215,14 @@ def _probe_split(
     return out
 
 
-def _prediction_frame(results: pd.DataFrame) -> pd.DataFrame:
+def _prediction_frame(
+    results: pd.DataFrame,
+    *,
+    record_column: str = "prediction_records",
+) -> pd.DataFrame:
     records: list[dict[str, Any]] = []
     for result_index, result in results.iterrows():
-        for record in result.get("prediction_records") or []:
+        for record in result.get(record_column) or []:
             row = dict(record)
             row["result_index"] = int(result_index)
             row["feature"] = str(result.get("feature"))
@@ -577,7 +581,7 @@ def _probe_data_quality(
 
 
 def _records(frame: pd.DataFrame) -> list[dict[str, Any]]:
-    hidden_columns = {"prediction_records", "model_state"}
+    hidden_columns = {"all_prediction_records", "prediction_records", "model_state"}
     return [
         {
             str(key): _json_scalar(value)

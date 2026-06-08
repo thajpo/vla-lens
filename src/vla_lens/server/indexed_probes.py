@@ -110,6 +110,7 @@ def _probe_summary_payload(artifact: Mapping[str, Any], rows: pd.DataFrame) -> d
         "unscored": max(0, _episode_count_from_rows(rows) - prediction_summary.get("scored", 0)),
         "correct": prediction_summary.get("correct", 0),
         "wrong": prediction_summary.get("incorrect", 0),
+        "highConfidence": _count_probe_rows(rows, min_confidence=0.8),
         "heldoutScored": _count_probe_rows(rows, heldout=True, scored=True),
         "heldoutWrong": _count_probe_rows(rows, heldout=True, correct=False),
         "confidentWrong": _count_probe_rows(rows, correct=False, min_confidence=0.8),
@@ -132,6 +133,7 @@ def _probe_summary_payload(artifact: Mapping[str, Any], rows: pd.DataFrame) -> d
         "split_summary": split_summary,
         "prediction_summary": prediction_summary,
         "review_stats": stats,
+        "review_stats_by_split": _probe_split_review_stats(rows),
     }
 
 
@@ -264,6 +266,26 @@ def _count_probe_rows(
     if min_confidence is not None and "confidence" in rows:
         mask = mask & (pd.to_numeric(rows["confidence"], errors="coerce") >= min_confidence)
     return int(mask.sum())
+
+
+def _probe_split_review_stats(rows: pd.DataFrame) -> dict[str, dict[str, int]]:
+    if rows.empty or "split_category" not in rows:
+        return {}
+    out: dict[str, dict[str, int]] = {}
+    for split, group in rows.groupby(rows["split_category"].astype(str), dropna=False, sort=True):
+        split_key = split or "unknown"
+        prediction_summary = _probe_prediction_summary(group)
+        out[split_key] = {
+            "total": int(len(group)),
+            "scored": prediction_summary.get("scored", 0),
+            "unscored": prediction_summary.get("unscored", 0),
+            "correct": prediction_summary.get("correct", 0),
+            "wrong": prediction_summary.get("incorrect", 0),
+            "unknown": prediction_summary.get("unknown", 0),
+            "highConfidence": _count_probe_rows(group, min_confidence=0.8),
+            "highConfWrong": _count_probe_rows(group, correct=False, min_confidence=0.8),
+        }
+    return out
 
 
 def _probe_review_score(probe: Mapping[str, Any]) -> float:

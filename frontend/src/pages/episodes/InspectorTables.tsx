@@ -1,6 +1,15 @@
 import type { ActivationSliceResponse } from "../../types/dataset";
 import { ACTIVATION_CLIP_OPTIONS } from "./shared";
 
+export type FeatureTableRow = {
+  detail?: string | null;
+  direction?: string | null;
+  index: number;
+  label?: string | null;
+  title?: string | null;
+  value: number;
+};
+
 export function DetailItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="detail-item">
@@ -28,6 +37,7 @@ export function FeatureTable({
   stale = false,
   title,
   updating = false,
+  valueHeader = "Value",
 }: {
   activeFeature: number;
   clip?: ActivationSliceResponse["clip"];
@@ -41,11 +51,12 @@ export function FeatureTable({
   reserveHeight?: boolean;
   rowLimit?: number;
   rowLimitOptions?: readonly number[];
-  rows: { index: number; value: number }[];
+  rows: FeatureTableRow[];
   selectable?: boolean;
   stale?: boolean;
   title: string;
   updating?: boolean;
+  valueHeader?: string;
 }) {
   const showClipControl = Boolean(onClipPercentChange);
   const showRowLimitControl = Boolean(onRowLimitChange && rowLimitOptions?.length);
@@ -108,15 +119,19 @@ export function FeatureTable({
           <thead>
             <tr>
               <th>{indexHeader}</th>
-              <th>Value</th>
+              <th>{valueHeader}</th>
             </tr>
           </thead>
           <tbody>
             {visibleRows.map((row) => (
               <tr
-                className={rowsAreSelectable ? "selectable-row" : ""}
+                className={[
+                  rowsAreSelectable ? "selectable-row" : "",
+                  row.index === activeFeature ? "active" : "",
+                ].filter(Boolean).join(" ")}
                 key={row.index}
                 onClick={rowsAreSelectable ? () => onFeatureChange(row.index) : undefined}
+                title={row.title ?? undefined}
               >
                 <td>
                   {rowsAreSelectable ? (
@@ -139,7 +154,9 @@ export function FeatureTable({
                   )}
                 </td>
                 <td className={row.value >= 0 ? "signed-positive" : "signed-negative"}>
-                  {row.value.toFixed(4)}
+                  <span>{row.value.toFixed(4)}</span>
+                  {row.label ? <small className="feature-row-label">{row.label}</small> : null}
+                  {row.detail ? <small className="feature-row-detail">{row.detail}</small> : null}
                 </td>
               </tr>
             ))}

@@ -123,11 +123,17 @@
   outline-offset: 3px;
 }
 
-.timeline-call-markers {
+.timeline-call-markers,
+.timeline-lens-markers {
   inset: 50% 8px auto;
   pointer-events: none;
   position: absolute;
   z-index: 2;
+}
+
+.timeline-lens-markers {
+  inset: 50% 8px auto;
+  z-index: 3;
 }
 
 .timeline-call-marker {
@@ -149,6 +155,45 @@
   box-shadow:
     0 0 0 1px var(--paper),
     0 0 0 3px rgba(47, 111, 127, 0.22);
+}
+
+.timeline-lens-marker {
+  background: #d6a84f;
+  border: 1px solid var(--paper);
+  box-shadow: 0 0 0 1px rgba(23, 32, 42, 0.22);
+  cursor: pointer;
+  height: 12px;
+  min-height: 12px;
+  padding: 0;
+  pointer-events: auto;
+  position: absolute;
+  transform: translate(-50%, -50%) rotate(45deg);
+  width: 12px;
+}
+
+.timeline-lens-marker.verdict-wrong {
+  background: #f97316;
+}
+
+.timeline-lens-marker.verdict-high-conf-wrong {
+  background: #dc2626;
+}
+
+.timeline-lens-marker.verdict-correct {
+  background: #2f6f7f;
+}
+
+.timeline-lens-marker.active {
+  box-shadow:
+    0 0 0 2px var(--paper),
+    0 0 0 5px rgba(216, 169, 79, 0.32);
+}
+
+.timeline-lens-marker.selected {
+  height: 16px;
+  min-height: 16px;
+  width: 16px;
+  z-index: 4;
 }
 
 .inspector .episode-tool-panel {

@@ -3,6 +3,7 @@ import type {
   ActivationSite,
   ActivationSliceResponse,
   ArchitectureMetadata,
+  EpisodeLensView,
   EpisodeProbesResponse,
   ExpertTokenActivationsResponse,
   ExpertTokenDetailsResponse,
@@ -12,14 +13,20 @@ import type {
   SelectedPatch,
 } from "../../types/dataset";
 import {
-  TOP_CHANNEL_COUNT_OPTIONS,
   type CameraOverlayPayload,
   type InspectionMode,
   type InspectorContext,
 } from "./shared";
 import { ExpertTokenFlow } from "./ExpertPanels";
-import { DetailItem, FeatureTable } from "./InspectorTables";
+import { LensCompactReadout, TopChannelPanel } from "./LensInspectorPanels";
+import { DetailItem } from "./InspectorTables";
 import { ModelPipelineMap } from "./PipelineMap";
+import {
+  lensFeatureRows,
+  probeLayerReferencesFromLensView,
+  probeSiteReadoutFromLensView,
+  type LensRankingMode,
+} from "./episodeLensModel";
 import { probeLayerReferences } from "./episodeProbeModel";
 import {
   attentionSiteForSite,
@@ -51,6 +58,7 @@ function ActivationSitePanelImpl({
   attentionHead,
   attentionQueryToken,
   cameraOverlay,
+  episodeLensView,
   episodeProbes,
   generationStep,
   generationStepCount,
@@ -68,6 +76,9 @@ function ActivationSitePanelImpl({
   onFeatureChange,
   onInspectionModeChange,
   onPatchSelect,
+  onLensDefaultJump,
+  onLensRankingModeChange,
+  onLensSendToIntervention,
   onProbeSelect,
   onPromptTokenSelect,
   onTopChannelCountChange,
@@ -81,6 +92,7 @@ function ActivationSitePanelImpl({
   selectedSite,
   selectedSiteName,
   topChannelCount,
+  lensRankingMode,
 }: {
   activationSlice?: ActivationSliceResponse;
   activationSliceFetching: boolean;
@@ -90,6 +102,7 @@ function ActivationSitePanelImpl({
   attentionHead: number | null;
   attentionQueryToken: number | null;
   cameraOverlay?: CameraOverlayPayload;
+  episodeLensView?: EpisodeLensView;
   episodeProbes?: EpisodeProbesResponse;
   generationStep: number;
   generationStepCount: number;
@@ -106,6 +119,9 @@ function ActivationSitePanelImpl({
   onActivationClipPercentChange: (clipPercent: number) => void;
   onFeatureChange: (feature: number) => void;
   onInspectionModeChange: (mode: InspectionMode) => void;
+  onLensDefaultJump: () => void;
+  onLensRankingModeChange: (mode: LensRankingMode) => void;
+  onLensSendToIntervention: () => void;
   onPatchSelect: (patch: SelectedPatch | null) => void;
   onProbeSelect: (artifactId: string) => void;
   onPromptTokenSelect: (tokenIndex: number | null) => void;
@@ -120,6 +136,7 @@ function ActivationSitePanelImpl({
   selectedSite?: ActivationSite;
   selectedSiteName: string;
   topChannelCount: number;
+  lensRankingMode: LensRankingMode;
 }) {
   const selectedSiteHasFeatures = isFeatureActivationSite(selectedSite);
   const siteFeatureCount = channelCountForSite(selectedSite);
@@ -127,7 +144,12 @@ function ActivationSitePanelImpl({
     ? Math.max(0, siteFeatureCount || activationSlice?.feature_count || 0)
     : 0;
   const topRows = selectedSiteHasFeatures ? activationSlice?.top_abs ?? [] : [];
-  const probeLayerRefs = probeLayerReferences(episodeProbes);
+  const lensProbeLayerRefs = probeLayerReferencesFromLensView(episodeLensView);
+  const probeLayerRefs = lensProbeLayerRefs.length
+    ? lensProbeLayerRefs
+    : probeLayerReferences(episodeProbes);
+  const lensSiteReadout = probeSiteReadoutFromLensView(episodeLensView);
+  const lensRows = lensFeatureRows(episodeLensView, lensRankingMode);
   const channelFeatureControl =
     inspectionMode === "features" && selectedSiteHasFeatures ? (
       <ChannelFeatureControl
@@ -157,8 +179,13 @@ function ActivationSitePanelImpl({
         feature={feature}
         onActivationClipPercentChange={onActivationClipPercentChange}
         onFeatureChange={onFeatureChange}
+        lensRankingMode={lensRankingMode}
+        lensRows={lensRows}
+        lensSiteReadout={lensSiteReadout}
+        onLensRankingModeChange={onLensRankingModeChange}
         onTopChannelCountChange={onTopChannelCountChange}
         selectedSiteHasFeatures={selectedSiteHasFeatures}
+        selectedSiteName={selectedSiteName}
         topChannelCount={topChannelCount}
         topRows={topRows}
       />
@@ -170,6 +197,13 @@ function ActivationSitePanelImpl({
         feature={feature}
         axisControls={attentionAxisControls ?? channelFeatureControl}
         inspectionMode={inspectionMode}
+        lensContextPanel={
+          <LensCompactReadout
+            view={episodeLensView}
+            onJumpDefault={onLensDefaultJump}
+            onSendToIntervention={onLensSendToIntervention}
+          />
+        }
         onInspectionModeChange={onInspectionModeChange}
         onProbeSelect={onProbeSelect}
         probeLayerRefs={probeLayerRefs}
@@ -256,8 +290,9 @@ function ChannelFeatureControl({
     <div className="channel-feature-control">
       <div className="feature-control">
         <label>
-          Channel {displayedFeature}
+          Feature {displayedFeature}
           <input
+            title="Choose which feature/channel to project onto the episode image or inspect in the ranking table."
             max={maxFeature}
             min={0}
             type="range"
@@ -270,7 +305,8 @@ function ChannelFeatureControl({
           />
         </label>
         <input
-          aria-label="Channel index"
+          aria-label="Feature index"
+          title="Feature/channel index within the selected model site."
           max={maxFeature}
           min={0}
           type="number"
@@ -316,6 +352,7 @@ function AttentionAxisControls({
     selectedSite?.token_kind === "action"
       ? "Action slot"
       : "Query slot";
+  const keyHint = attentionKeyHint(selectedSite);
   const clampQuery = (value: number) =>
     Math.max(0, Math.min(Math.max(0, queryCount - 1), Number.isFinite(value) ? value : 0));
   const commitQuery = (value: number) => {
@@ -354,12 +391,10 @@ function AttentionAxisControls({
 
   return (
     <div className="attention-axis-controls">
-      {selectedSite?.key_token_space_id === "pi05.expert_context" ? (
-        <div className="attention-token-ruler" aria-label="Expert attention key token space">
-          <span>Keys</span>
-          <i>image patches + prompt</i>
-          <i>action tokens</i>
-        </div>
+      {keyHint ? (
+        <p className="attention-token-hint" title={keyHint.title}>
+          {keyHint.label}
+        </p>
       ) : null}
       {headCount > 0 ? (
         <div className="attention-head-control">
@@ -367,6 +402,7 @@ function AttentionAxisControls({
           <div className="attention-head-blocks" aria-label="Attention heads">
             <button
               className={clampedHead === null ? "active summary" : "summary"}
+              title="Average attention across all heads."
               type="button"
               onClick={() => onHeadChange(null)}
             >
@@ -376,6 +412,7 @@ function AttentionAxisControls({
               <button
                 className={clampedHead === index ? "active" : ""}
                 key={index}
+                title={`Inspect attention head ${index}.`}
                 type="button"
                 onClick={() => onHeadChange(index)}
               >
@@ -390,6 +427,7 @@ function AttentionAxisControls({
           <label>
             {queryLabel} {clampedQuery === null ? "mean" : clampedQuery}
             <input
+              title="Choose which query token or action slot is looking at the keys."
               max={Math.max(0, queryCount - 1)}
               min={0}
               type="range"
@@ -404,6 +442,7 @@ function AttentionAxisControls({
             <span>Slot</span>
             <input
               aria-label={`${queryLabel} index`}
+              title="Query token/action slot index."
               max={Math.max(0, queryCount - 1)}
               min={0}
               type="number"
@@ -418,55 +457,29 @@ function AttentionAxisControls({
   );
 }
 
-function TopChannelPanel({
-  activationSlice,
-  activationSliceFetching,
-  activationSlicePlaceholder,
-  activationClipPercent,
-  feature,
-  onActivationClipPercentChange,
-  onFeatureChange,
-  onTopChannelCountChange,
-  selectedSiteHasFeatures,
-  topChannelCount,
-  topRows,
-}: {
-  activationSlice?: ActivationSliceResponse;
-  activationSliceFetching: boolean;
-  activationSlicePlaceholder: boolean;
-  activationClipPercent: number;
-  feature: number;
-  onActivationClipPercentChange: (clipPercent: number) => void;
-  onFeatureChange: (feature: number) => void;
-  onTopChannelCountChange: (count: number) => void;
-  selectedSiteHasFeatures: boolean;
-  topChannelCount: number;
-  topRows: { index: number; value: number }[];
-}) {
-  if (!selectedSiteHasFeatures) {
+function attentionKeyHint(selectedSite?: ActivationSite): { label: string; title: string } | null {
+  if (!selectedSite?.key_token_space_id) {
     return null;
   }
-  return (
-    <div className="top-channel-panel">
-      <FeatureTable
-        rows={topRows}
-        activeFeature={feature}
-        title="Top Channels"
-        loading={activationSliceFetching && !topRows.length}
-        reserveHeight
-        updating={activationSliceFetching && Boolean(topRows.length)}
-        stale={activationSlicePlaceholder}
-        onFeatureChange={onFeatureChange}
-        clipPercent={activationClipPercent}
-        clip={activationSlice?.clip}
-        onClipPercentChange={onActivationClipPercentChange}
-        rowLimit={topChannelCount}
-        rowLimitOptions={TOP_CHANNEL_COUNT_OPTIONS}
-        onRowLimitChange={onTopChannelCountChange}
-      />
-    </div>
-  );
+  if (selectedSite.key_token_space_id === "pi05.expert_context") {
+    return {
+      label: "Reads from scene/prompt memory and earlier action slots.",
+      title: "Expert attention keys contain VLM prefix memory first, followed by action-context tokens.",
+    };
+  }
+  if (selectedSite.key_token_space_id === "pi05.prefix") {
+    return {
+      label: "Reads from prompt and image-patch tokens.",
+      title: "VLM attention keys are the prefix tokens: camera image patches plus prompt text.",
+    };
+  }
+  return {
+    label: `Reads from ${selectedSite.key_token_space_id}.`,
+    title: "Attention maps show where the selected query token reads from.",
+  };
 }
+
+
 
 function GenerationStepControl({
   generationStep,
@@ -648,4 +661,3 @@ function PromptAttentionChips({
     </div>
   );
 }
-

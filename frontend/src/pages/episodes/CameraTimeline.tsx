@@ -165,7 +165,13 @@ function CameraFrame({
   const showOverlayStatus = Boolean(
     showAttentionOverlay &&
       overlayStatus &&
-      (imageHovered || overlayStatus.isUpdating || overlayStatus.isStale || imageTokenMap?.available === false),
+      (
+        imageHovered ||
+        (overlayStatus.mode === "attention" && imageTokenMap?.available) ||
+        overlayStatus.isUpdating ||
+        overlayStatus.isStale ||
+        imageTokenMap?.available === false
+      ),
   );
 
   return (
@@ -402,6 +408,7 @@ function ActivationGridOverlay({
   const values = useMemo(() => cameraMapValues ?? [], [cameraMapValues]);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [layoutVersion, setLayoutVersion] = useState(0);
+  const isAttentionMap = isAttentionOverlayPayload(imageTokenMap);
 
   useEffect(() => {
     const target = canvasRef.current?.parentElement;
@@ -445,12 +452,14 @@ function ActivationGridOverlay({
         if (!Number.isFinite(value)) {
           return;
         }
-        ctx.fillStyle = signedActivationColor(value, maxAbs);
+        ctx.fillStyle = isAttentionMap
+          ? attentionOverlayColor(value, maxAbs)
+          : signedActivationColor(value, maxAbs);
         ctx.fillRect(colIndex * cellWidth, rowIndex * cellHeight, cellWidth, cellHeight);
       });
     });
 
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.28)";
+    ctx.strokeStyle = isAttentionMap ? "rgba(255, 255, 255, 0.14)" : "rgba(255, 255, 255, 0.28)";
     ctx.lineWidth = 1;
     for (let row = 1; row < rows; row += 1) {
       const y = row * cellHeight;
@@ -485,7 +494,7 @@ function ActivationGridOverlay({
         Math.max(0, cellHeight - 8),
       );
     }
-  }, [camera, imageTokenMap?.available, layoutVersion, selectedPatch, values]);
+  }, [camera, imageTokenMap, imageTokenMap?.available, isAttentionMap, layoutVersion, selectedPatch, values]);
 
   if (stale || !imageTokenMap?.available || !values.length) {
     return null;
@@ -519,6 +528,21 @@ function ActivationGridOverlay({
       }}
     />
   );
+}
+
+function isAttentionOverlayPayload(payload?: CameraOverlayPayload): boolean {
+  return Boolean(
+    payload?.kind === "vlm" ||
+      payload?.kind === "expert" ||
+      payload?.attention_site ||
+      (payload?.site && String(payload.site).includes("attention")),
+  );
+}
+
+function attentionOverlayColor(value: number, maxValue: number): string {
+  const ratio = Math.sqrt(Math.max(0, value) / Math.max(maxValue, 1e-6));
+  const alpha = 0.08 + Math.min(1, ratio) * 0.66;
+  return `rgba(249, 115, 22, ${alpha})`;
 }
 
 function OverlayStatusBadge({

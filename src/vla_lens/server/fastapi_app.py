@@ -276,6 +276,21 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
             cache_control=NO_STORE_CACHE_CONTROL,
         )
 
+    @app.get("/api/discovery-artifacts/{artifact_id}/episode-lens-view")
+    async def discovery_artifact_episode_lens_view_endpoint(
+        request: Request, artifact_id: str
+    ) -> Response:
+        return _handle_json(
+            request,
+            lambda state,
+            query: discovery_artifacts_api.discovery_artifact_episode_lens_view_payload(
+                state.dataset,
+                artifact_id,
+                query,
+            ),
+            cache_control=NO_STORE_CACHE_CONTROL,
+        )
+
     @app.get("/api/discovery-artifacts/{artifact_id}/target")
     async def discovery_artifact_target_endpoint(request: Request, artifact_id: str) -> Response:
         return _handle_json(
@@ -608,6 +623,7 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
         return _error_response(HTTPStatus.NOT_FOUND, f"Unknown route: /api/{path}")
 
     return app
+
 
 def run_dashboard_fastapi_server(
     root: str | Path,

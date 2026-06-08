@@ -56,7 +56,7 @@ def _dataset_capabilities(dataset: TraceDataset) -> dict[str, Any]:
         "policy_calls": any(not bundle.policy_calls.empty for bundle in dataset.bundles),
         "model_sites": not model_sites.empty,
         "token_spaces": token_space_rows > 0,
-        "image_token_maps": _has_token_kind(model_sites, "image_patch"),
+        "image_token_maps": _has_image_token_maps(model_sites, token_space_rows),
         "attention_maps": _has_tensor_type(model_sites, "attention"),
         "action_chunks": "action_chunks" in array_names,
         "action_generation": "generation_actions" in array_names,
@@ -97,6 +97,21 @@ def _has_tensor_type(model_sites: pd.DataFrame, tensor_type: str) -> bool:
 def _has_token_kind(model_sites: pd.DataFrame, token_kind: str) -> bool:
     return "token_kind" in model_sites and bool(
         (model_sites["token_kind"].astype(str) == token_kind).any()
+    )
+
+
+def _has_image_token_maps(model_sites: pd.DataFrame, token_space_rows: int) -> bool:
+    if model_sites.empty or "axes" not in model_sites or "token_kind" not in model_sites:
+        return False
+    token_kinds = model_sites["token_kind"].astype(str)
+    axes_text = model_sites["axes"].astype(str)
+    has_token_channel_site = axes_text.str.contains("token", na=False) & axes_text.str.contains(
+        "channel", na=False
+    )
+    has_direct_image_site = token_kinds.isin({"image", "image_patch", "image_patches"})
+    has_prefix_site_with_layout = token_kinds.isin({"prefix", "image"}) & (token_space_rows > 0)
+    return bool(
+        (has_token_channel_site & (has_direct_image_site | has_prefix_site_with_layout)).any()
     )
 
 

@@ -16,6 +16,7 @@ type EpisodeStageViewProps = {
   metricPlot: ComponentProps<typeof MetricPlotPanel>;
   onEpisodePlotTabChange: (tab: EpisodePlotTab) => void;
   promptAttentionStrip: ComponentProps<typeof PromptAttentionStrip>;
+  showProbePanel?: boolean;
 };
 
 export function EpisodeStageView({
@@ -27,7 +28,9 @@ export function EpisodeStageView({
   metricPlot,
   onEpisodePlotTabChange,
   promptAttentionStrip,
+  showProbePanel = true,
 }: EpisodeStageViewProps) {
+  const activePlotTab = showProbePanel ? episodePlotTab : "episode";
   return (
     <section className="stage">
       <div className="stage-body stage-view">
@@ -40,23 +43,25 @@ export function EpisodeStageView({
                 <FramePlaybackControls {...frameControls} />
               </div>
               <aside className="viewer-plot-panel">
-                <div className="episode-plot-tabs" aria-label="Episode plot tabs">
-                  <button
-                    className={episodePlotTab === "probes" ? "active" : ""}
-                    type="button"
-                    onClick={() => onEpisodePlotTabChange("probes")}
-                  >
-                    Probes
-                  </button>
-                  <button
-                    className={episodePlotTab === "episode" ? "active" : ""}
-                    type="button"
-                    onClick={() => onEpisodePlotTabChange("episode")}
-                  >
-                    Episode
-                  </button>
-                </div>
-                {episodePlotTab === "episode" ? (
+                {showProbePanel ? (
+                  <div className="episode-plot-tabs" aria-label="Episode plot tabs">
+                    <button
+                      className={activePlotTab === "probes" ? "active" : ""}
+                      type="button"
+                      onClick={() => onEpisodePlotTabChange("probes")}
+                    >
+                      Probes
+                    </button>
+                    <button
+                      className={activePlotTab === "episode" ? "active" : ""}
+                      type="button"
+                      onClick={() => onEpisodePlotTabChange("episode")}
+                    >
+                      Episode
+                    </button>
+                  </div>
+                ) : null}
+                {activePlotTab === "episode" ? (
                   <>
                     <MetricPlotPanel {...metricPlot} />
                     <InteractionSummaryPanel {...interactionSummary} />

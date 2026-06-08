@@ -25,6 +25,7 @@ import { imageTokenMapQueryKey, overlayStatusForSelection } from "./episodeData"
 import { probeLayerReferences, selectedEpisodeProbe } from "./episodeProbeModel";
 import {
   attentionSiteForSite,
+  attentionKindForSite,
   expertTokenSiteForSite,
   generationStepCountForSite,
   inspectorContextForSite,
@@ -127,6 +128,7 @@ export function useEpisodeInspectorModel({
   const expertTokenSiteName = expertTokenSite?.name ?? "";
   const attentionSite = attentionSiteForSite(sites, selectedSite);
   const attentionSiteName = attentionSite?.name ?? "";
+  const attentionKind = attentionKindForSite(attentionSite);
   const inspectorContext: InspectorContext =
     inspectionMode === "attention" && attentionSiteName ? "attention" : selectedSiteContext;
   const generationStepCount = generationStepCountForSite(selectedSite);
@@ -278,7 +280,7 @@ export function useEpisodeInspectorModel({
       "attention-map",
       activeTraceId,
       activeCall?.index,
-      inspectorContext,
+      attentionKind,
       attentionSiteName,
       activeGenerationStep,
       attentionHead,
@@ -288,7 +290,7 @@ export function useEpisodeInspectorModel({
       fetchAttentionMap(
         activeTraceId,
         activeCall?.index ?? 0,
-        attentionSite?.name.includes(".vlm.") ? "vlm" : "expert",
+        attentionKind,
         activeGenerationStep,
         attentionSiteName,
         attentionHead,
@@ -299,7 +301,7 @@ export function useEpisodeInspectorModel({
     placeholderData: keepPreviousData,
     staleTime: 60_000,
   });
-  const promptAttentionKind = attentionSite?.name.includes(".vlm.") ? "vlm" : "expert";
+  const promptAttentionKind = attentionKind;
   const promptAttention = useQuery({
     queryKey: [
       "prompt-attention",

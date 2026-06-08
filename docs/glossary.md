@@ -2,7 +2,7 @@
 
 Status: active glossary.
 
-Last updated: June 6, 2026.
+Last updated: June 7, 2026.
 
 This glossary defines project vocabulary used by VLA Lens evidence workflows.
 The core rule is simple: records are data. Whether a record supports a causal
@@ -92,6 +92,23 @@ claim labels, and provenance.
   as a probe prediction for one episode, an activation score at one timestep, or
   an attribution score for one patch. Readouts are inspection evidence, not
   causal evidence by themselves.
+
+`ProbeEvaluationPredictions`:
+  Row-level probe predictions on configured evaluation splits, usually
+  validation/test-style splits. These rows support probe metrics and predictive
+  evidence claims.
+
+`ProbeScoredPredictions`:
+  Row-level probe predictions across the source rows used to build the artifact,
+  including train/source rows when available. These rows make dataset browsing
+  and episode readouts complete, but they should not be treated as heldout
+  predictive evidence unless the row split is an evaluation split.
+
+`ProbeScoreCache`:
+  A mutable dashboard table produced by re-applying a frozen probe artifact to
+  the current compatible dataset rows. It can be refreshed when new episodes are
+  added, but it must not rewrite the probe artifact's training split,
+  validation/test metrics, or evaluation prediction record.
 
 ## Intervention Terms
 

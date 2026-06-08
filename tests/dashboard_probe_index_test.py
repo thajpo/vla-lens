@@ -161,6 +161,8 @@ def test_fastapi_discovery_artifact_families_exposes_contracts(tmp_path):
     assert response.headers["Cache-Control"] == "no-store"
     family_by_type = {family["artifact_type"]: family for family in payload["families"]}
     assert family_by_type["probe_suite"]["target_kind"] == "probe_direction"
+    assert family_by_type["probe_suite"]["available"] is True
+    assert family_by_type["probe_suite"]["reason"] == ""
     assert "add_direction" in family_by_type["probe_suite"]["operators"]
     assert "sae_feature" in family_by_type
 
@@ -224,6 +226,21 @@ def test_fastapi_discovery_artifact_episode_ranking_delegates_to_probe_interest(
     ]
     assert generic["episodes"][0]["trace_id"] == trace_ids[2]
     assert generic["episodes"][0]["probe_record"]["correct"] is False
+
+    probe_index = client.get("/api/probe-index").json()
+    probe = probe_index["probes"][0]
+    assert probe["review_stats"]["highConfidence"] == 1
+    assert probe["review_stats_by_split"]["train"]["correct"] == 1
+    assert probe["review_stats_by_split"]["train"]["wrong"] == 0
+    assert probe["review_stats_by_split"]["test"]["wrong"] == 1
+    assert probe["review_stats_by_split"]["test"]["highConfidence"] == 1
+    assert probe["review_stats_by_split"]["test"]["highConfWrong"] == 1
+
+    explicit_sort = client.get(
+        "/api/discovery-artifacts/probe-a/episodes",
+        params={"limit": "3", "sort": "episode_index"},
+    ).json()
+    assert [episode["trace_id"] for episode in explicit_sort["episodes"]] == trace_ids
 
 
 def test_fastapi_discovery_artifact_readout_returns_probe_summary(tmp_path):

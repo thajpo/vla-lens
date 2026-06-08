@@ -6,12 +6,16 @@ import { EpisodesPage } from "./EpisodesPage";
 import { DatasetBrowser } from "./workbench/DatasetBrowser";
 import { useWorkbenchStore } from "../store/workbenchStore";
 import type { InterventionLabSeed } from "../types/interventions";
+import type { InspectionMode } from "./episodes/shared";
 import type { EpisodeOpenContext } from "./workbench/types";
 
 type EpisodeRouteState = {
+  feature?: number;
   fromCohort: boolean;
+  inspectionMode?: InspectionMode;
   policyCall?: number;
   probeId: string;
+  rankingMode?: string;
   siteName: string;
   traceId: string;
 };
@@ -57,6 +61,9 @@ export function WorkbenchPage() {
       {activePage === "episode" ? (
         <EpisodesPage
           cohortReturnHref={episodeRouteState.fromCohort ? "#dataset" : undefined}
+          initialFeature={episodeRouteState.feature}
+          initialInspectionMode={episodeRouteState.inspectionMode}
+          initialLensRankingMode={episodeRouteState.rankingMode}
           initialPolicyCall={episodeRouteState.policyCall}
           initialProbeArtifactId={episodeRouteState.probeId}
           initialSiteName={episodeRouteState.siteName}
@@ -98,8 +105,11 @@ export function WorkbenchPage() {
   function handleOpenDatasetEpisode(traceId: string, context: EpisodeOpenContext = {}) {
     const nextRoute = {
       fromCohort: Boolean(context.fromCohort),
+      feature: typeof context.feature === "number" ? context.feature : undefined,
+      inspectionMode: parseInspectionMode(context.inspectionMode),
       policyCall: typeof context.policyCall === "number" ? context.policyCall : undefined,
       probeId: context.probeId ?? "",
+      rankingMode: context.rankingMode ?? "",
       siteName: context.siteName ?? "",
       traceId,
     };
@@ -111,10 +121,13 @@ export function WorkbenchPage() {
 
   function handleEpisodeTraceChange(traceId: string, context: EpisodeOpenContext = {}) {
     const nextRoute = {
-      fromCohort: Boolean(context.fromCohort),
-      policyCall: typeof context.policyCall === "number" ? context.policyCall : undefined,
-      probeId: context.probeId ?? "",
-      siteName: context.siteName ?? "",
+      fromCohort: context.fromCohort ?? episodeRouteState.fromCohort,
+      feature: typeof context.feature === "number" ? context.feature : episodeRouteState.feature,
+      inspectionMode: parseInspectionMode(context.inspectionMode) ?? episodeRouteState.inspectionMode,
+      policyCall: typeof context.policyCall === "number" ? context.policyCall : episodeRouteState.policyCall,
+      probeId: context.probeId ?? episodeRouteState.probeId,
+      rankingMode: context.rankingMode ?? episodeRouteState.rankingMode,
+      siteName: context.siteName ?? episodeRouteState.siteName,
       traceId,
     };
     setActivePage("episode");
@@ -182,6 +195,8 @@ function initialPage(): {
 function emptyEpisodeRouteState(): EpisodeRouteState {
   return {
     fromCohort: false,
+    inspectionMode: undefined,
+    rankingMode: "",
     probeId: "",
     siteName: "",
     traceId: "",
@@ -194,10 +209,14 @@ function parseEpisodeRoute(value: string): EpisodeRouteState {
   const query = queryStart >= 0 ? value.slice(queryStart + 1) : "";
   const params = new URLSearchParams(query);
   const policyCall = numberParam(params.get("call"));
+  const feature = numberParam(params.get("feature"));
   return {
+    feature,
     fromCohort: params.get("from") === "cohort",
+    inspectionMode: parseInspectionMode(params.get("mode")),
     policyCall: policyCall ?? undefined,
     probeId: params.get("probe_id") ?? params.get("probe") ?? "",
+    rankingMode: params.get("ranking") ?? "",
     siteName: params.get("site") ?? "",
     traceId: decodeURIComponent(tracePart),
   };
@@ -210,6 +229,15 @@ function buildEpisodeHash(route: EpisodeRouteState): string {
   }
   if (typeof route.policyCall === "number") {
     params.set("call", String(route.policyCall));
+  }
+  if (typeof route.feature === "number") {
+    params.set("feature", String(route.feature));
+  }
+  if (route.rankingMode) {
+    params.set("ranking", route.rankingMode);
+  }
+  if (route.inspectionMode && route.inspectionMode !== "features") {
+    params.set("mode", route.inspectionMode);
   }
   if (route.siteName) {
     params.set("site", route.siteName);
@@ -230,9 +258,25 @@ function episodeRouteKey(route: EpisodeRouteState): string {
     route.traceId,
     route.probeId,
     route.policyCall ?? "",
+    route.feature ?? "",
+    route.inspectionMode ?? "",
+    route.rankingMode ?? "",
     route.siteName,
     route.fromCohort ? "cohort" : "",
   ].join("|");
+}
+
+function parseInspectionMode(value: string | null | undefined): InspectionMode | undefined {
+  if (
+    value === "features" ||
+    value === "attention" ||
+    value === "computation" ||
+    value === "saved_state" ||
+    value === "advanced"
+  ) {
+    return value;
+  }
+  return undefined;
 }
 
 function numberParam(value: string | null): number | undefined {

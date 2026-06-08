@@ -352,11 +352,22 @@ def _probe_index_prediction_summary(by_trace: Mapping[str, Mapping[str, Any]]) -
     return summary
 
 def _probe_prediction_table(dataset: TraceDataset, artifact: LensArtifact) -> pd.DataFrame:
+    from vla_lens.probes.score_cache import read_probe_score_cache
+
+    score_cache = read_probe_score_cache(dataset, artifact.artifact_id)
+    if not score_cache.empty:
+        return score_cache
     outputs = artifact.method.get("outputs") if isinstance(artifact.method, Mapping) else None
-    relative_path = outputs.get("predictions") if isinstance(outputs, Mapping) else None
+    relative_path = (
+        outputs.get("scored_predictions") or outputs.get("predictions")
+        if isinstance(outputs, Mapping)
+        else None
+    )
     if not relative_path:
         return pd.DataFrame()
     path = dataset.root / str(relative_path)
+    if not path.exists():
+        path = dataset._dataset_artifact_root() / str(relative_path)
     if not path.exists():
         return pd.DataFrame()
     try:

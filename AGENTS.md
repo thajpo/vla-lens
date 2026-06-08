@@ -4,6 +4,14 @@ Use git liberally.
 
 The user has coding experience, but is not a SWE. They want to become MLRE, enjoy theory, explanations, architecture design, and systems thinking. Their low-level computing background is still developing, so explain dependency/runtime issues concretely.
 
+## UI Design Rule
+
+For dashboard/workbench UI work, read `docs/research_ui_principles.md` before
+making layout, copy, color, or component-organization changes. Treat it as the
+repo-local taste contract: prefer screen-level coherence, human-readable
+research/ML language, fewer redundant panels, and semantic color over reactive
+one-widget fixes.
+
 ## Critical Environment Rule
 
 Do not run PI0.5/LeRobot/LIBERO capture through the normal repo `uv run` environment.

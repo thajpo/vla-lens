@@ -1,7 +1,9 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { ArrowRight, Search, Target } from "lucide-react";
+import { ArrowRight, Search } from "lucide-react";
 import {
+  fetchArtifacts,
+  fetchDiscoveryArtifactFamilies,
   type DiscoveryArtifactEpisodeParams,
   type EpisodePageParams,
   fetchDiscoveryArtifactEpisodes,
@@ -11,7 +13,9 @@ import {
   fetchProbeIndex,
 } from "../../api/dataset";
 import type {
-  DatasetEpisode,
+  ArtifactRecord,
+  DiscoveryArtifactEpisodesResponse,
+  DiscoveryArtifactFamily,
   EpisodeFacetValue,
   ProbeDatasetIndex,
   ProbeEpisodeIndex,
@@ -20,8 +24,6 @@ import type { WorkbenchManifest } from "../../types/workbench";
 import { datasetBrowserCapabilityGates } from "../capabilityGating";
 import {
   COHORT_PRESETS,
-  EVIDENCE_EPISODE_LIMIT,
-  PROBE_LIST_LIMIT,
   PROBE_PREDICTION_FILTER_LABELS,
   PROBE_PREDICTION_FILTERS,
   PROBE_SPLIT_FILTER_LABELS,
@@ -32,26 +34,41 @@ import {
   episodeOpenContextForProbe,
   episodeSeed,
   episodeTitle,
-  filterProbeChoices,
   formatDatasetProbeConfidence,
   percentOf,
-  probeCoverageRows,
-  probeEpisodeInterestLabel,
-  probeQuestionLabel,
   probeRecordForEpisode,
   probeResultChartRows,
-  probeResultLabel,
-  probeReviewStats,
+  probeLensSpec,
   probeSplitChartRows,
   probeSplitLabel,
-  probeTrustDetail,
-  probeTrustLabel,
-  rankProbesForReview,
   shortTrace,
   type ProbeCohortPreset,
-  type ProbeRankRecord,
 } from "./datasetBrowserModel";
 import type { EpisodeOpenContext } from "./types";
+
+const NO_LENS_ID = "none";
+const SORT_OPTIONS = ["episode_index", "lens_interest", "task_id", "outcome", "length", "trace_id"] as const;
+const SORT_LABELS: Record<string, string> = {
+  episode_index: "Episode order",
+  lens_interest: "Lens interest",
+  length: "Steps",
+  outcome: "Outcome",
+  task_id: "Task",
+  trace_id: "Trace ID",
+};
+const PROBE_COHORT_FILTERS = COHORT_PRESETS.map((preset) => preset.id);
+const PROBE_COHORT_FILTER_LABELS: Record<string, string> = Object.fromEntries(
+  COHORT_PRESETS.map((preset) => [preset.id, preset.label]),
+);
+
+type DatasetLens = {
+  artifact?: ArtifactRecord;
+  artifactId: string;
+  artifactType: string;
+  family?: DiscoveryArtifactFamily;
+  name: string;
+  probe?: ProbeDatasetIndex;
+};
 
 export function DatasetBrowser({
   onOpenEpisode,
@@ -70,6 +87,18 @@ export function DatasetBrowser({
       ? "unknown"
       : "pending";
   const { hasProbeArtifacts } = datasetBrowserCapabilityGates(dataset.data?.capabilities?.flags);
+  const discoveryFamilies = useQuery({
+    queryKey: ["discovery-artifact-families"],
+    queryFn: fetchDiscoveryArtifactFamilies,
+    enabled: dataset.isFetched,
+    staleTime: 60_000,
+  });
+  const artifactIndex = useQuery({
+    queryKey: ["artifacts", datasetIdentityKey],
+    queryFn: fetchArtifacts,
+    enabled: dataset.isFetched,
+    staleTime: 60_000,
+  });
   const probeIndex = useQuery({
     queryKey: ["probe-index"],
     queryFn: fetchProbeIndex,
@@ -86,18 +115,36 @@ export function DatasetBrowser({
   const [taskFilter, setTaskFilter] = useState("all");
   const [outcomeFilter, setOutcomeFilter] = useState("all");
   const [profileFilter, setProfileFilter] = useState("all");
-  const [probeFilter, setProbeFilter] = useState("all");
-  const [probeQuery, setProbeQuery] = useState("");
+  const [selectedLensId, setSelectedLensId] = useState(NO_LENS_ID);
+  const [sortMode, setSortMode] = useState("episode_index");
   const deferredQuery = useDeferredValue(query);
-  const deferredProbeQuery = useDeferredValue(probeQuery);
   const [probeCohortPreset, setProbeCohortPreset] = useState<ProbeCohortPreset>("all");
   const [probeSplitFilter, setProbeSplitFilter] = useState("all");
   const [probePredictionFilter, setProbePredictionFilter] = useState("all");
   const [pageOffset, setPageOffset] = useState(0);
-  const selectedProbe = useMemo(
-    () => probes.find((probe) => probe.artifact_id === probeFilter),
-    [probeFilter, probes],
+  const familyByType = useMemo(
+    () => new Map((discoveryFamilies.data?.families ?? []).map((family) => [family.artifact_type, family])),
+    [discoveryFamilies.data?.families],
   );
+  const artifactsById = useMemo(
+    () => new Map((artifactIndex.data?.artifacts ?? []).map((artifact) => [String(artifact.artifact_id ?? ""), artifact])),
+    [artifactIndex.data?.artifacts],
+  );
+  const lenses = useMemo(
+    () => discoveryLenses({
+      artifacts: artifactIndex.data?.artifacts ?? [],
+      artifactsById,
+      familyByType,
+      probes,
+    }),
+    [artifactIndex.data?.artifacts, artifactsById, familyByType, probes],
+  );
+  const selectedLens = useMemo(
+    () => lenses.find((lens) => lens.artifactId === selectedLensId),
+    [lenses, selectedLensId],
+  );
+  const selectedProbe = selectedLens?.probe;
+  const activeLensArtifactId = selectedLens?.artifactId ?? "";
   const episodePageParams = useMemo<DiscoveryArtifactEpisodeParams>(
     () => ({
       benchmark: benchmarkFilter,
@@ -109,7 +156,8 @@ export function DatasetBrowser({
       prediction: selectedProbe ? probePredictionFilter : undefined,
       profile: profileFilter,
       q: deferredQuery,
-      rank_by: selectedProbe ? "interest" : undefined,
+      rank_by: selectedLens && sortMode === "lens_interest" ? "interest" : undefined,
+      sort: sortMode === "lens_interest" ? undefined : sortMode,
       split: selectedProbe ? probeSplitFilter : undefined,
       task_id: taskFilter,
     }),
@@ -123,29 +171,30 @@ export function DatasetBrowser({
       probePredictionFilter,
       probeSplitFilter,
       profileFilter,
+      selectedLens,
       selectedProbe,
+      sortMode,
       taskFilter,
     ],
   );
   const episodePage = useQuery({
-    queryKey: ["episodes", datasetIdentityKey, episodePageParams],
-    queryFn: ({ signal }) => selectedProbe
-      ? fetchDiscoveryArtifactEpisodes(selectedProbe.artifact_id, episodePageParams, signal)
+    queryKey: ["episodes", datasetIdentityKey, activeLensArtifactId || NO_LENS_ID, episodePageParams],
+    queryFn: ({ signal }) => selectedLens
+      ? fetchDiscoveryArtifactEpisodes(activeLensArtifactId, episodePageParams, signal)
       : fetchEpisodesPage(episodePageParams as EpisodePageParams, signal),
     enabled: dataset.isFetched,
     staleTime: 15_000,
   });
+  const discoveryPayload = discoveryEpisodePayload(episodePage.data);
+  const activeLensUnavailable = Boolean(selectedLens && discoveryPayload?.available === false);
+  const activeLensReason = selectedLens ? discoveryPayload?.reason ?? "" : "";
+  const activeLensFamilyLabel = selectedLens ? familyLabel(selectedLens.artifactType) : "Episode index";
   const diagnostics = useQuery({
     queryKey: ["dataset-diagnostics", datasetIdentityKey],
     queryFn: fetchDatasetDiagnostics,
     enabled: episodePage.isFetched || episodePage.isError,
     staleTime: 60_000,
   });
-  const rankedProbes = useMemo(() => rankProbesForReview(probes), [probes]);
-  const visibleProbeChoices = useMemo(
-    () => filterProbeChoices(rankedProbes, deferredProbeQuery).slice(0, PROBE_LIST_LIMIT),
-    [deferredProbeQuery, rankedProbes],
-  );
   const episodes = useMemo(() => episodePage.data?.episodes ?? [], [episodePage.data?.episodes]);
   const datasetIds = facetValues(episodePage.data?.facets.dataset_id);
   const benchmarks = facetValues(episodePage.data?.facets.benchmark);
@@ -153,32 +202,29 @@ export function DatasetBrowser({
   const outcomes = facetValues(episodePage.data?.facets.outcome);
   const profiles = facetValues(episodePage.data?.facets.profile);
   const coverageRows = useMemo(() => datasetCoverageRows(episodes), [episodes]);
-  const probeVisibleRows = useMemo(
-    () => (selectedProbe ? probeCoverageRows(episodes, selectedProbe) : []),
-    [episodes, selectedProbe],
-  );
-  const evidenceParams = useMemo<DiscoveryArtifactEpisodeParams>(
-    () => ({
-      cohort_preset: probeCohortPreset,
-      limit: EVIDENCE_EPISODE_LIMIT,
-      prediction: probePredictionFilter,
-      rank_by: "interest",
-      split: probeSplitFilter,
-    }),
-    [probeCohortPreset, probePredictionFilter, probeSplitFilter],
-  );
-  const artifactEvidence = useQuery({
-    queryKey: ["discovery-artifact-evidence", selectedProbe?.artifact_id, evidenceParams],
-    queryFn: ({ signal }) =>
-      fetchDiscoveryArtifactEpisodes(selectedProbe?.artifact_id ?? "", evidenceParams, signal),
-    enabled: Boolean(selectedProbe),
-    staleTime: 15_000,
-  });
   const totalEpisodes = dataset.data?.episode_count ?? episodePage.data?.total ?? 0;
   const visibleTotal = episodePage.data?.total ?? 0;
   const pageStart = visibleTotal ? pageOffset + 1 : 0;
   const pageEnd = Math.min(pageOffset + (episodePage.data?.limit ?? 100), visibleTotal);
+  const activeFilterCount = [
+    datasetFilter,
+    benchmarkFilter,
+    taskFilter,
+    outcomeFilter,
+    profileFilter,
+    selectedProbe ? probeCohortPreset : "all",
+    selectedProbe ? probeSplitFilter : "all",
+    selectedProbe ? probePredictionFilter : "all",
+  ].filter((value) => value !== "all").length;
   const resetPage = () => setPageOffset(0);
+  const selectLens = (lensId: string) => {
+    setSelectedLensId(lensId);
+    setSortMode(lensId === NO_LENS_ID ? "episode_index" : "lens_interest");
+    setProbeCohortPreset("all");
+    setProbeSplitFilter("all");
+    setProbePredictionFilter("all");
+    resetPage();
+  };
 
   return (
     <main className="dataset-browser-page">
@@ -187,29 +233,51 @@ export function DatasetBrowser({
           <h1>Dataset</h1>
           <p>{dataset.data?.root ?? "Dataset"}</p>
         </div>
-        <div className={diagnostics.data?.stale ? "diagnostic-chip stale" : "diagnostic-chip"}>
-          {diagnostics.isLoading
-            ? "Diagnostics checking"
-            : diagnostics.data?.stale
-              ? "Diagnostics stale"
-              : "Diagnostics current"}
-        </div>
+        {diagnostics.data?.stale ? <div className="diagnostic-chip stale">Diagnostics stale</div> : null}
       </header>
 
-      <div className="dataset-browser-metrics">
-        <Metric label="Episodes" value={totalEpisodes} />
-        <Metric label="Visible" value={visibleTotal} />
-        <Metric label="Datasets" value={datasetIds.length} />
-        <Metric label="Benchmarks" value={benchmarks.length} />
-        <Metric label="Tasks" value={tasks.length} />
-        <Metric
-          label="Model Sites"
-          value={dataset.data?.activation_sites ?? 0}
+      <section className="dataset-lens-bar" aria-label="Dataset lens">
+        <LensSelector
+          lenses={lenses}
+          selectedLensId={selectedLensId}
+          onLensChange={selectLens}
         />
-        <Metric label="Probes" value={probes.length} />
-      </div>
+        {selectedLens ? <span>{activeLensFamilyLabel}</span> : null}
+      </section>
 
-      <section className="dataset-browser-controls" aria-label="Dataset filters">
+      {selectedProbe ? (
+        <>
+          <SelectedProbeLensSummary
+            artifact={selectedLens.artifact}
+            probe={selectedProbe}
+          />
+          <ProbeSummaryVisual
+            activePredictionFilter={probePredictionFilter}
+            activeSplitFilter={probeSplitFilter}
+            probe={selectedProbe}
+            onCohortPresetChange={(preset) => {
+              setProbeCohortPreset(preset);
+              setProbeSplitFilter("all");
+              setProbePredictionFilter("all");
+              resetPage();
+            }}
+            onPredictionFilterChange={(value) => {
+              setProbeCohortPreset("all");
+              setProbePredictionFilter(value);
+              resetPage();
+            }}
+            onSplitFilterChange={(value) => {
+              setProbeCohortPreset("all");
+              setProbeSplitFilter(value);
+              resetPage();
+            }}
+          />
+        </>
+      ) : selectedLens ? (
+        <LensEvidencePanel lens={selectedLens} ranking={discoveryPayload} />
+      ) : null}
+
+      <section className="dataset-table-controls" aria-label="Episode filters and sorting">
         <div className="dataset-search">
           <Search size={15} />
           <input
@@ -222,6 +290,17 @@ export function DatasetBrowser({
             }}
           />
         </div>
+        <FilterSelect
+          includeAll={false}
+          label="Sort"
+          value={sortMode}
+          values={selectedLens ? SORT_OPTIONS : SORT_OPTIONS.filter((option) => option !== "lens_interest")}
+          labels={SORT_LABELS}
+          onChange={(value) => {
+            setSortMode(value);
+            resetPage();
+          }}
+        />
         <FilterSelect
           label="Dataset"
           value={datasetFilter}
@@ -267,111 +346,85 @@ export function DatasetBrowser({
             resetPage();
           }}
         />
+        {selectedProbe ? (
+          <>
+            <FilterSelect
+              label="Probe Cohort"
+              value={probeCohortPreset}
+              values={PROBE_COHORT_FILTERS}
+              labels={PROBE_COHORT_FILTER_LABELS}
+              onChange={(value) => {
+                setProbeCohortPreset(value as ProbeCohortPreset);
+                setProbeSplitFilter("all");
+                setProbePredictionFilter("all");
+                resetPage();
+              }}
+            />
+            <FilterSelect
+              label="Probe Split"
+              value={probeSplitFilter}
+              values={PROBE_SPLIT_FILTERS}
+              labels={PROBE_SPLIT_FILTER_LABELS}
+              onChange={(value) => {
+                setProbeCohortPreset("all");
+                setProbeSplitFilter(value);
+                resetPage();
+              }}
+            />
+            <FilterSelect
+              label="Probe Result"
+              value={probePredictionFilter}
+              values={PROBE_PREDICTION_FILTERS}
+              labels={PROBE_PREDICTION_FILTER_LABELS}
+              onChange={(value) => {
+                setProbeCohortPreset("all");
+                setProbePredictionFilter(value);
+                resetPage();
+              }}
+            />
+          </>
+        ) : null}
+        <button
+          className="text-command"
+          disabled={!selectedLens && activeFilterCount === 0 && sortMode === "episode_index"}
+          type="button"
+          onClick={() => {
+            setDatasetFilter("all");
+            setBenchmarkFilter("all");
+            setTaskFilter("all");
+            setOutcomeFilter("all");
+            setProfileFilter("all");
+            setSortMode("episode_index");
+            selectLens(NO_LENS_ID);
+          }}
+        >
+          Reset
+        </button>
       </section>
 
       {dataset.isLoading ? <div className="app-message">Loading dataset...</div> : null}
       {dataset.isError ? <div className="empty-state">Dataset API unavailable.</div> : null}
-      {episodePage.isError ? <div className="empty-state compact">Episode index unavailable.</div> : null}
+      {episodePage.isError ? (
+        <div className="empty-state compact">
+          {selectedLens
+            ? "Lens ranking API unavailable. Restart the Python dashboard server so it picks up the discovery artifact routes."
+            : "Episode index unavailable."}
+        </div>
+      ) : null}
+      {activeLensUnavailable ? (
+        <div className="empty-state compact">
+          {activeLensReason || "This lens cannot rank episodes yet."}
+        </div>
+      ) : null}
       {episodePage.isFetching ? <div className="app-message compact">Loading episodes...</div> : null}
       {hasProbeArtifacts && probeIndex.isError ? (
         <div className="empty-state compact">Probe index unavailable.</div>
       ) : null}
 
-      <section className="dataset-probe-workbench" aria-label="Probe evidence and cohort mining">
-        <div className="probe-workbench-toolbar">
-          <div className="dataset-search probe-search">
-            <Search size={15} />
-            <input
-              aria-label="Search probes"
-              placeholder="Search probes, targets, sites"
-              value={probeQuery}
-              onChange={(event) => setProbeQuery(event.target.value)}
-            />
-          </div>
-          <FilterSelect
-            disabled={!selectedProbe}
-            label="Episode Split"
-            value={probeSplitFilter}
-            values={PROBE_SPLIT_FILTERS}
-            labels={PROBE_SPLIT_FILTER_LABELS}
-            onChange={(value) => {
-              setProbeCohortPreset("all");
-              setProbeSplitFilter(value);
-              resetPage();
-            }}
-          />
-          <FilterSelect
-            disabled={!selectedProbe}
-            label="Probe Result"
-            value={probePredictionFilter}
-            values={PROBE_PREDICTION_FILTERS}
-            labels={PROBE_PREDICTION_FILTER_LABELS}
-            onChange={(value) => {
-              setProbeCohortPreset("all");
-              setProbePredictionFilter(value);
-              resetPage();
-            }}
-          />
-          <button
-            className="text-command"
-            disabled={!selectedProbe}
-            type="button"
-            onClick={() => {
-              setProbeFilter("all");
-              setProbeCohortPreset("all");
-              setProbeSplitFilter("all");
-              setProbePredictionFilter("all");
-              resetPage();
-            }}
-          >
-            Clear probe
-          </button>
-        </div>
-        <div className="probe-workbench-grid">
-          <RankedProbeList
-            probes={visibleProbeChoices}
-            selectedProbeId={selectedProbe?.artifact_id ?? ""}
-            total={rankedProbes.length}
-            onProbeSelect={(artifactId) => {
-              setProbeFilter(artifactId);
-              setProbeCohortPreset("all");
-              setProbeSplitFilter("all");
-              setProbePredictionFilter("scored");
-              resetPage();
-            }}
-          />
-          <ProbeEvidencePanel
-            activePredictionFilter={probePredictionFilter}
-            activeSplitFilter={probeSplitFilter}
-            episodes={artifactEvidence.data?.episodes ?? []}
-            probe={selectedProbe}
-            summaryRows={probeVisibleRows}
-            cohortPreset={probeCohortPreset}
-            onCohortPresetChange={(preset) => {
-              setProbeCohortPreset(preset);
-              setProbeSplitFilter("all");
-              setProbePredictionFilter("all");
-              resetPage();
-            }}
-            onOpenEpisode={onOpenEpisode}
-            onPredictionFilterChange={(value) => {
-              setProbeCohortPreset("all");
-              setProbePredictionFilter(value);
-              resetPage();
-            }}
-            onSplitFilterChange={(value) => {
-              setProbeCohortPreset("all");
-              setProbeSplitFilter(value);
-              resetPage();
-            }}
-          />
-        </div>
-      </section>
-
       <section className="dataset-browser-grid">
         <div className="dataset-browser-panel">
           <header>
-            <h2>Episodes</h2>
+            <h2>{selectedLens ? "Episodes Through Lens" : "Episodes"}</h2>
             <span>
               {pageStart}-{pageEnd} / {visibleTotal}
             </span>
@@ -460,11 +513,20 @@ export function DatasetBrowser({
           </div>
         </div>
 
-        <div className="dataset-browser-panel">
-          <header>
-            <h2>Coverage</h2>
-            <span>{coverageRows.length}</span>
-          </header>
+        <details className="dataset-details-drawer">
+          <summary>
+            Dataset details
+            <span>{totalEpisodes} episodes · {probes.length} probes · {dataset.data?.activation_sites ?? 0} model sites</span>
+          </summary>
+          <div className="dataset-browser-metrics">
+            <Metric label="Episodes" value={totalEpisodes} />
+            <Metric label="Visible" value={visibleTotal} />
+            <Metric label="Datasets" value={datasetIds.length} />
+            <Metric label="Benchmarks" value={benchmarks.length} />
+            <Metric label="Tasks" value={tasks.length} />
+            <Metric label="Model Sites" value={dataset.data?.activation_sites ?? 0} />
+            <Metric label="Probes" value={probes.length} />
+          </div>
           <table className="compact-table">
             <thead>
               <tr>
@@ -489,7 +551,7 @@ export function DatasetBrowser({
               ))}
             </tbody>
           </table>
-        </div>
+        </details>
       </section>
     </main>
   );
@@ -497,6 +559,7 @@ export function DatasetBrowser({
 
 function FilterSelect({
   disabled = false,
+  includeAll = true,
   labels,
   label,
   value,
@@ -504,6 +567,7 @@ function FilterSelect({
   onChange,
 }: {
   disabled?: boolean;
+  includeAll?: boolean;
   labels?: Record<string, string>;
   label: string;
   value: string;
@@ -514,7 +578,7 @@ function FilterSelect({
     <label className="dataset-filter">
       {label}
       <select disabled={disabled} value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="all">All</option>
+        {includeAll ? <option value="all">All</option> : null}
         {values.map((item) => (
           <option key={item} value={item}>
             {labels?.[item] ?? item}
@@ -525,161 +589,103 @@ function FilterSelect({
   );
 }
 
-function RankedProbeList({
-  probes,
-  selectedProbeId,
-  total,
-  onProbeSelect,
+function LensSelector({
+  lenses,
+  selectedLensId,
+  onLensChange,
 }: {
-  probes: ProbeRankRecord[];
-  selectedProbeId: string;
-  total: number;
-  onProbeSelect: (artifactId: string) => void;
+  lenses: DatasetLens[];
+  selectedLensId: string;
+  onLensChange: (lensId: string) => void;
 }) {
+  const groups = lensGroups(lenses);
   return (
-    <div className="ranked-probe-panel">
-      <header>
-        <div>
-          <span>Ranked probes</span>
-          <strong>{probes.length}/{total}</strong>
-        </div>
-        <small>least useful: train-only sanity checks</small>
-      </header>
-      <div className="ranked-probe-list" aria-label="Ranked probes">
-        {probes.map(({ probe, reasons, stats }) => (
-          <button
-            className={probe.artifact_id === selectedProbeId ? "active" : ""}
-            key={probe.artifact_id}
-            type="button"
-            onClick={() => onProbeSelect(probe.artifact_id)}
-          >
-            <span>{probeQuestionLabel(probe)}</span>
-            <strong>{probe.name}</strong>
-            <small>
-              {reasons.join(" · ")} · {stats.scored} scored / {stats.heldoutScored} heldout
-            </small>
-          </button>
-        ))}
-        {!probes.length ? <div className="ranked-probe-empty">No probes match the search.</div> : null}
+    <section className="dataset-lens-strip" aria-label="Dataset lens">
+      <label className="dataset-lens-select">
+        <span>Dataset Lens</span>
+        <select value={selectedLensId} onChange={(event) => onLensChange(event.target.value)}>
+          <option value={NO_LENS_ID}>None - episode index</option>
+          {groups.map((group) => (
+            <optgroup key={group.family} label={group.label}>
+              {group.lenses.map((lens) => (
+                <option key={lens.artifactId} value={lens.artifactId}>
+                  {lensDisplayName(lens)}{lens.artifactType === "probe_suite" ? "" : " - ranking pending"}
+                </option>
+              ))}
+            </optgroup>
+          ))}
+        </select>
+      </label>
+    </section>
+  );
+}
+
+function LensEvidencePanel({
+  lens,
+  ranking,
+}: {
+  lens?: DatasetLens;
+  ranking?: DiscoveryArtifactEpisodesResponse;
+}) {
+  if (!lens) {
+    return (
+      <div className="probe-evidence-empty">
+        <span>Dataset lens</span>
+        <strong>No lens selected</strong>
+        <p>Choose a probe or another discovery artifact above to rank episodes through that signal.</p>
       </div>
+    );
+  }
+  return (
+    <div className="probe-evidence-empty">
+      <span>{familyLabel(lens.artifactType)}</span>
+      <strong>{lensDisplayName(lens)}</strong>
+      <p>
+        {ranking?.available === false
+          ? ranking.reason || "This artifact family is registered, but episode ranking is not implemented yet."
+          : "This lens is selected for dataset ranking. Detailed side-panel evidence is available for probe lenses first."}
+      </p>
     </div>
   );
 }
 
-function ProbeEvidencePanel({
-  activePredictionFilter,
-  activeSplitFilter,
-  cohortPreset,
-  episodes,
+function SelectedProbeLensSummary({
+  artifact,
   probe,
-  summaryRows,
-  onCohortPresetChange,
-  onOpenEpisode,
-  onPredictionFilterChange,
-  onSplitFilterChange,
 }: {
-  activePredictionFilter: string;
-  activeSplitFilter: string;
-  cohortPreset: ProbeCohortPreset;
-  episodes: DatasetEpisode[];
-  probe?: ProbeDatasetIndex;
-  summaryRows: Array<{ label: string; value: number | string }>;
-  onCohortPresetChange: (preset: ProbeCohortPreset) => void;
-  onOpenEpisode: (traceId: string, context?: EpisodeOpenContext) => void;
-  onPredictionFilterChange: (value: string) => void;
-  onSplitFilterChange: (value: string) => void;
+  artifact?: ArtifactRecord;
+  probe: ProbeDatasetIndex;
 }) {
-  const stats = probe ? probeReviewStats(probe) : undefined;
+  const spec = probeLensSpec(probe, artifact);
   return (
-    <div className="probe-evidence-panel">
-      {probe ? (
-        <>
-          <header>
-            <div>
-              <span>Probe evidence</span>
-              <strong>{probe.name}</strong>
-              <small>{probeQuestionLabel(probe)}</small>
-            </div>
-            <div className="probe-evidence-site">
-              <Target size={14} />
-              <span>{probe.best_feature || "site missing"}</span>
-            </div>
-          </header>
-          <div className="probe-evidence-summary">
-            <ProbeEvidenceFact label="Trust" value={probeTrustLabel(stats)} detail={probeTrustDetail(stats)} />
-            <ProbeEvidenceFact
-              label="Heldout review"
-              value={`${stats?.heldoutWrong ?? 0} wrong`}
-              detail={`${stats?.heldoutScored ?? 0} validation/test scored`}
-            />
-            <ProbeEvidenceFact
-              label="Model site"
-              value={probe.best_model || "model missing"}
-              detail={probe.best_feature || "No mapped feature was returned"}
-            />
-            <ProbeEvidenceFact
-              label="Visible cohort"
-              value={String(summaryRows.find((row) => row.label === "visible scored")?.value ?? 0)}
-              detail={String(summaryRows.find((row) => row.label === "visible splits")?.value ?? "-")}
-            />
-          </div>
-          <ProbeEvidencePlot
-            activePredictionFilter={activePredictionFilter}
-            activeSplitFilter={activeSplitFilter}
-            probe={probe}
-            onCohortPresetChange={onCohortPresetChange}
-            onPredictionFilterChange={onPredictionFilterChange}
-            onSplitFilterChange={onSplitFilterChange}
-          />
-          <div className="probe-cohort-presets" aria-label="Probe cohort presets">
-            {COHORT_PRESETS.map((preset) => (
-              <button
-                className={cohortPreset === preset.id ? "active" : ""}
-                key={preset.id}
-                type="button"
-                onClick={() => onCohortPresetChange(preset.id)}
-              >
-                {preset.label}
-              </button>
-            ))}
-          </div>
-          <div className="probe-evidence-episodes">
-            <header>
-              <span>Episodes to inspect</span>
-              <small>ranked by split, errors, and confidence</small>
-            </header>
-            <div className="probe-evidence-episode-list">
-              {episodes.map((episode) => {
-                const record = probeRecordForEpisode(probe, episode);
-                return (
-                  <button
-                    key={episode.trace_id}
-                    type="button"
-                    onClick={() => onOpenEpisode(episode.trace_id, episodeOpenContextForProbe(probe, episode))}
-                  >
-                    <span>{probeEpisodeInterestLabel(record)}</span>
-                    <strong>{episodeTitle(episode)}</strong>
-                    <small>
-                      {probeSplitLabel(record?.split_category, record?.split)} · {probeResultLabel(record)} ·{" "}
-                      {episodeBenchmark(episode) || "benchmark missing"} / task {episode.task_id ?? "-"}
-                    </small>
-                  </button>
-                );
-              })}
-              {!episodes.length ? <div className="ranked-probe-empty">No episodes available for this probe.</div> : null}
-            </div>
-          </div>
-        </>
-      ) : (
-        <div className="probe-evidence-empty">
-          <span>Probe evidence</span>
-          <strong>Select a ranked probe</strong>
-          <p>
-            Pick a probe to mine cohorts by split, correctness, confidence, and episode outcome.
-          </p>
-        </div>
-      )}
-    </div>
+    <section className="selected-lens-summary" aria-label="Selected lens summary">
+      <div className="selected-lens-title">
+        <span>Probe</span>
+        <strong>{probe.name}</strong>
+      </div>
+      <div className="selected-lens-facts">
+        <ProbeEvidenceFact
+          label={spec.prediction.label}
+          value={spec.prediction.value}
+          detail={spec.prediction.detail}
+        />
+        <ProbeEvidenceFact
+          label={spec.input.label}
+          value={spec.input.value}
+          detail={spec.input.detail}
+        />
+        <ProbeEvidenceFact
+          label={spec.output.label}
+          value={spec.output.value}
+          detail={spec.output.detail}
+        />
+        <ProbeEvidenceFact
+          label={spec.objective.label}
+          value={spec.objective.value}
+          detail={spec.objective.detail}
+        />
+      </div>
+    </section>
   );
 }
 
@@ -688,7 +694,7 @@ function ProbeEvidenceFact({
   label,
   value,
 }: {
-  detail: string;
+  detail?: string;
   label: string;
   value: string;
 }) {
@@ -696,12 +702,12 @@ function ProbeEvidenceFact({
     <div className="probe-evidence-fact">
       <span>{label}</span>
       <strong>{value}</strong>
-      <small>{detail}</small>
+      {detail ? <small>{detail}</small> : null}
     </div>
   );
 }
 
-function ProbeEvidencePlot({
+function ProbeSummaryVisual({
   activePredictionFilter,
   activeSplitFilter,
   probe,
@@ -719,11 +725,14 @@ function ProbeEvidencePlot({
   const splitRows = probeSplitChartRows(probe);
   const resultRows = probeResultChartRows(probe);
   return (
-    <div className="probe-evidence-plot" aria-label="Probe evidence plot">
+    <section className="probe-evidence-plot probe-summary-visual" aria-label="Probe summary">
       <div className="probe-evidence-plot-column">
         <header>
           <span>Split map</span>
-          <small>click to filter episodes</small>
+          <small className="probe-map-legend">
+            <span className="wrong">wrong</span>
+            <span className="high-conf-wrong">high-conf wrong</span>
+          </small>
         </header>
         <div className="probe-split-bars">
           {splitRows.map((row) => (
@@ -737,9 +746,18 @@ function ProbeEvidencePlot({
               <strong>{row.scored}/{row.total}</strong>
               <i className="probe-evidence-bar">
                 <b style={{ width: `${percentOf(row.scored, row.total)}%` }} />
-                <em style={{ width: `${percentOf(row.wrong, row.total)}%` }} />
+                <em className="wrong" style={{ width: `${percentOf(row.wrong ?? 0, row.total)}%` }} />
+                <em className="high-conf-wrong" style={{ width: `${percentOf(row.highConfWrong ?? 0, row.total)}%` }} />
               </i>
-              <small>{row.wrong} wrong · {row.highConfWrong} high-conf wrong</small>
+              <small>
+                {row.total === 0
+                  ? "no episodes"
+                  : row.wrong === null
+                  ? "error counts unavailable"
+                  : `${Math.max(0, row.scored - row.wrong)} correct · ${row.wrong} wrong · ${
+                      row.highConfWrong ?? 0
+                    } high-conf wrong`}
+              </small>
             </button>
           ))}
         </div>
@@ -747,7 +765,7 @@ function ProbeEvidencePlot({
       <div className="probe-evidence-plot-column">
         <header>
           <span>Result map</span>
-          <small>click to choose a cohort</small>
+          <small>compatible cohort</small>
         </header>
         <div className="probe-result-bars">
           {resultRows.map((row) => (
@@ -766,7 +784,7 @@ function ProbeEvidencePlot({
           ))}
         </div>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -820,6 +838,96 @@ function Metric({ label, value }: { label: string; value: number }) {
 
 function facetValues(values: EpisodeFacetValue[] | undefined): string[] {
   return (values ?? []).map((item) => item.value).filter(Boolean);
+}
+
+function discoveryLenses({
+  artifacts,
+  artifactsById,
+  familyByType,
+  probes,
+}: {
+  artifacts: ArtifactRecord[];
+  artifactsById: Map<string, ArtifactRecord>;
+  familyByType: Map<string, DiscoveryArtifactFamily>;
+  probes: ProbeDatasetIndex[];
+}): DatasetLens[] {
+  const seen = new Set<string>();
+  const lenses: DatasetLens[] = probes.map((probe) => {
+    const artifact = artifactsById.get(probe.artifact_id);
+    seen.add(probe.artifact_id);
+    return {
+      artifact,
+      artifactId: probe.artifact_id,
+      artifactType: "probe_suite",
+      family: familyByType.get("probe_suite"),
+      name: probe.name,
+      probe,
+    };
+  });
+  for (const artifact of artifacts) {
+    const artifactId = String(artifact.artifact_id ?? "");
+    const artifactType = String(artifact.artifact_type ?? "");
+    if (!artifactId || seen.has(artifactId) || !familyByType.has(artifactType)) {
+      continue;
+    }
+    seen.add(artifactId);
+    lenses.push({
+      artifact,
+      artifactId,
+      artifactType,
+      family: familyByType.get(artifactType),
+      name: String(artifact.name ?? artifactId),
+    });
+  }
+  return lenses.sort((left, right) => {
+    const familyDelta = familyLabel(left.artifactType).localeCompare(familyLabel(right.artifactType));
+    if (familyDelta !== 0) {
+      return familyDelta;
+    }
+    return lensDisplayName(left).localeCompare(lensDisplayName(right));
+  });
+}
+
+function lensGroups(lenses: DatasetLens[]): Array<{ family: string; label: string; lenses: DatasetLens[] }> {
+  const groups = new Map<string, DatasetLens[]>();
+  for (const lens of lenses) {
+    const key = lens.artifactType;
+    groups.set(key, [...(groups.get(key) ?? []), lens]);
+  }
+  return [...groups.entries()]
+    .map(([family, items]) => ({ family, label: familyLabel(family), lenses: items }))
+    .sort((left, right) => left.label.localeCompare(right.label));
+}
+
+function lensDisplayName(lens: DatasetLens): string {
+  return lens.name || String(lens.artifact?.name ?? lens.artifactId);
+}
+
+function familyLabel(artifactType: string): string {
+  const labels: Record<string, string> = {
+    activation_cluster: "Activation Cluster",
+    attention_edge: "Attention Edge",
+    attention_map: "Attention Map",
+    contrast_direction: "Contrast Direction",
+    crosscoder_feature: "Crosscoder",
+    probe_suite: "Probe",
+    sae_feature: "SAE",
+    transcoder_feature: "Transcoder",
+  };
+  return labels[artifactType] ?? artifactType.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function discoveryEpisodePayload(value: unknown): DiscoveryArtifactEpisodesResponse | undefined {
+  if (
+    value &&
+    typeof value === "object" &&
+    "artifact" in value &&
+    "family" in value &&
+    "available" in value
+  ) {
+    return value as DiscoveryArtifactEpisodesResponse;
+  }
+  return undefined;
 }
 
 function ProbeEpisodeBadge({ record }: { record?: ProbeEpisodeIndex }) {
