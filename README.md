@@ -20,6 +20,7 @@ HF model + environment + capture profile
 
 Current docs entrypoint: [docs/README.md](docs/README.md). Current operational
 state and known-good commands: [docs/current-state.md](docs/current-state.md).
+Start here for onboarding: [docs/quickstart.md](docs/quickstart.md).
 Dataset format contract: [docs/dataset-format.md](docs/dataset-format.md).
 
 ## Reviewer Quick Start

@@ -9,6 +9,8 @@ experiment notes when deciding what to run or implement.
 
 ## Read First
 
+- [quickstart.md](quickstart.md): 10-minute onboarding for choosing workflow,
+  running first successful checks, and locating the package boundaries.
 - [current-state.md](current-state.md): current repo direction, known-good
   commands, environment split, measured capture costs, and next action items.
 - [dataset-format.md](dataset-format.md): canonical dataset contract:
