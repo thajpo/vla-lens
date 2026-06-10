@@ -1,0 +1,158 @@
+{
+  "artifact": {
+    "created_at": "2026-06-09T00:00:00+00:00",
+    "lens_id": "probe-target-contacted",
+    "lens_type": "probe",
+    "lens_version": "v1",
+    "name": "target contacted",
+    "source": {
+      "module": "action_head",
+      "token_scope": "pooled"
+    },
+    "source_model": {
+      "model_id": "pi05"
+    },
+    "target": "target contacted",
+    "training": {
+      "dataset_id": "demo",
+      "objective": "logistic regression"
+    }
+  },
+  "bundle_id": "bundle-probe-target-contacted",
+  "capabilities": [
+    "score_series",
+    "ranked_moments",
+    "thresholding",
+    "prediction",
+    "uncertainty"
+  ],
+  "family": "probe",
+  "geometry": {
+    "capabilities": [
+      "score_series",
+      "ranked_moments",
+      "thresholding",
+      "prediction",
+      "uncertainty"
+    ],
+    "input_basis": "pooled_layer_activation",
+    "locus_kind": "none",
+    "output_kind": "scalar",
+    "temporal_scope": "timestep"
+  },
+  "primitives": [
+    {
+      "fields": {
+        "Input": "Pooled hidden states",
+        "Prediction": "Target contacted"
+      },
+      "kind": "provenance",
+      "lens_id": "probe-target-contacted",
+      "lens_run_id": "run-probe-target-contacted"
+    },
+    {
+      "episode_id": "episode-1",
+      "kind": "score_series",
+      "lens_id": "probe-target-contacted",
+      "lens_run_id": "run-probe-target-contacted",
+      "summary": {
+        "max": 0.91,
+        "mean": 0.42,
+        "min": 0.1
+      },
+      "threshold": 0.5,
+      "time_axis": "timestep",
+      "values_ref": {
+        "dtype": null,
+        "format": "array_ref",
+        "shape": [
+          12
+        ],
+        "uri": "arrays/probe-target-contacted/scores.zarr"
+      }
+    },
+    {
+      "kind": "ranked_moments",
+      "lens_id": "probe-target-contacted",
+      "lens_run_id": "run-probe-target-contacted",
+      "moments": [
+        {
+          "confidence": null,
+          "episode_id": "episode-1",
+          "frame_idx": null,
+          "label": null,
+          "policy_call": null,
+          "prediction": null,
+          "score": 0.91,
+          "thumbnail_ref": null,
+          "timestep": 7
+        }
+      ],
+      "ranking": "top"
+    },
+    {
+      "kind": "ranked_moments",
+      "lens_id": "probe-target-contacted",
+      "lens_run_id": "run-probe-target-contacted",
+      "moments": [
+        {
+          "confidence": null,
+          "episode_id": "episode-2",
+          "frame_idx": null,
+          "label": null,
+          "policy_call": null,
+          "prediction": null,
+          "score": 0.1,
+          "thumbnail_ref": null,
+          "timestep": 1
+        }
+      ],
+      "ranking": "bottom"
+    },
+    {
+      "confidence": 0.91,
+      "correct": null,
+      "episode_id": "episode-1",
+      "kind": "prediction",
+      "label": null,
+      "lens_id": "probe-target-contacted",
+      "lens_run_id": "run-probe-target-contacted",
+      "policy_call": null,
+      "prediction": true,
+      "split": "test",
+      "timestep": 7
+    }
+  ],
+  "run": {
+    "capture_profile_id": null,
+    "computed_at": "2026-06-09T00:00:00+00:00",
+    "dataset_id": "demo",
+    "episode_ids": [],
+    "evidence_bundle_id": "bundle-probe-target-contacted",
+    "lens_id": "probe-target-contacted",
+    "lens_run_id": "run-probe-target-contacted",
+    "lens_version": "v1",
+    "result_version": "probe_evidence.v1",
+    "status": "complete"
+  },
+  "unavailable": [
+    {
+      "capability": "contribution_breakdown",
+      "message": "Contribution breakdown unavailable because this probe exposes scores but not decomposed inputs.",
+      "panel_id": "contribution",
+      "reason": "missing_contribution_basis"
+    },
+    {
+      "capability": "model_locus_view",
+      "message": "Model locus unavailable because this probe uses pooled layer activations.",
+      "panel_id": "model_locus",
+      "reason": "pooled_representation"
+    },
+    {
+      "capability": "failure_cases",
+      "message": "Failure cases unavailable because no labels or proxy targets exist.",
+      "panel_id": "failure_cases",
+      "reason": "missing_labels"
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "artifact": {
+    "created_at": "2026-06-09T00:00:00+00:00",
+    "lens_id": "probe-sae-target-contact",
+    "lens_type": "probe",
+    "lens_version": "v1",
+    "name": "target contact SAE probe",
+    "source": {
+      "module": "action_head",
+      "token_scope": "pooled"
+    },
+    "source_model": {
+      "model_id": "pi05"
+    },
+    "target": "target contact SAE probe",
+    "training": {
+      "dataset_id": "demo",
+      "objective": "logistic regression"
+    }
+  },
+  "bundle_id": "bundle-probe-sae-target-contact",
+  "capabilities": [
+    "contribution_breakdown",
+    "model_locus_view"
+  ],
+  "family": "probe",
+  "geometry": {
+    "capabilities": [
+      "contribution_breakdown",
+      "model_locus_view"
+    ],
+    "input_basis": "sae_feature",
+    "locus_kind": "model_locus",
+    "output_kind": "scalar",
+    "temporal_scope": "policy_call"
+  },
+  "primitives": [
+    {
+      "fields": {
+        "Input": "sae_feature",
+        "Prediction": "target contact SAE probe"
+      },
+      "kind": "provenance",
+      "lens_id": "probe-sae-target-contact",
+      "lens_run_id": "run-probe-sae-target-contact"
+    },
+    {
+      "episode_id": null,
+      "kind": "model_locus",
+      "lens_id": "probe-sae-target-contact",
+      "lens_run_id": "run-probe-sae-target-contact",
+      "locus": {
+        "channel_index": null,
+        "head_index": null,
+        "layer": 6,
+        "model_site_id": "action_head.layers.6.attn",
+        "module": null,
+        "stream": "attention",
+        "token_index": null
+      },
+      "policy_call": null,
+      "source_label": "contact-like feature",
+      "timestep": null
+    },
+    {
+      "basis": "sae_feature",
+      "claim_level": "human_labeled_feature",
+      "episode_id": "episode-1",
+      "items": [
+        {
+          "description": null,
+          "key": "sae_17",
+          "label": "contact-like feature",
+          "model_locus": {
+            "channel_index": null,
+            "head_index": null,
+            "layer": 6,
+            "model_site_id": "action_head.layers.6.attn",
+            "module": null,
+            "stream": "attention",
+            "token_index": null
+          },
+          "rank": 1,
+          "sign": "positive",
+          "value": 0.5
+        }
+      ],
+      "kind": "contribution",
+      "lens_id": "probe-sae-target-contact",
+      "lens_run_id": "run-probe-sae-target-contact",
+      "policy_call": 2,
+      "timestep": null
+    }
+  ],
+  "run": {
+    "capture_profile_id": null,
+    "computed_at": "2026-06-09T00:00:00+00:00",
+    "dataset_id": "demo",
+    "episode_ids": [],
+    "evidence_bundle_id": "bundle-probe-sae-target-contact",
+    "lens_id": "probe-sae-target-contact",
+    "lens_run_id": "run-probe-sae-target-contact",
+    "lens_version": "v1",
+    "result_version": "probe_evidence.v1",
+    "status": "complete"
+  },
+  "unavailable": []
+}

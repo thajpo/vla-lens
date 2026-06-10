@@ -1,0 +1,108 @@
+{
+  "artifact": {
+    "created_at": "2026-06-09T00:00:00+00:00",
+    "lens_id": "probe-head-grasp-intent",
+    "lens_type": "probe",
+    "lens_version": "v1",
+    "name": "attention head grasp intent probe",
+    "source": {
+      "module": "action_head",
+      "token_scope": "pooled"
+    },
+    "source_model": {
+      "model_id": "pi05"
+    },
+    "target": "attention head grasp intent probe",
+    "training": {
+      "dataset_id": "demo",
+      "objective": "logistic regression"
+    }
+  },
+  "bundle_id": "bundle-probe-head-grasp-intent",
+  "capabilities": [
+    "contribution_breakdown",
+    "model_locus_view"
+  ],
+  "family": "probe",
+  "geometry": {
+    "capabilities": [
+      "contribution_breakdown",
+      "model_locus_view"
+    ],
+    "input_basis": "attention_head_output",
+    "locus_kind": "model_locus",
+    "output_kind": "scalar",
+    "temporal_scope": "policy_call"
+  },
+  "primitives": [
+    {
+      "fields": {
+        "Input": "attention_head_output",
+        "Prediction": "attention head grasp intent probe"
+      },
+      "kind": "provenance",
+      "lens_id": "probe-head-grasp-intent",
+      "lens_run_id": "run-probe-head-grasp-intent"
+    },
+    {
+      "episode_id": null,
+      "kind": "model_locus",
+      "lens_id": "probe-head-grasp-intent",
+      "lens_run_id": "run-probe-head-grasp-intent",
+      "locus": {
+        "channel_index": null,
+        "head_index": null,
+        "layer": 6,
+        "model_site_id": "action_head.layers.6.attn",
+        "module": null,
+        "stream": "attention",
+        "token_index": null
+      },
+      "policy_call": null,
+      "source_label": "Layer 6 head 3",
+      "timestep": null
+    },
+    {
+      "basis": "attention_head_output",
+      "claim_level": "grouped_model_locus",
+      "episode_id": "episode-1",
+      "items": [
+        {
+          "description": null,
+          "key": "head_3",
+          "label": "Layer 6 head 3",
+          "model_locus": {
+            "channel_index": null,
+            "head_index": null,
+            "layer": 6,
+            "model_site_id": "action_head.layers.6.attn",
+            "module": null,
+            "stream": "attention",
+            "token_index": null
+          },
+          "rank": 1,
+          "sign": "positive",
+          "value": 0.5
+        }
+      ],
+      "kind": "contribution",
+      "lens_id": "probe-head-grasp-intent",
+      "lens_run_id": "run-probe-head-grasp-intent",
+      "policy_call": 2,
+      "timestep": null
+    }
+  ],
+  "run": {
+    "capture_profile_id": null,
+    "computed_at": "2026-06-09T00:00:00+00:00",
+    "dataset_id": "demo",
+    "episode_ids": [],
+    "evidence_bundle_id": "bundle-probe-head-grasp-intent",
+    "lens_id": "probe-head-grasp-intent",
+    "lens_run_id": "run-probe-head-grasp-intent",
+    "lens_version": "v1",
+    "result_version": "probe_evidence.v1",
+    "status": "complete"
+  },
+  "unavailable": []
+}

@@ -1,0 +1,167 @@
+{
+  "artifact": {
+    "created_at": "2026-06-09T00:00:00+00:00",
+    "lens_id": "probe-grasp-intent",
+    "lens_type": "probe",
+    "lens_version": "v1",
+    "name": "grasp intent",
+    "source": {
+      "module": "action_head",
+      "token_scope": "pooled"
+    },
+    "source_model": {
+      "model_id": "pi05"
+    },
+    "target": "grasp intent",
+    "training": {
+      "dataset_id": "demo",
+      "objective": "logistic regression"
+    }
+  },
+  "bundle_id": "bundle-probe-grasp-intent",
+  "capabilities": [
+    "score_series",
+    "ranked_moments",
+    "prediction",
+    "contribution_breakdown",
+    "model_locus_view"
+  ],
+  "family": "probe",
+  "geometry": {
+    "capabilities": [
+      "score_series",
+      "ranked_moments",
+      "prediction",
+      "contribution_breakdown",
+      "model_locus_view"
+    ],
+    "input_basis": "layer_activation",
+    "locus_kind": "model_locus",
+    "output_kind": "scalar",
+    "temporal_scope": "policy_call"
+  },
+  "primitives": [
+    {
+      "fields": {
+        "Input": "Layer 8 residual stream",
+        "Prediction": "Grasp intent"
+      },
+      "kind": "provenance",
+      "lens_id": "probe-grasp-intent",
+      "lens_run_id": "run-probe-grasp-intent"
+    },
+    {
+      "episode_id": "episode-1",
+      "kind": "score_series",
+      "lens_id": "probe-grasp-intent",
+      "lens_run_id": "run-probe-grasp-intent",
+      "summary": {
+        "max": 0.88,
+        "mean": 0.6,
+        "min": 0.2
+      },
+      "threshold": null,
+      "time_axis": "policy_call",
+      "values_ref": {
+        "dtype": null,
+        "format": "array_ref",
+        "shape": [
+          4
+        ],
+        "uri": "arrays/probe-grasp-intent/scores.zarr"
+      }
+    },
+    {
+      "kind": "ranked_moments",
+      "lens_id": "probe-grasp-intent",
+      "lens_run_id": "run-probe-grasp-intent",
+      "moments": [
+        {
+          "confidence": null,
+          "episode_id": "episode-1",
+          "frame_idx": null,
+          "label": null,
+          "policy_call": 3,
+          "prediction": null,
+          "score": 0.88,
+          "thumbnail_ref": null,
+          "timestep": null
+        }
+      ],
+      "ranking": "top"
+    },
+    {
+      "confidence": 0.88,
+      "correct": true,
+      "episode_id": "episode-1",
+      "kind": "prediction",
+      "label": null,
+      "lens_id": "probe-grasp-intent",
+      "lens_run_id": "run-probe-grasp-intent",
+      "policy_call": 3,
+      "prediction": true,
+      "split": "validation",
+      "timestep": null
+    },
+    {
+      "episode_id": "episode-1",
+      "kind": "model_locus",
+      "lens_id": "probe-grasp-intent",
+      "lens_run_id": "run-probe-grasp-intent",
+      "locus": {
+        "channel_index": null,
+        "head_index": null,
+        "layer": 8,
+        "model_site_id": "action_head.layers.8.resid",
+        "module": null,
+        "stream": "residual",
+        "token_index": null
+      },
+      "policy_call": 3,
+      "source_label": "Layer 8 residual stream",
+      "timestep": null
+    },
+    {
+      "basis": "raw_activation_dimension",
+      "claim_level": "numeric_only",
+      "episode_id": "episode-1",
+      "items": [
+        {
+          "description": null,
+          "key": "dim_42",
+          "label": null,
+          "model_locus": {
+            "channel_index": 42,
+            "head_index": null,
+            "layer": 8,
+            "model_site_id": "action_head.layers.8.resid",
+            "module": null,
+            "stream": "residual",
+            "token_index": null
+          },
+          "rank": 1,
+          "sign": "positive",
+          "value": 0.42
+        }
+      ],
+      "kind": "contribution",
+      "lens_id": "probe-grasp-intent",
+      "lens_run_id": "run-probe-grasp-intent",
+      "policy_call": 3,
+      "timestep": null
+    }
+  ],
+  "run": {
+    "capture_profile_id": null,
+    "computed_at": "2026-06-09T00:00:00+00:00",
+    "dataset_id": "demo",
+    "episode_ids": [],
+    "evidence_bundle_id": "bundle-probe-grasp-intent",
+    "lens_id": "probe-grasp-intent",
+    "lens_run_id": "run-probe-grasp-intent",
+    "lens_version": "v1",
+    "result_version": "probe_evidence.v1",
+    "status": "complete"
+  },
+  "unavailable": []
+}
