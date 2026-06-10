@@ -32,6 +32,79 @@ function panelsById(bundle) {
   );
 }
 
+const PANEL_EXPECTATIONS = [
+  [
+    "scalar timestep",
+    scalarBundle,
+    {
+      contribution: false,
+      failure_cases: false,
+      model_locus: false,
+      prediction: true,
+      probe_provenance: true,
+      ranked_moments: true,
+      score_series: true,
+      unavailable_reasons: true,
+    },
+  ],
+  [
+    "pooled layer",
+    pooledBundle,
+    {
+      contribution: false,
+      failure_cases: false,
+      model_locus: false,
+      prediction: true,
+      probe_provenance: true,
+      ranked_moments: true,
+      score_series: true,
+      unavailable_reasons: true,
+    },
+  ],
+  [
+    "raw layer vector",
+    contributionBundle,
+    {
+      contribution: true,
+      failure_cases: false,
+      model_locus: true,
+      prediction: true,
+      probe_provenance: true,
+      ranked_moments: true,
+      score_series: true,
+      unavailable_reasons: true,
+    },
+  ],
+  [
+    "SAE feature",
+    saeBundle,
+    {
+      contribution: true,
+      failure_cases: false,
+      model_locus: true,
+      prediction: false,
+      probe_provenance: true,
+      ranked_moments: false,
+      score_series: false,
+      unavailable_reasons: true,
+    },
+  ],
+  [
+    "attention head grouped",
+    headBundle,
+    {
+      contribution: true,
+      failure_cases: false,
+      model_locus: true,
+      prediction: false,
+      probe_provenance: true,
+      ranked_moments: false,
+      score_series: false,
+      unavailable_reasons: true,
+    },
+  ],
+];
+
 test("probe evidence helpers consume shared Python-generated fixture payloads", () => {
   assert.deepEqual([...primitiveKinds(scalarBundle)].sort(), [
     "prediction",
@@ -44,6 +117,41 @@ test("probe evidence helpers consume shared Python-generated fixture payloads", 
   assert.deepEqual(pooledBundle, scalarBundle);
 });
 
+test("selectAvailablePanels has exact golden fixture expectations", () => {
+  for (const [name, bundle, expected] of PANEL_EXPECTATIONS) {
+    const panels = panelsById(bundle);
+
+    assert.deepEqual(Object.keys(panels).sort(), Object.keys(expected).sort(), name);
+    for (const [panelId, available] of Object.entries(expected)) {
+      assert.equal(panels[panelId].available, available, `${name} ${panelId}`);
+    }
+  }
+});
+
+test("selectAvailablePanels isolates capability gating from primitive presence", () => {
+  const [missingCapability] = selectAvailablePanels(scalarBundle, [
+    {
+      panel_id: "comparison_provenance",
+      consumes: ["provenance"],
+      requires_capabilities: ["comparison"],
+      unavailable_copy: "Comparison provenance is unavailable.",
+    },
+  ]);
+  const [missingPrimitive] = selectAvailablePanels(scalarBundle, [
+    {
+      panel_id: "score_backed_contribution",
+      consumes: ["contribution"],
+      requires_capabilities: ["score_series"],
+      unavailable_copy: "Contribution is unavailable.",
+    },
+  ]);
+
+  assert.equal(missingCapability.available, false);
+  assert.equal(missingCapability.reason, "missing capability: comparison");
+  assert.equal(missingPrimitive.available, false);
+  assert.equal(missingPrimitive.reason, "missing evidence primitive: contribution");
+});
+
 test("panel availability uses unavailable reasons instead of fake contribution/model panels", () => {
   const panels = panelsById(scalarBundle);
 
@@ -54,6 +162,9 @@ test("panel availability uses unavailable reasons instead of fake contribution/m
   assert.equal(panels.contribution.reason, "missing_contribution_basis");
   assert.equal(panels.model_locus.available, false);
   assert.equal(panels.model_locus.reason, "pooled_representation");
+  assert.equal(panels.failure_cases.available, false);
+  assert.equal(panels.failure_cases.reason, "missing_labels");
+  assert.match(panels.failure_cases.message, /no labels or proxy targets/);
   assert.equal(panels.unavailable_reasons.available, true);
 });
 
@@ -109,6 +220,34 @@ test("selector helpers expose current moment evidence without fake contribution 
   assert.deepEqual(current.score_series.map((series) => series.episode_id), ["episode-1"]);
   assert.deepEqual(current.contributions, []);
   assert.deepEqual(current.model_loci, []);
+});
+
+test("selectCurrentMomentEvidence narrows failure-case primitives directly", () => {
+  const bundle = {
+    ...scalarBundle,
+    capabilities: [...scalarBundle.capabilities, "failure_cases"],
+    primitives: [
+      ...scalarBundle.primitives,
+      {
+        kind: "failure_case",
+        lens_id: scalarBundle.artifact.lens_id,
+        lens_run_id: scalarBundle.run.lens_run_id,
+        ranking: "false_positive",
+        moments: [
+          { episode_id: "episode-1", score: 0.91, timestep: 7 },
+          { episode_id: "episode-2", score: 0.12, timestep: 1 },
+        ],
+      },
+    ],
+  };
+
+  const current = selectCurrentMomentEvidence(bundle, {
+    episode_id: "episode-1",
+    ranking: "false_positive",
+    timestep: 7,
+  });
+
+  assert.deepEqual(current.failure_moments.map((moment) => [moment.episode_id, moment.score]), [["episode-1", 0.91]]);
 });
 
 test("contribution selectors are selection-aware and preserve conservative claim level", () => {
@@ -206,4 +345,37 @@ test("probe episode lens adapter default selection preserves fallback ranking", 
   assert.equal(selection.episode_id, "episode-2");
   assert.equal(selection.timestep, 1);
   assert.deepEqual(current.ranked_moments.map((moment) => moment.episode_id), ["episode-2"]);
+});
+
+test("probe evidence interaction checklist stays executable", () => {
+  const selectProbePanels = panelsById(contributionBundle);
+  assert.equal(selectProbePanels.score_series.available, true);
+  assert.equal(selectProbePanels.ranked_moments.available, true);
+  assert.equal(selectProbePanels.model_locus.available, true);
+
+  const momentSelection = probeEpisodeLensAdapter.defaultSelection(contributionBundle);
+  const momentEvidence = selectCurrentMomentEvidence(contributionBundle, momentSelection);
+  assert.deepEqual(
+    [
+      momentSelection.dataset_id,
+      momentSelection.lens_id,
+      momentSelection.lens_run_id,
+      momentSelection.episode_id,
+      momentSelection.policy_call,
+      momentSelection.ranking,
+    ],
+    ["demo", "probe-grasp-intent", "run-probe-grasp-intent", "episode-1", 3, "top"],
+  );
+  assert.equal(momentEvidence.predictions[0].prediction, true);
+  assert.equal(momentEvidence.ranked_moments[0].score, 0.88);
+
+  const sourceAnnotations = probeEpisodeLensAdapter.pipelineAnnotations(contributionBundle, momentSelection);
+  assert.equal(sourceAnnotations[0].model_locus.model_site_id, "action_head.layers.8.resid");
+
+  const contributorSelection = { ...momentSelection, feature_id: "dim_42" };
+  assert.deepEqual(
+    selectContributionRows(contributionBundle, contributorSelection).map((row) => [row.key, row.value, row.sign]),
+    [["dim_42", 0.42, "positive"]],
+  );
+  assert.equal(selectContributionClaimLevel(contributionBundle, contributorSelection), "numeric_only");
 });
