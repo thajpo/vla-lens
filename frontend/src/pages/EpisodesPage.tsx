@@ -532,9 +532,17 @@ export function EpisodesPage({
     researchSelection: activeProbeEvidenceSelection,
   });
 
+  const isEpisodeLoading = Boolean(activeTraceId) && episodeDetail.isLoading && !selectedEpisode;
+  const isEpisodeUnavailable = !selectedEpisode && !isEpisodeLoading;
+
   return (
     <main className="episodes-workspace episode-main" style={workspaceStyle}>
-      {!selectedEpisode ? <div className="empty-state">No episode selected.</div> : null}
+      {isEpisodeLoading ? <div className="app-message">Loading episode...</div> : null}
+      {isEpisodeUnavailable ? (
+        <div className="empty-state">
+          {activeTraceId ? `Episode ${activeTraceId} could not be loaded.` : "No episode selected."}
+        </div>
+      ) : null}
       {selectedEpisode ? (
         <>
           <EpisodeNavigationBar
