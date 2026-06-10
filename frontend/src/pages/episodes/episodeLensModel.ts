@@ -8,6 +8,19 @@ import type {
   ProbeSiteReadout,
   TimelineLensAnnotation,
 } from "../../types/dataset";
+import type {
+  EvidenceClaimLevel,
+  ModelLocusRef,
+  ProbeEvidenceBundle,
+  ResearchSelectionState,
+} from "../../types/probeEvidence";
+import {
+  primitivesByKind,
+  probeEpisodeLensAdapter,
+  selectContributionClaimLevel,
+  selectCurrentMomentEvidence,
+  selectUnavailableReasons,
+} from "../../types/probeEvidence.ts";
 import type { ProbeLayerRef } from "./shared";
 
 export type LensRankingMode = "probe_contribution" | "raw_activation";
@@ -19,6 +32,13 @@ export type LensFeatureRow = {
   label?: string | null;
   title?: string | null;
   value: number;
+};
+export type ProbeEvidenceSelectionArgs = {
+  activeTraceId: string;
+  currentTimestep: number;
+  initialLensRunId?: string;
+  initialResearchSelection?: ResearchSelectionState;
+  policyCallIndex?: number;
 };
 
 export function lensDefaultApplicationKey(view?: EpisodeLensView | null): string {
@@ -75,6 +95,222 @@ export function lensTimelineMarks(view?: EpisodeLensView | null): TimelineLensAn
 
 export function lensInspectorRankings(view?: EpisodeLensView | null): LensInspectorRanking[] {
   return view?.inspector?.rankings ?? [];
+}
+
+export function probeEvidenceSelection(
+  bundle: ProbeEvidenceBundle | undefined,
+  {
+    activeTraceId,
+    currentTimestep,
+    initialLensRunId,
+    initialResearchSelection,
+    policyCallIndex,
+  }: ProbeEvidenceSelectionArgs,
+): ResearchSelectionState | null {
+  if (!bundle) {
+    return null;
+  }
+  const defaultSelection = probeEpisodeLensAdapter.defaultSelection(bundle);
+  const initialMatches =
+    initialResearchSelection?.lens_id === bundle.artifact.lens_id &&
+    (!initialResearchSelection.lens_run_id ||
+      initialResearchSelection.lens_run_id === bundle.run.lens_run_id) &&
+    (!initialLensRunId || initialLensRunId === bundle.run.lens_run_id);
+  const base = initialMatches ? initialResearchSelection : defaultSelection;
+  const selection = {
+    ...base,
+    dataset_id: base.dataset_id ?? bundle.run.dataset_id,
+    episode_id: (activeTraceId || base.episode_id) ?? null,
+    lens_id: bundle.artifact.lens_id,
+    lens_run_id: bundle.run.lens_run_id,
+    policy_call: policyCallIndex ?? base.policy_call ?? null,
+    timestep: currentTimestep ?? base.timestep ?? null,
+  };
+  return {
+    ...selection,
+    model_locus: selection.model_locus ?? modelLocusForResearchSelection(bundle, selection),
+  };
+}
+
+export function probeLayerReferencesFromEvidenceBundle(
+  bundle: ProbeEvidenceBundle | undefined,
+  selection: ResearchSelectionState | null,
+): ProbeLayerRef[] {
+  if (!bundle || !selection) {
+    return [];
+  }
+  const readout = probeEvidenceReadout(bundle, selection);
+  return probeEpisodeLensAdapter.pipelineAnnotations(bundle, selection)
+    .filter((annotation) => annotation.model_locus.model_site_id || annotation.model_locus.layer !== undefined)
+    .map((annotation) => ({
+      actual: readout.actual,
+      artifactId: bundle.artifact.lens_id,
+      confidence: readout.confidence ?? null,
+      correct: readout.correct,
+      default: modelLocusMatchesSelection(annotation.model_locus, selection),
+      layer: annotation.model_locus.layer ?? null,
+      modelSiteId: annotation.model_locus.model_site_id ?? annotation.model_locus.module ?? `layer-${annotation.model_locus.layer ?? "unknown"}`,
+      name: bundle.artifact.name,
+      policyCall: selection.policy_call ?? annotation.policy_call ?? null,
+      predicted: readout.predicted,
+      selected: modelLocusMatchesSelection(annotation.model_locus, selection),
+      target: bundle.artifact.target ?? bundle.artifact.name,
+      trained: annotation.source === "model_locus",
+    }));
+}
+
+export function probeEvidenceTimelineMarks(
+  bundle: ProbeEvidenceBundle | undefined,
+  selection: ResearchSelectionState | null,
+): TimelineLensAnnotation[] {
+  if (!bundle) {
+    return [];
+  }
+  return probeEpisodeLensAdapter.timelineRows(bundle)
+    .filter((row) => !selection?.episode_id || row.episode_id === selection.episode_id)
+    .map((row) => ({
+      kind: row.source,
+      label: row.ranking ? humanLabel(String(row.ranking)) : row.source.replaceAll("_", " "),
+      policy_call_index: row.policy_call ?? null,
+      selected: Boolean(selection) && timelineRowMatchesSelection(row, selection),
+      timestep: row.timestep ?? null,
+      value: row.score ?? row.confidence ?? row.prediction ?? null,
+      verdict: row.source === "failure_case" ? "wrong" : undefined,
+    }));
+}
+
+export function probeEvidenceSiteReadoutFromBundle(
+  bundle: ProbeEvidenceBundle | undefined,
+  selection: ResearchSelectionState | null,
+  selectedSiteName: string,
+): ProbeSiteReadout | null {
+  if (!bundle || !selection) {
+    return null;
+  }
+  const annotations = probeEpisodeLensAdapter.pipelineAnnotations(bundle, selection);
+  const locusAnnotation = annotations.find((annotation) => {
+    const site = annotation.model_locus.model_site_id ?? annotation.model_locus.module ?? "";
+    return !selectedSiteName || site === selectedSiteName;
+  }) ?? annotations[0];
+  const modelSiteId = locusAnnotation?.model_locus.model_site_id ?? locusAnnotation?.model_locus.module ?? null;
+  if (!modelSiteId) {
+    return null;
+  }
+  const rows = probeEpisodeLensAdapter.channelRanking(bundle, selection);
+  const unavailable = selectUnavailableReasons(bundle, { panel_id: "contribution" })[0] ??
+    selectUnavailableReasons(bundle, { capability: "contribution_breakdown" })[0];
+  return {
+    available: true,
+    default_feature: featureFromContributionKey(rows[0]?.key),
+    feature_contributors: rows.map((row) => ({
+      contribution: row.value,
+      direction: row.sign ?? "unknown",
+      feature: featureFromContributionKey(row.key) ?? row.rank,
+      label: contributionLabel(row.label, row.claim_level),
+      rank: row.rank,
+      sign_label: claimLevelLabel(row.claim_level),
+    })),
+    feature_contributors_available: rows.length > 0,
+    feature_contributors_unavailable_reason: rows.length ? null : unavailable?.message ?? "Contribution breakdown unavailable for this probe.",
+    intervention_seed_available: false,
+    layer: locusAnnotation?.model_locus.layer ?? null,
+    model_site_id: modelSiteId,
+    normalization: "probe evidence bundle",
+    policy_call_index: selection.policy_call ?? null,
+    probe_contribution_ranking_available: rows.length > 0,
+    ranking_basis: selectContributionClaimLevel(bundle, selection) ?? "numeric_only",
+    raw_activation_ranking_available: true,
+    site_readout_available: true,
+    temporal_readout_available: true,
+    timestep: selection.timestep ?? null,
+    units: "contribution",
+  };
+}
+
+export function probeEvidenceFeatureRows(
+  bundle: ProbeEvidenceBundle | undefined,
+  selection: ResearchSelectionState | null,
+  rankingMode: LensRankingMode = "probe_contribution",
+): LensFeatureRow[] {
+  if (!bundle || !selection || rankingMode === "raw_activation") {
+    return [];
+  }
+  return probeEpisodeLensAdapter.channelRanking(bundle, selection).map((row) => ({
+    detail: `${claimLevelLabel(row.claim_level)} · ${row.basis.replaceAll("_", " ")}`,
+    direction: row.sign ?? "unknown",
+    index: featureFromContributionKey(row.key) ?? row.rank,
+    label: `#${row.rank}`,
+    title: contributionTitle(row.claim_level, row.basis),
+    value: row.value,
+  }));
+}
+
+export function probeEvidenceReadout(
+  bundle: ProbeEvidenceBundle,
+  selection: ResearchSelectionState,
+): LensReadoutSummary {
+  const current = selectCurrentMomentEvidence(bundle, selection);
+  const prediction = current.predictions[0];
+  const failure = current.failure_moments[0];
+  const ranked = current.ranked_moments[0];
+  const correct = prediction?.correct ?? null;
+  const confidence = prediction?.confidence ?? ranked?.confidence ?? ranked?.score ?? null;
+  return {
+    actual: prediction?.label ?? ranked?.label ?? failure?.label ?? null,
+    confidence,
+    correct,
+    model_site_id: current.model_loci[0]?.locus.model_site_id ?? null,
+    policy_call_index: prediction?.policy_call ?? selection.policy_call ?? null,
+    predicted: prediction?.prediction ?? ranked?.prediction ?? failure?.prediction ?? null,
+    score: ranked?.score ?? failure?.score ?? null,
+    split: prediction?.split ?? null,
+    timestep: prediction?.timestep ?? selection.timestep ?? null,
+    verdict: correct === true ? "correct" : correct === false ? "wrong" : confidence === null ? "unknown" : "ambiguous",
+  };
+}
+
+export function probeEvidenceSpec(bundle?: ProbeEvidenceBundle): Record<string, string> {
+  if (!bundle) {
+    return {};
+  }
+  const provenance = primitivesByKind(bundle, "provenance")[0];
+  const fields = provenance?.kind === "provenance" ? provenance.fields ?? {} : {};
+  return {
+    input: String(fields.Input ?? bundle.geometry.input_basis).replaceAll("_", " "),
+    objective: String(fields.Objective ?? bundle.artifact.training?.objective ?? "probe objective"),
+    output: String(fields.Output ?? bundle.geometry.output_kind).replaceAll("_", " "),
+    prediction: String(fields.Prediction ?? bundle.artifact.target ?? bundle.artifact.name),
+  };
+}
+
+export function probeEvidenceCallouts(bundle?: ProbeEvidenceBundle): string[] {
+  return (bundle?.unavailable ?? []).map((reason) => reason.message).slice(0, 3);
+}
+
+export function probeSourceSitesFromEvidenceBundle(
+  bundle: ProbeEvidenceBundle | undefined,
+  selection: ResearchSelectionState | null,
+): ProbeSourceSite[] {
+  if (!bundle || !selection) {
+    return [];
+  }
+  return probeEpisodeLensAdapter.pipelineAnnotations(bundle, selection)
+    .filter((annotation) => annotation.source === "model_locus")
+    .map((annotation) => {
+      const modelSiteId = annotation.model_locus.model_site_id ?? annotation.model_locus.module ?? `layer-${annotation.model_locus.layer ?? "unknown"}`;
+      return {
+        available: true,
+        default: modelLocusMatchesSelection(annotation.model_locus, selection),
+        label: annotation.label,
+        layer: annotation.model_locus.layer ?? null,
+        model_site_id: modelSiteId,
+        selected: modelLocusMatchesSelection(annotation.model_locus, selection),
+        short_label: annotation.model_locus.layer === null || annotation.model_locus.layer === undefined
+          ? modelSiteId
+          : `L${annotation.model_locus.layer}`,
+        trained: true,
+      };
+    });
 }
 
 export function probeSourceSitesFromLensView(
@@ -191,6 +427,110 @@ function contributorTitle(row: ProbeFeatureContribution): string | null {
       : `raw activation ${row.activation.toFixed(3)}`,
   ];
   return parts.filter(Boolean).join(" · ") || null;
+}
+
+function modelLocusMatchesSelection(
+  locus: { model_site_id?: string | null; layer?: number | null },
+  selection: ResearchSelectionState,
+): boolean {
+  if (selection.model_locus?.model_site_id && locus.model_site_id) {
+    return selection.model_locus.model_site_id === locus.model_site_id;
+  }
+  if (selection.model_locus?.layer !== undefined && selection.model_locus?.layer !== null) {
+    return selection.model_locus.layer === locus.layer;
+  }
+  return false;
+}
+
+function timelineRowMatchesSelection(
+  row: { policy_call?: number | null; timestep?: number | null },
+  selection: ResearchSelectionState | null,
+): boolean {
+  if (!selection) {
+    return false;
+  }
+  if (
+    selection.policy_call !== undefined &&
+    selection.policy_call !== null &&
+    row.policy_call !== undefined &&
+    row.policy_call !== null &&
+    selection.policy_call !== row.policy_call
+  ) {
+    return false;
+  }
+  if (
+    selection.timestep !== undefined &&
+    selection.timestep !== null &&
+    row.timestep !== undefined &&
+    row.timestep !== null &&
+    selection.timestep !== row.timestep
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function modelLocusForResearchSelection(
+  bundle: ProbeEvidenceBundle,
+  selection: ResearchSelectionState,
+): ModelLocusRef | null {
+  return primitivesByKind(bundle, "model_locus").find((primitive) => {
+    if (selection.episode_id && primitive.episode_id && primitive.episode_id !== selection.episode_id) {
+      return false;
+    }
+    if (
+      selection.policy_call !== undefined &&
+      selection.policy_call !== null &&
+      primitive.policy_call !== undefined &&
+      primitive.policy_call !== null &&
+      selection.policy_call !== primitive.policy_call
+    ) {
+      return false;
+    }
+    if (
+      selection.timestep !== undefined &&
+      selection.timestep !== null &&
+      primitive.timestep !== undefined &&
+      primitive.timestep !== null &&
+      selection.timestep !== primitive.timestep
+    ) {
+      return false;
+    }
+    return true;
+  })?.locus ?? null;
+}
+
+function featureFromContributionKey(value?: string | null): number | null {
+  const match = String(value ?? "").match(/(?:dim|feature|sae|head)_([0-9]+)/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function contributionLabel(label: string | null | undefined, claimLevel: EvidenceClaimLevel): string | null {
+  if (!label) {
+    return claimLevel === "numeric_only" ? null : claimLevelLabel(claimLevel);
+  }
+  return claimLevel === "numeric_only" ? `${label} (numeric)` : label;
+}
+
+function claimLevelLabel(value: EvidenceClaimLevel): string {
+  const labels: Record<EvidenceClaimLevel, string> = {
+    grouped_model_locus: "grouped model locus",
+    human_labeled_feature: "human-labeled feature",
+    numeric_only: "numeric only",
+    semantic_hypothesis: "semantic hypothesis",
+  };
+  return labels[value];
+}
+
+function contributionTitle(claimLevel: EvidenceClaimLevel, basis: string): string {
+  if (claimLevel === "numeric_only") {
+    return `Numeric contribution over ${basis.replaceAll("_", " ")}; not a semantic feature claim.`;
+  }
+  return `${claimLevelLabel(claimLevel)} over ${basis.replaceAll("_", " ")}.`;
 }
 
 function policyCallsLabel(value: unknown): string {

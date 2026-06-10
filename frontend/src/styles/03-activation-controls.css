@@ -219,6 +219,31 @@
   padding: 4px 6px;
 }
 
+.lens-moment-strip {
+  border-top: 1px solid var(--line);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 9px;
+  padding-top: 9px;
+}
+
+.lens-moment-strip strong,
+.lens-moment-strip span {
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 850;
+  line-height: 1;
+  padding: 4px 6px;
+}
+
+.lens-moment-strip strong {
+  background: var(--soft);
+  color: var(--ink);
+  text-transform: uppercase;
+}
+
 .lens-source-sites span.default,
 .lens-source-sites span.best {
   border-color: #d6a84f;

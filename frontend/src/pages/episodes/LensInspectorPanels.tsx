@@ -1,10 +1,16 @@
 import type { ActivationSliceResponse, EpisodeLensView } from "../../types/dataset";
+import type { ProbeEvidenceBundle, ResearchSelectionState } from "../../types/probeEvidence";
 import { FeatureTable } from "./InspectorTables";
 import { TOP_CHANNEL_COUNT_OPTIONS } from "./shared";
 import { formatMaybeNumber, labelFromSnake } from "./formatters";
 import {
   lensReadoutLine,
+  probeEvidenceCallouts,
+  probeEvidenceReadout,
+  probeEvidenceSpec,
+  probeEvidenceTimelineMarks,
   probeSourceSitesFromLensView,
+  probeSourceSitesFromEvidenceBundle,
   probeSiteReadoutFromLensView,
   probeTrainingLine,
   type LensFeatureRow,
@@ -129,12 +135,108 @@ export function TopChannelPanel({
 export function LensCompactReadout({
   onJumpDefault,
   onSendToIntervention,
+  probeEvidenceBundle,
+  probeEvidenceSelection,
   view,
 }: {
   onJumpDefault: () => void;
   onSendToIntervention: () => void;
+  probeEvidenceBundle?: ProbeEvidenceBundle;
+  probeEvidenceSelection?: ResearchSelectionState | null;
   view?: EpisodeLensView;
 }) {
+  if (probeEvidenceBundle && probeEvidenceSelection) {
+    const readout = probeEvidenceReadout(probeEvidenceBundle, probeEvidenceSelection);
+    const spec = probeEvidenceSpec(probeEvidenceBundle);
+    const sourceSites = probeSourceSitesFromEvidenceBundle(probeEvidenceBundle, probeEvidenceSelection);
+    const visibleSources = sourceSites.filter((site) => site.trained).slice(0, 8);
+    const selectedSource = sourceSites.find((site) => site.selected || site.default || site.best);
+    const sourceTitle = selectedSource?.label ?? selectedSource?.model_site_id ?? "";
+    const callouts = probeEvidenceCallouts(probeEvidenceBundle);
+    const topMoments = probeEvidenceTimelineMarks(probeEvidenceBundle, probeEvidenceSelection)
+      .filter((mark) => mark.kind === "ranked_moment")
+      .slice(0, 3);
+    return (
+      <section className="lens-compact-readout">
+        <div className="section-title">
+          <span>{probeEvidenceBundle.artifact.name}</span>
+          <small>{lensReadoutLine(readout)}</small>
+        </div>
+        <div className="lens-spec-brief">
+          <p>
+            Predicts <strong>{spec.prediction}</strong> from <strong>{spec.input}</strong>.
+          </p>
+          <span>{spec.objective}</span>
+          <span>Output {spec.output}</span>
+        </div>
+        {visibleSources.length ? (
+          <div className="lens-source-sites" aria-label="Probe source sites">
+            <strong>Probe layers</strong>
+            {visibleSources.map((site) => (
+              <span
+                className={[
+                  site.selected ? "selected" : "",
+                  site.default ? "default" : "",
+                  site.best ? "best" : "",
+                ].filter(Boolean).join(" ")}
+                key={site.model_site_id}
+                title={site.label ?? site.model_site_id}
+              >
+                {site.short_label ?? `L${site.layer ?? "-"}`}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="lens-readout-strip">
+          <span>
+            {readout.predicted === undefined || readout.predicted === null
+              ? "Prediction -"
+              : `Prediction ${String(readout.predicted)}`}
+          </span>
+          <span>
+            {readout.actual === undefined || readout.actual === null
+              ? "Actual -"
+              : `Actual ${String(readout.actual)}`}
+          </span>
+          {readout.confidence === undefined || readout.confidence === null ? null : (
+            <span>Confidence {formatMaybeNumber(readout.confidence)}</span>
+          )}
+          <span>Correct {readout.correct === null || readout.correct === undefined ? "-" : readout.correct ? "yes" : "no"}</span>
+          <span>Policy call {probeEvidenceSelection.policy_call ?? readout.policy_call_index ?? "-"}</span>
+          {sourceTitle ? <span title={sourceTitle}>Model site {selectedSource?.short_label ?? sourceTitle}</span> : null}
+        </div>
+        {topMoments.length ? (
+          <div className="lens-moment-strip" aria-label="Top moments in episode">
+            <strong>Episode moments</strong>
+            {topMoments.map((mark, index) => (
+              <span key={`${mark.kind}-${mark.policy_call_index ?? ""}-${mark.timestep ?? ""}-${index}`}>
+                {mark.label ?? "moment"} · {mark.policy_call_index === null || mark.policy_call_index === undefined
+                  ? `timestep ${mark.timestep ?? "-"}`
+                  : `call ${mark.policy_call_index}`}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="lens-action-row">
+          <button type="button" onClick={onJumpDefault}>
+            Use probe site
+          </button>
+          <button disabled type="button" title="Canonical probe evidence does not yet expose an intervention seed.">
+            Seed intervention
+          </button>
+        </div>
+        {callouts.length ? (
+          <div className="lens-callout-list">
+            {callouts.map((text, index) => (
+              <div className="lens-readout-note" key={`${text}-${index}`}>
+                {text}
+              </div>
+            ))}
+          </div>
+        ) : null}
+      </section>
+    );
+  }
   if (!view || view.family !== "probe_suite") {
     return null;
   }

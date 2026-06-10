@@ -12,6 +12,7 @@ import type {
   PromptTokenAttention,
   SelectedPatch,
 } from "../../types/dataset";
+import type { ProbeEvidenceBundle, ResearchSelectionState } from "../../types/probeEvidence";
 import {
   type CameraOverlayPayload,
   type InspectionMode,
@@ -23,6 +24,9 @@ import { DetailItem } from "./InspectorTables";
 import { ModelPipelineMap } from "./PipelineMap";
 import {
   lensFeatureRows,
+  probeEvidenceFeatureRows,
+  probeEvidenceSiteReadoutFromBundle,
+  probeLayerReferencesFromEvidenceBundle,
   probeLayerReferencesFromLensView,
   probeSiteReadoutFromLensView,
   type LensRankingMode,
@@ -60,6 +64,8 @@ function ActivationSitePanelImpl({
   cameraOverlay,
   episodeLensView,
   episodeProbes,
+  probeEvidenceBundle,
+  probeEvidenceSelection,
   generationStep,
   generationStepCount,
   expertTokenActivations,
@@ -104,6 +110,8 @@ function ActivationSitePanelImpl({
   cameraOverlay?: CameraOverlayPayload;
   episodeLensView?: EpisodeLensView;
   episodeProbes?: EpisodeProbesResponse;
+  probeEvidenceBundle?: ProbeEvidenceBundle;
+  probeEvidenceSelection?: ResearchSelectionState | null;
   generationStep: number;
   generationStepCount: number;
   expertTokenActivations?: ExpertTokenActivationsResponse;
@@ -144,12 +152,28 @@ function ActivationSitePanelImpl({
     ? Math.max(0, siteFeatureCount || activationSlice?.feature_count || 0)
     : 0;
   const topRows = selectedSiteHasFeatures ? activationSlice?.top_abs ?? [] : [];
-  const lensProbeLayerRefs = probeLayerReferencesFromLensView(episodeLensView);
+  const evidenceProbeLayerRefs = probeLayerReferencesFromEvidenceBundle(
+    probeEvidenceBundle,
+    probeEvidenceSelection ?? null,
+  );
+  const lensProbeLayerRefs = evidenceProbeLayerRefs.length
+    ? evidenceProbeLayerRefs
+    : probeLayerReferencesFromLensView(episodeLensView);
   const probeLayerRefs = lensProbeLayerRefs.length
     ? lensProbeLayerRefs
     : probeLayerReferences(episodeProbes);
-  const lensSiteReadout = probeSiteReadoutFromLensView(episodeLensView);
-  const lensRows = lensFeatureRows(episodeLensView, lensRankingMode);
+  const evidenceSiteReadout = probeEvidenceSiteReadoutFromBundle(
+    probeEvidenceBundle,
+    probeEvidenceSelection ?? null,
+    selectedSiteName,
+  );
+  const lensSiteReadout = evidenceSiteReadout ?? probeSiteReadoutFromLensView(episodeLensView);
+  const evidenceRows = probeEvidenceFeatureRows(
+    probeEvidenceBundle,
+    probeEvidenceSelection ?? null,
+    lensRankingMode,
+  );
+  const lensRows = evidenceRows.length ? evidenceRows : lensFeatureRows(episodeLensView, lensRankingMode);
   const channelFeatureControl =
     inspectionMode === "features" && selectedSiteHasFeatures ? (
       <ChannelFeatureControl
@@ -199,6 +223,8 @@ function ActivationSitePanelImpl({
         inspectionMode={inspectionMode}
         lensContextPanel={
           <LensCompactReadout
+            probeEvidenceBundle={probeEvidenceBundle}
+            probeEvidenceSelection={probeEvidenceSelection}
             view={episodeLensView}
             onJumpDefault={onLensDefaultJump}
             onSendToIntervention={onLensSendToIntervention}

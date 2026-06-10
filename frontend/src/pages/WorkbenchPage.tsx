@@ -6,17 +6,22 @@ import { EpisodesPage } from "./EpisodesPage";
 import { DatasetBrowser } from "./workbench/DatasetBrowser";
 import { useWorkbenchStore } from "../store/workbenchStore";
 import type { InterventionLabSeed } from "../types/interventions";
+import type { ResearchSelectionState } from "../types/probeEvidence";
 import type { InspectionMode } from "./episodes/shared";
 import type { EpisodeOpenContext } from "./workbench/types";
 
 type EpisodeRouteState = {
+  datasetId?: string;
   feature?: number;
   fromCohort: boolean;
   inspectionMode?: InspectionMode;
+  lensRunId?: string;
   policyCall?: number;
   probeId: string;
   rankingMode?: string;
+  researchSelection?: ResearchSelectionState;
   siteName: string;
+  timestep?: number;
   traceId: string;
 };
 
@@ -63,10 +68,13 @@ export function WorkbenchPage() {
           cohortReturnHref={episodeRouteState.fromCohort ? "#dataset" : undefined}
           initialFeature={episodeRouteState.feature}
           initialInspectionMode={episodeRouteState.inspectionMode}
+          initialLensRunId={episodeRouteState.lensRunId}
           initialLensRankingMode={episodeRouteState.rankingMode}
           initialPolicyCall={episodeRouteState.policyCall}
           initialProbeArtifactId={episodeRouteState.probeId}
+          initialResearchSelection={episodeRouteState.researchSelection}
           initialSiteName={episodeRouteState.siteName}
+          initialTimestep={episodeRouteState.timestep}
           initialTraceId={episodeTraceId}
           key={episodeRouteKey(episodeRouteState)}
           onSendToIntervention={handleSendToIntervention}
@@ -104,13 +112,19 @@ export function WorkbenchPage() {
 
   function handleOpenDatasetEpisode(traceId: string, context: EpisodeOpenContext = {}) {
     const nextRoute = {
+      datasetId: context.researchSelection?.dataset_id ?? undefined,
       fromCohort: Boolean(context.fromCohort),
       feature: typeof context.feature === "number" ? context.feature : undefined,
       inspectionMode: parseInspectionMode(context.inspectionMode),
+      lensRunId: context.lensRunId ?? context.researchSelection?.lens_run_id ?? undefined,
       policyCall: typeof context.policyCall === "number" ? context.policyCall : undefined,
       probeId: context.probeId ?? "",
       rankingMode: context.rankingMode ?? "",
+      researchSelection: context.researchSelection,
       siteName: context.siteName ?? "",
+      timestep: typeof context.researchSelection?.timestep === "number"
+        ? context.researchSelection.timestep
+        : undefined,
       traceId,
     };
     setActivePage("episode");
@@ -121,13 +135,19 @@ export function WorkbenchPage() {
 
   function handleEpisodeTraceChange(traceId: string, context: EpisodeOpenContext = {}) {
     const nextRoute = {
+      datasetId: context.researchSelection?.dataset_id ?? episodeRouteState.datasetId,
       fromCohort: context.fromCohort ?? episodeRouteState.fromCohort,
       feature: typeof context.feature === "number" ? context.feature : episodeRouteState.feature,
       inspectionMode: parseInspectionMode(context.inspectionMode) ?? episodeRouteState.inspectionMode,
+      lensRunId: context.lensRunId ?? context.researchSelection?.lens_run_id ?? episodeRouteState.lensRunId,
       policyCall: typeof context.policyCall === "number" ? context.policyCall : episodeRouteState.policyCall,
       probeId: context.probeId ?? episodeRouteState.probeId,
       rankingMode: context.rankingMode ?? episodeRouteState.rankingMode,
+      researchSelection: context.researchSelection ?? episodeRouteState.researchSelection,
       siteName: context.siteName ?? episodeRouteState.siteName,
+      timestep: typeof context.researchSelection?.timestep === "number"
+        ? context.researchSelection.timestep
+        : episodeRouteState.timestep,
       traceId,
     };
     setActivePage("episode");
@@ -196,9 +216,12 @@ function emptyEpisodeRouteState(): EpisodeRouteState {
   return {
     fromCohort: false,
     inspectionMode: undefined,
+    lensRunId: undefined,
     rankingMode: "",
     probeId: "",
+    researchSelection: undefined,
     siteName: "",
+    timestep: undefined,
     traceId: "",
   };
 }
@@ -210,15 +233,36 @@ function parseEpisodeRoute(value: string): EpisodeRouteState {
   const params = new URLSearchParams(query);
   const policyCall = numberParam(params.get("call"));
   const feature = numberParam(params.get("feature"));
+  const timestep = numberParam(params.get("timestep"));
+  const datasetId = params.get("dataset_id") ?? "";
+  const lensRunId = params.get("lens_run_id") ?? "";
+  const probeId = params.get("probe_id") ?? params.get("probe") ?? "";
+  const ranking = params.get("rank") ?? "";
+  const traceId = decodeURIComponent(tracePart);
+  const researchSelection = probeId || lensRunId || datasetId || ranking || typeof timestep === "number" || typeof policyCall === "number"
+    ? {
+        dataset_id: datasetId || undefined,
+        episode_id: traceId || undefined,
+        lens_id: probeId || undefined,
+        lens_run_id: lensRunId || undefined,
+        policy_call: policyCall ?? null,
+        ranking: parseRankingKind(ranking),
+        timestep: timestep ?? null,
+      }
+    : undefined;
   return {
+    datasetId: datasetId || undefined,
     feature,
     fromCohort: params.get("from") === "cohort",
     inspectionMode: parseInspectionMode(params.get("mode")),
+    lensRunId: lensRunId || undefined,
     policyCall: policyCall ?? undefined,
-    probeId: params.get("probe_id") ?? params.get("probe") ?? "",
+    probeId,
     rankingMode: params.get("ranking") ?? "",
+    researchSelection,
     siteName: params.get("site") ?? "",
-    traceId: decodeURIComponent(tracePart),
+    timestep,
+    traceId,
   };
 }
 
@@ -227,8 +271,20 @@ function buildEpisodeHash(route: EpisodeRouteState): string {
   if (route.probeId) {
     params.set("probe_id", route.probeId);
   }
+  if (route.lensRunId) {
+    params.set("lens_run_id", route.lensRunId);
+  }
+  if (route.datasetId) {
+    params.set("dataset_id", route.datasetId);
+  }
   if (typeof route.policyCall === "number") {
     params.set("call", String(route.policyCall));
+  }
+  if (typeof route.timestep === "number") {
+    params.set("timestep", String(route.timestep));
+  }
+  if (route.researchSelection?.ranking) {
+    params.set("rank", route.researchSelection.ranking);
   }
   if (typeof route.feature === "number") {
     params.set("feature", String(route.feature));
@@ -257,7 +313,11 @@ function episodeRouteKey(route: EpisodeRouteState): string {
   return [
     route.traceId,
     route.probeId,
+    route.lensRunId ?? "",
+    route.datasetId ?? "",
     route.policyCall ?? "",
+    route.timestep ?? "",
+    route.researchSelection?.ranking ?? "",
     route.feature ?? "",
     route.inspectionMode ?? "",
     route.rankingMode ?? "",
@@ -285,4 +345,18 @@ function numberParam(value: string | null): number | undefined {
   }
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function parseRankingKind(value: string | null | undefined): ResearchSelectionState["ranking"] {
+  if (
+    value === "top" ||
+    value === "bottom" ||
+    value === "uncertain" ||
+    value === "false_positive" ||
+    value === "false_negative" ||
+    value === "largest_delta"
+  ) {
+    return value;
+  }
+  return undefined;
 }

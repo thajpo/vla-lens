@@ -1,6 +1,6 @@
 import { type CSSProperties, useCallback, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchActivationSites, fetchDataset, fetchDiscoveryArtifactReadout, fetchEpisode, fetchEpisodeAnnotation, fetchEpisodeNeighbors, fetchEpisodeInteractions, fetchEpisodeMetrics, fetchEpisodeProbes, fetchEpisodesPage, fetchPolicyCalls, saveEpisodeAnnotation } from "../api/dataset";
+import { fetchActivationSites, fetchDataset, fetchEpisode, fetchEpisodeAnnotation, fetchEpisodeNeighbors, fetchEpisodeInteractions, fetchEpisodeMetrics, fetchEpisodeProbes, fetchEpisodesPage, fetchPolicyCalls, saveEpisodeAnnotation } from "../api/dataset";
 import type { SelectedPatch } from "../types/dataset";
 import { episodeCapabilityGates, episodeQueryGates } from "./capabilityGating";
 import { EpisodeColumnResizer } from "./episodes/EpisodeColumnResizer";
@@ -9,15 +9,15 @@ import { EpisodeNavigationBar } from "./episodes/EpisodeNavigation";
 import { EpisodeStageView } from "./episodes/EpisodeStageView";
 import { camerasFromManifest, frameVersionKey } from "./episodes/episodeData";
 import { attentionSiteForSite, axisCountForSite, inspectionModeForSite, isAttentionSite } from "./episodes/siteModel";
-import { artifactReadoutParams as buildArtifactReadoutParams } from "./episodes/artifactReadoutParams";
-import { buildProbeInterventionSeed } from "./episodes/interventionSeed";
 import { type EpisodePlotTab, type InspectionMode } from "./episodes/shared";
-import { lensTimelineMarks } from "./episodes/episodeLensModel";
 import { useEpisodeInspectorModel } from "./episodes/useEpisodeInspectorModel";
 import { useEpisodeHashSync } from "./episodes/useEpisodeHashSync";
 import { useEpisodeLensView } from "./episodes/useEpisodeLensView";
 import { useAdjacentEpisodePrefetch, useEpisodePlayback, useOverlayPrefetch } from "./episodes/useEpisodePrefetch";
 import { useEpisodeRouteContext } from "./episodes/useEpisodeRouteContext";
+import { useProbeEvidenceDefaultSiteAction } from "./episodes/useProbeEvidenceInspectorActions";
+import { useDiscoveryArtifactReadout, useProbeInterventionSender } from "./episodes/useProbeArtifactContext";
+import { useProbeEvidenceLensContext } from "./episodes/useProbeEvidenceLensContext";
 import type { EpisodesPageProps } from "./episodes/EpisodesPageTypes";
 
 const EMPTY_ARTIFACTS: Record<string, unknown>[] = [], EMPTY_GENERATION_VALUES: (number | null)[][] = [];
@@ -25,10 +25,13 @@ export function EpisodesPage({
   cohortReturnHref,
   initialFeature,
   initialInspectionMode,
+  initialLensRunId,
   initialLensRankingMode,
   initialPolicyCall,
   initialProbeArtifactId = "",
+  initialResearchSelection,
   initialSiteName = "",
+  initialTimestep,
   manifest,
   initialTraceId = "",
   onSendToIntervention,
@@ -64,7 +67,7 @@ export function EpisodesPage({
     staleTime: 30_000,
   });
   const firstEpisode = firstEpisodePage.data?.episodes[0];
-  const [timestep, setTimestep] = useState(0);
+  const [timestep, setTimestep] = useState(initialTimestep ?? 0);
   const [isPlayingFrames, setIsPlayingFrames] = useState(false);
   const [playbackFps, setPlaybackFps] = useState(10);
   const [showObjectOverlay, setShowObjectOverlay] = useState(true);
@@ -266,18 +269,14 @@ export function EpisodesPage({
     timestep,
     topChannelCount,
   });
-  const artifactReadoutParams = buildArtifactReadoutParams({
+  const artifactReadout = useDiscoveryArtifactReadout({
+    activeSelectedProbeArtifactId,
     activeSelectedSiteName,
     activeTraceId,
+    hasProbeArtifacts,
     selectedProbePolicyCall,
     selectedProbeRef,
     selectedProbeSite,
-  });
-  const artifactReadout = useQuery({
-    queryKey: ["discovery-artifact-readout", activeSelectedProbeArtifactId, artifactReadoutParams],
-    queryFn: () => fetchDiscoveryArtifactReadout(activeSelectedProbeArtifactId, artifactReadoutParams),
-    enabled: Boolean(hasProbeArtifacts && activeTraceId && activeSelectedProbeArtifactId),
-    staleTime: 15_000,
   });
   const openComparisonCandidate = useCallback((traceId: string) => {
     setIsPlayingFrames(false);
@@ -369,21 +368,7 @@ export function EpisodesPage({
       jumpToPolicyCall(selectedProbePolicyCall);
     }
   }, [jumpToPolicyCall, selectedProbePolicyCall]);
-  const sendProbeToIntervention = useCallback(async () => {
-    if (!onSendToIntervention || !activeSelectedProbeArtifactId) {
-      return;
-    }
-    const seed = await buildProbeInterventionSeed({
-      activeSelectedProbeArtifactId,
-      activeSelectedSiteName,
-      activeTraceId,
-      selectedProbe,
-      selectedProbePolicyCall,
-      selectedProbeRef,
-      selectedProbeSite,
-    });
-    onSendToIntervention(seed);
-  }, [
+  const sendProbeToIntervention = useProbeInterventionSender({
     activeSelectedProbeArtifactId,
     activeSelectedSiteName,
     activeTraceId,
@@ -392,7 +377,7 @@ export function EpisodesPage({
     selectedProbePolicyCall,
     selectedProbeRef,
     selectedProbeSite,
-  ]);
+  });
 
   useEpisodeRouteContext({
     activeSelectedProbeArtifactId,
@@ -521,6 +506,17 @@ export function EpisodesPage({
     ),
     topChannelCount,
   });
+  const { activeLensTimelineMarks, activeProbeEvidenceBundle, activeProbeEvidenceSelection } = useProbeEvidenceLensContext({
+    activeEpisodeLensView, activeSelectedProbeArtifactId,
+    activeTraceId,
+    currentTimestep,
+    datasetIdentityKey,
+    hasProbeArtifacts,
+    initialLensRunId,
+    initialResearchSelection,
+    policyCallIndex: activeCall?.index,
+  });
+  const jumpToActiveLensDefault = useProbeEvidenceDefaultSiteAction({ fallback: jumpToLensDefault, onInspectionModeChange: handleInspectionModeChange, onSiteChange: handleSiteChange, selection: activeProbeEvidenceSelection });
 
   useEpisodeHashSync({
     activeSelectedProbeArtifactId,
@@ -529,9 +525,11 @@ export function EpisodesPage({
     clampedFeature,
     cohortReturnHref,
     isPlayingFrames,
+    lensRunId: initialLensRunId,
     lensRankingMode,
     inspectionMode,
     policyCallIndex: activeCall?.index,
+    researchSelection: activeProbeEvidenceSelection,
   });
 
   return (
@@ -585,7 +583,7 @@ export function EpisodesPage({
               fps: playbackFps,
               cacheKey: frameCacheKey,
               isPlaying: isPlayingFrames,
-              lensTimelineMarks: lensTimelineMarks(activeEpisodeLensView),
+              lensTimelineMarks: activeLensTimelineMarks,
               maxTimestep,
               policyCalls: policyCallList,
               showAttentionOverlay,
@@ -630,7 +628,7 @@ export function EpisodesPage({
               onJumpToPolicyCall: jumpToPolicyCall,
               onProbeChange: setSelectedProbeArtifactId,
             }}
-            showProbePanel={!activeSelectedProbeArtifactId || activeEpisodeLensView?.available === false}
+            showProbePanel={!activeSelectedProbeArtifactId || (!activeProbeEvidenceBundle && activeEpisodeLensView?.available === false)}
           />
 
           <EpisodeColumnResizer onResizePctChange={setInspectorWidthPct} />
@@ -646,6 +644,8 @@ export function EpisodesPage({
               cameraOverlay,
               episodeLensView: activeEpisodeLensView,
               episodeProbes: hasProbeArtifacts ? episodeProbes.data : undefined,
+              probeEvidenceBundle: activeProbeEvidenceBundle,
+              probeEvidenceSelection: activeProbeEvidenceSelection,
               selectedProbeArtifactId: activeSelectedProbeArtifactId,
               patchFeatures: patchFeatures.data,
               expertTokenActivations: expertTokenActivations.data,
@@ -673,7 +673,7 @@ export function EpisodesPage({
               onPromptTokenSelect: handlePromptTokenSelect,
               onActivationClipPercentChange: setActivationClipPercent,
               onInspectionModeChange: handleInspectionModeChange,
-              onLensDefaultJump: jumpToLensDefault,
+              onLensDefaultJump: jumpToActiveLensDefault,
               onLensRankingModeChange: setLensRankingMode,
               onLensSendToIntervention: sendLensToIntervention,
               onProbeSelect: setSelectedProbeArtifactId,
