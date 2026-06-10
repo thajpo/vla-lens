@@ -544,7 +544,7 @@ export function DatasetBrowser({
             </span>
           </header>
           <div className="dataset-episode-table-wrap">
-            <table className="compact-table dataset-episode-table">
+            <table className={`compact-table dataset-episode-table ${selectedProbe ? "probe-evidence-table" : ""}`}>
               <thead>
                 {selectedProbe ? (
                   <tr>
@@ -731,32 +731,40 @@ function ProbeLensWorkbench({
 
 function ProbeMechanismCard({ model }: { model: ProbeLensWorkbenchViewModel }) {
   return (
-    <section className="probe-mechanism-card" aria-label="Probe mechanism summary">
+    <section className="probe-mechanism-card" aria-label="Probe readout summary">
       <header>
-        <span>Probe input</span>
+        <span>Probe reads from</span>
         <strong>{model.mechanism.modelSite}</strong>
+        <small>The activation source used to score episodes with this probe.</small>
       </header>
       <div className="probe-mechanism-tags">
-        <span>{model.mechanism.basis}</span>
-        <span>{model.mechanism.temporal}</span>
-        <span>{model.mechanism.output}</span>
+        <span><b>Basis</b>{model.mechanism.basis}</span>
+        <span><b>Time</b>{model.mechanism.temporal}</span>
+        <span><b>Score</b>{model.mechanism.output}</span>
       </div>
       {model.mechanism.contributors.length ? (
-        <div className="probe-contributor-list">
-          {model.mechanism.contributors.map((item) => (
-            <div className={`probe-contributor ${item.tone}`} key={item.key}>
-              <span>{item.value}</span>
-              <strong>{item.label}</strong>
-              <small>{item.detail}</small>
-            </div>
-          ))}
+        <div className="probe-contributor-section">
+          <div>
+            <span>Top contributing features</span>
+            <small>Largest signed probe weights available in the saved evidence bundle.</small>
+          </div>
+          <div className="probe-contributor-list">
+            {model.mechanism.contributors.map((item) => (
+              <div className={`probe-contributor ${item.tone}`} key={item.key}>
+                <span>{item.value}</span>
+                <strong>{item.label}</strong>
+                <small>{item.detail}</small>
+              </div>
+            ))}
+          </div>
         </div>
       ) : (
-        <p>Open an episode to see contributing dimensions.</p>
+        <p>Top contributing features were not saved for this probe bundle. Episode scores can still be ranked.</p>
       )}
       {model.mechanism.missing.length ? (
         <details className="probe-mechanism-missing">
-          <summary>Missing probe details</summary>
+          <summary>Why some probe evidence is unavailable</summary>
+          <p>The saved bundle does not include every evidence primitive for this lens. The dataset page can still rank episodes, but these details cannot be shown here.</p>
           <ul>
             {model.mechanism.missing.map((message) => (
               <li key={message}>{message}</li>
@@ -829,7 +837,6 @@ function ProbeEpisodeTableRow({
   const record = probeRecordForEpisode(probe, episode);
   const reason = probeEpisodeInspectionReason(probe, bundle, episode, datasetFilter);
   const meta = [
-    episodeBenchmark(episode),
     episode.task_id ? `task ${episode.task_id}` : "",
     episodeSeed(episode) ? `seed ${episodeSeed(episode)}` : "",
     episode.length ? `${episode.length} steps` : "",

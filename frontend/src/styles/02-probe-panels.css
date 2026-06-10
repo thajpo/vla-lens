@@ -682,10 +682,17 @@
   overflow-wrap: anywhere;
 }
 
+.probe-mechanism-card > header small,
+.probe-contributor-section > div:first-child small {
+  color: #64748b;
+  font-size: 11px;
+  line-height: 1.35;
+}
+
 .probe-mechanism-tags {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 5px;
 }
 
 .probe-mechanism-tags span,
@@ -698,6 +705,36 @@
   min-height: 24px;
   padding: 4px 7px;
   text-transform: uppercase;
+}
+
+.probe-mechanism-tags span {
+  display: inline-grid;
+  gap: 1px;
+  line-height: 1.1;
+  min-height: 30px;
+  min-width: 76px;
+}
+
+.probe-mechanism-tags b {
+  color: #64748b;
+  font-size: 8px;
+  font-weight: 850;
+}
+
+.probe-contributor-section {
+  display: grid;
+  gap: 7px;
+}
+
+.probe-contributor-section > div:first-child {
+  display: grid;
+  gap: 2px;
+}
+
+.probe-contributor-section > div:first-child span {
+  color: #0f172a;
+  font-size: 11px;
+  font-weight: 900;
 }
 
 .probe-contributor-list {
@@ -765,6 +802,10 @@
   text-transform: uppercase;
 }
 
+.probe-mechanism-missing p {
+  margin-top: 8px;
+}
+
 .probe-mechanism-missing ul {
   margin: 8px 0 0;
   padding-left: 18px;
@@ -783,7 +824,7 @@
 }
 
 .dataset-episode-link.probe-oriented {
-  max-width: 620px;
+  max-width: 340px;
 }
 
 .dataset-episode-link.probe-oriented span {
@@ -793,7 +834,8 @@
 .probe-inspect-reason {
   display: grid;
   gap: 3px;
-  min-width: 150px;
+  max-width: 220px;
+  min-width: 0;
 }
 
 .probe-inspect-reason strong {
@@ -825,6 +867,45 @@
 
 .probe-inspect-reason .probe-mini-timeline {
   max-width: 150px;
+}
+
+.probe-evidence-table {
+  table-layout: fixed;
+}
+
+.probe-evidence-table th,
+.probe-evidence-table td {
+  padding: 7px 8px;
+}
+
+.probe-evidence-table th:nth-child(1),
+.probe-evidence-table td:nth-child(1) {
+  width: 32%;
+}
+
+.probe-evidence-table th:nth-child(2),
+.probe-evidence-table td:nth-child(2) {
+  width: 118px;
+}
+
+.probe-evidence-table th:nth-child(3),
+.probe-evidence-table td:nth-child(3) {
+  width: 230px;
+}
+
+.probe-evidence-table th:nth-child(4),
+.probe-evidence-table td:nth-child(4) {
+  width: 116px;
+}
+
+.probe-evidence-table th:nth-child(5),
+.probe-evidence-table td:nth-child(5) {
+  width: 92px;
+}
+
+.probe-evidence-table th:nth-child(6),
+.probe-evidence-table td:nth-child(6) {
+  width: 38px;
 }
 
 @media (max-width: 980px) {

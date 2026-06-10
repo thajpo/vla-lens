@@ -444,15 +444,16 @@ input {
 .dataset-table-controls.probe-mode {
   align-items: stretch;
   background: #fffdf8;
-  gap: 8px;
+  gap: 6px;
+  padding: 8px 10px;
 }
 
 .dataset-table-controls.probe-mode .dataset-search {
-  flex: 2 1 360px;
+  flex: 1 1 260px;
 }
 
 .dataset-table-controls.probe-mode > .dataset-filter {
-  flex: 0 1 150px;
+  flex: 0 1 132px;
 }
 
 .dataset-refine-cohort {

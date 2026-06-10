@@ -1609,13 +1609,13 @@ function modelLocusSummary(bundle: ProbeEvidenceBundle): string {
   if (!locus) {
     return "";
   }
-  if (locus.model_site_id) {
-    return locus.model_site_id;
-  }
-  if (locus.layer !== null && locus.layer !== undefined) {
-    return `layer ${locus.layer}`;
-  }
-  return "";
+  return compactJoin(
+    [
+      conciseModelSiteLabel(locus.model_site_id ?? locus.module),
+      locus.layer === null || locus.layer === undefined ? "" : `layer ${locus.layer}`,
+    ],
+    " · ",
+  );
 }
 
 function numberFromContributionKey(value: string | null | undefined): number | null {
