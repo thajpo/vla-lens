@@ -8,7 +8,7 @@ seams, not implemented branches.
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field, is_dataclass
-from typing import Any, Literal, Mapping, Sequence, TypeAlias
+from typing import Any, Literal, Mapping, Sequence, TypeAlias, TypeVar
 
 LensCapability: TypeAlias = Literal[
     "score_series",
@@ -23,6 +23,8 @@ LensCapability: TypeAlias = Literal[
     "failure_cases",
     "comparison",
 ]
+
+T = TypeVar("T")
 
 TemporalScope: TypeAlias = Literal[
     "episode",
@@ -566,6 +568,77 @@ class PanelAvailability:
         return _jsonable(self)
 
 
+@dataclass(frozen=True, slots=True)
+class CurrentMomentEvidence:
+    """Evidence primitives narrowed to the active research cursor."""
+
+    selection: ResearchSelectionState
+    score_series: tuple[ScoreSeriesEvidence, ...] = ()
+    ranked_moments: tuple[RankedMoment, ...] = ()
+    predictions: tuple[PredictionEvidence, ...] = ()
+    contributions: tuple[ContributionEvidence, ...] = ()
+    model_loci: tuple[ModelLocusEvidence, ...] = ()
+    failure_moments: tuple[RankedMoment, ...] = ()
+    unavailable: tuple[UnavailableReason, ...] = ()
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(self)
+
+
+@dataclass(frozen=True, slots=True)
+class LensFeatureContribution:
+    """Episode microscope row derived from contribution evidence."""
+
+    key: str
+    value: float
+    rank: int
+    claim_level: EvidenceClaimLevel
+    basis: str
+    sign: Literal["positive", "negative"] | None = None
+    model_locus: ModelLocusRef | None = None
+    label: str | None = None
+    description: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(self)
+
+
+@dataclass(frozen=True, slots=True)
+class PipelineLensAnnotation:
+    """Model-pipeline annotation for the active probe lens."""
+
+    annotation_id: str
+    source: Literal["model_locus", "contribution"]
+    label: str
+    model_locus: ModelLocusRef
+    episode_id: str | None = None
+    timestep: int | None = None
+    policy_call: int | None = None
+    claim_level: EvidenceClaimLevel | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(self)
+
+
+@dataclass(frozen=True, slots=True)
+class LensTemporalRow:
+    """Timeline marker derived from ranked moments, predictions, or failures."""
+
+    row_id: str
+    source: Literal["ranked_moment", "prediction", "failure_case"]
+    episode_id: str
+    timestep: int | None = None
+    policy_call: int | None = None
+    ranking: str | None = None
+    score: float | None = None
+    confidence: float | None = None
+    prediction: str | bool | int | float | None = None
+    label: str | bool | int | float | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return _jsonable(self)
+
+
 def primitive_kinds(bundle: ProbeEvidenceBundle) -> set[str]:
     return {str(primitive.kind) for primitive in bundle.primitives}
 
@@ -587,6 +660,133 @@ def ranked_moments(
         if isinstance(primitive, RankedMomentsEvidence) and primitive.ranking == ranking:
             return primitive.moments
     return ()
+
+
+def select_top_moments(
+    bundle: ProbeEvidenceBundle,
+    ranking: RankingKind = "top",
+    *,
+    limit: int | None = None,
+) -> tuple[RankedMoment, ...]:
+    """Return ranked moments for one ranking, preserving adapter order."""
+    return _limit_tuple(ranked_moments(bundle, ranking), limit)
+
+
+def select_current_moment_evidence(
+    bundle: ProbeEvidenceBundle,
+    selection: ResearchSelectionState,
+) -> CurrentMomentEvidence:
+    """Narrow a bundle to evidence relevant to the active episode/time cursor."""
+    ranked: list[RankedMoment] = []
+    failure_moments: list[RankedMoment] = []
+    for primitive in bundle.primitives:
+        if isinstance(primitive, RankedMomentsEvidence):
+            if selection.ranking is not None and primitive.ranking != selection.ranking:
+                continue
+            ranked.extend(
+                moment
+                for moment in primitive.moments
+                if _moment_matches_selection(moment, selection)
+            )
+        elif isinstance(primitive, FailureCaseEvidence):
+            failure_moments.extend(
+                moment
+                for moment in primitive.moments
+                if _moment_matches_selection(moment, selection)
+            )
+    score_series = tuple(
+        primitive
+        for primitive in primitives_by_kind(bundle, "score_series")
+        if isinstance(primitive, ScoreSeriesEvidence)
+        and _evidence_matches_selection(primitive, selection)
+    )
+    predictions = tuple(
+        primitive
+        for primitive in primitives_by_kind(bundle, "prediction")
+        if isinstance(primitive, PredictionEvidence)
+        and _evidence_matches_selection(primitive, selection)
+    )
+    contributions = tuple(
+        primitive
+        for primitive in primitives_by_kind(bundle, "contribution")
+        if isinstance(primitive, ContributionEvidence)
+        and _evidence_matches_selection(primitive, selection)
+    )
+    model_loci = tuple(
+        primitive
+        for primitive in primitives_by_kind(bundle, "model_locus")
+        if isinstance(primitive, ModelLocusEvidence)
+        and _evidence_matches_selection(primitive, selection)
+    )
+    return CurrentMomentEvidence(
+        selection=selection,
+        score_series=score_series,
+        ranked_moments=tuple(ranked),
+        predictions=predictions,
+        contributions=contributions,
+        model_loci=model_loci,
+        failure_moments=tuple(failure_moments),
+        unavailable=select_unavailable_reasons(bundle),
+    )
+
+
+def select_contribution_rows(
+    bundle: ProbeEvidenceBundle,
+    selection: ResearchSelectionState | None = None,
+    *,
+    limit: int | None = None,
+) -> tuple[ContributionItem, ...]:
+    """Return contribution rows visible for the active cursor without inventing rows."""
+    rows: list[ContributionItem] = []
+    for primitive in primitives_by_kind(bundle, "contribution"):
+        if not isinstance(primitive, ContributionEvidence):
+            continue
+        if selection is not None and not _evidence_matches_selection(primitive, selection):
+            continue
+        for item in primitive.items:
+            if selection is not None and selection.feature_id is not None:
+                if item.key != selection.feature_id:
+                    continue
+            rows.append(item)
+    rows.sort(key=lambda item: item.rank)
+    return _limit_tuple(tuple(rows), limit)
+
+
+def select_contribution_claim_level(
+    bundle: ProbeEvidenceBundle,
+    selection: ResearchSelectionState | None = None,
+) -> EvidenceClaimLevel | None:
+    """Return the conservative claim level for visible contribution evidence."""
+    levels: list[EvidenceClaimLevel] = []
+    for primitive in primitives_by_kind(bundle, "contribution"):
+        if not isinstance(primitive, ContributionEvidence):
+            continue
+        if selection is not None and not _evidence_matches_selection(primitive, selection):
+            continue
+        if selection is not None and selection.feature_id is not None:
+            if not any(item.key == selection.feature_id for item in primitive.items):
+                continue
+        levels.append(primitive.claim_level)
+    if not levels:
+        return None
+    return min(levels, key=lambda level: _CLAIM_LEVEL_STRENGTH[level])
+
+
+def select_unavailable_reasons(
+    bundle: ProbeEvidenceBundle,
+    *,
+    panel_id: str | None = None,
+    capability: LensCapability | None = None,
+) -> tuple[UnavailableReason, ...]:
+    """Return explicit unavailable reasons, optionally narrowed by panel or capability."""
+    if capability is not None:
+        _ensure_choice("capability", capability, CAPABILITIES)
+    return tuple(
+        reason
+        for reason in bundle.unavailable
+        if (panel_id is None or reason.panel_id == panel_id)
+        and (capability is None or reason.capability == capability)
+    )
 
 
 def select_available_panels(
@@ -695,7 +895,279 @@ def default_probe_panel_specs() -> tuple[PanelSpec, ...]:
             requires_capabilities=("failure_cases",),
             unavailable_copy="Failure cases are unavailable for this probe run.",
         ),
+        PanelSpec(
+            panel_id="unavailable_reasons",
+            consumes=(),
+            unavailable_copy="Unavailable reason explanations are unavailable.",
+        ),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class EpisodeLensAdapter:
+    """Concrete v1 bridge from ProbeEvidenceBundle into the episode microscope."""
+
+    family: Literal["probe"] = "probe"
+
+    def default_selection(self, bundle: ProbeEvidenceBundle) -> ResearchSelectionState:
+        ranked_default = _first_available_moment(bundle)
+        base = {
+            "dataset_id": bundle.run.dataset_id,
+            "lens_id": bundle.artifact.lens_id,
+            "lens_run_id": bundle.run.lens_run_id,
+        }
+        if ranked_default is not None:
+            ranking, moment = ranked_default
+            return ResearchSelectionState(
+                **base,
+                episode_id=moment.episode_id,
+                timestep=moment.timestep,
+                policy_call=moment.policy_call,
+                ranking=ranking,
+            )
+        prediction = next(
+            (
+                primitive
+                for primitive in primitives_by_kind(bundle, "prediction")
+                if isinstance(primitive, PredictionEvidence)
+            ),
+            None,
+        )
+        if prediction is not None:
+            return ResearchSelectionState(
+                **base,
+                episode_id=prediction.episode_id,
+                timestep=prediction.timestep,
+                policy_call=prediction.policy_call,
+            )
+        model_locus = next(
+            (
+                primitive
+                for primitive in primitives_by_kind(bundle, "model_locus")
+                if isinstance(primitive, ModelLocusEvidence)
+            ),
+            None,
+        )
+        if model_locus is not None:
+            return ResearchSelectionState(
+                **base,
+                episode_id=model_locus.episode_id,
+                timestep=model_locus.timestep,
+                policy_call=model_locus.policy_call,
+                model_locus=model_locus.locus,
+            )
+        return ResearchSelectionState(**base)
+
+    def pipeline_annotations(
+        self,
+        bundle: ProbeEvidenceBundle,
+        selection: ResearchSelectionState | None = None,
+    ) -> tuple[PipelineLensAnnotation, ...]:
+        out: list[PipelineLensAnnotation] = []
+        for primitive in primitives_by_kind(bundle, "model_locus"):
+            if not isinstance(primitive, ModelLocusEvidence):
+                continue
+            if selection is not None and not _evidence_matches_selection(primitive, selection):
+                continue
+            label = primitive.source_label or _model_locus_label(primitive.locus)
+            out.append(
+                PipelineLensAnnotation(
+                    annotation_id=f"model_locus:{len(out)}",
+                    source="model_locus",
+                    label=label,
+                    model_locus=primitive.locus,
+                    episode_id=primitive.episode_id,
+                    timestep=primitive.timestep,
+                    policy_call=primitive.policy_call,
+                )
+            )
+        for primitive in primitives_by_kind(bundle, "contribution"):
+            if not isinstance(primitive, ContributionEvidence):
+                continue
+            if selection is not None and not _evidence_matches_selection(primitive, selection):
+                continue
+            for item in primitive.items:
+                if item.model_locus is None:
+                    continue
+                if selection is not None and selection.feature_id is not None:
+                    if item.key != selection.feature_id:
+                        continue
+                out.append(
+                    PipelineLensAnnotation(
+                        annotation_id=f"contribution:{item.key}",
+                        source="contribution",
+                        label=item.label or item.key,
+                        model_locus=item.model_locus,
+                        episode_id=primitive.episode_id,
+                        timestep=primitive.timestep,
+                        policy_call=primitive.policy_call,
+                        claim_level=primitive.claim_level,
+                    )
+                )
+        return tuple(out)
+
+    def channel_ranking(
+        self,
+        bundle: ProbeEvidenceBundle,
+        selection: ResearchSelectionState,
+    ) -> tuple[LensFeatureContribution, ...]:
+        rows: list[LensFeatureContribution] = []
+        for primitive in primitives_by_kind(bundle, "contribution"):
+            if not isinstance(primitive, ContributionEvidence):
+                continue
+            if not _evidence_matches_selection(primitive, selection):
+                continue
+            for item in primitive.items:
+                if selection.feature_id is not None and item.key != selection.feature_id:
+                    continue
+                rows.append(
+                    LensFeatureContribution(
+                        key=item.key,
+                        value=item.value,
+                        rank=item.rank,
+                        sign=item.sign,
+                        model_locus=item.model_locus,
+                        label=item.label,
+                        description=item.description,
+                        claim_level=primitive.claim_level,
+                        basis=primitive.basis,
+                    )
+                )
+        rows.sort(key=lambda item: item.rank)
+        return tuple(rows)
+
+    def timeline_rows(self, bundle: ProbeEvidenceBundle) -> tuple[LensTemporalRow, ...]:
+        rows: list[LensTemporalRow] = []
+        for primitive in bundle.primitives:
+            if isinstance(primitive, RankedMomentsEvidence):
+                for index, moment in enumerate(primitive.moments):
+                    rows.append(
+                        LensTemporalRow(
+                            row_id=f"ranked:{primitive.ranking}:{index}",
+                            source="ranked_moment",
+                            episode_id=moment.episode_id,
+                            timestep=moment.timestep,
+                            policy_call=moment.policy_call,
+                            ranking=primitive.ranking,
+                            score=moment.score,
+                            confidence=moment.confidence,
+                            prediction=moment.prediction,
+                            label=moment.label,
+                        )
+                    )
+            elif isinstance(primitive, PredictionEvidence):
+                rows.append(
+                    LensTemporalRow(
+                        row_id=f"prediction:{len(rows)}",
+                        source="prediction",
+                        episode_id=primitive.episode_id,
+                        timestep=primitive.timestep,
+                        policy_call=primitive.policy_call,
+                        confidence=primitive.confidence,
+                        prediction=primitive.prediction,
+                        label=primitive.label,
+                    )
+                )
+            elif isinstance(primitive, FailureCaseEvidence):
+                for index, moment in enumerate(primitive.moments):
+                    rows.append(
+                        LensTemporalRow(
+                            row_id=f"failure:{primitive.ranking}:{index}",
+                            source="failure_case",
+                            episode_id=moment.episode_id,
+                            timestep=moment.timestep,
+                            policy_call=moment.policy_call,
+                            ranking=primitive.ranking,
+                            score=moment.score,
+                            confidence=moment.confidence,
+                            prediction=moment.prediction,
+                            label=moment.label,
+                        )
+                    )
+        return tuple(rows)
+
+    def intervention_seed(
+        self,
+        bundle: ProbeEvidenceBundle,
+        selection: ResearchSelectionState,
+    ) -> None:
+        del bundle, selection
+        return None
+
+
+probe_episode_lens_adapter = EpisodeLensAdapter()
+
+
+_CLAIM_LEVEL_STRENGTH: dict[EvidenceClaimLevel, int] = {
+    "numeric_only": 0,
+    "grouped_model_locus": 1,
+    "human_labeled_feature": 2,
+    "semantic_hypothesis": 3,
+}
+
+
+def _limit_tuple(items: tuple[T, ...], limit: int | None) -> tuple[T, ...]:
+    if limit is None:
+        return items
+    if limit < 0:
+        raise ProbeEvidenceContractError("limit must be non-negative")
+    return items[:limit]
+
+
+def _first_available_moment(bundle: ProbeEvidenceBundle) -> tuple[RankingKind, RankedMoment] | None:
+    for ranking in ("top", "uncertain", "bottom"):
+        moments = ranked_moments(bundle, ranking)
+        if moments:
+            return ranking, moments[0]
+    return None
+
+
+def _moment_matches_selection(moment: RankedMoment, selection: ResearchSelectionState) -> bool:
+    if selection.episode_id is not None and moment.episode_id != selection.episode_id:
+        return False
+    return _time_matches_selection(
+        selection,
+        timestep=moment.timestep,
+        policy_call=moment.policy_call,
+    )
+
+
+def _evidence_matches_selection(
+    evidence: EvidencePrimitive,
+    selection: ResearchSelectionState,
+) -> bool:
+    episode_id = getattr(evidence, "episode_id", None)
+    if selection.episode_id is not None and episode_id is not None:
+        if episode_id != selection.episode_id:
+            return False
+    return _time_matches_selection(
+        selection,
+        timestep=getattr(evidence, "timestep", None),
+        policy_call=getattr(evidence, "policy_call", None),
+    )
+
+
+def _time_matches_selection(
+    selection: ResearchSelectionState,
+    *,
+    timestep: int | None,
+    policy_call: int | None,
+) -> bool:
+    if selection.timestep is not None and timestep is not None:
+        if timestep != selection.timestep:
+            return False
+    if selection.policy_call is not None and policy_call is not None:
+        if policy_call != selection.policy_call:
+            return False
+    return True
+
+
+def _model_locus_label(locus: ModelLocusRef) -> str:
+    if locus.model_site_id:
+        return locus.model_site_id
+    if locus.layer is not None:
+        return f"layer {locus.layer}"
+    return "model locus"
 
 
 def scalar_timestep_probe_bundle() -> ProbeEvidenceBundle:
@@ -997,19 +1469,24 @@ __all__ = [
     "CohortSummaryEvidence",
     "ContributionEvidence",
     "ContributionItem",
+    "CurrentMomentEvidence",
     "EvidenceClaimLevel",
     "EvidenceCohortRef",
     "EvidencePrimitive",
     "EvidencePrimitiveKind",
+    "EpisodeLensAdapter",
     "FailureCaseEvidence",
     "LensCapability",
+    "LensFeatureContribution",
     "LensGeometry",
     "LensProvenanceEvidence",
     "LensRun",
+    "LensTemporalRow",
     "ModelLocusEvidence",
     "ModelLocusRef",
     "PanelAvailability",
     "PanelSpec",
+    "PipelineLensAnnotation",
     "PredictionEvidence",
     "ProbeEvidenceBundle",
     "ProbeEvidenceContractError",
@@ -1023,10 +1500,16 @@ __all__ = [
     "default_probe_panel_specs",
     "primitive_kinds",
     "primitives_by_kind",
+    "probe_episode_lens_adapter",
     "pooled_no_contribution_probe_bundle",
     "ranked_moments",
     "raw_layer_contribution_probe_bundle",
     "sae_feature_contribution_probe_bundle",
     "scalar_timestep_probe_bundle",
     "select_available_panels",
+    "select_contribution_claim_level",
+    "select_contribution_rows",
+    "select_current_moment_evidence",
+    "select_top_moments",
+    "select_unavailable_reasons",
 ]

@@ -291,6 +291,64 @@ export type PanelAvailability = {
   message?: string | null;
 };
 
+export type CurrentMomentEvidence = {
+  selection: ResearchSelectionState;
+  score_series: ScoreSeriesEvidence[];
+  ranked_moments: RankedMoment[];
+  predictions: PredictionEvidence[];
+  contributions: ContributionEvidence[];
+  model_loci: ModelLocusEvidence[];
+  failure_moments: RankedMoment[];
+  unavailable: UnavailableReason[];
+};
+
+export type LensFeatureContribution = ContributionItem & {
+  claim_level: EvidenceClaimLevel;
+  basis: ContributionEvidence["basis"];
+};
+
+export type PipelineLensAnnotation = {
+  annotation_id: string;
+  source: "model_locus" | "contribution";
+  label: string;
+  model_locus: ModelLocusRef;
+  episode_id?: string | null;
+  timestep?: number | null;
+  policy_call?: number | null;
+  claim_level?: EvidenceClaimLevel | null;
+};
+
+export type LensTemporalRow = {
+  row_id: string;
+  source: "ranked_moment" | "prediction" | "failure_case";
+  episode_id: string;
+  timestep?: number | null;
+  policy_call?: number | null;
+  ranking?: string | null;
+  score?: number | null;
+  confidence?: number | null;
+  prediction?: string | boolean | number | null;
+  label?: string | boolean | number | null;
+};
+
+export type EpisodeLensAdapter = {
+  family: "probe";
+  defaultSelection: (bundle: ProbeEvidenceBundle) => ResearchSelectionState;
+  pipelineAnnotations: (
+    bundle: ProbeEvidenceBundle,
+    selection?: ResearchSelectionState | null,
+  ) => PipelineLensAnnotation[];
+  channelRanking: (
+    bundle: ProbeEvidenceBundle,
+    selection: ResearchSelectionState,
+  ) => LensFeatureContribution[];
+  timelineRows: (bundle: ProbeEvidenceBundle) => LensTemporalRow[];
+  interventionSeed: (
+    bundle: ProbeEvidenceBundle,
+    selection: ResearchSelectionState,
+  ) => null;
+};
+
 export function primitiveKinds(bundle: ProbeEvidenceBundle): Set<EvidencePrimitiveKind> {
   return new Set(bundle.primitives.map((primitive) => primitive.kind));
 }
@@ -312,6 +370,95 @@ export function rankedMoments(
     (item): item is RankedMomentsEvidence => item.kind === "ranked_moments" && item.ranking === ranking,
   );
   return primitive?.moments ?? [];
+}
+
+export function selectTopMoments(
+  bundle: ProbeEvidenceBundle,
+  ranking: RankingKind = "top",
+  limit?: number | null,
+): RankedMoment[] {
+  return limitItems(rankedMoments(bundle, ranking), limit);
+}
+
+export function selectCurrentMomentEvidence(
+  bundle: ProbeEvidenceBundle,
+  selection: ResearchSelectionState,
+): CurrentMomentEvidence {
+  const ranked_moments: RankedMoment[] = [];
+  const failure_moments: RankedMoment[] = [];
+  for (const primitive of bundle.primitives) {
+    if (primitive.kind === "ranked_moments") {
+      if (selection.ranking && primitive.ranking !== selection.ranking) {
+        continue;
+      }
+      ranked_moments.push(...primitive.moments.filter((moment) => momentMatchesSelection(moment, selection)));
+    } else if (primitive.kind === "failure_case") {
+      failure_moments.push(...primitive.moments.filter((moment) => momentMatchesSelection(moment, selection)));
+    }
+  }
+  return {
+    selection,
+    score_series: primitivesByKind(bundle, "score_series").filter((primitive) =>
+      evidenceMatchesSelection(primitive, selection),
+    ),
+    ranked_moments,
+    predictions: primitivesByKind(bundle, "prediction").filter((primitive) =>
+      evidenceMatchesSelection(primitive, selection),
+    ),
+    contributions: primitivesByKind(bundle, "contribution").filter((primitive) =>
+      evidenceMatchesSelection(primitive, selection),
+    ),
+    model_loci: primitivesByKind(bundle, "model_locus").filter((primitive) =>
+      evidenceMatchesSelection(primitive, selection),
+    ),
+    failure_moments,
+    unavailable: selectUnavailableReasons(bundle),
+  };
+}
+
+export function selectContributionRows(
+  bundle: ProbeEvidenceBundle,
+  selection?: ResearchSelectionState | null,
+  limit?: number | null,
+): ContributionItem[] {
+  const rows = primitivesByKind(bundle, "contribution").flatMap((primitive) => {
+    if (selection && !evidenceMatchesSelection(primitive, selection)) {
+      return [];
+    }
+    return primitive.items.filter((item) => !selection?.feature_id || item.key === selection.feature_id);
+  });
+  rows.sort((left, right) => left.rank - right.rank);
+  return limitItems(rows, limit);
+}
+
+export function selectContributionClaimLevel(
+  bundle: ProbeEvidenceBundle,
+  selection?: ResearchSelectionState | null,
+): EvidenceClaimLevel | null {
+  const levels = primitivesByKind(bundle, "contribution")
+    .filter((primitive) => !selection || evidenceMatchesSelection(primitive, selection))
+    .filter((primitive) => {
+      if (!selection?.feature_id) {
+        return true;
+      }
+      return primitive.items.some((item) => item.key === selection.feature_id);
+    })
+    .map((primitive) => primitive.claim_level);
+  if (!levels.length) {
+    return null;
+  }
+  return levels.sort((left, right) => claimLevelStrength[left] - claimLevelStrength[right])[0] ?? null;
+}
+
+export function selectUnavailableReasons(
+  bundle: ProbeEvidenceBundle,
+  options: { panel_id?: string | null; capability?: LensCapability | null } = {},
+): UnavailableReason[] {
+  return bundle.unavailable.filter(
+    (reason) =>
+      (!options.panel_id || reason.panel_id === options.panel_id) &&
+      (!options.capability || reason.capability === options.capability),
+  );
 }
 
 export function selectAvailablePanels(
@@ -412,5 +559,250 @@ export function defaultProbePanelSpecs(): PanelSpec[] {
       requires_capabilities: ["failure_cases"],
       unavailable_copy: "Failure cases are unavailable for this probe run.",
     },
+    {
+      panel_id: "unavailable_reasons",
+      consumes: [],
+      unavailable_copy: "Unavailable reason explanations are unavailable.",
+    },
   ];
+}
+
+export const probeEpisodeLensAdapter: EpisodeLensAdapter = {
+  family: "probe",
+
+  defaultSelection(bundle) {
+    const base = {
+      dataset_id: bundle.run.dataset_id,
+      lens_id: bundle.artifact.lens_id,
+      lens_run_id: bundle.run.lens_run_id,
+    };
+    const rankedDefault = firstAvailableMoment(bundle);
+    if (rankedDefault) {
+      return {
+        ...base,
+        episode_id: rankedDefault.moment.episode_id,
+        timestep: rankedDefault.moment.timestep ?? null,
+        policy_call: rankedDefault.moment.policy_call ?? null,
+        ranking: rankedDefault.ranking,
+      };
+    }
+    const prediction = primitivesByKind(bundle, "prediction")[0];
+    if (prediction) {
+      return {
+        ...base,
+        episode_id: prediction.episode_id,
+        timestep: prediction.timestep ?? null,
+        policy_call: prediction.policy_call ?? null,
+      };
+    }
+    const locus = primitivesByKind(bundle, "model_locus")[0];
+    if (locus) {
+      return {
+        ...base,
+        episode_id: locus.episode_id ?? null,
+        timestep: locus.timestep ?? null,
+        policy_call: locus.policy_call ?? null,
+        model_locus: locus.locus,
+      };
+    }
+    return base;
+  },
+
+  pipelineAnnotations(bundle, selection = null) {
+    const annotations: PipelineLensAnnotation[] = [];
+    for (const primitive of primitivesByKind(bundle, "model_locus")) {
+      if (selection && !evidenceMatchesSelection(primitive, selection)) {
+        continue;
+      }
+      annotations.push({
+        annotation_id: `model_locus:${annotations.length}`,
+        source: "model_locus",
+        label: primitive.source_label ?? modelLocusLabel(primitive.locus),
+        model_locus: primitive.locus,
+        episode_id: primitive.episode_id ?? null,
+        timestep: primitive.timestep ?? null,
+        policy_call: primitive.policy_call ?? null,
+      });
+    }
+    for (const primitive of primitivesByKind(bundle, "contribution")) {
+      if (selection && !evidenceMatchesSelection(primitive, selection)) {
+        continue;
+      }
+      for (const item of primitive.items) {
+        if (!item.model_locus) {
+          continue;
+        }
+        if (selection?.feature_id && item.key !== selection.feature_id) {
+          continue;
+        }
+        annotations.push({
+          annotation_id: `contribution:${item.key}`,
+          source: "contribution",
+          label: item.label ?? item.key,
+          model_locus: item.model_locus,
+          episode_id: primitive.episode_id,
+          timestep: primitive.timestep ?? null,
+          policy_call: primitive.policy_call ?? null,
+          claim_level: primitive.claim_level,
+        });
+      }
+    }
+    return annotations;
+  },
+
+  channelRanking(bundle, selection) {
+    const rows: LensFeatureContribution[] = [];
+    for (const primitive of primitivesByKind(bundle, "contribution")) {
+      if (!evidenceMatchesSelection(primitive, selection)) {
+        continue;
+      }
+      for (const item of primitive.items) {
+        if (selection.feature_id && item.key !== selection.feature_id) {
+          continue;
+        }
+        rows.push({
+          ...item,
+          claim_level: primitive.claim_level,
+          basis: primitive.basis,
+        });
+      }
+    }
+    return rows.sort((left, right) => left.rank - right.rank);
+  },
+
+  timelineRows(bundle) {
+    const rows: LensTemporalRow[] = [];
+    for (const primitive of bundle.primitives) {
+      if (primitive.kind === "ranked_moments") {
+        primitive.moments.forEach((moment, index) => {
+          rows.push({
+            row_id: `ranked:${primitive.ranking}:${index}`,
+            source: "ranked_moment",
+            episode_id: moment.episode_id,
+            timestep: moment.timestep ?? null,
+            policy_call: moment.policy_call ?? null,
+            ranking: primitive.ranking,
+            score: moment.score ?? null,
+            confidence: moment.confidence ?? null,
+            prediction: moment.prediction ?? null,
+            label: moment.label ?? null,
+          });
+        });
+      } else if (primitive.kind === "prediction") {
+        rows.push({
+          row_id: `prediction:${rows.length}`,
+          source: "prediction",
+          episode_id: primitive.episode_id,
+          timestep: primitive.timestep ?? null,
+          policy_call: primitive.policy_call ?? null,
+          confidence: primitive.confidence ?? null,
+          prediction: primitive.prediction,
+          label: primitive.label ?? null,
+        });
+      } else if (primitive.kind === "failure_case") {
+        primitive.moments.forEach((moment, index) => {
+          rows.push({
+            row_id: `failure:${primitive.ranking}:${index}`,
+            source: "failure_case",
+            episode_id: moment.episode_id,
+            timestep: moment.timestep ?? null,
+            policy_call: moment.policy_call ?? null,
+            ranking: primitive.ranking,
+            score: moment.score ?? null,
+            confidence: moment.confidence ?? null,
+            prediction: moment.prediction ?? null,
+            label: moment.label ?? null,
+          });
+        });
+      }
+    }
+    return rows;
+  },
+
+  interventionSeed() {
+    return null;
+  },
+};
+
+const claimLevelStrength: Record<EvidenceClaimLevel, number> = {
+  numeric_only: 0,
+  grouped_model_locus: 1,
+  human_labeled_feature: 2,
+  semantic_hypothesis: 3,
+};
+
+function limitItems<T>(items: T[], limit?: number | null): T[] {
+  if (limit === undefined || limit === null) {
+    return items;
+  }
+  if (limit < 0) {
+    throw new Error("limit must be non-negative");
+  }
+  return items.slice(0, limit);
+}
+
+function firstAvailableMoment(
+  bundle: ProbeEvidenceBundle,
+): { ranking: RankingKind; moment: RankedMoment } | undefined {
+  for (const ranking of ["top", "uncertain", "bottom"] as RankingKind[]) {
+    const [moment] = rankedMoments(bundle, ranking);
+    if (moment) {
+      return { ranking, moment };
+    }
+  }
+  return undefined;
+}
+
+function momentMatchesSelection(moment: RankedMoment, selection: ResearchSelectionState): boolean {
+  if (selection.episode_id && moment.episode_id !== selection.episode_id) {
+    return false;
+  }
+  return timeMatchesSelection(selection, {
+    timestep: moment.timestep ?? null,
+    policy_call: moment.policy_call ?? null,
+  });
+}
+
+function evidenceMatchesSelection(
+  evidence:
+    | ScoreSeriesEvidence
+    | PredictionEvidence
+    | ContributionEvidence
+    | ModelLocusEvidence,
+  selection: ResearchSelectionState,
+): boolean {
+  if (selection.episode_id && evidence.episode_id && evidence.episode_id !== selection.episode_id) {
+    return false;
+  }
+  return timeMatchesSelection(selection, {
+    timestep: "timestep" in evidence ? evidence.timestep ?? null : null,
+    policy_call: "policy_call" in evidence ? evidence.policy_call ?? null : null,
+  });
+}
+
+function timeMatchesSelection(
+  selection: ResearchSelectionState,
+  value: { timestep?: number | null; policy_call?: number | null },
+): boolean {
+  if (selection.timestep !== undefined && selection.timestep !== null && value.timestep !== undefined && value.timestep !== null) {
+    if (selection.timestep !== value.timestep) {
+      return false;
+    }
+  }
+  if (selection.policy_call !== undefined && selection.policy_call !== null && value.policy_call !== undefined && value.policy_call !== null) {
+    if (selection.policy_call !== value.policy_call) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function modelLocusLabel(locus: ModelLocusRef): string {
+  if (locus.model_site_id) {
+    return locus.model_site_id;
+  }
+  if (locus.layer !== undefined && locus.layer !== null) {
+    return `layer ${locus.layer}`;
+  }
+  return "model locus";
 }
