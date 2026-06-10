@@ -104,7 +104,6 @@ export type ProbeLensWorkbenchViewModel = {
   };
   metrics: ProbeLensMetricChip[];
   spec: ProbeLensSpec;
-  subtitle: string;
   title: string;
   verdict: {
     detail: string;
@@ -471,7 +470,6 @@ export function probeLensWorkbenchModel({
     },
     metrics: probeLensMetricChips(probe, stats, indexedTotal, heldoutScored, wrongRate),
     spec,
-    subtitle: bundle ? `${bundle.run.dataset_id} · ${labelFromSnake(bundle.run.status)}` : probe.artifact_id,
     title: probe.name,
     verdict,
   };
@@ -483,28 +481,109 @@ export function probeEvidenceSpec(bundle: ProbeEvidenceBundle | undefined): Prob
   }
   const provenance = evidencePrimitivesByKind(bundle, "provenance")[0] as LensProvenanceEvidence | undefined;
   const fields = provenance?.fields ?? {};
+  const inputValue = evidenceInputLabel(fields.Input, bundle);
+  const inputDetail = nonRepeatingDetail(inputValue, labelFromSnake(bundle.geometry.input_basis));
+  const objectiveValue = evidenceObjectiveLabel(fields.Objective, bundle);
+  const predictionValue = evidenceTextLabel(
+    stringValue(fields.Prediction) || bundle.artifact.target || bundle.artifact.name,
+  );
+  const outputValue = evidenceTextLabel(stringValue(fields.Output) || bundle.geometry.output_kind);
   return {
     input: {
-      detail: stringValue(bundle.artifact.source?.module) || stringValue(bundle.artifact.source?.token_scope),
+      detail: inputDetail,
       label: "Input",
-      value: stringValue(fields.Input) || labelFromSnake(bundle.geometry.input_basis),
+      value: inputValue,
     },
     objective: {
-      detail: stringValue(bundle.artifact.training?.objective),
+      detail: "",
       label: "Objective",
-      value: stringValue(fields.Objective) || stringValue(bundle.artifact.training?.objective) || "Probe objective",
+      value: objectiveValue,
     },
     output: {
-      detail: bundle.geometry.output_kind,
+      detail: "",
       label: "Output",
-      value: stringValue(fields.Output) || labelFromSnake(bundle.geometry.output_kind),
+      value: outputValue,
     },
     prediction: {
-      detail: bundle.artifact.target ?? "",
+      detail: "",
       label: "Prediction",
-      value: stringValue(fields.Prediction) || bundle.artifact.target || bundle.artifact.name,
+      value: predictionValue,
     },
   };
+}
+
+function evidenceInputLabel(value: unknown, bundle: ProbeEvidenceBundle): string {
+  const raw = stringValue(value);
+  if (raw && !genericInputLabel(raw)) {
+    return evidenceTextLabel(raw);
+  }
+  const moduleName = stringValue(bundle.artifact.source?.module) || modelLocusSummary(bundle);
+  if (moduleName) {
+    return conciseModuleLabel(moduleName);
+  }
+  return labelFromSnake(bundle.geometry.input_basis);
+}
+
+function evidenceObjectiveLabel(value: unknown, bundle: ProbeEvidenceBundle): string {
+  const raw = stringValue(value) || stringValue(bundle.artifact.training?.objective);
+  if (!raw) {
+    return "Probe";
+  }
+  const target = bundle.artifact.target || bundle.artifact.name;
+  const normalizedRaw = normalizeText(raw);
+  const normalizedTarget = normalizeText(target);
+  if (
+    normalizedRaw === normalizedTarget ||
+    normalizedRaw === `probe for ${normalizedTarget}` ||
+    normalizedRaw.startsWith(`probe for ${normalizedTarget}`)
+  ) {
+    return "Probe";
+  }
+  return evidenceTextLabel(raw);
+}
+
+function genericInputLabel(value: string): boolean {
+  const normalized = normalizeText(value);
+  return normalized === "selected model sites" || normalized === "model sites" || normalized === "selected source";
+}
+
+function conciseModuleLabel(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("action_head")) {
+    return normalized.includes("output") ? "Action head output" : "Action head";
+  }
+  if (normalized.includes("expert")) {
+    return "Expert activations";
+  }
+  if (normalized.includes("vlm")) {
+    return "VLM activations";
+  }
+  return evidenceTextLabel(value.replace(/^pi05\./, ""));
+}
+
+function evidenceTextLabel(value: string): string {
+  const cleaned = value
+    .replace(/^probe for\s+/i, "")
+    .replace(/^selected\s+/i, "")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!cleaned) {
+    return "";
+  }
+  return cleaned.replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function nonRepeatingDetail(value: string, detail: string): string {
+  return normalizeText(value) === normalizeText(detail) ? "" : detail;
+}
+
+function normalizeText(value: unknown): string {
+  return String(value ?? "")
+    .replace(/[._-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
 }
 
 export function probeEvidenceProvenanceBadges(bundle: ProbeEvidenceBundle | undefined): string[] {

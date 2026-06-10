@@ -679,7 +679,6 @@ function ProbeLensWorkbench({
       <aside className={`probe-lens-verdict ${model.verdict.tone}`}>
         <span>{model.verdict.label}</span>
         <strong>{model.verdict.headline}</strong>
-        <small>{model.subtitle}</small>
         <div className="probe-lens-metrics">
           {model.metrics.map((metric) => (
             <div className={`probe-lens-metric ${metric.tone}`} key={metric.label}>
@@ -1048,7 +1047,6 @@ function ProbeRankedEvidencePanel({
             <span>{row.scoreLabel}</span>
             <span>{row.predictionLabel}</span>
             <small>{row.splitLabel} · {row.resultLabel}</small>
-            <em>{row.provenanceBadges.join(" · ")}</em>
           </button>
         ))}
       </div>
@@ -1065,11 +1063,14 @@ function ProbeEvidenceFact({
   label: string;
   value: string;
 }) {
+  const visibleDetail = detail && detail.trim().toLowerCase() !== value.trim().toLowerCase()
+    ? detail
+    : "";
   return (
     <div className="probe-evidence-fact">
       <span>{label}</span>
       <strong>{value}</strong>
-      {detail ? <small>{detail}</small> : null}
+      {visibleDetail ? <small>{visibleDetail}</small> : null}
     </div>
   );
 }
