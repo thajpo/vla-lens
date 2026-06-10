@@ -87,6 +87,10 @@ from vla_lens.probe_evidence import (
     ranked_moments,
     select_available_panels,
 )
+from vla_lens.probe_evidence_adapter import (
+    indexed_probe_evidence_bundle_payload,
+    probe_evidence_bundle_from_index,
+)
 from vla_lens.selectors import ActivationQuery, FeatureMatrix, FeatureView
 from vla_lens.synthetic import create_synthetic_trace_dataset
 from vla_lens.target_object import (
@@ -253,6 +257,7 @@ __all__ = [
     "image_frame_catalog",
     "index_manifest_path",
     "index_root",
+    "indexed_probe_evidence_bundle_payload",
     "lens_array_catalog",
     "lens_array_meta",
     "list_cohorts",
@@ -270,6 +275,7 @@ __all__ = [
     "primitive_kinds",
     "primitives_by_kind",
     "pooled_no_contribution_probe_bundle",
+    "probe_evidence_bundle_from_index",
     "query_table",
     "ranked_moments",
     "resolve_workspace",

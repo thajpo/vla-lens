@@ -345,6 +345,20 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
         "summary": "Probe evidence page",
         "description": "Returns a bounded page of episode rows annotated for one selected probe.",
     },
+    ("get", "/api/probes/{probe_id}/evidence-bundle"): {
+        "summary": "Probe evidence bundle",
+        "description": (
+            "Returns the canonical ProbeEvidenceBundle for one selected probe run, including "
+            "geometry, typed evidence primitives, and unavailable reasons."
+        ),
+        "parameters": [
+            _query_param(
+                "limit",
+                "Maximum ranked moments per evidence shelf.",
+                schema={"type": "integer", "minimum": 1, "maximum": 500},
+            ),
+        ],
+    },
     ("get", "/api/activation-sites"): {
         "summary": "Activation site catalog",
         "description": "Lists model sites captured for one episode.",

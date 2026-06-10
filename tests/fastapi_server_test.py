@@ -57,6 +57,7 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/episode-probes", "get"),
     ("/api/probe-index", "get"),
     ("/api/probes/{probe_id}/evidence", "get"),
+    ("/api/probes/{probe_id}/evidence-bundle", "get"),
     ("/api/activation-sites", "get"),
     ("/api/activation-slice", "get"),
     ("/api/image-token-map", "get"),

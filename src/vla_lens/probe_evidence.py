@@ -689,6 +689,12 @@ def default_probe_panel_specs() -> tuple[PanelSpec, ...]:
             requires_geometry={"locus_kind": "model_locus"},
             unavailable_copy="Model locus is unavailable for this probe run.",
         ),
+        PanelSpec(
+            panel_id="failure_cases",
+            consumes=("failure_case",),
+            requires_capabilities=("failure_cases",),
+            unavailable_copy="Failure cases are unavailable for this probe run.",
+        ),
     )
 
 

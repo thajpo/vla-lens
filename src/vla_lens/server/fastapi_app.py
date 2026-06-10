@@ -20,6 +20,7 @@ import vla_lens.server.interventions as interventions_api
 import vla_lens.server.metrics as metrics_api
 import vla_lens.server.probes as probes_api
 import vla_lens.server.spatial as spatial_api
+from vla_lens.probe_evidence_adapter import indexed_probe_evidence_bundle_payload
 from vla_lens.server.http import (
     NO_STORE_CACHE_CONTROL,
     _error_response,
@@ -405,6 +406,18 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
                 probe_id,
                 query,
             ),
+        )
+
+    @app.get("/api/probes/{probe_id}/evidence-bundle")
+    async def probe_evidence_bundle_endpoint(request: Request, probe_id: str) -> Response:
+        return _handle_json(
+            request,
+            lambda state, query: indexed_probe_evidence_bundle_payload(
+                state.root,
+                probe_id,
+                query,
+            ),
+            cache_control=NO_STORE_CACHE_CONTROL,
         )
 
     @app.get("/api/activation-sites")
