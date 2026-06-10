@@ -1,4 +1,5 @@
 import type { EpisodeLensView } from "../types/dataset";
+import { researchCopy } from "../copy/researchCopy";
 import type { EvidenceClaimLevel, ModelLocusRef, ProbeEvidenceBundle } from "../types/probeEvidence";
 import { primitivesByKind } from "../types/probeEvidence";
 
@@ -67,9 +68,9 @@ export function contributionCaveat(claimLevel?: EvidenceClaimLevel | string | nu
     return "semantic label";
   }
   if (claimLevel === "grouped_model_locus") {
-    return "model-site grouped";
+    return "source grouped";
   }
-  return "not semantic-labeled";
+  return "unlabeled dimension";
 }
 
 export function contributionFeatureLabel(value: string | null | undefined, fallback: number): string {
@@ -159,7 +160,10 @@ function evidenceObjectiveLabel(value: unknown, bundle: ProbeEvidenceBundle): st
 
 function genericInputLabel(value: string): boolean {
   const normalized = normalizeProbeText(value);
-  return normalized === "selected model sites" || normalized === "model sites" || normalized === "selected source";
+  return normalized === "selected model sites" ||
+    normalized === "model sites" ||
+    normalized === researchCopy.labels.readSource.toLowerCase() ||
+    normalized === "selected source";
 }
 
 function normalizeProbeText(value: unknown): string {

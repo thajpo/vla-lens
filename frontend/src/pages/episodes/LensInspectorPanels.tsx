@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import type { ActivationSliceResponse, EpisodeLensView } from "../../types/dataset";
+import { researchCopy } from "../../copy/researchCopy";
 import type { ProbeEvidenceBundle, ResearchSelectionState } from "../../types/probeEvidence";
 import { saveEvidencePin } from "../../api/dataset";
 import { FeatureTable } from "./InspectorTables";
@@ -176,7 +177,7 @@ export function LensCompactReadout({
       <LensContextState
         tone="error"
         title="Probe lens unavailable"
-        detail="The probe evidence request failed, so the inspector is showing the raw model site view."
+        detail={researchCopy.unavailable.rawActivationFallback}
       />
     );
   }
@@ -185,7 +186,7 @@ export function LensCompactReadout({
       <LensContextState
         tone="warning"
         title="Probe lens unavailable"
-        detail="This probe is selected, but the episode lens endpoint cannot produce evidence for it yet."
+        detail={researchCopy.unavailable.episodeLens}
       />
     );
   }
@@ -214,7 +215,7 @@ export function LensCompactReadout({
           <span>Output {spec.output}</span>
         </div>
         {visibleSources.length ? (
-          <div className="lens-source-sites" aria-label="Probe source sites">
+          <div className="lens-source-sites" aria-label="Probe read sources">
             <strong>Probe layers</strong>
             {visibleSources.map((site) => (
               <span
@@ -338,7 +339,7 @@ export function LensCompactReadout({
       </div>
       {trainingLine ? <div className="lens-training-line">{trainingLine}</div> : null}
       {visibleSources.length ? (
-        <div className="lens-source-sites" aria-label="Probe source sites">
+        <div className="lens-source-sites" aria-label="Probe read sources">
           <strong>Probe layers</strong>
           {visibleSources.map((site) => (
             <span
@@ -375,7 +376,7 @@ export function LensCompactReadout({
       <div className="lens-action-row">
         <button
           disabled={!jumpAction?.enabled}
-          title="Return the inspector to the model site and policy call this probe readout uses."
+          title="Return the inspector to the layer and policy call this probe readout uses."
           type="button"
           onClick={onJumpDefault}
         >

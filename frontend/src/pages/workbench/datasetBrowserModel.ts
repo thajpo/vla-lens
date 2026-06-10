@@ -1,4 +1,5 @@
 import type { ArtifactRecord, DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
+import { researchCopy } from "../../copy/researchCopy";
 import type {
   ContributionEvidence,
   LensProvenanceEvidence,
@@ -508,32 +509,32 @@ function probeLensVerdict(
 ): ProbeLensWorkbenchViewModel["verdict"] {
   if (!stats.scored) {
     return {
-      detail: "The probe is indexed, but compatible scored rows are not available for this dataset view.",
-      headline: "No scored evidence yet",
-      label: "Unknown",
+      detail: researchCopy.probeVerdict.noScores.detail,
+      headline: researchCopy.probeVerdict.noScores.headline,
+      label: researchCopy.probeVerdict.noScores.label,
       tone: "unknown",
     };
   }
   if (!heldoutScored) {
     return {
-      detail: "Use this as a training/debug sanity check until validation or test episodes are scored.",
-      headline: "Train evidence only",
-      label: "Debug",
+      detail: researchCopy.probeVerdict.trainOnly.detail,
+      headline: researchCopy.probeVerdict.trainOnly.headline,
+      label: researchCopy.probeVerdict.trainOnly.label,
       tone: "debug",
     };
   }
   if (stats.confidentWrong > 0 || (wrongRate !== null && wrongRate >= 0.25)) {
     return {
-      detail: "This lens is useful for finding failures and boundary cases, but its claim should be checked episode-by-episode.",
-      headline: "Good review lens, not proof",
-      label: "Limited",
+      detail: researchCopy.probeVerdict.reviewFailures.detail,
+      headline: researchCopy.probeVerdict.reviewFailures.headline,
+      label: researchCopy.probeVerdict.reviewFailures.label,
       tone: "limited",
     };
   }
   return {
-    detail: "Heldout scored episodes exist and high-confidence failures are not dominating the current index.",
-    headline: "Heldout evidence available",
-    label: "Credible",
+    detail: researchCopy.probeVerdict.heldoutAvailable.detail,
+    headline: researchCopy.probeVerdict.heldoutAvailable.headline,
+    label: researchCopy.probeVerdict.heldoutAvailable.label,
     tone: "credible",
   };
 }
@@ -1048,7 +1049,7 @@ export function probeTrustDetail(stats: ProbeReviewStats | undefined): string {
     return `${stats.validation} validation / ${stats.test} test episodes, ${stats.heldoutScored} scored`;
   }
   if (stats.train > 0) {
-    return `${stats.train} train episodes; useful mainly for debugging the probe`;
+    return `${stats.train} training episodes; no held-out scores yet`;
   }
   return "No split metadata or scored rows were returned";
 }
@@ -1108,7 +1109,7 @@ export function probeTrainingDetails(
     {
       detail: probe.best_feature || "No selected feature recorded",
       label: "Scoring site",
-      value: probe.best_model || "model site unavailable",
+      value: probe.best_model || "read source unavailable",
     },
     {
       detail: "Training/evaluation metrics stay fixed; compatible new episodes can be scored from saved weights.",

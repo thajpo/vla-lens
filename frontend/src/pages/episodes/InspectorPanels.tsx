@@ -339,7 +339,7 @@ function ChannelFeatureControl({
         </label>
         <input
           aria-label="Feature index"
-          title="Feature/channel index within the selected model site."
+          title="Feature/channel index within the selected activation source."
           max={maxFeature}
           min={0}
           type="number"

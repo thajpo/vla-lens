@@ -7,6 +7,7 @@ import type {
   ObservationalComparisonCandidate,
   ObservationalComparisonsResponse,
 } from "../../types/dataset";
+import { researchCopy } from "../../copy/researchCopy";
 import { EPISODE_PROBE_RESULT_LIMIT, type ProbeLayerRef } from "./shared";
 import { formatLayerNumber, formatMaybeNumber } from "./formatters";
 import {
@@ -121,9 +122,9 @@ function EpisodeProbePanelImpl({
     <div className="episode-probe-panel compact">
       <section className="episode-probe-header">
         <div className="episode-probe-selector-head">
-          <span>Interesting Probes</span>
+          <span>{researchCopy.labels.probeShortlist}</span>
           <small>
-            top {Math.min(EPISODE_PROBE_RESULT_LIMIT, allProbes.length)}/{allProbes.length} · train episodes last
+            showing {Math.min(EPISODE_PROBE_RESULT_LIMIT, allProbes.length)}/{allProbes.length} · training-only results last
           </small>
         </div>
         <EpisodeProbeStack
@@ -167,7 +168,7 @@ function EpisodeProbePanelImpl({
           </button>
           <button
             disabled={!canIntervene}
-            title="Send this artifact, episode, policy call, and model site to the Intervention Lab"
+            title="Send this probe, episode, policy call, and activation source to the Intervention Lab"
             type="button"
             onClick={onIntervene}
           >
@@ -206,14 +207,14 @@ function EpisodeProbePanelImpl({
 
       {selectedProbe && !selectedProbe.available ? (
         <div className="empty-state compact">
-          This trained artifact could not be scored for this episode.
+          This probe could not be scored for this episode.
         </div>
       ) : null}
 
       {showHeatmap ? (
         <section className="episode-probe-plot">
           <div className="episode-probe-plot-head">
-            <strong>Probe map</strong>
+            <strong>Prediction grid</strong>
             <label>
               Plot
               <select value={metric} onChange={(event) => setMetric(event.target.value as "confidence" | "correct")}>
@@ -228,16 +229,16 @@ function EpisodeProbePanelImpl({
 
       <details className="episode-probe-details">
         <summary>
-          <span>Probe details</span>
+          <span>Training and scoring details</span>
           <small>{selectedProbe?.row_count ?? 0} rows</small>
         </summary>
         <div className="episode-probe-context">
-          <span>Source: {probeSourceLabel(bestRow, selectedProbeRef, bestFeature)}</span>
-          <span>Probe form: {probeModelLabel(bestRow, selectedProbe)}</span>
-          <span>Feature: {probeFeatureLabel(bestRow, bestFeature)}</span>
+          <span>{researchCopy.labels.readSource}: {probeSourceLabel(bestRow, selectedProbeRef, bestFeature)}</span>
+          <span>Probe model: {probeModelLabel(bestRow, selectedProbe)}</span>
+          <span>{researchCopy.labels.inputFeature}: {probeFeatureLabel(bestRow, bestFeature)}</span>
           <span>Training: {usage.label} · {usage.detail}</span>
-          <span>Global score: {formatMaybeNumber(episodeProbeNumber(selectedProbe?.metrics.best_score))}</span>
-          <span>Global delta: {formatSignedProbeNumber(episodeProbeNumber(selectedProbe?.metrics.best_delta))}</span>
+          <span>{researchCopy.labels.datasetScore}: {formatMaybeNumber(episodeProbeNumber(selectedProbe?.metrics.best_score))}</span>
+          <span>{researchCopy.labels.datasetDelta}: {formatSignedProbeNumber(episodeProbeNumber(selectedProbe?.metrics.best_delta))}</span>
         </div>
         {filteredRows.length ? <EpisodeProbePredictionTable rows={filteredRows.slice(0, 12)} /> : null}
       </details>
@@ -258,9 +259,9 @@ function ArtifactReadoutPanel({
   if (!readout.available) {
     return (
       <section className="episode-artifact-readout unavailable">
-        <span>Artifact readout</span>
+        <span>{researchCopy.labels.artifactReadout}</span>
         <strong>Unavailable</strong>
-        <small>{readout.reason || "No readout for this artifact and trace."}</small>
+        <small>{readout.reason || researchCopy.unavailable.probeReadout}</small>
       </section>
     );
   }
@@ -268,7 +269,7 @@ function ArtifactReadoutPanel({
   return (
     <section className="episode-artifact-readout">
       <div>
-        <span>Artifact readout</span>
+        <span>{researchCopy.labels.artifactReadout}</span>
         <strong>{readout.readout_type.replaceAll("_", " ")}</strong>
       </div>
       <div>
@@ -487,7 +488,7 @@ function EpisodeProbeTimeline({
     <section className="episode-probe-timeline" aria-label="Probe prediction by policy call">
       <div className="episode-probe-plot-head">
         <strong>Policy-call readout</strong>
-        <small>{rows.length === 1 ? "single source cell" : `${rows.length} scored calls`}</small>
+        <small>{rows.length === 1 ? "one scored row" : `${rows.length} scored calls`}</small>
       </div>
       <div className="episode-probe-timeline-row">
         {rows.map((row, index) => {

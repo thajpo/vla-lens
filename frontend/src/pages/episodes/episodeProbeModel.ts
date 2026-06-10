@@ -410,7 +410,7 @@ export function probeFeatureLabel(row: EpisodeProbePrediction | undefined, fallb
     return "Feature source metadata is not available.";
   }
   if (feature === "selected model_sites") {
-    return "Uses the selected model site at each policy call.";
+    return "Uses the selected activation source at each policy call.";
   }
   if (feature.includes("policy_call_index") || feature.includes("layer=")) {
     return feature.replaceAll("_", " ");

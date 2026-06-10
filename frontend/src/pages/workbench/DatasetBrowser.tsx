@@ -22,6 +22,7 @@ import type {
   ProbeDatasetIndex,
   ProbeEpisodeIndex,
 } from "../../types/dataset";
+import { researchCopy } from "../../copy/researchCopy";
 import type { WorkbenchManifest } from "../../types/workbench";
 import type { ProbeEvidenceBundle } from "../../types/probeEvidence";
 import { datasetBrowserCapabilityGates } from "../capabilityGating";
@@ -212,7 +213,7 @@ export function DatasetBrowser({
   const discoveryPayload = discoveryEpisodePayload(episodePage.data);
   const activeLensUnavailable = Boolean(selectedLens && discoveryPayload?.available === false);
   const activeLensReason = selectedLens ? discoveryPayload?.reason ?? "" : "";
-  const activeLensFamilyLabel = selectedLens ? familyLabel(selectedLens.artifactType) : "Episode index";
+  const activeLensFamilyLabel = selectedLens ? familyLabel(selectedLens.artifactType) : researchCopy.labels.episodeOrder;
   const diagnostics = useQuery({
     queryKey: ["dataset-diagnostics", datasetIdentityKey],
     queryFn: fetchDatasetDiagnostics,
@@ -376,7 +377,7 @@ export function DatasetBrowser({
               }}
             />
             <details className="dataset-refine-cohort">
-              <summary>Refine cohort</summary>
+              <summary>{researchCopy.labels.refineEpisodes}</summary>
               <div>
                 <FilterSelect
                   includeAll={false}
@@ -521,7 +522,7 @@ export function DatasetBrowser({
         <div className="empty-state compact">
           {selectedLens
             ? "Lens ranking API unavailable. Restart the Python dashboard server so it picks up the discovery artifact routes."
-            : "Episode index unavailable."}
+            : "Episode list unavailable."}
         </div>
       ) : null}
       {activeLensUnavailable ? (
@@ -615,7 +616,7 @@ export function DatasetBrowser({
         <details className="dataset-details-drawer">
           <summary>
             Dataset details
-            <span>{totalEpisodes} episodes · {probes.length} probes · {dataset.data?.activation_sites ?? 0} model sites</span>
+            <span>{totalEpisodes} episodes · {probes.length} probes · {dataset.data?.activation_sites ?? 0} {researchCopy.labels.activationSources}</span>
           </summary>
           <div className="dataset-browser-metrics">
             <Metric label="Episodes" value={totalEpisodes} />
@@ -751,7 +752,7 @@ function ProbeMechanismCard({ model }: { model: ProbeLensWorkbenchViewModel }) {
           ))}
         </div>
       ) : (
-        <p>Contributor details are not available in the dataset-level bundle yet. Open an evidence moment for feature-level readout.</p>
+        <p>Contributor breakdown is not available in this dataset view. Open an episode for feature-level details.</p>
       )}
       {model.mechanism.missing.length ? (
         <details className="probe-mechanism-missing">
@@ -932,7 +933,7 @@ function LensSelector({
       <label className="dataset-lens-select">
         <span>Dataset Lens</span>
         <select value={selectedLensId} onChange={(event) => onLensChange(event.target.value)}>
-          <option value={NO_LENS_ID}>None - episode index</option>
+          <option value={NO_LENS_ID}>None - {researchCopy.labels.episodeOrder}</option>
           {groups.map((group) => (
             <optgroup key={group.family} label={group.label}>
               {group.lenses.map((lens) => (
@@ -1019,7 +1020,7 @@ function ProbeSummaryVisual({
     <section className="probe-evidence-plot probe-summary-visual" aria-label="Probe summary">
       <div className="probe-evidence-plot-column">
         <header>
-          <span>Indexed split map</span>
+          <span>{researchCopy.labels.splitCoverage}</span>
           <small className="probe-map-legend">
             <span className="wrong">wrong</span>
             <span className="high-conf-wrong">high-conf wrong</span>
@@ -1055,8 +1056,8 @@ function ProbeSummaryVisual({
       </div>
       <div className="probe-evidence-plot-column">
         <header>
-          <span>Indexed result map</span>
-          <small>compatible cohort counts</small>
+          <span>{researchCopy.labels.resultCoverage}</span>
+          <small>episode counts</small>
         </header>
         <div className="probe-result-bars">
           {resultRows.map((row) => (

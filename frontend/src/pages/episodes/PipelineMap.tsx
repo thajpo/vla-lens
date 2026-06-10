@@ -391,14 +391,14 @@ function PipelineLegend({ probeCount }: { probeCount: number }) {
       <span><i className="legend-swatch missing" />Uncaptured</span>
       <span><i className="legend-swatch active" />Current layer</span>
       {probeCount ? <span><i className="legend-probe source" />Probe trained here</span> : null}
-      {probeCount ? <span><i className="legend-probe selected" />Current probe site</span> : null}
+      {probeCount ? <span><i className="legend-probe selected" />Current probe source</span> : null}
     </div>
   );
 }
 
 function inspectionModeHint(mode: InspectionMode): string {
   const hints: Record<InspectionMode, string> = {
-    advanced: "Show every captured tensor for this node. Useful for debugging the capture, not the default research path.",
+    advanced: "Debug-only: show every captured tensor for this node.",
     attention: "Inspect attention heads and query tokens, then project their key mass onto the episode view.",
     computation: "Inspect MLP, normalization, and conditioning captures inside the layer.",
     features: "Inspect hidden-state features/channels and their image or token overlays.",
