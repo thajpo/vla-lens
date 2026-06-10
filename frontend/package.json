@@ -6,9 +6,9 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1",
     "build": "tsc -b && vite build",
-    "copy:check": "python ../scripts/check_frontend_copy.py",
+    "copy:check": "python3 ../scripts/check_frontend_copy.py",
     "lint": "eslint .",
-    "test": "node --test --experimental-strip-types src/pages/capabilityGating.test.mjs src/components/interventions/interventionLabModel.test.mjs src/api/discoveryArtifacts.test.mjs src/pages/evidencePinsModel.test.mjs src/pages/workbench/episodeRouteModel.test.mjs src/pages/workbench/datasetBrowserModel.test.mjs src/pages/episodes/episodeLensModel.test.mjs src/types/probeEvidence.test.mjs",
+    "test": "npm run copy:check && node --test --experimental-strip-types src/pages/capabilityGating.test.mjs src/components/interventions/interventionLabModel.test.mjs src/api/discoveryArtifacts.test.mjs src/pages/evidencePinsModel.test.mjs src/pages/workbench/episodeRouteModel.test.mjs src/pages/workbench/datasetBrowserModel.test.mjs src/pages/episodes/episodeLensModel.test.mjs src/types/probeEvidence.test.mjs",
     "preview": "vite preview --host 127.0.0.1"
   },
   "dependencies": {

@@ -840,5 +840,5 @@ function modelLocusLabel(locus: ModelLocusRef): string {
   if (locus.layer !== undefined && locus.layer !== null) {
     return `layer ${locus.layer}`;
   }
-  return "model locus";
+  return "activation tensor";
 }

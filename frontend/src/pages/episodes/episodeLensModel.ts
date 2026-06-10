@@ -219,11 +219,11 @@ export function probeEvidenceSiteReadoutFromBundle(
       sign_label: claimLevelLabel(row.claim_level),
     })),
     feature_contributors_available: rows.length > 0,
-    feature_contributors_unavailable_reason: rows.length ? null : unavailable?.message ?? "Contribution breakdown unavailable for this probe.",
+    feature_contributors_unavailable_reason: rows.length ? null : unavailable?.message ?? "No probe contribution scores for this selection.",
     intervention_seed_available: false,
     layer: locusAnnotation?.model_locus.layer ?? null,
     model_site_id: modelSiteId,
-    normalization: "probe evidence bundle",
+    normalization: "Probe evidence",
     policy_call_index: selection.policy_call ?? null,
     probe_contribution_ranking_available: rows.length > 0,
     ranking_basis: selectContributionClaimLevel(bundle, selection) ?? "numeric_only",
@@ -566,15 +566,15 @@ function contributionLabel(label: string | null | undefined, claimLevel: Evidenc
   if (!label) {
     return claimLevel === "numeric_only" ? null : contributionCaveat(claimLevel);
   }
-  return claimLevel === "numeric_only" ? `${humanizeProbeText(label)} (numeric)` : humanizeProbeText(label);
+  return claimLevel === "numeric_only" ? `${humanizeProbeText(label)} unlabeled` : humanizeProbeText(label);
 }
 
 function claimLevelLabel(value: EvidenceClaimLevel): string {
   const labels: Record<EvidenceClaimLevel, string> = {
-    grouped_model_locus: "grouped model locus",
-    human_labeled_feature: "human-labeled feature",
-    numeric_only: "numeric only",
-    semantic_hypothesis: "semantic hypothesis",
+    grouped_model_locus: "grouped activation",
+    human_labeled_feature: "human label",
+    numeric_only: "unlabeled",
+    semantic_hypothesis: "proposed label",
   };
   return labels[value];
 }

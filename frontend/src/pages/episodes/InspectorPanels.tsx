@@ -338,8 +338,8 @@ function ChannelFeatureControl({
           />
         </label>
         <input
-          aria-label="Feature index"
-          title="Feature/channel index within the selected activation source."
+          aria-label="Feature number"
+          title="Feature/channel number in the selected activation tensor."
           max={maxFeature}
           min={0}
           type="number"
@@ -474,8 +474,8 @@ function AttentionAxisControls({
           <div className="attention-query-inputs">
             <span>Slot</span>
             <input
-              aria-label={`${queryLabel} index`}
-              title="Query token/action slot index."
+              aria-label={`${queryLabel} number`}
+              title="Query token or action slot number."
               max={Math.max(0, queryCount - 1)}
               min={0}
               type="number"

@@ -22,7 +22,7 @@ export function InteractionSummaryPanel({
           <Target size={16} />
           <strong>Interaction Labels</strong>
         </div>
-        {interactions?.artifact_id ? <span>{interactions.artifact_id}</span> : null}
+        {interactions?.artifact_id ? <span>Auto labels</span> : null}
       </header>
       {isLoading ? <div className="empty-state">Loading interaction metrics.</div> : null}
       {!isLoading && isError ? (

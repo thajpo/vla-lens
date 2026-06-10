@@ -25,6 +25,7 @@ import {
   formatProbeCorrect,
   formatProbeValue,
   formatSignedProbeNumber,
+  humanizeModelSite,
   probeDisplayedCorrect,
   probeEpisodeMembership,
   probeFeatureLabel,
@@ -115,7 +116,7 @@ function EpisodeProbePanelImpl({
     return <div className="empty-state">Probe predictions could not be loaded.</div>;
   }
   if (!allProbes.length) {
-    return <div className="empty-state">No trained probe artifacts found.</div>;
+    return <div className="empty-state">No trained probes found.</div>;
   }
 
   return (
@@ -124,7 +125,7 @@ function EpisodeProbePanelImpl({
         <div className="episode-probe-selector-head">
           <span>{researchCopy.labels.probeShortlist}</span>
           <small>
-            showing {Math.min(EPISODE_PROBE_RESULT_LIMIT, allProbes.length)}/{allProbes.length} · training-only results last
+            showing {Math.min(EPISODE_PROBE_RESULT_LIMIT, allProbes.length)}/{allProbes.length} · training-split episodes sorted last
           </small>
         </div>
         <EpisodeProbeStack
@@ -168,7 +169,7 @@ function EpisodeProbePanelImpl({
           </button>
           <button
             disabled={!canIntervene}
-            title="Send this probe, episode, policy call, and activation source to the Intervention Lab"
+            title="Send this probe, episode, policy call, and probe input activation to the Intervention Lab"
             type="button"
             onClick={onIntervene}
           >
@@ -181,7 +182,7 @@ function EpisodeProbePanelImpl({
 
       <section className="episode-probe-audit-strip" aria-label="Probe audit">
         <ProbeAuditPill label="Signal" value={trajectoryAudit.value} detail={trajectoryAudit.detail} />
-        <ProbeAuditPill label="Site" value={siteAudit.value} detail={siteAudit.detail} />
+        <ProbeAuditPill label="Input" value={siteAudit.value} detail={siteAudit.detail} />
         <ProbeAuditPill
           detail={`${episodeMembership.detail} · ${reliabilityAudit.detail}`}
           label="Trust"
@@ -230,7 +231,7 @@ function EpisodeProbePanelImpl({
       <details className="episode-probe-details">
         <summary>
           <span>Training and scoring details</span>
-          <small>{selectedProbe?.row_count ?? 0} rows</small>
+          <small>{selectedProbe?.row_count ?? 0} predictions</small>
         </summary>
         <div className="episode-probe-context">
           <span>{researchCopy.labels.readSource}: {probeSourceLabel(bestRow, selectedProbeRef, bestFeature)}</span>
@@ -270,7 +271,7 @@ function ArtifactReadoutPanel({
     <section className="episode-artifact-readout">
       <div>
         <span>{researchCopy.labels.artifactReadout}</span>
-        <strong>{readout.readout_type.replaceAll("_", " ")}</strong>
+        <strong>{readoutTypeLabel(readout.readout_type)}</strong>
       </div>
       <div>
         <span>Prediction</span>
@@ -283,8 +284,8 @@ function ArtifactReadoutPanel({
         <small>{summary.correct === false ? "incorrect" : summary.correct === true ? "correct" : "unknown"}</small>
       </div>
       <div>
-        <span>Target</span>
-        <strong>{textValue(summary.model_site) || "-"}</strong>
+        <span>Probe input</span>
+        <strong>{humanizeModelSite(textValue(summary.model_site)) || "-"}</strong>
         <small>{[
           textValue(summary.feature),
           summary.policy_call_index === null || summary.policy_call_index === undefined
@@ -302,6 +303,14 @@ function numberValue(value: unknown): number | null {
 
 function textValue(value: unknown): string {
   return value === null || value === undefined ? "" : String(value);
+}
+
+function readoutTypeLabel(value: string): string {
+  const labels: Record<string, string> = {
+    probe_episode: "Episode probe result",
+    probe_suite: "Episode probe result",
+  };
+  return labels[value] ?? "Episode probe result";
 }
 
 function EpisodeProbeStack({
@@ -450,8 +459,8 @@ function comparisonCandidateTone(candidate: ObservationalComparisonCandidate): s
 }
 
 function comparisonOutcomeLabel(candidate: ObservationalComparisonCandidate): string {
-  const source = candidate.metrics.source_outcome || "source";
-  const next = candidate.metrics.candidate_outcome || candidate.episode.outcome || "candidate";
+  const source = candidate.metrics.source_outcome || "current";
+  const next = candidate.metrics.candidate_outcome || candidate.episode.outcome || "comparison";
   return candidate.metrics.different_outcome ? `${source} -> ${next}` : String(next);
 }
 
@@ -487,8 +496,8 @@ function EpisodeProbeTimeline({
   return (
     <section className="episode-probe-timeline" aria-label="Probe prediction by policy call">
       <div className="episode-probe-plot-head">
-        <strong>Policy-call readout</strong>
-        <small>{rows.length === 1 ? "one scored row" : `${rows.length} scored calls`}</small>
+        <strong>Probe across policy calls</strong>
+        <small>{rows.length === 1 ? "1 policy call scored" : `${rows.length} policy calls scored`}</small>
       </div>
       <div className="episode-probe-timeline-row">
         {rows.map((row, index) => {
@@ -498,7 +507,7 @@ function EpisodeProbeTimeline({
             policyCall !== null &&
             bestPolicyCall === policyCall &&
             String(bestRow?.model_site_id ?? "") === String(row.model_site_id ?? "");
-          const label = policyCall === null ? `row ${index + 1}` : `call ${policyCall}`;
+          const label = policyCall === null ? `prediction ${index + 1}` : `call ${policyCall}`;
           const confidence = episodeProbeNumber(row.confidence);
           const styleValue = `${(confidence === null ? 0.08 : Math.max(0.08, Math.min(1, confidence))) * 100}%`;
           return (
@@ -552,7 +561,7 @@ function EpisodeProbeHeatmap({ cells }: { cells: EpisodeProbeCell[] }) {
         <div className="axis-corner">layer</div>
         {calls.map((call) => (
           <div className="axis-label" key={`call-${call}`}>
-            c{call}
+            call {call}
           </div>
         ))}
         {layers.map((layer) => (
@@ -590,7 +599,7 @@ function ProbeHeatmapRow({
             className="heatmap-cell readonly"
             key={`${layer}-${call}`}
             style={{ background: episodeProbeColor(cell?.value ?? null, range) }}
-            title={cell ? `${cell.count} row${cell.count === 1 ? "" : "s"}` : undefined}
+            title={cell ? `${cell.count} prediction${cell.count === 1 ? "" : "s"}` : undefined}
           >
             {cell ? episodeProbeValueLabel(cell.value) : ""}
           </div>
@@ -616,7 +625,7 @@ function EpisodeProbePredictionTable({ rows }: { rows: EpisodeProbeSummary["rows
         <tbody>
           {rows.map((row, index) => (
             <tr key={`${row.feature ?? "feature"}-${index}`}>
-              <td>{row.feature ?? `layer ${row.layer} call ${row.policy_call_index}`}</td>
+              <td>{probeFeatureLabel(row, `layer ${row.layer} call ${row.policy_call_index}`)}</td>
               <td>{String(row.actual ?? row.target_value ?? "-")}</td>
               <td>{String(row.predicted ?? row.prediction_value ?? "-")}</td>
               <td>{formatMaybeNumber(row.confidence)}</td>

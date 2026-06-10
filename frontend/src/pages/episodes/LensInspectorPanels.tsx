@@ -112,7 +112,7 @@ export function TopChannelPanel({
       ) : null}
       {contributorUnavailable ? (
         <div className="lens-readout-note">
-          {lensSiteReadout?.feature_contributors_unavailable_reason ?? "Probe contributors unavailable."}
+          {lensSiteReadout?.feature_contributors_unavailable_reason ?? "No probe contribution scores for this layer."}
         </div>
       ) : null}
       <FeatureTable
@@ -168,7 +168,7 @@ export function LensCompactReadout({
       <LensContextState
         tone="loading"
         title="Loading probe lens"
-        detail="Fetching the selected probe evidence for this episode."
+        detail="Fetching the selected probe result for this episode."
       />
     );
   }
@@ -215,7 +215,7 @@ export function LensCompactReadout({
           <span>Output {spec.output}</span>
         </div>
         {visibleSources.length ? (
-          <div className="lens-source-sites" aria-label="Probe read sources">
+          <div className="lens-source-sites" aria-label="Probe input layers">
             <strong>Probe layers</strong>
             {visibleSources.map((site) => (
               <span
@@ -248,7 +248,7 @@ export function LensCompactReadout({
           )}
           <span>Correct {readout.correct === null || readout.correct === undefined ? "-" : readout.correct ? "yes" : "no"}</span>
           <span>Policy call {probeEvidenceSelection.policy_call ?? readout.policy_call_index ?? "-"}</span>
-          {sourceTitle ? <span title={sourceTitle}>Model site {selectedSource?.short_label ?? sourceTitle}</span> : null}
+          {sourceTitle ? <span title={sourceTitle}>Probe input {selectedSource?.short_label ?? sourceTitle}</span> : null}
         </div>
         {topMoments.length ? (
           <div className="lens-moment-strip" aria-label="Top moments in episode">
@@ -264,7 +264,7 @@ export function LensCompactReadout({
         ) : null}
         <div className="lens-action-row">
           <button type="button" onClick={onJumpDefault}>
-            Use probe site
+            Inspect probe input
           </button>
           <button
             disabled={pinStatus === "saving"}
@@ -282,17 +282,13 @@ export function LensCompactReadout({
                 .catch(() => setPinStatus("error"));
             }}
           >
-            {pinStatus === "saved" ? "Pinned" : "Pin evidence"}
+            {pinStatus === "saved" ? "Pinned" : "Save moment"}
           </button>
         </div>
-        {pinStatus === "error" ? <div className="lens-readout-note">Unable to pin evidence.</div> : null}
+        {pinStatus === "error" ? <div className="lens-readout-note">Unable to save moment.</div> : null}
         {callouts.length ? (
           <div className="lens-callout-list">
-            {callouts.map((text, index) => (
-              <div className="lens-readout-note" key={`${text}-${index}`}>
-                {text}
-              </div>
-            ))}
+            <div className="lens-readout-note">Some probe details are unavailable for this selection.</div>
           </div>
         ) : null}
       </section>
@@ -304,7 +300,7 @@ export function LensCompactReadout({
         <LensContextState
           tone="warning"
           title="Probe lens selected"
-          detail="No probe evidence is available for this episode yet."
+          detail="No episode result is available for this probe yet."
         />
       );
     }
@@ -339,7 +335,7 @@ export function LensCompactReadout({
       </div>
       {trainingLine ? <div className="lens-training-line">{trainingLine}</div> : null}
       {visibleSources.length ? (
-        <div className="lens-source-sites" aria-label="Probe read sources">
+        <div className="lens-source-sites" aria-label="Probe input layers">
           <strong>Probe layers</strong>
           {visibleSources.map((site) => (
             <span
@@ -371,20 +367,20 @@ export function LensCompactReadout({
           <span>Confidence {formatMaybeNumber(readout.confidence)}</span>
         )}
         {readout?.split ? <span>{labelFromSnake(String(readout.split))} split</span> : null}
-        {sourceTitle ? <span title={sourceTitle}>Site {selectedSource?.short_label ?? "selected"}</span> : null}
+        {sourceTitle ? <span title={sourceTitle}>Probe input {selectedSource?.short_label ?? "selected"}</span> : null}
       </div>
       <div className="lens-action-row">
         <button
           disabled={!jumpAction?.enabled}
-          title="Return the inspector to the layer and policy call this probe readout uses."
+          title="Jump to the layer and policy call used by this probe result."
           type="button"
           onClick={onJumpDefault}
         >
-          Use probe site
+          Inspect probe input
         </button>
         {interventionAction?.enabled ? (
           <button
-            title="Seed the intervention workspace with the current probe site, call, and selected feature."
+            title="Seed the intervention workspace with the current probe input, policy call, and selected feature."
             type="button"
             onClick={onSendToIntervention}
           >
@@ -394,11 +390,7 @@ export function LensCompactReadout({
       </div>
       {view.annotations.callouts.length ? (
         <div className="lens-callout-list">
-          {view.annotations.callouts.slice(0, 3).map((callout, index) => (
-            <div className="lens-readout-note" key={`${callout.severity}-${index}`}>
-              {callout.text}
-            </div>
-          ))}
+          <div className="lens-readout-note">Some probe details are unavailable for this selection.</div>
         </div>
       ) : null}
     </section>
@@ -418,7 +410,7 @@ function LensContextState({
     <section className={`lens-compact-readout lens-context-state ${tone}`}>
       <div className="section-title">
         <span>Selected probe lens</span>
-        <small>{tone === "loading" ? "Loading" : tone === "error" ? "Unavailable" : "No evidence"}</small>
+        <small>{tone === "loading" ? "Loading" : tone === "error" ? "Unavailable" : "No result"}</small>
       </div>
       <div className="lens-readout-note">
         <strong>{title}</strong>

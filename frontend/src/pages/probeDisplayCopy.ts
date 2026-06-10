@@ -68,9 +68,9 @@ export function contributionCaveat(claimLevel?: EvidenceClaimLevel | string | nu
     return "semantic label";
   }
   if (claimLevel === "grouped_model_locus") {
-    return "source grouped";
+    return "grouped activation";
   }
-  return "unlabeled dimension";
+  return "unlabeled feature";
 }
 
 export function contributionFeatureLabel(value: string | null | undefined, fallback: number): string {
@@ -163,7 +163,7 @@ function genericInputLabel(value: string): boolean {
   return normalized === "selected model sites" ||
     normalized === "model sites" ||
     normalized === researchCopy.labels.readSource.toLowerCase() ||
-    normalized === "selected source";
+    normalized === "selected input";
 }
 
 function normalizeProbeText(value: unknown): string {

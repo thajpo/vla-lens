@@ -27,7 +27,7 @@ export function EpisodeInspectorColumn({
         {hasModelSites ? (
           <ActivationSitePanel {...activationSitePanel} />
         ) : (
-          <div className="empty-state">No model-site overlay is available for this dataset.</div>
+          <div className="empty-state">No activation overlay is available for this dataset.</div>
         )}
         {showDebugSections ? <InspectorDebugSections {...debugSections} /> : null}
       </div>

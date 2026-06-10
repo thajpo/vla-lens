@@ -521,7 +521,7 @@ export function DatasetBrowser({
       {episodePage.isError ? (
         <div className="empty-state compact">
           {selectedLens
-            ? "Lens ranking API unavailable. Restart the Python dashboard server so it picks up the discovery artifact routes."
+            ? "Lens ranking API unavailable. Restart the Python dashboard server so it picks up the episode ranking endpoint."
             : "Episode list unavailable."}
         </div>
       ) : null}
@@ -532,13 +532,13 @@ export function DatasetBrowser({
       ) : null}
       {episodePage.isFetching ? <div className="app-message compact">Loading episodes...</div> : null}
       {hasProbeArtifacts && probeIndex.isError ? (
-        <div className="empty-state compact">Probe index unavailable.</div>
+        <div className="empty-state compact">Probe list unavailable.</div>
       ) : null}
 
       <section className="dataset-browser-grid">
         <div className="dataset-browser-panel">
           <header>
-            <h2>{selectedProbe ? "Evidence queue" : selectedLens ? "Episodes through lens" : "Episodes"}</h2>
+            <h2>{selectedProbe ? "Episodes to inspect" : selectedLens ? "Episodes through lens" : "Episodes"}</h2>
             <span>
               {pageStart}-{pageEnd} / {visibleTotal}
             </span>
@@ -549,7 +549,7 @@ export function DatasetBrowser({
                 {selectedProbe ? (
                   <tr>
                     <th>Episode</th>
-                    <th>Probe readout</th>
+                    <th>Probe result</th>
                     <th>Why inspect</th>
                     <th>Split</th>
                     <th>Outcome</th>
@@ -624,7 +624,7 @@ export function DatasetBrowser({
             <Metric label="Datasets" value={datasetIds.length} />
             <Metric label="Benchmarks" value={benchmarks.length} />
             <Metric label="Tasks" value={tasks.length} />
-            <Metric label="Model Sites" value={dataset.data?.activation_sites ?? 0} />
+            <Metric label="Activation sources" value={dataset.data?.activation_sites ?? 0} />
             <Metric label="Probes" value={probes.length} />
           </div>
           <table className="compact-table">
@@ -733,7 +733,7 @@ function ProbeMechanismCard({ model }: { model: ProbeLensWorkbenchViewModel }) {
   return (
     <section className="probe-mechanism-card" aria-label="Probe mechanism summary">
       <header>
-        <span>Where it reads</span>
+        <span>Probe input</span>
         <strong>{model.mechanism.modelSite}</strong>
       </header>
       <div className="probe-mechanism-tags">
@@ -752,11 +752,11 @@ function ProbeMechanismCard({ model }: { model: ProbeLensWorkbenchViewModel }) {
           ))}
         </div>
       ) : (
-        <p>Contributor breakdown is not available in this dataset view. Open an episode for feature-level details.</p>
+        <p>Open an episode to see contributing dimensions.</p>
       )}
       {model.mechanism.missing.length ? (
         <details className="probe-mechanism-missing">
-          <summary>Unavailable evidence</summary>
+          <summary>Missing probe details</summary>
           <ul>
             {model.mechanism.missing.map((message) => (
               <li key={message}>{message}</li>
@@ -875,7 +875,7 @@ function ProbeEpisodeTableRow({
         <button
           className="icon-command"
           type="button"
-          title="Open episode at probe evidence"
+          title="Open episode"
           aria-label={`Open ${episode.trace_id}`}
           onClick={() => onOpenEpisode(episode)}
         >
@@ -961,7 +961,7 @@ function LensEvidencePanel({
       <div className="probe-evidence-empty">
         <span>Dataset lens</span>
         <strong>No lens selected</strong>
-        <p>Choose a probe or another discovery artifact above to rank episodes through that signal.</p>
+        <p>Choose a lens above to rank episodes.</p>
       </div>
     );
   }
@@ -971,8 +971,8 @@ function LensEvidencePanel({
       <strong>{lensDisplayName(lens)}</strong>
       <p>
         {ranking?.available === false
-          ? ranking.reason || "This artifact family is registered, but episode ranking is not implemented yet."
-          : "This lens is selected for dataset ranking. Detailed side-panel evidence is available for probe lenses first."}
+          ? ranking.reason || "Episode ranking is not available for this lens yet."
+          : "Probe details are shown after selecting a probe."}
       </p>
     </div>
   );
@@ -1083,7 +1083,7 @@ function ProbeSummaryVisual({
 export function ArtifactsSummary({ manifest }: { manifest: WorkbenchManifest }) {
   return (
     <main className="summary-page">
-      <h1>Artifacts</h1>
+      <h1>Saved analyses</h1>
       <table className="compact-table">
         <thead>
           <tr>
@@ -1233,7 +1233,7 @@ function ProbeEpisodeBadge({
     return (
       <span className="probe-episode-badge muted">
         <strong>Not scored</strong>
-        <small>{cue?.markerLabel ?? "No probe row"}</small>
+        <small>{cue?.markerLabel ?? "No score for this episode"}</small>
         {cue ? <ProbeTimelineCue cue={cue} /> : null}
       </span>
     );

@@ -98,7 +98,7 @@ function EpisodeNavigationBarImpl({
         </div>
         {cohortReturnHref ? (
           <a className="episode-cohort-link" href={cohortReturnHref}>
-            Back to cohort
+            Back to episode set
           </a>
         ) : null}
         {counterfactualPair ? (

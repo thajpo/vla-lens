@@ -188,7 +188,7 @@ export function probeToneForRefs(refs: ProbeLayerRef[]): ProbeTone {
 
 export function probeLayerTitle(ref: ProbeLayerRef): string {
   return [
-    ref.selected || ref.default ? "Current probe site" : "Probe trained here",
+    ref.selected || ref.default ? "Current probe input" : "Probe trained here",
     ref.target || ref.name,
     ref.layer === null ? "" : `L${formatLayerNumber(ref.layer)}`,
     ref.policyCall === null ? "" : `call ${ref.policyCall}`,
@@ -540,7 +540,7 @@ export function captureDescription(site: ActivationSite, node: PipelineNode): st
     return "Feature vectors for the text and image slots after this layer. Pick a channel to inspect one coordinate.";
   }
   if (site.tensor_type === "hidden_mean") {
-    return "A smaller average of the layer features. Useful as a quick summary, but it loses token-level detail.";
+    return "A smaller average of the layer features. Averaged layer features; hides token-level detail.";
   }
   if (role === "input_embeddings" || site.tensor_type === "embedding") {
     return stack === "expert"
@@ -567,7 +567,7 @@ export function captureDescription(site: ActivationSite, node: PipelineNode): st
   }
   if (isAttentionMapSite(site)) {
     if (site.name.includes("key_mass")) {
-      return "A compact attention summary. It is cheaper to view, but it is not the full attention map.";
+      return "A compact attention summary. Compact attention summary; not the full attention map.";
     }
     return stack === "expert"
       ? "Pick a looking action slot, then see which saved scene/text slots and action slots it reads from."
@@ -577,10 +577,10 @@ export function captureDescription(site: ActivationSite, node: PipelineNode): st
     return "An attention-family capture from this layer.";
   }
   if (site.family === "cache" || site.tensor_type === "cache" || site.name.includes(".kv_cache.")) {
-    return "One layer's saved prefix keys or values. The action denoiser receives the full list of these per-layer tensors as past_key_values.";
+    return "One layer's saved prefix keys or values. The action denoiser receives the full list of these per-layer tensors as cached attention state.";
   }
   if (site.family === "residual") {
-    return "The layer's running state at this boundary. These are useful points for probes because they show what the layer has added.";
+    return "The layer's running state at this boundary. Layer state after this boundary; often used as probe input.";
   }
   if (site.family === "normalization") {
     return role.includes("adarms")

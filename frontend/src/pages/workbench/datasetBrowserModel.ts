@@ -153,10 +153,10 @@ export const PROBE_PREDICTION_FILTER_LABELS: Record<string, string> = {
 export const COHORT_PRESETS: Array<{ id: ProbeCohortPreset; label: string }> = [
   { id: "all", label: "All" },
   { id: "needs_review", label: "Needs review" },
-  { id: "heldout_wrong", label: "Heldout wrong" },
+  { id: "heldout_wrong", label: "Validation/Test wrong" },
   { id: "confident_wrong", label: "High-conf wrong" },
-  { id: "heldout_scored", label: "Heldout scored" },
-  { id: "train_sanity", label: "Train sanity" },
+  { id: "heldout_scored", label: "Validation/Test scored" },
+  { id: "train_sanity", label: "Train-only check" },
 ];
 
 export function matchesProbeFilters(
@@ -418,7 +418,7 @@ export function probeEpisodeInspectionReason(
   const confidence = record ? probeConfidenceValue(record) : null;
   if (!record?.available) {
     return {
-      detail: "No compatible scored row for this lens",
+      detail: "No probe score for this episode",
       label: "Unscored",
       timelinePercent: null,
       tone: "muted",
@@ -471,7 +471,7 @@ export function probeLensWorkbenchModel({
       basis: bundle ? labelFromSnake(bundle.geometry.input_basis) : spec.input.value,
       contributors: bundle ? topContributorSummaries(bundle, 5) : [],
       missing: (bundle?.unavailable ?? []).map((reason) => reason.message).filter(Boolean).slice(0, 3),
-      modelSite: bundle ? modelLocusSummary(bundle) || "Model locus not computed" : probe.best_feature || probe.best_model || "Model locus not computed",
+      modelSite: bundle ? modelLocusSummary(bundle) || "Probe input unavailable" : probe.best_feature || probe.best_model || "Probe input unavailable",
       output: bundle ? labelFromSnake(bundle.geometry.output_kind) : spec.output.value,
       temporal: bundle ? labelFromSnake(bundle.geometry.temporal_scope) : "Episode",
     },
@@ -548,19 +548,19 @@ function probeLensMetricChips(
 ): ProbeLensMetricChip[] {
   const chips: ProbeLensMetricChip[] = [
     {
-      detail: "compatible rows",
+      detail: "episodes scored by this probe",
       label: "Scored",
       tone: stats.scored ? "credible" : "unknown",
       value: indexedTotal ? `${formatInteger(stats.scored)}/${formatInteger(indexedTotal)}` : formatInteger(stats.scored),
     },
     {
       detail: `${formatInteger(stats.validation)} validation · ${formatInteger(stats.test)} test`,
-      label: "Heldout",
+      label: "Validation/Test",
       tone: heldoutScored ? "credible" : "debug",
       value: formatInteger(heldoutScored),
     },
     {
-      detail: wrongRate === null ? "wrong rate unavailable" : `${Math.round(wrongRate * 100)}% of scored`,
+      detail: wrongRate === null ? "No error rate yet" : `${Math.round(wrongRate * 100)}% of scored`,
       label: "Wrong",
       tone: stats.wrong ? "limited" : "credible",
       value: formatInteger(stats.wrong),
@@ -574,7 +574,7 @@ function probeLensMetricChips(
   ];
   if (typeof probe.best_score === "number" && Number.isFinite(probe.best_score)) {
     chips.push({
-      detail: probe.best_model || "selected model",
+      detail: probe.best_model || "selected activation tensor",
       label: "Metric",
       tone: "unknown",
       value: probe.best_score.toFixed(3),
@@ -920,18 +920,18 @@ export function probeReviewReasons(probe: ProbeDatasetIndex, stats: ProbeReviewS
     reasons.push(`${stats.confidentWrong} high-conf wrong`);
   }
   if (stats.heldoutWrong) {
-    reasons.push(`${stats.heldoutWrong} heldout wrong`);
+    reasons.push(`${stats.heldoutWrong} validation/test wrong`);
   }
   if (stats.heldoutScored) {
-    reasons.push(`${stats.heldoutScored} heldout scored`);
+    reasons.push(`${stats.heldoutScored} validation/test scored`);
   }
   if (!stats.heldoutScored && stats.train) {
-    reasons.push("train-heavy sanity check");
+    reasons.push("training split only");
   }
   if (typeof probe.best_delta === "number" && Number.isFinite(probe.best_delta)) {
     reasons.push(`delta ${formatSignedNumber(probe.best_delta)}`);
   }
-  return reasons.slice(0, 3).length ? reasons.slice(0, 3) : ["no scored cohort yet"];
+  return reasons.slice(0, 3).length ? reasons.slice(0, 3) : ["no scored episodes yet"];
 }
 
 export function rankEpisodesForProbe(episodes: DatasetEpisode[], probe: ProbeDatasetIndex): DatasetEpisode[] {
@@ -968,7 +968,7 @@ export function probeEpisodeInterestScore(record: ProbeEpisodeIndex | undefined)
 
 export function probeEpisodeInterestLabel(record: ProbeEpisodeIndex | undefined): string {
   if (!record) {
-    return "not indexed";
+    return "not scored by this probe";
   }
   const split = probeSplitLabel(record.split_category, record.split);
   if (!record.available) {
@@ -1033,12 +1033,12 @@ export function probeTrustLabel(stats: ProbeReviewStats | undefined): string {
     return "Select probe";
   }
   if (stats.heldoutScored > 0) {
-    return "heldout evidence";
+    return "validation/test scores";
   }
   if (stats.train > 0) {
-    return "train sanity";
+    return "training split only";
   }
-  return "coverage missing";
+  return "scores unavailable";
 }
 
 export function probeTrustDetail(stats: ProbeReviewStats | undefined): string {
@@ -1051,14 +1051,14 @@ export function probeTrustDetail(stats: ProbeReviewStats | undefined): string {
   if (stats.train > 0) {
     return `${stats.train} training episodes; no held-out scores yet`;
   }
-  return "No split metadata or scored rows were returned";
+  return "No split labels or probe scores returned";
 }
 
 export function probeScoredCohortDetail(stats: ProbeReviewStats, rankedEpisodeTotal: number): string {
   if (rankedEpisodeTotal > 0 && rankedEpisodeTotal !== stats.scored) {
-    return `${stats.scored} compatible scored / ${rankedEpisodeTotal} ranked episodes`;
+    return `${stats.scored} scored / ${rankedEpisodeTotal} episodes`;
   }
-  return `${stats.scored} compatible scored episodes`;
+  return `${stats.scored} scored episodes`;
 }
 
 export function probeTrainingDetails(
@@ -1103,13 +1103,13 @@ export function probeTrainingDetails(
     },
     {
       detail: examplesDetail(examples),
-      label: "Rows",
+      label: "Training data",
       value: examplesSummary(examples, input, display),
     },
     {
       detail: probe.best_feature || "No selected feature recorded",
-      label: "Scoring site",
-      value: probe.best_model || "read source unavailable",
+      label: "Probe input",
+      value: probe.best_model || "Probe input unavailable",
     },
     {
       detail: "Training/evaluation metrics stay fixed; compatible new episodes can be scored from saved weights.",
@@ -1188,7 +1188,7 @@ export function probeQuestionLabel(probe: ProbeDatasetIndex): string {
   if (target && labels[target]) {
     return labels[target];
   }
-  return target ? labelFromSnake(target) : "Probe readout";
+  return target ? labelFromSnake(target) : "Probe result";
 }
 
 function simplePredictionLabel(target: Record<string, unknown> | undefined, probe: ProbeDatasetIndex): string {
@@ -1199,7 +1199,7 @@ function simplePredictionLabel(target: Record<string, unknown> | undefined, prob
     target_contacted: "Target contacted",
     target_moved: "Target moved",
   };
-  return labels[name] ?? (name ? labelFromSnake(name) : "Probe readout");
+  return labels[name] ?? (name ? labelFromSnake(name) : "Probe result");
 }
 
 function simplePredictionDetail(target: Record<string, unknown> | undefined): string {
@@ -1474,11 +1474,11 @@ function examplesSummary(
   const featureDim = numberValue(input?.feature_dim) ?? numberValue(display?.feature_dim);
   return compactJoin(
     [
-      rowCount ? `${formatInteger(rowCount)} rows` : "",
+      rowCount ? `${formatInteger(rowCount)} records` : "",
       featureDim ? `${formatInteger(featureDim)} features` : "",
     ],
     " · ",
-  ) || "row metadata unavailable";
+  ) || "input metadata unavailable";
 }
 
 function examplesDetail(examples: Record<string, unknown> | undefined): string {

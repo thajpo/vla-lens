@@ -123,7 +123,7 @@ export function probeEpisodeMembership(
   rows: EpisodeProbeSummary["rows"],
 ): EpisodeProbeMembership {
   if (!probe) {
-    return { detail: "episode split metadata was not returned", label: "split missing", tone: "unknown" };
+    return { detail: "Split unknown", label: "split missing", tone: "unknown" };
   }
   const candidateRows = [
     probe.episode_summary.best_row,
@@ -141,7 +141,7 @@ export function probeEpisodeMembership(
   );
   if (categories.includes("train")) {
     return {
-      detail: "this episode appears in the probe training split, so treat it as a sanity check",
+      detail: "this episode is in the probe training split",
       label: "train episode",
       tone: "train",
     };
@@ -161,7 +161,7 @@ export function probeEpisodeMembership(
     };
   }
   return {
-    detail: splits.length ? `unrecognized split ${splits.join(", ")}` : "episode split metadata was not returned",
+    detail: splits.length ? `unrecognized split ${splits.join(", ")}` : "Split unknown",
     label: "split missing",
     tone: "unknown",
   };
@@ -212,7 +212,7 @@ export function probeQuestionLabel(probe: EpisodeProbeSummary | undefined): stri
   if (target) {
     return labelFromSnake(target);
   }
-  return probe?.name || "Probe readout";
+  return probe?.name || "Probe result";
 }
 
 export function probeTrajectoryAudit(
@@ -221,7 +221,7 @@ export function probeTrajectoryAudit(
 ): ProbeAuditLine {
   if (!rows.length) {
     return {
-      detail: "No per-call prediction rows were returned for this artifact.",
+      detail: "No probe predictions were returned for this episode.",
       value: "not scored",
     };
   }
@@ -245,10 +245,10 @@ export function probeTrajectoryAudit(
   const value = calls.length > 1
     ? `${calls.length} calls`
     : bestCall === null
-      ? "single readout"
+      ? "1 prediction"
       : `call ${bestCall}`;
   const detail = [
-    firstConfidentLabel ? `first high confidence at ${firstConfidentLabel}` : "no high-confidence call",
+    firstConfidentLabel ? `first confident prediction at ${firstConfidentLabel}` : "no high-confidence call",
     predictions.length > 1
       ? `prediction changes across calls: ${predictions.join(" -> ")}`
       : predictions[0]
@@ -256,7 +256,7 @@ export function probeTrajectoryAudit(
         : "",
   ].filter(Boolean).join("; ");
   return {
-    detail: detail || "Single source cell for this episode.",
+    detail: detail || "One prediction available for this episode.",
     value,
   };
 }
@@ -273,7 +273,7 @@ export function probeSiteAudit(
     probeFeatureLabel(row, fallback),
   ].filter(Boolean);
   return {
-    detail: details.join(" · ") || "Mapped from the selected probe artifact.",
+    detail: details.join(" · ") || "Using the selected probe input.",
     value: source,
   };
 }
@@ -284,7 +284,7 @@ export function probeReliabilityAudit(
 ): ProbeAuditLine {
   if (!probe?.available) {
     return {
-      detail: "The artifact exists, but this episode has no usable prediction rows.",
+      detail: "This episode has no usable predictions.",
       value: "unscored",
     };
   }
@@ -305,7 +305,7 @@ export function probeCallTimestepLabel(row: EpisodeProbePrediction): string {
   const call = episodeProbeNumber(row.policy_call_index);
   const timestep = episodeProbeNumber(row.timestep);
   return [
-    call === null ? "source row" : `call ${call}`,
+    call === null ? "prediction" : `call ${call}`,
     timestep === null ? "" : `t~${timestep}`,
   ].filter(Boolean).join(" / ");
 }
@@ -359,7 +359,7 @@ export function episodeProbeTemporalRows(rows: EpisodeProbePrediction[]): Episod
 
 export function probeTemporalLabel(rows: EpisodeProbePrediction[]): string {
   if (!rows.length) {
-    return "No episode-level prediction rows were returned.";
+    return "No probe predictions were returned for this episode.";
   }
   const calls = uniqueStrings(
     rows
@@ -373,7 +373,7 @@ export function probeTemporalLabel(rows: EpisodeProbePrediction[]): string {
   const row = rows[0];
   const timestep = episodeProbeNumber(row.timestep);
   return [
-    calls[0] ? `call ${calls[0]}` : "one source cell",
+    calls[0] ? `call ${calls[0]}` : "one prediction",
     timestep === null ? "" : `t~${timestep}`,
   ].filter(Boolean).join(" · ");
 }
@@ -392,7 +392,7 @@ export function probeSourceLabel(
   if (ref?.layer !== null && ref?.layer !== undefined) {
     return `Expert layer ${formatLayerNumber(ref.layer)}`;
   }
-  return fallback || "selected source";
+  return fallback || "selected input";
 }
 
 export function probeModelLabel(
@@ -407,10 +407,10 @@ export function probeModelLabel(
 export function probeFeatureLabel(row: EpisodeProbePrediction | undefined, fallback: string): string {
   const feature = String(row?.feature || fallback || "").trim();
   if (!feature) {
-    return "Feature source metadata is not available.";
+    return "Probe input unavailable.";
   }
   if (feature === "selected model_sites") {
-    return "Uses the selected activation source at each policy call.";
+    return "Uses the selected activation tensor at each policy call.";
   }
   if (feature.includes("policy_call_index") || feature.includes("layer=")) {
     return feature.replaceAll("_", " ");

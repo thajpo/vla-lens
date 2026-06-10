@@ -391,7 +391,7 @@ function PipelineLegend({ probeCount }: { probeCount: number }) {
       <span><i className="legend-swatch missing" />Uncaptured</span>
       <span><i className="legend-swatch active" />Current layer</span>
       {probeCount ? <span><i className="legend-probe source" />Probe trained here</span> : null}
-      {probeCount ? <span><i className="legend-probe selected" />Current probe source</span> : null}
+      {probeCount ? <span><i className="legend-probe selected" />Current probe input</span> : null}
     </div>
   );
 }
