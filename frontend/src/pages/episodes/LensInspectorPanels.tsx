@@ -6,6 +6,7 @@ import { saveEvidencePin } from "../../api/dataset";
 import { FeatureTable } from "./InspectorTables";
 import { TOP_CHANNEL_COUNT_OPTIONS } from "./shared";
 import { formatMaybeNumber, labelFromSnake } from "./formatters";
+import { probeLensViewDisplaySpec } from "../probeDisplayCopy";
 import {
   lensReadoutLine,
   probeEvidenceCallouts,
@@ -138,6 +139,9 @@ export function TopChannelPanel({
 
 export function LensCompactReadout({
   feature,
+  isError = false,
+  isLoading = false,
+  lensRequested = false,
   onJumpDefault,
   onSendToIntervention,
   probeEvidenceBundle,
@@ -146,6 +150,9 @@ export function LensCompactReadout({
   view,
 }: {
   feature?: number;
+  isError?: boolean;
+  isLoading?: boolean;
+  lensRequested?: boolean;
   onJumpDefault: () => void;
   onSendToIntervention: () => void;
   probeEvidenceBundle?: ProbeEvidenceBundle;
@@ -155,6 +162,33 @@ export function LensCompactReadout({
 }) {
   const queryClient = useQueryClient();
   const [pinStatus, setPinStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
+  if (lensRequested && isLoading && !probeEvidenceBundle && !view) {
+    return (
+      <LensContextState
+        tone="loading"
+        title="Loading probe lens"
+        detail="Fetching the selected probe evidence for this episode."
+      />
+    );
+  }
+  if (lensRequested && isError && !probeEvidenceBundle && !view) {
+    return (
+      <LensContextState
+        tone="error"
+        title="Probe lens unavailable"
+        detail="The probe evidence request failed, so the inspector is showing the raw model site view."
+      />
+    );
+  }
+  if (lensRequested && !probeEvidenceBundle && view?.available === false) {
+    return (
+      <LensContextState
+        tone="warning"
+        title="Probe lens unavailable"
+        detail="This probe is selected, but the episode lens endpoint cannot produce evidence for it yet."
+      />
+    );
+  }
   if (probeEvidenceBundle && probeEvidenceSelection) {
     const readout = probeEvidenceReadout(probeEvidenceBundle, probeEvidenceSelection);
     const spec = probeEvidenceSpec(probeEvidenceBundle);
@@ -249,9 +283,6 @@ export function LensCompactReadout({
           >
             {pinStatus === "saved" ? "Pinned" : "Pin evidence"}
           </button>
-          <button disabled type="button" title="Canonical probe evidence does not yet expose an intervention seed.">
-            Seed intervention
-          </button>
         </div>
         {pinStatus === "error" ? <div className="lens-readout-note">Unable to pin evidence.</div> : null}
         {callouts.length ? (
@@ -267,20 +298,29 @@ export function LensCompactReadout({
     );
   }
   if (!view || view.family !== "probe_suite") {
+    if (lensRequested) {
+      return (
+        <LensContextState
+          tone="warning"
+          title="Probe lens selected"
+          detail="No probe evidence is available for this episode yet."
+        />
+      );
+    }
     return null;
   }
   const readout = view.readout;
-  const spec = view.lens.spec ?? {};
+  const spec = probeLensViewDisplaySpec(view);
   const jumpAction = view.actions.find((action) => action.kind === "jump_to_lens_default");
   const interventionAction = view.actions.find((action) => action.kind === "send_to_intervention");
   const sourceSites = probeSourceSitesFromLensView(view);
   const visibleSources = sourceSites.filter((site) => site.trained).slice(0, 8);
   const selectedSources = sourceSites.filter((site) => site.selected || site.default || site.best);
   const trainingLine = probeTrainingLine(view);
-  const prediction = String(spec.prediction ?? "this outcome");
-  const input = String(spec.input ?? "model features");
-  const output = String(spec.output ?? "False / True");
-  const objective = String(spec.objective ?? "probe objective");
+  const prediction = spec.prediction.value;
+  const input = spec.input.value;
+  const output = spec.output.value;
+  const objective = spec.objective.value;
   const selectedSource = selectedSources[0];
   const sourceTitle = selectedSource?.label ?? selectedSource?.model_site_id ?? "";
   return (
@@ -341,14 +381,15 @@ export function LensCompactReadout({
         >
           Use probe site
         </button>
-        <button
-          disabled={!interventionAction?.enabled}
-          title="Seed the intervention workspace with the current probe site, call, and selected feature."
-          type="button"
-          onClick={onSendToIntervention}
-        >
-          Seed intervention
-        </button>
+        {interventionAction?.enabled ? (
+          <button
+            title="Seed the intervention workspace with the current probe site, call, and selected feature."
+            type="button"
+            onClick={onSendToIntervention}
+          >
+            Seed intervention
+          </button>
+        ) : null}
       </div>
       {view.annotations.callouts.length ? (
         <div className="lens-callout-list">
@@ -359,6 +400,29 @@ export function LensCompactReadout({
           ))}
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function LensContextState({
+  detail,
+  title,
+  tone,
+}: {
+  detail: string;
+  title: string;
+  tone: "error" | "loading" | "warning";
+}) {
+  return (
+    <section className={`lens-compact-readout lens-context-state ${tone}`}>
+      <div className="section-title">
+        <span>Selected probe lens</span>
+        <small>{tone === "loading" ? "Loading" : tone === "error" ? "Unavailable" : "No evidence"}</small>
+      </div>
+      <div className="lens-readout-note">
+        <strong>{title}</strong>
+        <p>{detail}</p>
+      </div>
     </section>
   );
 }

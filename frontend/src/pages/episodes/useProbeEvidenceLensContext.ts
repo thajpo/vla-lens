@@ -9,6 +9,8 @@ import {
   probeEvidenceTimelineMarks,
 } from "./episodeLensModel";
 
+export type ProbeEvidenceStatus = "idle" | "loading" | "error" | "ready";
+
 type UseProbeEvidenceLensContextArgs = {
   activeEpisodeLensView?: EpisodeLensView | null;
   activeSelectedProbeArtifactId: string;
@@ -58,10 +60,20 @@ export function useProbeEvidenceLensContext({
   const activeLensTimelineMarks = probeEvidenceBundle.data && activeProbeEvidenceSelection
     ? probeEvidenceTimelineMarks(probeEvidenceBundle.data, activeProbeEvidenceSelection)
     : lensTimelineMarks(activeEpisodeLensView);
+  const activeProbeEvidenceStatus: ProbeEvidenceStatus = !activeSelectedProbeArtifactId
+    ? "idle"
+    : probeEvidenceBundle.isError
+      ? "error"
+      : probeEvidenceBundle.isLoading || probeEvidenceBundle.isFetching
+        ? "loading"
+        : probeEvidenceBundle.data
+          ? "ready"
+          : "idle";
 
   return {
     activeLensTimelineMarks,
     activeProbeEvidenceBundle: probeEvidenceBundle.data,
     activeProbeEvidenceSelection,
+    activeProbeEvidenceStatus,
   };
 }

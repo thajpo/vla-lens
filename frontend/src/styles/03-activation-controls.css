@@ -299,6 +299,33 @@
   margin: 6px 0;
 }
 
+.lens-context-state .lens-readout-note {
+  background: var(--soft);
+  border: 1px solid var(--line);
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+}
+
+.lens-context-state .lens-readout-note strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.lens-context-state .lens-readout-note p {
+  margin: 0;
+}
+
+.lens-context-state.error .lens-readout-note {
+  background: #fff1f2;
+  border-color: rgba(190, 18, 60, 0.26);
+}
+
+.lens-context-state.warning .lens-readout-note {
+  background: #fff7ed;
+  border-color: rgba(217, 119, 6, 0.28);
+}
+
 .lens-callout-list {
   display: grid;
   gap: 4px;

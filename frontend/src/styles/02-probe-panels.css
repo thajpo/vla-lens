@@ -507,8 +507,7 @@
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   grid-template-areas:
     "head verdict"
-    "trust mechanism"
-    "queue queue";
+    "trust mechanism";
   min-width: 0;
 }
 
@@ -778,16 +777,6 @@
   grid-area: trust;
 }
 
-.probe-lens-workbench .probe-ranked-evidence {
-  border: 0;
-  border-top: 1px solid #e2e8f0;
-  grid-area: queue;
-}
-
-.probe-lens-workbench .probe-ranked-evidence > header strong {
-  font-size: 15px;
-}
-
 .probe-episode-row.selected td,
 .probe-episode-row:hover td {
   background: #fffdf8;
@@ -845,8 +834,7 @@
       "head"
       "verdict"
       "mechanism"
-      "trust"
-      "queue";
+      "trust";
   }
 
   .probe-lens-head,

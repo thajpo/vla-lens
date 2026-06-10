@@ -10,6 +10,12 @@ import type {
   ScoreSeriesEvidence,
 } from "../../types/probeEvidence";
 import type { EpisodeOpenContext } from "./types";
+import {
+  conciseModelSiteLabel,
+  contributionCaveat,
+  humanizeProbeText,
+  probeEvidenceDisplaySpec,
+} from "../probeDisplayCopy";
 
 export type CoverageRow = {
   benchmark: string;
@@ -479,111 +485,7 @@ export function probeEvidenceSpec(bundle: ProbeEvidenceBundle | undefined): Prob
   if (!bundle) {
     return undefined;
   }
-  const provenance = evidencePrimitivesByKind(bundle, "provenance")[0] as LensProvenanceEvidence | undefined;
-  const fields = provenance?.fields ?? {};
-  const inputValue = evidenceInputLabel(fields.Input, bundle);
-  const inputDetail = nonRepeatingDetail(inputValue, labelFromSnake(bundle.geometry.input_basis));
-  const objectiveValue = evidenceObjectiveLabel(fields.Objective, bundle);
-  const predictionValue = evidenceTextLabel(
-    stringValue(fields.Prediction) || bundle.artifact.target || bundle.artifact.name,
-  );
-  const outputValue = evidenceTextLabel(stringValue(fields.Output) || bundle.geometry.output_kind);
-  return {
-    input: {
-      detail: inputDetail,
-      label: "Input",
-      value: inputValue,
-    },
-    objective: {
-      detail: "",
-      label: "Objective",
-      value: objectiveValue,
-    },
-    output: {
-      detail: "",
-      label: "Output",
-      value: outputValue,
-    },
-    prediction: {
-      detail: "",
-      label: "Prediction",
-      value: predictionValue,
-    },
-  };
-}
-
-function evidenceInputLabel(value: unknown, bundle: ProbeEvidenceBundle): string {
-  const raw = stringValue(value);
-  if (raw && !genericInputLabel(raw)) {
-    return evidenceTextLabel(raw);
-  }
-  const moduleName = stringValue(bundle.artifact.source?.module) || modelLocusSummary(bundle);
-  if (moduleName) {
-    return conciseModuleLabel(moduleName);
-  }
-  return labelFromSnake(bundle.geometry.input_basis);
-}
-
-function evidenceObjectiveLabel(value: unknown, bundle: ProbeEvidenceBundle): string {
-  const raw = stringValue(value) || stringValue(bundle.artifact.training?.objective);
-  if (!raw) {
-    return "Probe";
-  }
-  const target = bundle.artifact.target || bundle.artifact.name;
-  const normalizedRaw = normalizeText(raw);
-  const normalizedTarget = normalizeText(target);
-  if (
-    normalizedRaw === normalizedTarget ||
-    normalizedRaw === `probe for ${normalizedTarget}` ||
-    normalizedRaw.startsWith(`probe for ${normalizedTarget}`)
-  ) {
-    return "Probe";
-  }
-  return evidenceTextLabel(raw);
-}
-
-function genericInputLabel(value: string): boolean {
-  const normalized = normalizeText(value);
-  return normalized === "selected model sites" || normalized === "model sites" || normalized === "selected source";
-}
-
-function conciseModuleLabel(value: string): string {
-  const normalized = value.toLowerCase();
-  if (normalized.includes("action_head")) {
-    return normalized.includes("output") ? "Action head output" : "Action head";
-  }
-  if (normalized.includes("expert")) {
-    return "Expert activations";
-  }
-  if (normalized.includes("vlm")) {
-    return "VLM activations";
-  }
-  return evidenceTextLabel(value.replace(/^pi05\./, ""));
-}
-
-function evidenceTextLabel(value: string): string {
-  const cleaned = value
-    .replace(/^probe for\s+/i, "")
-    .replace(/^selected\s+/i, "")
-    .replace(/[._-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!cleaned) {
-    return "";
-  }
-  return cleaned.replace(/\b\w/g, (letter) => letter.toUpperCase());
-}
-
-function nonRepeatingDetail(value: string, detail: string): string {
-  return normalizeText(value) === normalizeText(detail) ? "" : detail;
-}
-
-function normalizeText(value: unknown): string {
-  return String(value ?? "")
-    .replace(/[._-]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim()
-    .toLowerCase();
+  return probeEvidenceDisplaySpec(bundle);
 }
 
 export function probeEvidenceProvenanceBadges(bundle: ProbeEvidenceBundle | undefined): string[] {
@@ -696,8 +598,7 @@ function topContributorSummaries(bundle: ProbeEvidenceBundle, limit: number): Pr
     .map(({ item, primitive }) => ({
       detail: compactJoin(
         [
-          claimLevelLabel(primitive.claim_level),
-          labelFromSnake(primitive.basis),
+          contributionCaveat(primitive.claim_level),
           modelLocusRefLabel(item.model_locus),
         ],
         " · ",
@@ -709,25 +610,15 @@ function topContributorSummaries(bundle: ProbeEvidenceBundle, limit: number): Pr
     }));
 }
 
-function claimLevelLabel(value: string): string {
-  const labels: Record<string, string> = {
-    grouped_model_locus: "grouped locus",
-    human_labeled_feature: "human label",
-    numeric_only: "numeric",
-    semantic_hypothesis: "semantic",
-  };
-  return labels[value] ?? labelFromSnake(value);
-}
-
 function modelLocusRefLabel(locus: ModelLocusEvidence["locus"] | null | undefined): string {
   if (!locus) {
     return "";
   }
   if (locus.model_site_id) {
-    return locus.model_site_id;
+    return conciseModelSiteLabel(locus.model_site_id);
   }
   if (locus.module) {
-    return locus.module;
+    return conciseModelSiteLabel(locus.module);
   }
   if (locus.layer !== null && locus.layer !== undefined) {
     return `layer ${locus.layer}`;
@@ -1850,7 +1741,7 @@ function formatInteger(value: number): string {
 }
 
 export function labelFromSnake(value: string): string {
-  return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
+  return humanizeProbeText(value);
 }
 
 export function formatSignedNumber(value: number): string {

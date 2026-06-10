@@ -793,9 +793,16 @@
 
   .dataset-table-controls .dataset-filter,
   .dataset-table-controls .dataset-search,
-  .dataset-table-controls .text-command {
+  .dataset-table-controls .text-command,
+  .dataset-refine-cohort {
     flex-basis: 100%;
     max-width: none;
+  }
+
+  .dataset-refine-cohort > div {
+    min-width: 0;
+    position: static;
+    grid-template-columns: 1fr;
   }
 
   .dataset-browser-header {

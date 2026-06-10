@@ -22,6 +22,13 @@ import {
   selectCurrentMomentEvidence,
   selectUnavailableReasons,
 } from "../../types/probeEvidence.ts";
+import {
+  contributionCaveat,
+  contributionFeatureLabel,
+  humanizeProbeText,
+  modelLocusDisplayLabel,
+  probeEvidenceDisplaySpec,
+} from "../probeDisplayCopy";
 import type { ProbeLayerRef } from "./shared";
 
 export type LensRankingMode = "probe_contribution" | "raw_activation";
@@ -237,11 +244,11 @@ export function probeEvidenceFeatureRows(
     return [];
   }
   return probeEpisodeLensAdapter.channelRanking(bundle, selection).map((row) => ({
-    detail: `${claimLevelLabel(row.claim_level)} · ${row.basis.replaceAll("_", " ")}`,
+    detail: contributionCaveat(row.claim_level),
     direction: row.sign ?? "unknown",
     index: featureFromContributionKey(row.key) ?? row.rank,
-    label: `#${row.rank}`,
-    title: contributionTitle(row.claim_level, row.basis),
+    label: contributionFeatureLabel(row.key, row.rank),
+    title: "Probe-weighted contribution",
     value: row.value,
   }));
 }
@@ -274,13 +281,12 @@ export function probeEvidenceSpec(bundle?: ProbeEvidenceBundle): Record<string, 
   if (!bundle) {
     return {};
   }
-  const provenance = primitivesByKind(bundle, "provenance")[0];
-  const fields = provenance?.kind === "provenance" ? provenance.fields ?? {} : {};
+  const spec = probeEvidenceDisplaySpec(bundle);
   return {
-    input: String(fields.Input ?? bundle.geometry.input_basis).replaceAll("_", " "),
-    objective: String(fields.Objective ?? bundle.artifact.training?.objective ?? "probe objective"),
-    output: String(fields.Output ?? bundle.geometry.output_kind).replaceAll("_", " "),
-    prediction: String(fields.Prediction ?? bundle.artifact.target ?? bundle.artifact.name),
+    input: spec.input.value,
+    objective: spec.objective.value,
+    output: spec.output.value,
+    prediction: spec.prediction.value,
   };
 }
 
@@ -348,7 +354,7 @@ export function probeSourceSitesFromEvidenceBundle(
       return {
         available: true,
         default: modelLocusMatchesSelection(annotation.model_locus, selection),
-        label: annotation.label,
+        label: annotation.label ? humanizeProbeText(annotation.label) : modelLocusDisplayLabel(annotation.model_locus),
         layer: annotation.model_locus.layer ?? null,
         model_site_id: modelSiteId,
         selected: modelLocusMatchesSelection(annotation.model_locus, selection),
@@ -558,9 +564,9 @@ function featureFromContributionKey(value?: string | null): number | null {
 
 function contributionLabel(label: string | null | undefined, claimLevel: EvidenceClaimLevel): string | null {
   if (!label) {
-    return claimLevel === "numeric_only" ? null : claimLevelLabel(claimLevel);
+    return claimLevel === "numeric_only" ? null : contributionCaveat(claimLevel);
   }
-  return claimLevel === "numeric_only" ? `${label} (numeric)` : label;
+  return claimLevel === "numeric_only" ? `${humanizeProbeText(label)} (numeric)` : humanizeProbeText(label);
 }
 
 function claimLevelLabel(value: EvidenceClaimLevel): string {
@@ -571,13 +577,6 @@ function claimLevelLabel(value: EvidenceClaimLevel): string {
     semantic_hypothesis: "semantic hypothesis",
   };
   return labels[value];
-}
-
-function contributionTitle(claimLevel: EvidenceClaimLevel, basis: string): string {
-  if (claimLevel === "numeric_only") {
-    return `Numeric contribution over ${basis.replaceAll("_", " ")}; not a semantic feature claim.`;
-  }
-  return `${claimLevelLabel(claimLevel)} over ${basis.replaceAll("_", " ")}.`;
 }
 
 function policyCallsLabel(value: unknown): string {

@@ -506,7 +506,12 @@ export function EpisodesPage({
     ),
     topChannelCount,
   });
-  const { activeLensTimelineMarks, activeProbeEvidenceBundle, activeProbeEvidenceSelection } = useProbeEvidenceLensContext({
+  const {
+    activeLensTimelineMarks,
+    activeProbeEvidenceBundle,
+    activeProbeEvidenceSelection,
+    activeProbeEvidenceStatus,
+  } = useProbeEvidenceLensContext({
     activeEpisodeLensView, activeSelectedProbeArtifactId,
     activeTraceId,
     currentTimestep,
@@ -636,7 +641,7 @@ export function EpisodesPage({
               onJumpToPolicyCall: jumpToPolicyCall,
               onProbeChange: setSelectedProbeArtifactId,
             }}
-            showProbePanel={!activeSelectedProbeArtifactId || (!activeProbeEvidenceBundle && activeEpisodeLensView?.available === false)}
+            showProbePanel
           />
 
           <EpisodeColumnResizer onResizePctChange={setInspectorWidthPct} />
@@ -654,6 +659,7 @@ export function EpisodesPage({
               episodeProbes: hasProbeArtifacts ? episodeProbes.data : undefined,
               probeEvidenceBundle: activeProbeEvidenceBundle,
               probeEvidenceSelection: activeProbeEvidenceSelection,
+              probeEvidenceStatus: activeProbeEvidenceStatus,
               selectedProbeArtifactId: activeSelectedProbeArtifactId,
               patchFeatures: patchFeatures.data,
               expertTokenActivations: expertTokenActivations.data,

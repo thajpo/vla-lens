@@ -23,7 +23,7 @@ import type {
   ProbeEpisodeIndex,
 } from "../../types/dataset";
 import type { WorkbenchManifest } from "../../types/workbench";
-import type { ProbeEvidenceBundle, ResearchSelectionState } from "../../types/probeEvidence";
+import type { ProbeEvidenceBundle } from "../../types/probeEvidence";
 import { datasetBrowserCapabilityGates } from "../capabilityGating";
 import {
   COHORT_PRESETS,
@@ -42,18 +42,13 @@ import {
   probeEvidenceContextForEpisode,
   probeEpisodeInspectionReason,
   probeEvidenceCueForEpisode,
-  probeEvidenceRankedRows,
-  probeEvidenceSpec,
   probeLensWorkbenchModel,
   probeRecordForEpisode,
   probeResultChartRows,
-  probeLensSpec,
   probeSplitChartRows,
   probeSplitLabel,
-  rankingLabel,
   shortTrace,
   type ProbeCohortPreset,
-  type ProbeEvidenceRankedRow,
   type ProbeLensWorkbenchViewModel,
 } from "./datasetBrowserModel";
 import type { EpisodeOpenContext } from "./types";
@@ -133,7 +128,6 @@ export function DatasetBrowser({
   const [probeCohortPreset, setProbeCohortPreset] = useState<ProbeCohortPreset>("all");
   const [probeSplitFilter, setProbeSplitFilter] = useState("all");
   const [probePredictionFilter, setProbePredictionFilter] = useState("all");
-  const [researchSelection, setResearchSelection] = useState<ResearchSelectionState | null>(null);
   const [pageOffset, setPageOffset] = useState(0);
   const familyByType = useMemo(
     () => new Map((discoveryFamilies.data?.families ?? []).map((family) => [family.artifact_type, family])),
@@ -232,16 +226,6 @@ export function DatasetBrowser({
   const outcomes = facetValues(episodePage.data?.facets.outcome);
   const profiles = facetValues(episodePage.data?.facets.profile);
   const coverageRows = useMemo(() => datasetCoverageRows(episodes), [episodes]);
-  const rankedEvidenceRows = useMemo(
-    () => probeEvidenceRankedRows({
-      bundle: activeProbeEvidenceBundle,
-      episodes,
-      probe: selectedProbe,
-      selected: researchSelection,
-      selectedDatasetId: datasetFilter,
-    }),
-    [activeProbeEvidenceBundle, datasetFilter, episodes, researchSelection, selectedProbe],
-  );
   const probeWorkbench = useMemo(
     () => selectedProbe
       ? probeLensWorkbenchModel({
@@ -280,13 +264,7 @@ export function DatasetBrowser({
     setProbeCohortPreset("all");
     setProbeSplitFilter("all");
     setProbePredictionFilter("all");
-    setResearchSelection(null);
     resetPage();
-  };
-  const openProbeMoment = (row: ProbeEvidenceRankedRow) => {
-    const selection = row.context?.researchSelection ?? null;
-    setResearchSelection(selection);
-    onOpenEpisode(row.episode?.trace_id ?? row.moment.episode_id, row.context);
   };
   const openDatasetEpisode = (episode: DatasetEpisode) => {
     const evidenceContext = probeEvidenceContextForEpisode(
@@ -296,7 +274,6 @@ export function DatasetBrowser({
       datasetFilter,
     );
     if (evidenceContext?.researchSelection) {
-      setResearchSelection(evidenceContext.researchSelection);
       onOpenEpisode(episode.trace_id, evidenceContext);
       return;
     }
@@ -326,19 +303,14 @@ export function DatasetBrowser({
         <ProbeLensWorkbench
           activePredictionFilter={probePredictionFilter}
           activeSplitFilter={probeSplitFilter}
-          evidenceIsError={probeEvidenceBundle.isError}
-          evidenceIsLoading={probeEvidenceBundle.isFetching}
           model={probeWorkbench}
           probe={selectedProbe}
-          rankedRows={rankedEvidenceRows}
-          unavailable={activeProbeEvidenceBundle?.unavailable ?? []}
           onCohortPresetChange={(preset) => {
             setProbeCohortPreset(preset);
             setProbeSplitFilter("all");
             setProbePredictionFilter("all");
             resetPage();
           }}
-          onOpenMoment={openProbeMoment}
           onPredictionFilterChange={(value) => {
             setProbeCohortPreset("all");
             setProbePredictionFilter(value);
@@ -354,7 +326,7 @@ export function DatasetBrowser({
         <LensEvidencePanel lens={selectedLens} ranking={discoveryPayload} />
       ) : null}
 
-      <section className="dataset-table-controls" aria-label="Episode filters and sorting">
+      <section className={`dataset-table-controls ${selectedProbe ? "probe-mode" : ""}`} aria-label="Episode filters and sorting">
         <div className="dataset-search">
           <Search size={15} />
           <input
@@ -367,66 +339,10 @@ export function DatasetBrowser({
             }}
           />
         </div>
-        <FilterSelect
-          includeAll={false}
-          label="Sort"
-          value={sortMode}
-          values={selectedLens ? SORT_OPTIONS : SORT_OPTIONS.filter((option) => option !== "lens_interest")}
-          labels={SORT_LABELS}
-          onChange={(value) => {
-            setSortMode(value);
-            resetPage();
-          }}
-        />
-        <FilterSelect
-          label="Dataset"
-          value={datasetFilter}
-          values={datasetIds}
-          onChange={(value) => {
-            setDatasetFilter(value);
-            resetPage();
-          }}
-        />
-        <FilterSelect
-          label="Benchmark"
-          value={benchmarkFilter}
-          values={benchmarks}
-          onChange={(value) => {
-            setBenchmarkFilter(value);
-            resetPage();
-          }}
-        />
-        <FilterSelect
-          label="Task"
-          value={taskFilter}
-          values={tasks}
-          onChange={(value) => {
-            setTaskFilter(value);
-            resetPage();
-          }}
-        />
-        <FilterSelect
-          label="Outcome"
-          value={outcomeFilter}
-          values={outcomes}
-          onChange={(value) => {
-            setOutcomeFilter(value);
-            resetPage();
-          }}
-        />
-        <FilterSelect
-          label="Profile"
-          value={profileFilter}
-          values={profiles}
-          onChange={(value) => {
-            setProfileFilter(value);
-            resetPage();
-          }}
-        />
         {selectedProbe ? (
           <>
             <FilterSelect
-              label="Probe Cohort"
+              label="Review"
               value={probeCohortPreset}
               values={PROBE_COHORT_FILTERS}
               labels={PROBE_COHORT_FILTER_LABELS}
@@ -438,7 +354,7 @@ export function DatasetBrowser({
               }}
             />
             <FilterSelect
-              label="Probe Split"
+              label="Split"
               value={probeSplitFilter}
               values={PROBE_SPLIT_FILTERS}
               labels={PROBE_SPLIT_FILTER_LABELS}
@@ -449,7 +365,7 @@ export function DatasetBrowser({
               }}
             />
             <FilterSelect
-              label="Probe Result"
+              label="Result"
               value={probePredictionFilter}
               values={PROBE_PREDICTION_FILTERS}
               labels={PROBE_PREDICTION_FILTER_LABELS}
@@ -459,8 +375,128 @@ export function DatasetBrowser({
                 resetPage();
               }}
             />
+            <details className="dataset-refine-cohort">
+              <summary>Refine cohort</summary>
+              <div>
+                <FilterSelect
+                  includeAll={false}
+                  label="Sort"
+                  value={sortMode}
+                  values={SORT_OPTIONS}
+                  labels={SORT_LABELS}
+                  onChange={(value) => {
+                    setSortMode(value);
+                    resetPage();
+                  }}
+                />
+                <FilterSelect
+                  label="Dataset"
+                  value={datasetFilter}
+                  values={datasetIds}
+                  onChange={(value) => {
+                    setDatasetFilter(value);
+                    resetPage();
+                  }}
+                />
+                <FilterSelect
+                  label="Benchmark"
+                  value={benchmarkFilter}
+                  values={benchmarks}
+                  onChange={(value) => {
+                    setBenchmarkFilter(value);
+                    resetPage();
+                  }}
+                />
+                <FilterSelect
+                  label="Task"
+                  value={taskFilter}
+                  values={tasks}
+                  onChange={(value) => {
+                    setTaskFilter(value);
+                    resetPage();
+                  }}
+                />
+                <FilterSelect
+                  label="Outcome"
+                  value={outcomeFilter}
+                  values={outcomes}
+                  onChange={(value) => {
+                    setOutcomeFilter(value);
+                    resetPage();
+                  }}
+                />
+                <FilterSelect
+                  label="Profile"
+                  value={profileFilter}
+                  values={profiles}
+                  onChange={(value) => {
+                    setProfileFilter(value);
+                    resetPage();
+                  }}
+                />
+              </div>
+            </details>
           </>
-        ) : null}
+        ) : (
+          <>
+            <FilterSelect
+              includeAll={false}
+              label="Sort"
+              value={sortMode}
+              values={selectedLens ? SORT_OPTIONS : SORT_OPTIONS.filter((option) => option !== "lens_interest")}
+              labels={SORT_LABELS}
+              onChange={(value) => {
+                setSortMode(value);
+                resetPage();
+              }}
+            />
+            <FilterSelect
+              label="Dataset"
+              value={datasetFilter}
+              values={datasetIds}
+              onChange={(value) => {
+                setDatasetFilter(value);
+                resetPage();
+              }}
+            />
+            <FilterSelect
+              label="Benchmark"
+              value={benchmarkFilter}
+              values={benchmarks}
+              onChange={(value) => {
+                setBenchmarkFilter(value);
+                resetPage();
+              }}
+            />
+            <FilterSelect
+              label="Task"
+              value={taskFilter}
+              values={tasks}
+              onChange={(value) => {
+                setTaskFilter(value);
+                resetPage();
+              }}
+            />
+            <FilterSelect
+              label="Outcome"
+              value={outcomeFilter}
+              values={outcomes}
+              onChange={(value) => {
+                setOutcomeFilter(value);
+                resetPage();
+              }}
+            />
+            <FilterSelect
+              label="Profile"
+              value={profileFilter}
+              values={profiles}
+              onChange={(value) => {
+                setProfileFilter(value);
+                resetPage();
+              }}
+            />
+          </>
+        )}
         <button
           className="text-command"
           disabled={!selectedLens && activeFilterCount === 0 && sortMode === "episode_index"}
@@ -501,7 +537,7 @@ export function DatasetBrowser({
       <section className="dataset-browser-grid">
         <div className="dataset-browser-panel">
           <header>
-            <h2>{selectedProbe ? "Episodes through probe" : selectedLens ? "Episodes through lens" : "Episodes"}</h2>
+            <h2>{selectedProbe ? "Evidence queue" : selectedLens ? "Episodes through lens" : "Episodes"}</h2>
             <span>
               {pageStart}-{pageEnd} / {visibleTotal}
             </span>
@@ -623,27 +659,17 @@ export function DatasetBrowser({
 function ProbeLensWorkbench({
   activePredictionFilter,
   activeSplitFilter,
-  evidenceIsError,
-  evidenceIsLoading,
   model,
   probe,
-  rankedRows,
-  unavailable,
   onCohortPresetChange,
-  onOpenMoment,
   onPredictionFilterChange,
   onSplitFilterChange,
 }: {
   activePredictionFilter: string;
   activeSplitFilter: string;
-  evidenceIsError: boolean;
-  evidenceIsLoading: boolean;
   model: ProbeLensWorkbenchViewModel;
   probe: ProbeDatasetIndex;
-  rankedRows: ProbeEvidenceRankedRow[];
-  unavailable: ProbeEvidenceBundle["unavailable"];
   onCohortPresetChange: (preset: ProbeCohortPreset) => void;
-  onOpenMoment: (row: ProbeEvidenceRankedRow) => void;
   onPredictionFilterChange: (value: string) => void;
   onSplitFilterChange: (value: string) => void;
 }) {
@@ -697,13 +723,6 @@ function ProbeLensWorkbench({
         onCohortPresetChange={onCohortPresetChange}
         onPredictionFilterChange={onPredictionFilterChange}
         onSplitFilterChange={onSplitFilterChange}
-      />
-      <ProbeRankedEvidencePanel
-        isError={evidenceIsError}
-        isLoading={evidenceIsLoading}
-        rows={rankedRows}
-        unavailable={unavailable}
-        onOpenMoment={onOpenMoment}
       />
     </section>
   );
@@ -955,102 +974,6 @@ function LensEvidencePanel({
           : "This lens is selected for dataset ranking. Detailed side-panel evidence is available for probe lenses first."}
       </p>
     </div>
-  );
-}
-
-export function SelectedProbeLensSummary({
-  artifact,
-  bundle,
-  probe,
-}: {
-  artifact?: ArtifactRecord;
-  bundle?: ProbeEvidenceBundle;
-  probe: ProbeDatasetIndex;
-}) {
-  const spec = probeEvidenceSpec(bundle) ?? probeLensSpec(probe, artifact);
-  return (
-    <section className="selected-lens-summary" aria-label="Selected lens summary">
-      <div className="selected-lens-title">
-        <span>Probe</span>
-        <strong>{probe.name}</strong>
-        {bundle ? <small>{bundle.run.dataset_id} · {bundle.run.status}</small> : null}
-      </div>
-      <div className="selected-lens-facts">
-        <ProbeEvidenceFact
-          label={spec.prediction.label}
-          value={spec.prediction.value}
-          detail={spec.prediction.detail}
-        />
-        <ProbeEvidenceFact
-          label={spec.input.label}
-          value={spec.input.value}
-          detail={spec.input.detail}
-        />
-        <ProbeEvidenceFact
-          label={spec.output.label}
-          value={spec.output.value}
-          detail={spec.output.detail}
-        />
-        <ProbeEvidenceFact
-          label={spec.objective.label}
-          value={spec.objective.value}
-          detail={spec.objective.detail}
-        />
-      </div>
-    </section>
-  );
-}
-
-function ProbeRankedEvidencePanel({
-  isError,
-  isLoading,
-  rows,
-  unavailable,
-  onOpenMoment,
-}: {
-  isError: boolean;
-  isLoading: boolean;
-  rows: ProbeEvidenceRankedRow[];
-  unavailable: ProbeEvidenceBundle["unavailable"];
-  onOpenMoment: (row: ProbeEvidenceRankedRow) => void;
-}) {
-  if (isLoading) {
-    return <div className="app-message compact">Loading probe evidence...</div>;
-  }
-  if (isError) {
-    return <div className="empty-state compact">Probe evidence bundle unavailable.</div>;
-  }
-  if (!rows.length) {
-    const message = unavailable[0]?.message ?? "No ranked probe moments were returned for this dataset.";
-    return <div className="empty-state compact">{message}</div>;
-  }
-  return (
-    <section className="probe-ranked-evidence" aria-label="Ranked probe evidence">
-      <header>
-        <div>
-          <span>Ranked evidence</span>
-          <strong>Top, low, and uncertain moments</strong>
-        </div>
-        <small>{rows.length} moments from the selected probe run</small>
-      </header>
-      <div className="probe-ranked-list">
-        {rows.map((row) => (
-          <button
-            className={["probe-ranked-row", row.selected ? "active" : ""].filter(Boolean).join(" ")}
-            key={`${row.ranking}:${row.moment.episode_id}:${row.moment.timestep ?? ""}:${row.moment.policy_call ?? ""}`}
-            type="button"
-            onClick={() => onOpenMoment(row)}
-          >
-            <span className={`probe-rank-tag ${row.ranking}`}>{rankingLabel(row.ranking)}</span>
-            <strong>{row.episode ? episodeTitle(row.episode) : row.moment.episode_id}</strong>
-            <span>{row.timeLabel}</span>
-            <span>{row.scoreLabel}</span>
-            <span>{row.predictionLabel}</span>
-            <small>{row.splitLabel} · {row.resultLabel}</small>
-          </button>
-        ))}
-      </div>
-    </section>
   );
 }
 

@@ -66,6 +66,7 @@ function ActivationSitePanelImpl({
   episodeProbes,
   probeEvidenceBundle,
   probeEvidenceSelection,
+  probeEvidenceStatus = "idle",
   generationStep,
   generationStepCount,
   expertTokenActivations,
@@ -112,6 +113,7 @@ function ActivationSitePanelImpl({
   episodeProbes?: EpisodeProbesResponse;
   probeEvidenceBundle?: ProbeEvidenceBundle;
   probeEvidenceSelection?: ResearchSelectionState | null;
+  probeEvidenceStatus?: "idle" | "loading" | "error" | "ready";
   generationStep: number;
   generationStepCount: number;
   expertTokenActivations?: ExpertTokenActivationsResponse;
@@ -224,6 +226,9 @@ function ActivationSitePanelImpl({
         lensContextPanel={
           <LensCompactReadout
             feature={feature}
+            isError={probeEvidenceStatus === "error"}
+            isLoading={probeEvidenceStatus === "loading"}
+            lensRequested={Boolean(selectedProbeArtifactId)}
             probeEvidenceBundle={probeEvidenceBundle}
             probeEvidenceSelection={probeEvidenceSelection}
             selectedSiteName={selectedSiteName}
