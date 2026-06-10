@@ -36,6 +36,7 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/unit-profile", "get"),
     ("/api/dataset-diagnostics", "get"),
     ("/api/episode-annotations", "get"),
+    ("/api/evidence-pins", "get"),
     ("/api/dataset-diagnostics/run", "get"),
     ("/api/artifacts", "get"),
     ("/api/artifacts/{artifact_id}", "get"),
@@ -70,6 +71,7 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/expert-token-details", "get"),
     ("/api/dataset-diagnostics/run", "post"),
     ("/api/episode-annotations", "post"),
+    ("/api/evidence-pins", "post"),
     ("/api/selections/resolve", "post"),
     ("/api/cohorts", "post"),
     ("/api/cohorts/from-selection", "post"),
@@ -341,6 +343,7 @@ def test_fastapi_representative_get_routes_return_legacy_payload_shapes(tmp_path
         ("/api/unit-profile", {"unit": "0"}, {"unit_ref", "top_examples", "lens_arrays"}),
         ("/api/dataset-diagnostics", {}, {"fingerprint", "stale", "latest"}),
         ("/api/episode-annotations", {"trace_id": trace_id}, {"annotation"}),
+        ("/api/evidence-pins", {}, {"pins", "total"}),
         ("/api/dataset-diagnostics/run", {}, {"fingerprint", "artifact"}),
         (f"/api/artifacts/{artifact_id}", {}, {"artifact", "arrays"}),
         ("/api/episodes", {"limit": "1"}, {"episodes", "total", "facets", "next_offset"}),
@@ -449,6 +452,25 @@ def test_fastapi_representative_post_routes_return_legacy_payload_shapes(tmp_pat
             "/api/episode-annotations",
             {"trace_id": trace_id, "starred": True, "notes": "review"},
             {"annotation"},
+        ),
+        (
+            "/api/evidence-pins",
+            {
+                "label": "Probe evidence",
+                "selection": {
+                    "dataset_id": "demo",
+                    "episode_id": trace_id,
+                    "lens_id": "probe-a",
+                    "lens_run_id": "run-a",
+                    "policy_call": 0,
+                },
+                "evidence": {
+                    "model_site_id": "action_head.layers.8.resid",
+                    "primitive_kind": "prediction",
+                    "score": 0.9,
+                },
+            },
+            {"pin", "pins", "total"},
         ),
         ("/api/selections/resolve", selection, {"selection", "episodes", "lens_arrays"}),
         (
@@ -611,6 +633,7 @@ def test_fastapi_intervention_run_detail_route_saves_lists_and_reloads(tmp_path)
         "/api/intervention-runs",
         "/api/dataset-diagnostics",
         "/api/episode-annotations",
+        "/api/evidence-pins",
         "/api/artifacts",
     ],
 )

@@ -38,7 +38,7 @@ import type {
   PolicyCallsResponse,
   SelectedPatch,
 } from "../types/dataset";
-import type { ProbeEvidenceBundle } from "../types/probeEvidence";
+import type { EvidencePinSavePayload, EvidencePinSaveResponse, EvidencePinsResponse, ProbeEvidenceBundle } from "../types/probeEvidence";
 
 export type EpisodePageParams = {
   benchmark?: string;
@@ -151,6 +151,14 @@ export function saveEpisodeAnnotation(
   annotation: Pick<EpisodeAnnotation, "trace_id" | "starred" | "notes">,
 ): Promise<EpisodeAnnotationResponse> {
   return postJson<EpisodeAnnotationResponse>("/api/episode-annotations", annotation);
+}
+
+export function fetchEvidencePins(): Promise<EvidencePinsResponse> {
+  return getJson<EvidencePinsResponse>("/api/evidence-pins", freshJsonInit());
+}
+
+export function saveEvidencePin(pin: EvidencePinSavePayload): Promise<EvidencePinSaveResponse> {
+  return postJson<EvidencePinSaveResponse>("/api/evidence-pins", pin);
 }
 
 export function fetchPolicyCalls(traceId: string): Promise<PolicyCallsResponse> {

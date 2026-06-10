@@ -1,5 +1,8 @@
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import type { ActivationSliceResponse, EpisodeLensView } from "../../types/dataset";
 import type { ProbeEvidenceBundle, ResearchSelectionState } from "../../types/probeEvidence";
+import { saveEvidencePin } from "../../api/dataset";
 import { FeatureTable } from "./InspectorTables";
 import { TOP_CHANNEL_COUNT_OPTIONS } from "./shared";
 import { formatMaybeNumber, labelFromSnake } from "./formatters";
@@ -7,6 +10,7 @@ import {
   lensReadoutLine,
   probeEvidenceCallouts,
   probeEvidenceReadout,
+  probeEvidencePinPayload,
   probeEvidenceSpec,
   probeEvidenceTimelineMarks,
   probeSourceSitesFromLensView,
@@ -133,18 +137,24 @@ export function TopChannelPanel({
 }
 
 export function LensCompactReadout({
+  feature,
   onJumpDefault,
   onSendToIntervention,
   probeEvidenceBundle,
   probeEvidenceSelection,
+  selectedSiteName,
   view,
 }: {
+  feature?: number;
   onJumpDefault: () => void;
   onSendToIntervention: () => void;
   probeEvidenceBundle?: ProbeEvidenceBundle;
   probeEvidenceSelection?: ResearchSelectionState | null;
+  selectedSiteName?: string;
   view?: EpisodeLensView;
 }) {
+  const queryClient = useQueryClient();
+  const [pinStatus, setPinStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   if (probeEvidenceBundle && probeEvidenceSelection) {
     const readout = probeEvidenceReadout(probeEvidenceBundle, probeEvidenceSelection);
     const spec = probeEvidenceSpec(probeEvidenceBundle);
@@ -221,10 +231,29 @@ export function LensCompactReadout({
           <button type="button" onClick={onJumpDefault}>
             Use probe site
           </button>
+          <button
+            disabled={pinStatus === "saving"}
+            type="button"
+            onClick={() => {
+              setPinStatus("saving");
+              saveEvidencePin(probeEvidencePinPayload(probeEvidenceBundle, probeEvidenceSelection, "", {
+                feature,
+                modelSiteId: selectedSiteName,
+              }))
+                .then(() => {
+                  setPinStatus("saved");
+                  queryClient.invalidateQueries({ queryKey: ["evidence-pins"] });
+                })
+                .catch(() => setPinStatus("error"));
+            }}
+          >
+            {pinStatus === "saved" ? "Pinned" : "Pin evidence"}
+          </button>
           <button disabled type="button" title="Canonical probe evidence does not yet expose an intervention seed.">
             Seed intervention
           </button>
         </div>
+        {pinStatus === "error" ? <div className="lens-readout-note">Unable to pin evidence.</div> : null}
         {callouts.length ? (
           <div className="lens-callout-list">
             {callouts.map((text, index) => (

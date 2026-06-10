@@ -9,6 +9,7 @@ import {
   lensTimelineMarks,
   probeEvidenceCallouts,
   probeEvidenceFeatureRows,
+  probeEvidencePinPayload,
   probeEvidenceReadout,
   probeEvidenceSelection,
   probeEvidenceSiteReadoutFromBundle,
@@ -289,6 +290,61 @@ test("ProbeEvidenceBundle readout and site rows stay conservative about numeric 
   assert.match(contributionRows[0].title, /not a semantic feature claim/);
   assert.equal(rawRows.length, 0);
   assert.equal(marks.find((mark) => mark.policy_call_index === 3)?.selected, true);
+});
+
+test("ProbeEvidenceBundle pin payload saves research state, not page layout", () => {
+  const selection = probeEvidenceSelection(rawContributionBundle, {
+    activeTraceId: "episode-1",
+    currentTimestep: 0,
+    policyCallIndex: 3,
+  });
+  const pin = probeEvidencePinPayload(rawContributionBundle, selection, "inspect later", {
+    feature: 42,
+    modelSiteId: "action_head.layers.8.resid",
+  });
+
+  assert.equal(pin.label, "grasp intent");
+  assert.equal(pin.note, "inspect later");
+  assert.equal(pin.selection.episode_id, "episode-1");
+  assert.equal(pin.selection.lens_run_id, "run-probe-grasp-intent");
+  assert.equal(pin.selection.policy_call, 3);
+  assert.equal(pin.selection.feature_id, "dim_42");
+  assert.equal(pin.selection.model_locus.model_site_id, "action_head.layers.8.resid");
+  assert.equal(pin.evidence.primitive_kind, "contribution");
+  assert.equal(pin.evidence.model_site_id, "action_head.layers.8.resid");
+  assert.equal(pin.evidence.selected_contributor, "dim_42");
+  assert.equal(pin.evidence.claim_level, "numeric_only");
+  assert.equal(pin.evidence.score, 0.88);
+});
+
+test("ProbeEvidenceBundle pin payload treats selected false positives as failure evidence", () => {
+  const bundle = structuredClone(rawContributionBundle);
+  bundle.primitives.push({
+    kind: "failure_case",
+    lens_id: "probe-grasp-intent",
+    lens_run_id: "run-probe-grasp-intent",
+    ranking: "false_positive",
+    moments: [
+      {
+        episode_id: "episode-1",
+        label: "False positive",
+        policy_call: 3,
+        score: 0.88,
+        timestep: 0,
+      },
+    ],
+  });
+  const selection = {
+    ...probeEvidenceSelection(rawContributionBundle, {
+      activeTraceId: "episode-1",
+      currentTimestep: 0,
+      policyCallIndex: 3,
+    }),
+    ranking: "false_positive",
+  };
+  const pin = probeEvidencePinPayload(bundle, selection);
+
+  assert.equal(pin.evidence.primitive_kind, "failure_case");
 });
 
 test("ProbeEvidenceBundle source sites choose one default from selected model locus", () => {

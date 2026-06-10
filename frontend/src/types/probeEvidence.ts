@@ -96,7 +96,8 @@ export type EvidencePrimitiveKind =
   | "contribution"
   | "model_locus"
   | "cohort_summary"
-  | "failure_case";
+  | "failure_case"
+  | "manual";
 
 export type RankingKind =
   | "top"
@@ -250,6 +251,41 @@ export type EvidencePrimitive =
   | ModelLocusEvidence
   | CohortSummaryEvidence
   | FailureCaseEvidence;
+
+export type EvidencePinEvidence = {
+  primitive_kind?: EvidencePrimitiveKind | null;
+  score?: number | null;
+  prediction?: string | boolean | number | null;
+  confidence?: number | null;
+  claim_level?: EvidenceClaimLevel | null;
+  model_site_id?: string | null;
+  selected_contributor?: string | null;
+};
+
+export type EvidencePin = {
+  pin_id: string;
+  created_utc: string;
+  label: string;
+  note?: string;
+  selection: ResearchSelectionState;
+  evidence: EvidencePinEvidence;
+};
+
+export type EvidencePinSavePayload = {
+  label?: string;
+  note?: string;
+  selection: ResearchSelectionState;
+  evidence: EvidencePinEvidence;
+};
+
+export type EvidencePinsResponse = {
+  pins: EvidencePin[];
+  total: number;
+};
+
+export type EvidencePinSaveResponse = EvidencePinsResponse & {
+  pin: EvidencePin;
+};
 
 export type UnavailableReason = {
   capability: LensCapability;

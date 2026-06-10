@@ -223,8 +223,10 @@ function ActivationSitePanelImpl({
         inspectionMode={inspectionMode}
         lensContextPanel={
           <LensCompactReadout
+            feature={feature}
             probeEvidenceBundle={probeEvidenceBundle}
             probeEvidenceSelection={probeEvidenceSelection}
+            selectedSiteName={selectedSiteName}
             view={episodeLensView}
             onJumpDefault={onLensDefaultJump}
             onSendToIntervention={onLensSendToIntervention}

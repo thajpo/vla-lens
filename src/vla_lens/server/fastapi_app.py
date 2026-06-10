@@ -221,6 +221,14 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
             cache_control=NO_STORE_CACHE_CONTROL,
         )
 
+    @app.get("/api/evidence-pins")
+    async def evidence_pins_endpoint(request: Request) -> Response:
+        return _handle_json(
+            request,
+            lambda state, _query: dataset_api._evidence_pins_payload(state.root),
+            cache_control=NO_STORE_CACHE_CONTROL,
+        )
+
     @app.get("/api/dataset-diagnostics/run")
     async def run_dataset_diagnostics_get_endpoint(request: Request) -> Response:
         return _handle_json(
@@ -502,6 +510,13 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
         return await _handle_post_body_json(
             request,
             lambda state, body: dataset_api._save_episode_annotation_payload(state.root, body),
+        )
+
+    @app.post("/api/evidence-pins")
+    async def save_evidence_pin_endpoint(request: Request) -> Response:
+        return await _handle_post_body_json(
+            request,
+            lambda state, body: dataset_api._save_evidence_pin_payload(state.root, body),
         )
 
     @app.post("/api/selections/resolve")

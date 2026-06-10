@@ -1,9 +1,11 @@
 import { useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
+import { fetchEvidencePins } from "../api/dataset";
 import { fetchInterventionRun, fetchInterventionRuns } from "../api/interventions";
 import { EvidenceLibrary } from "../components/interventions/EvidenceLibrary";
 import { InterventionLab } from "../components/interventions/InterventionLab";
 import { InterventionRunDetail } from "../components/interventions/InterventionRunDetail";
+import { evidencePinHash, evidencePinSummary } from "./evidencePinsModel";
 import type { InterventionLabSeed } from "../types/interventions";
 
 type EvidencePageProps = {
@@ -23,6 +25,11 @@ export function EvidencePage({ interventionSeed, selectedRunId, onRunChange }: E
   const runs = useQuery({
     queryKey: ["intervention-runs"],
     queryFn: fetchInterventionRuns,
+    staleTime: 15_000,
+  });
+  const pins = useQuery({
+    queryKey: ["evidence-pins"],
+    queryFn: fetchEvidencePins,
     staleTime: 15_000,
   });
   const records = useMemo(() => runs.data?.intervention_runs ?? [], [runs.data]);
@@ -50,6 +57,25 @@ export function EvidencePage({ interventionSeed, selectedRunId, onRunChange }: E
         onOpenRun={onRunChange}
       />
       <section className="evidence-workspace">
+        <section className="intervention-card">
+          <div className="section-title">
+            <span>Pinned probe evidence</span>
+            <small>{pins.data?.total ?? 0} saved</small>
+          </div>
+          {(pins.data?.pins ?? []).map((pin) => (
+            <div className="evidence-library-row" key={pin.pin_id}>
+              <div>
+                <strong>{pin.label}</strong>
+                <small>{evidencePinSummary(pin)}</small>
+              </div>
+              <button type="button" onClick={() => { window.location.hash = evidencePinHash(pin); }}>
+                Open
+              </button>
+            </div>
+          ))}
+          {pins.isLoading ? <p className="app-message">Loading pinned evidence.</p> : null}
+          {!pins.isLoading && !(pins.data?.pins ?? []).length ? <p className="app-message">No pinned probe evidence.</p> : null}
+        </section>
         <InterventionLab
           initialDraft={interventionSeed}
           key={interventionSeedKey || "manual-intervention"}

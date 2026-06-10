@@ -10,6 +10,7 @@ import type {
 } from "../../types/dataset";
 import type {
   EvidenceClaimLevel,
+  EvidencePinSavePayload,
   ModelLocusRef,
   ProbeEvidenceBundle,
   ResearchSelectionState,
@@ -285,6 +286,52 @@ export function probeEvidenceSpec(bundle?: ProbeEvidenceBundle): Record<string, 
 
 export function probeEvidenceCallouts(bundle?: ProbeEvidenceBundle): string[] {
   return (bundle?.unavailable ?? []).map((reason) => reason.message).slice(0, 3);
+}
+
+export function probeEvidencePinPayload(
+  bundle: ProbeEvidenceBundle,
+  selection: ResearchSelectionState,
+  note = "",
+  options: { feature?: number | null; modelSiteId?: string | null } = {},
+): EvidencePinSavePayload {
+  const current = selectCurrentMomentEvidence(bundle, selection);
+  const readout = probeEvidenceReadout(bundle, selection);
+  const contribution = current.contributions[0];
+  const selectedModelSiteId = options.modelSiteId || selection.model_locus?.model_site_id || current.model_loci[0]?.locus.model_site_id || null;
+  const selectedFeatureId = typeof options.feature === "number" ? `dim_${options.feature}` : selection.feature_id ?? null;
+  const primitive_kind = current.failure_moments[0] ||
+    selection.ranking === "false_positive" ||
+    selection.ranking === "false_negative"
+    ? "failure_case"
+    : contribution
+    ? "contribution"
+    : current.predictions[0]
+      ? "prediction"
+      : current.ranked_moments[0]
+        ? "ranked_moments"
+        : current.model_loci[0]
+          ? "model_locus"
+          : current.score_series[0]
+            ? "score_series"
+            : null;
+  return {
+    label: bundle.artifact.name,
+    note,
+    selection: {
+      ...selection,
+      feature_id: selectedFeatureId,
+      model_locus: selectedModelSiteId ? { ...selection.model_locus, model_site_id: selectedModelSiteId } : selection.model_locus,
+    },
+    evidence: {
+      claim_level: selectContributionClaimLevel(bundle, selection),
+      confidence: readout.confidence ?? null,
+      model_site_id: selectedModelSiteId,
+      prediction: readout.predicted ?? null,
+      primitive_kind,
+      score: readout.score ?? null,
+      selected_contributor: selectedFeatureId,
+    },
+  };
 }
 
 export function probeSourceSitesFromEvidenceBundle(
