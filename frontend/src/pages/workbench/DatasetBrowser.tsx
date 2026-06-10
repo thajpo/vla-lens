@@ -40,9 +40,11 @@ import {
   formatDatasetProbeConfidence,
   percentOf,
   probeEvidenceContextForEpisode,
+  probeEpisodeInspectionReason,
   probeEvidenceCueForEpisode,
   probeEvidenceRankedRows,
   probeEvidenceSpec,
+  probeLensWorkbenchModel,
   probeRecordForEpisode,
   probeResultChartRows,
   probeLensSpec,
@@ -52,6 +54,7 @@ import {
   shortTrace,
   type ProbeCohortPreset,
   type ProbeEvidenceRankedRow,
+  type ProbeLensWorkbenchViewModel,
 } from "./datasetBrowserModel";
 import type { EpisodeOpenContext } from "./types";
 
@@ -239,6 +242,23 @@ export function DatasetBrowser({
     }),
     [activeProbeEvidenceBundle, datasetFilter, episodes, researchSelection, selectedProbe],
   );
+  const probeWorkbench = useMemo(
+    () => selectedProbe
+      ? probeLensWorkbenchModel({
+          artifact: selectedLens?.artifact,
+          bundle: activeProbeEvidenceBundle,
+          probe: selectedProbe,
+          totalEpisodes: dataset.data?.episode_count ?? episodePage.data?.total ?? 0,
+        })
+      : undefined,
+    [
+      activeProbeEvidenceBundle,
+      dataset.data?.episode_count,
+      episodePage.data?.total,
+      selectedLens?.artifact,
+      selectedProbe,
+    ],
+  );
   const totalEpisodes = dataset.data?.episode_count ?? episodePage.data?.total ?? 0;
   const visibleTotal = episodePage.data?.total ?? 0;
   const pageStart = visibleTotal ? pageOffset + 1 : 0;
@@ -302,42 +322,34 @@ export function DatasetBrowser({
         {selectedLens ? <span>{activeLensFamilyLabel}</span> : null}
       </section>
 
-      {selectedProbe ? (
-        <>
-          <SelectedProbeLensSummary
-            artifact={selectedLens.artifact}
-            bundle={activeProbeEvidenceBundle}
-            probe={selectedProbe}
-          />
-          <ProbeRankedEvidencePanel
-            isError={probeEvidenceBundle.isError}
-            isLoading={probeEvidenceBundle.isFetching}
-            rows={rankedEvidenceRows}
-            unavailable={activeProbeEvidenceBundle?.unavailable ?? []}
-            onOpenMoment={openProbeMoment}
-          />
-          <ProbeSummaryVisual
-            activePredictionFilter={probePredictionFilter}
-            activeSplitFilter={probeSplitFilter}
-            probe={selectedProbe}
-            onCohortPresetChange={(preset) => {
-              setProbeCohortPreset(preset);
-              setProbeSplitFilter("all");
-              setProbePredictionFilter("all");
-              resetPage();
-            }}
-            onPredictionFilterChange={(value) => {
-              setProbeCohortPreset("all");
-              setProbePredictionFilter(value);
-              resetPage();
-            }}
-            onSplitFilterChange={(value) => {
-              setProbeCohortPreset("all");
-              setProbeSplitFilter(value);
-              resetPage();
-            }}
-          />
-        </>
+      {selectedProbe && probeWorkbench ? (
+        <ProbeLensWorkbench
+          activePredictionFilter={probePredictionFilter}
+          activeSplitFilter={probeSplitFilter}
+          evidenceIsError={probeEvidenceBundle.isError}
+          evidenceIsLoading={probeEvidenceBundle.isFetching}
+          model={probeWorkbench}
+          probe={selectedProbe}
+          rankedRows={rankedEvidenceRows}
+          unavailable={activeProbeEvidenceBundle?.unavailable ?? []}
+          onCohortPresetChange={(preset) => {
+            setProbeCohortPreset(preset);
+            setProbeSplitFilter("all");
+            setProbePredictionFilter("all");
+            resetPage();
+          }}
+          onOpenMoment={openProbeMoment}
+          onPredictionFilterChange={(value) => {
+            setProbeCohortPreset("all");
+            setProbePredictionFilter(value);
+            resetPage();
+          }}
+          onSplitFilterChange={(value) => {
+            setProbeCohortPreset("all");
+            setProbeSplitFilter(value);
+            resetPage();
+          }}
+        />
       ) : selectedLens ? (
         <LensEvidencePanel lens={selectedLens} ranking={discoveryPayload} />
       ) : null}
@@ -489,7 +501,7 @@ export function DatasetBrowser({
       <section className="dataset-browser-grid">
         <div className="dataset-browser-panel">
           <header>
-            <h2>{selectedLens ? "Episodes Through Lens" : "Episodes"}</h2>
+            <h2>{selectedProbe ? "Episodes through probe" : selectedLens ? "Episodes through lens" : "Episodes"}</h2>
             <span>
               {pageStart}-{pageEnd} / {visibleTotal}
             </span>
@@ -497,70 +509,48 @@ export function DatasetBrowser({
           <div className="dataset-episode-table-wrap">
             <table className="compact-table dataset-episode-table">
               <thead>
-                <tr>
-                  <th>Episode</th>
-                  <th>Dataset</th>
-                  <th>Benchmark</th>
-                  <th>Task</th>
-                  <th>Seed</th>
-                  <th>Outcome</th>
-                  <th>Steps</th>
-                  {selectedProbe ? <th>Probe</th> : null}
-                  <th />
-                </tr>
+                {selectedProbe ? (
+                  <tr>
+                    <th>Episode</th>
+                    <th>Probe readout</th>
+                    <th>Why inspect</th>
+                    <th>Split</th>
+                    <th>Outcome</th>
+                    <th />
+                  </tr>
+                ) : (
+                  <tr>
+                    <th>Episode</th>
+                    <th>Dataset</th>
+                    <th>Benchmark</th>
+                    <th>Task</th>
+                    <th>Seed</th>
+                    <th>Outcome</th>
+                    <th>Steps</th>
+                    <th />
+                  </tr>
+                )}
               </thead>
               <tbody>
-                {episodes.map((episode) => (
-                  <tr key={episode.trace_id}>
-                    <td>
-                      <button
-                        className="dataset-episode-link"
-                        type="button"
-                        onClick={() => openDatasetEpisode(episode)}
-                      >
-                        <span>{episodeTitle(episode)}</span>
-                        <small>{shortTrace(episode.trace_id)}</small>
-                      </button>
-                    </td>
-                    <td>{episodeDatasetId(episode) || "-"}</td>
-                    <td>{episodeBenchmark(episode) || "-"}</td>
-                    <td>{episode.task_id ?? "-"}</td>
-                    <td>{episodeSeed(episode) || "-"}</td>
-                    <td>
-                      <span className={`outcome-pill ${episode.outcome ?? "unknown"}`}>
-                        {episode.outcome ?? "unknown"}
-                      </span>
-                    </td>
-                    <td>{episode.length ?? "-"}</td>
-                    {selectedProbe ? (
-                      <td>
-                        <ProbeEpisodeBadge
-                          cue={probeEvidenceCueForEpisode(
-                            activeProbeEvidenceBundle,
-                            episode,
-                            selectedProbe,
-                            datasetFilter,
-                          )}
-                          record={probeRecordForEpisode(selectedProbe, episode)}
-                        />
-                      </td>
-                    ) : null}
-                    <td>
-                      <button
-                        className="icon-command"
-                        type="button"
-                        title="Open episode"
-                        aria-label={`Open ${episode.trace_id}`}
-                        onClick={() => openDatasetEpisode(episode)}
-                      >
-                        <ArrowRight size={16} />
-                      </button>
-                    </td>
-                  </tr>
+                {episodes.map((episode) => selectedProbe ? (
+                  <ProbeEpisodeTableRow
+                    bundle={activeProbeEvidenceBundle}
+                    datasetFilter={datasetFilter}
+                    episode={episode}
+                    key={episode.trace_id}
+                    probe={selectedProbe}
+                    onOpenEpisode={openDatasetEpisode}
+                  />
+                ) : (
+                  <DatasetEpisodeTableRow
+                    episode={episode}
+                    key={episode.trace_id}
+                    onOpenEpisode={openDatasetEpisode}
+                  />
                 ))}
                 {!episodes.length ? (
                   <tr>
-                    <td colSpan={selectedProbe ? 9 : 8}>No episodes match the current filters.</td>
+                    <td colSpan={selectedProbe ? 6 : 8}>No episodes match the current filters.</td>
                   </tr>
                 ) : null}
               </tbody>
@@ -627,6 +617,253 @@ export function DatasetBrowser({
         </details>
       </section>
     </main>
+  );
+}
+
+function ProbeLensWorkbench({
+  activePredictionFilter,
+  activeSplitFilter,
+  evidenceIsError,
+  evidenceIsLoading,
+  model,
+  probe,
+  rankedRows,
+  unavailable,
+  onCohortPresetChange,
+  onOpenMoment,
+  onPredictionFilterChange,
+  onSplitFilterChange,
+}: {
+  activePredictionFilter: string;
+  activeSplitFilter: string;
+  evidenceIsError: boolean;
+  evidenceIsLoading: boolean;
+  model: ProbeLensWorkbenchViewModel;
+  probe: ProbeDatasetIndex;
+  rankedRows: ProbeEvidenceRankedRow[];
+  unavailable: ProbeEvidenceBundle["unavailable"];
+  onCohortPresetChange: (preset: ProbeCohortPreset) => void;
+  onOpenMoment: (row: ProbeEvidenceRankedRow) => void;
+  onPredictionFilterChange: (value: string) => void;
+  onSplitFilterChange: (value: string) => void;
+}) {
+  return (
+    <section className="probe-lens-workbench" aria-label="Selected probe lens workbench">
+      <div className="probe-lens-head">
+        <span>Selected probe lens</span>
+        <h2>{model.title}</h2>
+        <p>{model.verdict.detail}</p>
+        <div className="probe-lens-specs">
+          <ProbeEvidenceFact
+            label={model.spec.prediction.label}
+            value={model.spec.prediction.value}
+            detail={model.spec.prediction.detail}
+          />
+          <ProbeEvidenceFact
+            label={model.spec.input.label}
+            value={model.spec.input.value}
+            detail={model.spec.input.detail}
+          />
+          <ProbeEvidenceFact
+            label={model.spec.output.label}
+            value={model.spec.output.value}
+            detail={model.spec.output.detail}
+          />
+          <ProbeEvidenceFact
+            label={model.spec.objective.label}
+            value={model.spec.objective.value}
+            detail={model.spec.objective.detail}
+          />
+        </div>
+      </div>
+      <aside className={`probe-lens-verdict ${model.verdict.tone}`}>
+        <span>{model.verdict.label}</span>
+        <strong>{model.verdict.headline}</strong>
+        <small>{model.subtitle}</small>
+        <div className="probe-lens-metrics">
+          {model.metrics.map((metric) => (
+            <div className={`probe-lens-metric ${metric.tone}`} key={metric.label}>
+              <span>{metric.label}</span>
+              <strong>{metric.value}</strong>
+              {metric.detail ? <small>{metric.detail}</small> : null}
+            </div>
+          ))}
+        </div>
+      </aside>
+      <ProbeMechanismCard model={model} />
+      <ProbeSummaryVisual
+        activePredictionFilter={activePredictionFilter}
+        activeSplitFilter={activeSplitFilter}
+        probe={probe}
+        onCohortPresetChange={onCohortPresetChange}
+        onPredictionFilterChange={onPredictionFilterChange}
+        onSplitFilterChange={onSplitFilterChange}
+      />
+      <ProbeRankedEvidencePanel
+        isError={evidenceIsError}
+        isLoading={evidenceIsLoading}
+        rows={rankedRows}
+        unavailable={unavailable}
+        onOpenMoment={onOpenMoment}
+      />
+    </section>
+  );
+}
+
+function ProbeMechanismCard({ model }: { model: ProbeLensWorkbenchViewModel }) {
+  return (
+    <section className="probe-mechanism-card" aria-label="Probe mechanism summary">
+      <header>
+        <span>Where it reads</span>
+        <strong>{model.mechanism.modelSite}</strong>
+      </header>
+      <div className="probe-mechanism-tags">
+        <span>{model.mechanism.basis}</span>
+        <span>{model.mechanism.temporal}</span>
+        <span>{model.mechanism.output}</span>
+      </div>
+      {model.mechanism.contributors.length ? (
+        <div className="probe-contributor-list">
+          {model.mechanism.contributors.map((item) => (
+            <div className={`probe-contributor ${item.tone}`} key={item.key}>
+              <span>{item.value}</span>
+              <strong>{item.label}</strong>
+              <small>{item.detail}</small>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p>Contributor details are not available in the dataset-level bundle yet. Open an evidence moment for feature-level readout.</p>
+      )}
+      {model.mechanism.missing.length ? (
+        <details className="probe-mechanism-missing">
+          <summary>Unavailable evidence</summary>
+          <ul>
+            {model.mechanism.missing.map((message) => (
+              <li key={message}>{message}</li>
+            ))}
+          </ul>
+        </details>
+      ) : null}
+    </section>
+  );
+}
+
+function DatasetEpisodeTableRow({
+  episode,
+  onOpenEpisode,
+}: {
+  episode: DatasetEpisode;
+  onOpenEpisode: (episode: DatasetEpisode) => void;
+}) {
+  return (
+    <tr>
+      <td>
+        <button
+          className="dataset-episode-link"
+          type="button"
+          onClick={() => onOpenEpisode(episode)}
+        >
+          <span>{episodeTitle(episode)}</span>
+          <small>{shortTrace(episode.trace_id)}</small>
+        </button>
+      </td>
+      <td>{episodeDatasetId(episode) || "-"}</td>
+      <td>{episodeBenchmark(episode) || "-"}</td>
+      <td>{episode.task_id ?? "-"}</td>
+      <td>{episodeSeed(episode) || "-"}</td>
+      <td>
+        <span className={`outcome-pill ${episode.outcome ?? "unknown"}`}>
+          {episode.outcome ?? "unknown"}
+        </span>
+      </td>
+      <td>{episode.length ?? "-"}</td>
+      <td>
+        <button
+          className="icon-command"
+          type="button"
+          title="Open episode"
+          aria-label={`Open ${episode.trace_id}`}
+          onClick={() => onOpenEpisode(episode)}
+        >
+          <ArrowRight size={16} />
+        </button>
+      </td>
+    </tr>
+  );
+}
+
+function ProbeEpisodeTableRow({
+  bundle,
+  datasetFilter,
+  episode,
+  probe,
+  onOpenEpisode,
+}: {
+  bundle?: ProbeEvidenceBundle;
+  datasetFilter: string;
+  episode: DatasetEpisode;
+  probe: ProbeDatasetIndex;
+  onOpenEpisode: (episode: DatasetEpisode) => void;
+}) {
+  const cue = probeEvidenceCueForEpisode(bundle, episode, probe, datasetFilter);
+  const record = probeRecordForEpisode(probe, episode);
+  const reason = probeEpisodeInspectionReason(probe, bundle, episode, datasetFilter);
+  const meta = [
+    episodeBenchmark(episode),
+    episode.task_id ? `task ${episode.task_id}` : "",
+    episodeSeed(episode) ? `seed ${episodeSeed(episode)}` : "",
+    episode.length ? `${episode.length} steps` : "",
+  ].filter(Boolean).join(" · ");
+  return (
+    <tr className={`probe-episode-row ${reason.tone}`}>
+      <td>
+        <button
+          className="dataset-episode-link probe-oriented"
+          type="button"
+          onClick={() => onOpenEpisode(episode)}
+        >
+          <span>{episodeTitle(episode)}</span>
+          <small>{meta || shortTrace(episode.trace_id)}</small>
+        </button>
+      </td>
+      <td>
+        <ProbeEpisodeBadge
+          cue={cue}
+          record={record}
+        />
+      </td>
+      <td>
+        <div className={`probe-inspect-reason ${reason.tone}`}>
+          <strong>{reason.label}</strong>
+          <small>{reason.detail}</small>
+          {reason.timelinePercent !== null ? (
+            <i className="probe-mini-timeline">
+              <b style={{ left: `${reason.timelinePercent}%` }} />
+            </i>
+          ) : null}
+        </div>
+      </td>
+      <td>
+        <span className="probe-split-chip">{probeSplitLabel(record?.split_category, record?.split)}</span>
+      </td>
+      <td>
+        <span className={`outcome-pill ${episode.outcome ?? "unknown"}`}>
+          {episode.outcome ?? "unknown"}
+        </span>
+      </td>
+      <td>
+        <button
+          className="icon-command"
+          type="button"
+          title="Open episode at probe evidence"
+          aria-label={`Open ${episode.trace_id}`}
+          onClick={() => onOpenEpisode(episode)}
+        >
+          <ArrowRight size={16} />
+        </button>
+      </td>
+    </tr>
   );
 }
 
@@ -722,7 +959,7 @@ function LensEvidencePanel({
   );
 }
 
-function SelectedProbeLensSummary({
+export function SelectedProbeLensSummary({
   artifact,
   bundle,
   probe,

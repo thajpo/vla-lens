@@ -500,6 +500,369 @@
   color: #b91c1c;
 }
 
+.probe-lens-workbench {
+  background: #fffdf8;
+  border: 1px solid #d7dedc;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  grid-template-areas:
+    "head verdict"
+    "trust mechanism"
+    "queue queue";
+  min-width: 0;
+}
+
+.probe-lens-head {
+  border-right: 1px solid #e2e8f0;
+  display: grid;
+  gap: 9px;
+  grid-area: head;
+  min-width: 0;
+  padding: 16px;
+}
+
+.probe-lens-head > span,
+.probe-lens-verdict > span,
+.probe-mechanism-card > header span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.probe-lens-head h2 {
+  color: #0f172a;
+  font-size: clamp(20px, 2.6vw, 34px);
+  letter-spacing: -0.04em;
+  line-height: 0.98;
+  margin: 0;
+  max-width: 840px;
+}
+
+.probe-lens-head p {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 0;
+  max-width: 760px;
+}
+
+.probe-lens-specs {
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 4px;
+}
+
+.probe-lens-specs .probe-evidence-fact {
+  border-right: 1px solid #e2e8f0;
+  padding: 10px 10px 0 0;
+}
+
+.probe-lens-specs .probe-evidence-fact:last-child {
+  border-right: 0;
+}
+
+.probe-lens-verdict {
+  align-content: start;
+  background: #f8fafc;
+  display: grid;
+  gap: 8px;
+  grid-area: verdict;
+  min-width: 0;
+  padding: 16px;
+}
+
+.probe-lens-verdict.credible {
+  background: #eef7f3;
+}
+
+.probe-lens-verdict.limited {
+  background: #fff7ed;
+}
+
+.probe-lens-verdict.debug,
+.probe-lens-verdict.unknown {
+  background: #f8fafc;
+}
+
+.probe-lens-verdict.danger {
+  background: #fff1f2;
+}
+
+.probe-lens-verdict > strong {
+  color: #0f172a;
+  font-size: 18px;
+  font-weight: 920;
+  letter-spacing: -0.02em;
+  line-height: 1.05;
+}
+
+.probe-lens-verdict > small {
+  color: #64748b;
+  font-size: 11px;
+  font-weight: 780;
+  overflow-wrap: anywhere;
+}
+
+.probe-lens-metrics {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 6px;
+}
+
+.probe-lens-metric {
+  background: rgba(255, 255, 255, 0.72);
+  border: 1px solid rgba(148, 163, 184, 0.34);
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 8px;
+}
+
+.probe-lens-metric.credible {
+  border-color: rgba(95, 143, 120, 0.42);
+}
+
+.probe-lens-metric.limited {
+  border-color: rgba(217, 119, 6, 0.42);
+}
+
+.probe-lens-metric.danger {
+  border-color: rgba(220, 38, 38, 0.42);
+}
+
+.probe-lens-metric.debug,
+.probe-lens-metric.unknown {
+  border-color: rgba(148, 163, 184, 0.36);
+}
+
+.probe-lens-metric span {
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.probe-lens-metric strong {
+  color: #0f172a;
+  font-size: 17px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 920;
+}
+
+.probe-lens-metric small {
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.25;
+}
+
+.probe-mechanism-card {
+  background: #ffffff;
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 10px;
+  grid-area: mechanism;
+  min-width: 0;
+  padding: 14px 16px;
+}
+
+.probe-mechanism-card > header {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.probe-mechanism-card > header strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+  overflow-wrap: anywhere;
+}
+
+.probe-mechanism-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.probe-mechanism-tags span,
+.probe-split-chip {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #334155;
+  font-size: 10px;
+  font-weight: 850;
+  min-height: 24px;
+  padding: 4px 7px;
+  text-transform: uppercase;
+}
+
+.probe-contributor-list {
+  display: grid;
+  gap: 6px;
+}
+
+.probe-contributor {
+  border-left: 3px solid #94a3b8;
+  display: grid;
+  gap: 2px 8px;
+  grid-template-columns: 56px minmax(0, 1fr);
+  min-width: 0;
+  padding: 6px 0 6px 8px;
+}
+
+.probe-contributor.positive {
+  border-left-color: #5f8f78;
+}
+
+.probe-contributor.negative {
+  border-left-color: #d97706;
+}
+
+.probe-contributor span {
+  color: #0f172a;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+}
+
+.probe-contributor strong {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.probe-contributor small {
+  color: #64748b;
+  font-size: 10px;
+  grid-column: 2;
+  overflow-wrap: anywhere;
+}
+
+.probe-mechanism-card p {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1.4;
+  margin: 0;
+}
+
+.probe-mechanism-missing {
+  border-top: 1px solid #e2e8f0;
+  color: #64748b;
+  font-size: 11px;
+  padding-top: 8px;
+}
+
+.probe-mechanism-missing summary {
+  cursor: pointer;
+  font-weight: 850;
+  text-transform: uppercase;
+}
+
+.probe-mechanism-missing ul {
+  margin: 8px 0 0;
+  padding-left: 18px;
+}
+
+.probe-lens-workbench .probe-summary-visual {
+  border: 0;
+  border-right: 1px solid #e2e8f0;
+  border-top: 1px solid #e2e8f0;
+  grid-area: trust;
+}
+
+.probe-lens-workbench .probe-ranked-evidence {
+  border: 0;
+  border-top: 1px solid #e2e8f0;
+  grid-area: queue;
+}
+
+.probe-lens-workbench .probe-ranked-evidence > header strong {
+  font-size: 15px;
+}
+
+.probe-episode-row.selected td,
+.probe-episode-row:hover td {
+  background: #fffdf8;
+}
+
+.dataset-episode-link.probe-oriented {
+  max-width: 620px;
+}
+
+.dataset-episode-link.probe-oriented span {
+  font-size: 13px;
+}
+
+.probe-inspect-reason {
+  display: grid;
+  gap: 3px;
+  min-width: 150px;
+}
+
+.probe-inspect-reason strong {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.probe-inspect-reason small {
+  color: #64748b;
+  font-size: 10px;
+}
+
+.probe-inspect-reason.danger strong {
+  color: #b91c1c;
+}
+
+.probe-inspect-reason.warning strong {
+  color: #b45309;
+}
+
+.probe-inspect-reason.good strong {
+  color: #047857;
+}
+
+.probe-inspect-reason.muted strong {
+  color: #64748b;
+}
+
+.probe-inspect-reason .probe-mini-timeline {
+  max-width: 150px;
+}
+
+@media (max-width: 980px) {
+  .probe-lens-workbench {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "head"
+      "verdict"
+      "mechanism"
+      "trust"
+      "queue";
+  }
+
+  .probe-lens-head,
+  .probe-lens-workbench .probe-summary-visual {
+    border-right: 0;
+  }
+
+  .probe-lens-specs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .probe-lens-metrics {
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  }
+}
+
 .episode-detail {
   background: var(--bg);
   display: flex;

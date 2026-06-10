@@ -1,5 +1,6 @@
 import type { ArtifactRecord, DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
 import type {
+  ContributionEvidence,
   LensProvenanceEvidence,
   ModelLocusEvidence,
   ProbeEvidenceBundle,
@@ -77,6 +78,46 @@ export type ProbeEvidenceEpisodeCue = {
   markerLabel: string;
   scoreLabel: string;
   timelinePercent: number | null;
+};
+export type ProbeLensTone = "credible" | "limited" | "debug" | "unknown" | "danger";
+export type ProbeLensMetricChip = {
+  detail?: string;
+  label: string;
+  tone: ProbeLensTone;
+  value: string;
+};
+export type ProbeContributorSummary = {
+  detail: string;
+  key: string;
+  label: string;
+  tone: "positive" | "negative" | "neutral";
+  value: string;
+};
+export type ProbeLensWorkbenchViewModel = {
+  mechanism: {
+    basis: string;
+    contributors: ProbeContributorSummary[];
+    missing: string[];
+    modelSite: string;
+    output: string;
+    temporal: string;
+  };
+  metrics: ProbeLensMetricChip[];
+  spec: ProbeLensSpec;
+  subtitle: string;
+  title: string;
+  verdict: {
+    detail: string;
+    headline: string;
+    label: string;
+    tone: ProbeLensTone;
+  };
+};
+export type ProbeEpisodeInspectionReason = {
+  detail: string;
+  label: string;
+  timelinePercent: number | null;
+  tone: "good" | "warning" | "danger" | "muted" | "selected";
 };
 
 export const PROBE_LIST_LIMIT = 80;
@@ -347,6 +388,95 @@ export function probeEvidenceContextForEpisode(
   return cue?.context ?? episodeOpenContextForProbe(probe, episode);
 }
 
+export function probeEpisodeInspectionReason(
+  probe: ProbeDatasetIndex,
+  bundle: ProbeEvidenceBundle | undefined,
+  episode: DatasetEpisode,
+  selectedDatasetId?: string,
+): ProbeEpisodeInspectionReason {
+  const cue = probeEvidenceCueForEpisode(bundle, episode, probe, selectedDatasetId);
+  if (cue) {
+    const tone = cue.markerLabel.toLowerCase().includes("uncertain")
+      ? "warning"
+      : cue.markerLabel.toLowerCase().includes("bottom")
+        ? "muted"
+        : "selected";
+    return {
+      detail: cue.scoreLabel,
+      label: cue.markerLabel,
+      timelinePercent: cue.timelinePercent,
+      tone,
+    };
+  }
+  const record = probeRecordForEpisode(probe, episode);
+  const confidence = record ? probeConfidenceValue(record) : null;
+  if (!record?.available) {
+    return {
+      detail: "No compatible scored row for this lens",
+      label: "Unscored",
+      timelinePercent: null,
+      tone: "muted",
+    };
+  }
+  if (record.correct === false && confidence !== null && confidence >= 0.8) {
+    return {
+      detail: formatDatasetProbeConfidence(confidence),
+      label: "High-conf wrong",
+      timelinePercent: null,
+      tone: "danger",
+    };
+  }
+  if (record.correct === false) {
+    return {
+      detail: formatDatasetProbeConfidence(confidence),
+      label: "Wrong prediction",
+      timelinePercent: null,
+      tone: "warning",
+    };
+  }
+  return {
+    detail: formatDatasetProbeConfidence(confidence),
+    label: "Scored episode",
+    timelinePercent: null,
+    tone: "good",
+  };
+}
+
+export function probeLensWorkbenchModel({
+  artifact,
+  bundle,
+  probe,
+  totalEpisodes = 0,
+}: {
+  artifact?: ArtifactRecord;
+  bundle?: ProbeEvidenceBundle;
+  probe: ProbeDatasetIndex;
+  totalEpisodes?: number;
+}): ProbeLensWorkbenchViewModel {
+  const spec = probeEvidenceSpec(bundle) ?? probeLensSpec(probe, artifact);
+  const stats = probeReviewStats(probe);
+  const indexedTotal = Object.keys(probe.by_trace ?? {}).length || stats.scored + stats.unscored || totalEpisodes;
+  const heldoutTotal = stats.validation + stats.test;
+  const heldoutScored = stats.heldoutScored || Math.min(stats.scored, heldoutTotal);
+  const wrongRate = stats.scored ? stats.wrong / stats.scored : null;
+  const verdict = probeLensVerdict(stats, heldoutScored, wrongRate);
+  return {
+    mechanism: {
+      basis: bundle ? labelFromSnake(bundle.geometry.input_basis) : spec.input.value,
+      contributors: bundle ? topContributorSummaries(bundle, 5) : [],
+      missing: (bundle?.unavailable ?? []).map((reason) => reason.message).filter(Boolean).slice(0, 3),
+      modelSite: bundle ? modelLocusSummary(bundle) || "Model locus not computed" : probe.best_feature || probe.best_model || "Model locus not computed",
+      output: bundle ? labelFromSnake(bundle.geometry.output_kind) : spec.output.value,
+      temporal: bundle ? labelFromSnake(bundle.geometry.temporal_scope) : "Episode",
+    },
+    metrics: probeLensMetricChips(probe, stats, indexedTotal, heldoutScored, wrongRate),
+    spec,
+    subtitle: bundle ? `${bundle.run.dataset_id} · ${labelFromSnake(bundle.run.status)}` : probe.artifact_id,
+    title: probe.name,
+    verdict,
+  };
+}
+
 export function probeEvidenceSpec(bundle: ProbeEvidenceBundle | undefined): ProbeLensSpec | undefined {
   if (!bundle) {
     return undefined;
@@ -388,6 +518,142 @@ export function probeEvidenceProvenanceBadges(bundle: ProbeEvidenceBundle | unde
     stringValue(fields.Objective),
     modelLocusSummary(bundle),
   ].filter(Boolean).slice(0, 3);
+}
+
+function probeLensVerdict(
+  stats: ProbeReviewStats,
+  heldoutScored: number,
+  wrongRate: number | null,
+): ProbeLensWorkbenchViewModel["verdict"] {
+  if (!stats.scored) {
+    return {
+      detail: "The probe is indexed, but compatible scored rows are not available for this dataset view.",
+      headline: "No scored evidence yet",
+      label: "Unknown",
+      tone: "unknown",
+    };
+  }
+  if (!heldoutScored) {
+    return {
+      detail: "Use this as a training/debug sanity check until validation or test episodes are scored.",
+      headline: "Train evidence only",
+      label: "Debug",
+      tone: "debug",
+    };
+  }
+  if (stats.confidentWrong > 0 || (wrongRate !== null && wrongRate >= 0.25)) {
+    return {
+      detail: "This lens is useful for finding failures and boundary cases, but its claim should be checked episode-by-episode.",
+      headline: "Good review lens, not proof",
+      label: "Limited",
+      tone: "limited",
+    };
+  }
+  return {
+    detail: "Heldout scored episodes exist and high-confidence failures are not dominating the current index.",
+    headline: "Heldout evidence available",
+    label: "Credible",
+    tone: "credible",
+  };
+}
+
+function probeLensMetricChips(
+  probe: ProbeDatasetIndex,
+  stats: ProbeReviewStats,
+  indexedTotal: number,
+  heldoutScored: number,
+  wrongRate: number | null,
+): ProbeLensMetricChip[] {
+  const chips: ProbeLensMetricChip[] = [
+    {
+      detail: "compatible rows",
+      label: "Scored",
+      tone: stats.scored ? "credible" : "unknown",
+      value: indexedTotal ? `${formatInteger(stats.scored)}/${formatInteger(indexedTotal)}` : formatInteger(stats.scored),
+    },
+    {
+      detail: `${formatInteger(stats.validation)} validation · ${formatInteger(stats.test)} test`,
+      label: "Heldout",
+      tone: heldoutScored ? "credible" : "debug",
+      value: formatInteger(heldoutScored),
+    },
+    {
+      detail: wrongRate === null ? "wrong rate unavailable" : `${Math.round(wrongRate * 100)}% of scored`,
+      label: "Wrong",
+      tone: stats.wrong ? "limited" : "credible",
+      value: formatInteger(stats.wrong),
+    },
+    {
+      detail: "highest priority review cases",
+      label: "High-conf wrong",
+      tone: stats.confidentWrong ? "danger" : "credible",
+      value: formatInteger(stats.confidentWrong),
+    },
+  ];
+  if (typeof probe.best_score === "number" && Number.isFinite(probe.best_score)) {
+    chips.push({
+      detail: probe.best_model || "selected model",
+      label: "Metric",
+      tone: "unknown",
+      value: probe.best_score.toFixed(3),
+    });
+  }
+  return chips;
+}
+
+function topContributorSummaries(bundle: ProbeEvidenceBundle, limit: number): ProbeContributorSummary[] {
+  const bestByKey = new Map<string, { item: ContributionEvidence["items"][number]; primitive: ContributionEvidence }>();
+  for (const primitive of evidencePrimitivesByKind(bundle, "contribution") as ContributionEvidence[]) {
+    for (const item of primitive.items) {
+      const current = bestByKey.get(item.key);
+      if (!current || Math.abs(item.value) > Math.abs(current.item.value)) {
+        bestByKey.set(item.key, { item, primitive });
+      }
+    }
+  }
+  return [...bestByKey.values()]
+    .sort((left, right) => Math.abs(right.item.value) - Math.abs(left.item.value))
+    .slice(0, limit)
+    .map(({ item, primitive }) => ({
+      detail: compactJoin(
+        [
+          claimLevelLabel(primitive.claim_level),
+          labelFromSnake(primitive.basis),
+          modelLocusRefLabel(item.model_locus),
+        ],
+        " · ",
+      ),
+      key: item.key,
+      label: item.label || item.description || item.key,
+      tone: item.value > 0 ? "positive" : item.value < 0 ? "negative" : "neutral",
+      value: formatSignedNumber(item.value),
+    }));
+}
+
+function claimLevelLabel(value: string): string {
+  const labels: Record<string, string> = {
+    grouped_model_locus: "grouped locus",
+    human_labeled_feature: "human label",
+    numeric_only: "numeric",
+    semantic_hypothesis: "semantic",
+  };
+  return labels[value] ?? labelFromSnake(value);
+}
+
+function modelLocusRefLabel(locus: ModelLocusEvidence["locus"] | null | undefined): string {
+  if (!locus) {
+    return "";
+  }
+  if (locus.model_site_id) {
+    return locus.model_site_id;
+  }
+  if (locus.module) {
+    return locus.module;
+  }
+  if (locus.layer !== null && locus.layer !== undefined) {
+    return `layer ${locus.layer}`;
+  }
+  return "";
 }
 
 export function probeCoverageRows(
