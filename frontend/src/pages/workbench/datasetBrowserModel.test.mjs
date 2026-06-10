@@ -1,13 +1,23 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  probeEvidenceCueForEpisode,
+  probeEvidenceContextForEpisode,
+  probeEvidenceRankedRows,
+  probeEvidenceSpec,
   probeLensSpec,
   probeTrainingDetails,
   probeResultChartRows,
   probeScoredCohortDetail,
   probeSplitChartRows,
 } from "./datasetBrowserModel.ts";
+
+function readProbeEvidenceFixture(name) {
+  const url = new URL(`../../../../tests/fixtures/probe_evidence/${name}.json`, import.meta.url);
+  return JSON.parse(readFileSync(url, "utf8"));
+}
 
 test("probe split rows use indexed split-level review stats without by_trace", () => {
   const probe = {
@@ -210,4 +220,145 @@ test("probe lens spec stays short and human-readable", () => {
   assert.equal(spec.input.detail, "action tokens · layers 0, 4, 8, 12, 17 · final step");
   assert.equal(spec.output.value, "False / True");
   assert.equal(spec.objective.value, "Logistic regression");
+});
+
+test("probe evidence spec uses canonical bundle provenance for dataset lens summary", () => {
+  const bundle = readProbeEvidenceFixture("scalar_timestep");
+  const spec = probeEvidenceSpec(bundle);
+
+  assert.equal(spec.prediction.value, "Target contacted");
+  assert.equal(spec.input.value, "Pooled hidden states");
+  assert.equal(spec.output.value, "Scalar");
+  assert.equal(spec.objective.value, "logistic regression");
+});
+
+test("probe evidence ranked rows preserve lens run and moment selection context", () => {
+  const bundle = readProbeEvidenceFixture("scalar_timestep");
+  const probe = {
+    artifact_id: "probe-target-contacted",
+    name: "Target contacted",
+    prediction_summary: {},
+    split_summary: {},
+    by_trace: {
+      "episode-1": {
+        available: true,
+        confidence: 0.91,
+        correct: true,
+        predicted: true,
+        row_count: 1,
+        split_category: "test",
+        trace_id: "episode-1",
+      },
+      "episode-2": {
+        available: true,
+        confidence: 0.1,
+        correct: false,
+        predicted: false,
+        row_count: 1,
+        split_category: "validation",
+        trace_id: "episode-2",
+      },
+    },
+  };
+  const episodes = [
+    { episode_id: "episode-1", trace_id: "episode-1", prompt: "pick cube" },
+    { episode_id: "episode-2", trace_id: "episode-2", prompt: "push cube" },
+  ];
+
+  const rows = probeEvidenceRankedRows({
+    bundle,
+    episodes,
+    probe,
+    selectedDatasetId: "libero_spatial",
+  });
+
+  assert.deepEqual(rows.map((row) => [row.ranking, row.moment.episode_id, row.timeLabel]), [
+    ["top", "episode-1", "timestep 7"],
+    ["bottom", "episode-2", "timestep 1"],
+  ]);
+  assert.equal(rows[0].context.probeId, "probe-target-contacted");
+  assert.equal(rows[0].context.lensRunId, bundle.run.lens_run_id);
+  assert.equal(rows[0].context.researchSelection.dataset_id, "libero_spatial");
+  assert.equal(rows[0].context.researchSelection.lens_run_id, bundle.run.lens_run_id);
+  assert.equal(rows[0].context.researchSelection.ranking, "top");
+  assert.equal(rows[0].context.policyCall, null);
+});
+
+test("probe evidence cue marks table rows with score and timeline location", () => {
+  const bundle = readProbeEvidenceFixture("scalar_timestep");
+  const cue = probeEvidenceCueForEpisode(bundle, { episode_id: "episode-1", trace_id: "episode-1" });
+
+  assert.equal(cue.markerLabel, "Top timestep 7");
+  assert.equal(cue.scoreLabel, "score 0.910");
+  assert.equal(Math.round(cue.timelinePercent), 64);
+});
+
+test("probe evidence ranked rows keep top low and uncertain visible for top-heavy bundles", () => {
+  const bundle = readProbeEvidenceFixture("scalar_timestep");
+  const topPrimitive = bundle.primitives.find(
+    (primitive) => primitive.kind === "ranked_moments" && primitive.ranking === "top",
+  );
+  const topMoments = Array.from({ length: 12 }, (_, index) => ({
+    episode_id: `top-${index}`,
+    score: 1 - index * 0.01,
+    timestep: index,
+  }));
+  const topHeavyBundle = {
+    ...bundle,
+    primitives: [
+      ...bundle.primitives.filter(
+        (primitive) => !(primitive.kind === "ranked_moments" && primitive.ranking === "top"),
+      ),
+      { ...topPrimitive, moments: topMoments },
+      {
+        ...topPrimitive,
+        ranking: "uncertain",
+        moments: [{ episode_id: "uncertain-1", score: 0.5, timestep: 5 }],
+      },
+    ],
+  };
+
+  const rows = probeEvidenceRankedRows({
+    bundle: topHeavyBundle,
+    episodes: [],
+    limit: 6,
+    probe: {
+      artifact_id: "probe-target-contacted",
+      name: "Target contacted",
+      prediction_summary: {},
+      split_summary: {},
+    },
+  });
+
+  assert.deepEqual([...new Set(rows.map((row) => row.ranking))], ["top", "bottom", "uncertain"]);
+});
+
+test("probe evidence context for compact rows uses full bundle beyond displayed row limit", () => {
+  const bundle = readProbeEvidenceFixture("scalar_timestep");
+  const probe = {
+    artifact_id: "probe-target-contacted",
+    name: "Target contacted",
+    prediction_summary: {},
+    split_summary: {},
+  };
+  const rows = probeEvidenceRankedRows({
+    bundle,
+    episodes: [{ episode_id: "episode-1", trace_id: "episode-1" }],
+    limit: 1,
+    probe,
+  });
+  assert.deepEqual(rows.map((row) => row.moment.episode_id), ["episode-1"]);
+
+  const context = probeEvidenceContextForEpisode(
+    probe,
+    bundle,
+    { episode_id: "episode-2", trace_id: "episode-2" },
+    "heldout_dataset",
+  );
+
+  assert.equal(context.probeId, "probe-target-contacted");
+  assert.equal(context.lensRunId, bundle.run.lens_run_id);
+  assert.equal(context.researchSelection.dataset_id, "heldout_dataset");
+  assert.equal(context.researchSelection.episode_id, "episode-2");
+  assert.equal(context.researchSelection.ranking, "bottom");
 });

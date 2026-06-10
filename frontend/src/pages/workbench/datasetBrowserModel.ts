@@ -1,4 +1,13 @@
 import type { ArtifactRecord, DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
+import type {
+  LensProvenanceEvidence,
+  ModelLocusEvidence,
+  ProbeEvidenceBundle,
+  RankedMoment,
+  RankingKind,
+  ResearchSelectionState,
+  ScoreSeriesEvidence,
+} from "../../types/probeEvidence";
 import type { EpisodeOpenContext } from "./types";
 
 export type CoverageRow = {
@@ -49,6 +58,25 @@ export type ProbeLensSpec = {
   objective: ProbeTrainingDetailRow;
   output: ProbeTrainingDetailRow;
   prediction: ProbeTrainingDetailRow;
+};
+export type ProbeEvidenceRankedRow = {
+  context: EpisodeOpenContext | undefined;
+  episode?: DatasetEpisode;
+  moment: RankedMoment;
+  predictionLabel: string;
+  provenanceBadges: string[];
+  ranking: RankingKind;
+  resultLabel: string;
+  scoreLabel: string;
+  selected: boolean;
+  splitLabel: string;
+  timeLabel: string;
+};
+export type ProbeEvidenceEpisodeCue = {
+  context: EpisodeOpenContext | undefined;
+  markerLabel: string;
+  scoreLabel: string;
+  timelinePercent: number | null;
 };
 
 export const PROBE_LIST_LIMIT = 80;
@@ -181,6 +209,185 @@ export function episodeOpenContextForProbe(
     policyCall: record?.policy_call_index ?? policyCallFromProbeFeature(record?.feature ?? probe.best_feature ?? ""),
     probeId: probe.artifact_id,
   };
+}
+
+export function episodeOpenContextForProbeMoment(
+  probe: ProbeDatasetIndex | undefined,
+  bundle: ProbeEvidenceBundle | undefined,
+  moment: RankedMoment,
+  ranking: RankingKind,
+  episode?: DatasetEpisode,
+  datasetId?: string,
+): EpisodeOpenContext | undefined {
+  if (!probe || !bundle) {
+    return episode ? episodeOpenContextForProbe(probe, episode) : undefined;
+  }
+  const selection = researchSelectionForMoment(bundle, moment, ranking, datasetId);
+  const locus = modelLocusForSelection(bundle, selection);
+  const feature = numberFromContributionKey(selection.feature_id);
+  return {
+    feature,
+    fromCohort: true,
+    lensRunId: bundle.run.lens_run_id,
+    policyCall: selection.policy_call ?? policyCallFromProbeFeature(probe.best_feature ?? ""),
+    probeId: probe.artifact_id,
+    rankingMode: "probe_contribution",
+    researchSelection: selection,
+    siteName: locus?.locus.model_site_id ?? locus?.locus.module ?? "",
+  };
+}
+
+export function researchSelectionForMoment(
+  bundle: ProbeEvidenceBundle,
+  moment: RankedMoment,
+  ranking: RankingKind,
+  datasetId?: string,
+): ResearchSelectionState {
+  return {
+    dataset_id: activeDatasetId(bundle, datasetId),
+    episode_id: moment.episode_id,
+    lens_id: bundle.artifact.lens_id,
+    lens_run_id: bundle.run.lens_run_id,
+    policy_call: moment.policy_call ?? null,
+    ranking,
+    timestep: moment.timestep ?? null,
+  };
+}
+
+export function probeEvidenceRankedRows({
+  bundle,
+  episodes,
+  limit = 12,
+  probe,
+  selected,
+  selectedDatasetId,
+}: {
+  bundle?: ProbeEvidenceBundle;
+  episodes: DatasetEpisode[];
+  limit?: number;
+  probe?: ProbeDatasetIndex;
+  selected?: ResearchSelectionState | null;
+  selectedDatasetId?: string;
+}): ProbeEvidenceRankedRow[] {
+  if (!bundle || !probe) {
+    return [];
+  }
+  const episodeById = episodeLookup(episodes);
+  const provenanceBadges = probeEvidenceProvenanceBadges(bundle);
+  const rowsByRanking = new Map<RankingKind, ProbeEvidenceRankedRow[]>();
+  for (const ranking of ["top", "bottom", "uncertain"] as RankingKind[]) {
+    const rankingRows: ProbeEvidenceRankedRow[] = [];
+    for (const moment of rankedEvidenceMoments(bundle, ranking)) {
+      const episode = episodeById.get(moment.episode_id);
+      const record = episode ? probeRecordForEpisode(probe, episode) : probe.by_trace?.[moment.episode_id];
+      const selection = researchSelectionForMoment(bundle, moment, ranking, selectedDatasetId);
+      rankingRows.push({
+        context: episodeOpenContextForProbeMoment(
+          probe,
+          bundle,
+          moment,
+          ranking,
+          episode,
+          selectedDatasetId,
+        ),
+        episode,
+        moment,
+        predictionLabel: probePredictionMomentLabel(moment, record),
+        provenanceBadges,
+        ranking,
+        resultLabel: probeResultLabel(record),
+        scoreLabel: moment.score === null || moment.score === undefined ? "-" : moment.score.toFixed(3),
+        selected: researchSelectionsEqual(selection, selected),
+        splitLabel: probeSplitLabel(record?.split_category, record?.split),
+        timeLabel: probeMomentTimeLabel(moment),
+      });
+    }
+    rowsByRanking.set(ranking, rankingRows);
+  }
+  return balancedRankedRows(rowsByRanking, limit);
+}
+
+export function probeEvidenceCueForEpisode(
+  bundle: ProbeEvidenceBundle | undefined,
+  episode: DatasetEpisode,
+  probe?: ProbeDatasetIndex,
+  selectedDatasetId?: string,
+): ProbeEvidenceEpisodeCue | undefined {
+  if (!bundle) {
+    return undefined;
+  }
+  const rankingOrder = ["top", "uncertain", "bottom"] as RankingKind[];
+  for (const ranking of rankingOrder) {
+    const moment = rankedEvidenceMoments(bundle, ranking).find(
+      (item) => item.episode_id === episode.trace_id || item.episode_id === episode.episode_id,
+    );
+    if (!moment) {
+      continue;
+    }
+    const timelinePercent = momentTimelinePercent(bundle, moment);
+    return {
+      context: probe
+        ? episodeOpenContextForProbeMoment(probe, bundle, moment, ranking, episode, selectedDatasetId)
+        : undefined,
+      markerLabel: `${rankingLabel(ranking)} ${probeMomentTimeLabel(moment)}`,
+      scoreLabel: moment.score === null || moment.score === undefined ? "score -" : `score ${moment.score.toFixed(3)}`,
+      timelinePercent,
+    };
+  }
+  return undefined;
+}
+
+export function probeEvidenceContextForEpisode(
+  probe: ProbeDatasetIndex | undefined,
+  bundle: ProbeEvidenceBundle | undefined,
+  episode: DatasetEpisode,
+  selectedDatasetId?: string,
+): EpisodeOpenContext | undefined {
+  const cue = probeEvidenceCueForEpisode(bundle, episode, probe, selectedDatasetId);
+  return cue?.context ?? episodeOpenContextForProbe(probe, episode);
+}
+
+export function probeEvidenceSpec(bundle: ProbeEvidenceBundle | undefined): ProbeLensSpec | undefined {
+  if (!bundle) {
+    return undefined;
+  }
+  const provenance = evidencePrimitivesByKind(bundle, "provenance")[0] as LensProvenanceEvidence | undefined;
+  const fields = provenance?.fields ?? {};
+  return {
+    input: {
+      detail: stringValue(bundle.artifact.source?.module) || stringValue(bundle.artifact.source?.token_scope),
+      label: "Input",
+      value: stringValue(fields.Input) || labelFromSnake(bundle.geometry.input_basis),
+    },
+    objective: {
+      detail: stringValue(bundle.artifact.training?.objective),
+      label: "Objective",
+      value: stringValue(fields.Objective) || stringValue(bundle.artifact.training?.objective) || "Probe objective",
+    },
+    output: {
+      detail: bundle.geometry.output_kind,
+      label: "Output",
+      value: stringValue(fields.Output) || labelFromSnake(bundle.geometry.output_kind),
+    },
+    prediction: {
+      detail: bundle.artifact.target ?? "",
+      label: "Prediction",
+      value: stringValue(fields.Prediction) || bundle.artifact.target || bundle.artifact.name,
+    },
+  };
+}
+
+export function probeEvidenceProvenanceBadges(bundle: ProbeEvidenceBundle | undefined): string[] {
+  if (!bundle) {
+    return [];
+  }
+  const provenance = evidencePrimitivesByKind(bundle, "provenance")[0] as LensProvenanceEvidence | undefined;
+  const fields = provenance?.fields ?? {};
+  return [
+    stringValue(fields.Input) || labelFromSnake(bundle.geometry.input_basis),
+    stringValue(fields.Objective),
+    modelLocusSummary(bundle),
+  ].filter(Boolean).slice(0, 3);
 }
 
 export function probeCoverageRows(
@@ -540,6 +747,31 @@ export function probeEpisodeInterestLabel(record: ProbeEpisodeIndex | undefined)
     return `${split} · correct`;
   }
   return `${split} · scored`;
+}
+
+export function probeMomentTimeLabel(moment: RankedMoment): string {
+  if (moment.policy_call !== null && moment.policy_call !== undefined) {
+    return `call ${moment.policy_call}`;
+  }
+  if (moment.timestep !== null && moment.timestep !== undefined) {
+    return `timestep ${moment.timestep}`;
+  }
+  if (moment.frame_idx !== null && moment.frame_idx !== undefined) {
+    return `frame ${moment.frame_idx}`;
+  }
+  return "episode";
+}
+
+export function rankingLabel(ranking: RankingKind): string {
+  const labels: Record<RankingKind, string> = {
+    bottom: "Low",
+    false_negative: "False negative",
+    false_positive: "False positive",
+    largest_delta: "Delta",
+    top: "Top",
+    uncertain: "Uncertain",
+  };
+  return labels[ranking] ?? labelFromSnake(ranking);
 }
 
 export function probeResultLabel(record: ProbeEpisodeIndex | undefined): string {
@@ -1037,6 +1269,187 @@ function stringValue(value: unknown): string {
     return String(value);
   }
   return "";
+}
+
+function episodeLookup(episodes: DatasetEpisode[]): Map<string, DatasetEpisode> {
+  const out = new Map<string, DatasetEpisode>();
+  for (const episode of episodes) {
+    out.set(episode.trace_id, episode);
+    out.set(episode.episode_id, episode);
+  }
+  return out;
+}
+
+function activeDatasetId(bundle: ProbeEvidenceBundle, selectedDatasetId?: string): string {
+  return selectedDatasetId && selectedDatasetId !== "all" ? selectedDatasetId : bundle.run.dataset_id;
+}
+
+function balancedRankedRows(
+  rowsByRanking: Map<RankingKind, ProbeEvidenceRankedRow[]>,
+  limit: number,
+): ProbeEvidenceRankedRow[] {
+  const rankings = ["top", "bottom", "uncertain"] as RankingKind[];
+  const visible: ProbeEvidenceRankedRow[] = [];
+  const perRanking = Math.max(1, Math.floor(limit / rankings.length));
+  for (const ranking of rankings) {
+    visible.push(...(rowsByRanking.get(ranking) ?? []).slice(0, perRanking));
+  }
+  if (visible.length >= limit) {
+    return visible.slice(0, limit);
+  }
+  for (const ranking of rankings) {
+    const existing = new Set(visible.map(rankedRowKey));
+    for (const row of rowsByRanking.get(ranking) ?? []) {
+      if (visible.length >= limit) {
+        return visible;
+      }
+      if (!existing.has(rankedRowKey(row))) {
+        visible.push(row);
+        existing.add(rankedRowKey(row));
+      }
+    }
+  }
+  return visible;
+}
+
+function rankedRowKey(row: ProbeEvidenceRankedRow): string {
+  return [
+    row.ranking,
+    row.moment.episode_id,
+    row.moment.timestep ?? "",
+    row.moment.policy_call ?? "",
+  ].join("|");
+}
+
+function probePredictionMomentLabel(
+  moment: RankedMoment,
+  record: ProbeEpisodeIndex | undefined,
+): string {
+  const prediction = moment.prediction ?? record?.predicted;
+  const label = moment.label ?? record?.actual;
+  if (prediction !== null && prediction !== undefined && label !== null && label !== undefined) {
+    return `${String(prediction)} / ${String(label)}`;
+  }
+  if (prediction !== null && prediction !== undefined) {
+    return String(prediction);
+  }
+  return record?.available ? "prediction available" : "prediction missing";
+}
+
+function researchSelectionsEqual(
+  left: ResearchSelectionState,
+  right?: ResearchSelectionState | null,
+): boolean {
+  if (!right) {
+    return false;
+  }
+  return (
+    left.lens_id === right.lens_id &&
+    left.lens_run_id === right.lens_run_id &&
+    left.episode_id === right.episode_id &&
+    left.ranking === right.ranking &&
+    (left.timestep ?? null) === (right.timestep ?? null) &&
+    (left.policy_call ?? null) === (right.policy_call ?? null)
+  );
+}
+
+function modelLocusForSelection(
+  bundle: ProbeEvidenceBundle,
+  selection: ResearchSelectionState,
+): ModelLocusEvidence | undefined {
+  const currentLoci = evidencePrimitivesByKind(bundle, "model_locus").filter(
+    (primitive): primitive is ModelLocusEvidence =>
+      primitive.kind === "model_locus" && evidenceMatchesSelection(primitive, selection),
+  );
+  return (
+    currentLoci[0] ??
+    (evidencePrimitivesByKind(bundle, "model_locus")[0] as ModelLocusEvidence | undefined)
+  );
+}
+
+function modelLocusSummary(bundle: ProbeEvidenceBundle): string {
+  const locus = (evidencePrimitivesByKind(bundle, "model_locus")[0] as ModelLocusEvidence | undefined)?.locus;
+  if (!locus) {
+    return "";
+  }
+  if (locus.model_site_id) {
+    return locus.model_site_id;
+  }
+  if (locus.layer !== null && locus.layer !== undefined) {
+    return `layer ${locus.layer}`;
+  }
+  return "";
+}
+
+function numberFromContributionKey(value: string | null | undefined): number | null {
+  const match = String(value ?? "").match(/(?:dim|feature|sae)_([0-9]+)/);
+  if (!match) {
+    return null;
+  }
+  const parsed = Number(match[1]);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function momentTimelinePercent(bundle: ProbeEvidenceBundle, moment: RankedMoment): number | null {
+  const series = evidencePrimitivesByKind(bundle, "score_series").find(
+    (primitive): primitive is ScoreSeriesEvidence =>
+      primitive.kind === "score_series" &&
+      primitive.episode_id === moment.episode_id &&
+      (primitive.time_axis === "policy_call" || primitive.time_axis === "timestep"),
+  );
+  const position = moment.policy_call ?? moment.timestep;
+  const length = series?.values_ref.shape?.[0];
+  if (position === null || position === undefined || !length || length <= 1) {
+    return null;
+  }
+  return percentOf(position, length - 1);
+}
+
+function evidencePrimitivesByKind(
+  bundle: ProbeEvidenceBundle,
+  kind: string,
+): ProbeEvidenceBundle["primitives"] {
+  return bundle.primitives.filter((primitive) => primitive.kind === kind);
+}
+
+function rankedEvidenceMoments(
+  bundle: ProbeEvidenceBundle,
+  ranking: RankingKind,
+  limit?: number,
+): RankedMoment[] {
+  const primitive = bundle.primitives.find(
+    (item) => item.kind === "ranked_moments" && item.ranking === ranking,
+  );
+  const moments = primitive?.kind === "ranked_moments" ? primitive.moments : [];
+  return limit === undefined ? moments : moments.slice(0, limit);
+}
+
+function evidenceMatchesSelection(
+  evidence: ModelLocusEvidence,
+  selection: ResearchSelectionState,
+): boolean {
+  if (selection.episode_id && evidence.episode_id && evidence.episode_id !== selection.episode_id) {
+    return false;
+  }
+  if (
+    selection.policy_call !== null &&
+    selection.policy_call !== undefined &&
+    evidence.policy_call !== null &&
+    evidence.policy_call !== undefined &&
+    evidence.policy_call !== selection.policy_call
+  ) {
+    return false;
+  }
+  if (
+    selection.timestep !== null &&
+    selection.timestep !== undefined &&
+    evidence.timestep !== null &&
+    evidence.timestep !== undefined &&
+    evidence.timestep !== selection.timestep
+  ) {
+    return false;
+  }
+  return true;
 }
 
 function numberValue(value: unknown, arrayIndex?: number): number | undefined {

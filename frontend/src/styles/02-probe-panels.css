@@ -178,6 +178,137 @@
   white-space: nowrap;
 }
 
+.probe-ranked-evidence {
+  background: #ffffff;
+  border: 1px solid #dbe3ed;
+  display: grid;
+  gap: 0;
+}
+
+.probe-ranked-evidence > header {
+  align-items: end;
+  border-bottom: 1px solid #e2e8f0;
+  display: flex;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 9px 12px;
+}
+
+.probe-ranked-evidence > header div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.probe-ranked-evidence > header span,
+.probe-ranked-evidence > header small {
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+}
+
+.probe-ranked-evidence > header strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.probe-ranked-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.probe-ranked-row {
+  align-items: start;
+  background: #ffffff;
+  border: 0;
+  border-right: 1px solid #e2e8f0;
+  color: #334155;
+  display: grid;
+  gap: 4px 8px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  justify-items: start;
+  min-height: 86px;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.probe-ranked-row:nth-child(3n) {
+  border-right: 0;
+}
+
+.probe-ranked-row:hover,
+.probe-ranked-row.active {
+  background: rgba(216, 169, 79, 0.1);
+}
+
+.probe-ranked-row strong {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  width: 100%;
+}
+
+.probe-ranked-row span,
+.probe-ranked-row small,
+.probe-ranked-row em {
+  color: #64748b;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 750;
+  line-height: 1.25;
+}
+
+.probe-ranked-row small,
+.probe-ranked-row em {
+  grid-column: 1 / -1;
+}
+
+.probe-rank-tag {
+  border: 1px solid #dbe3ed;
+  color: #334155;
+  padding: 3px 5px;
+  text-transform: uppercase;
+}
+
+.probe-rank-tag.top {
+  background: #eef7f7;
+  border-color: rgba(47, 111, 127, 0.28);
+}
+
+.probe-rank-tag.bottom {
+  background: #f8fafc;
+}
+
+.probe-rank-tag.uncertain {
+  background: #fff7ed;
+  border-color: rgba(249, 115, 22, 0.28);
+}
+
+.probe-mini-timeline {
+  background: #e2e8f0;
+  display: block;
+  height: 4px;
+  margin-top: 3px;
+  position: relative;
+  width: 100%;
+}
+
+.probe-mini-timeline b {
+  background: #d6a84f;
+  display: block;
+  height: 10px;
+  position: absolute;
+  top: -3px;
+  transform: translateX(-50%);
+  width: 3px;
+}
+
 .icon-command {
   border-radius: 0;
   justify-content: center;

@@ -11,6 +11,7 @@ import pandas as pd
 
 from vla_lens.dataset.index import (
     ARTIFACT_INDEX,
+    EPISODE_INDEX,
     MODEL_SITE_INDEX,
     PROBE_EPISODE_INDEX,
     PROBE_PREDICTIONS,
@@ -46,7 +47,13 @@ def indexed_probe_evidence_bundle_payload(
     """Return a canonical ProbeEvidenceBundle payload for one indexed probe."""
     query = query or {}
     limit = _positive_int(_query_value(query, "limit"), DEFAULT_RANK_LIMIT)
-    bundle = probe_evidence_bundle_from_index(root, probe_id, rank_limit=limit)
+    dataset_id = _query_value(query, "dataset_id")
+    bundle = probe_evidence_bundle_from_index(
+        root,
+        probe_id,
+        dataset_id=dataset_id,
+        rank_limit=limit,
+    )
     return bundle.to_dict()
 
 
@@ -54,6 +61,7 @@ def probe_evidence_bundle_from_index(
     root: Path,
     probe_id: str,
     *,
+    dataset_id: str | None = None,
     rank_limit: int = DEFAULT_RANK_LIMIT,
 ) -> ProbeEvidenceBundle:
     """Build a validated ProbeEvidenceBundle from existing dashboard index tables.
@@ -66,13 +74,16 @@ def probe_evidence_bundle_from_index(
     artifact_row = _artifact_row(artifacts, probe_id)
     predictions = _probe_rows(_read_table(root / PROBE_PREDICTIONS), probe_id)
     episode_rows = _probe_rows(_read_table(root / PROBE_EPISODE_INDEX), probe_id)
-    model_sites = _read_table(root / MODEL_SITE_INDEX)
+    trace_ids = _dataset_trace_ids(root, dataset_id)
+    predictions = _filter_rows_to_traces(predictions, trace_ids)
+    episode_rows = _filter_rows_to_traces(episode_rows, trace_ids)
+    model_sites = _filter_rows_to_traces(_read_table(root / MODEL_SITE_INDEX), trace_ids)
     metrics = _json_mapping(artifact_row.get("metrics"))
     method = _json_mapping(artifact_row.get("method"))
     display = _json_mapping(artifact_row.get("display"))
     arrays = _json_mapping(artifact_row.get("arrays"))
     artifact = _probe_lens_artifact(artifact_row, metrics, method, display)
-    run = _lens_run(root, artifact, artifact_row, predictions, episode_rows)
+    run = _lens_run(root, artifact, artifact_row, predictions, episode_rows, dataset_id=dataset_id)
     geometry = _lens_geometry(metrics, method, predictions, episode_rows)
     primitives = [
         _provenance_evidence(artifact, run, metrics, method, display),
@@ -125,6 +136,25 @@ def _probe_rows(frame: pd.DataFrame, probe_id: str) -> pd.DataFrame:
     return frame.loc[frame["probe_id"].astype(str) == probe_id].copy()
 
 
+def _dataset_trace_ids(root: Path, dataset_id: str | None) -> set[str] | None:
+    dataset_id = _normal_dataset_id(dataset_id)
+    if dataset_id is None:
+        return None
+    episodes = _read_table(root / EPISODE_INDEX)
+    if episodes.empty or "dataset_id" not in episodes or "trace_id" not in episodes:
+        return set()
+    rows = episodes.loc[episodes["dataset_id"].astype(str) == dataset_id]
+    return set(_unique_strings(rows["trace_id"]))
+
+
+def _filter_rows_to_traces(frame: pd.DataFrame, trace_ids: set[str] | None) -> pd.DataFrame:
+    if trace_ids is None:
+        return frame
+    if frame.empty or "trace_id" not in frame:
+        return frame.iloc[0:0].copy()
+    return frame.loc[frame["trace_id"].astype(str).isin(trace_ids)].copy()
+
+
 def _probe_lens_artifact(
     row: Mapping[str, Any],
     metrics: Mapping[str, Any],
@@ -156,6 +186,8 @@ def _lens_run(
     row: Mapping[str, Any],
     predictions: pd.DataFrame,
     episode_rows: pd.DataFrame,
+    *,
+    dataset_id: str | None = None,
 ) -> LensRun:
     trace_ids = _unique_strings(
         pd.concat(
@@ -167,16 +199,17 @@ def _lens_run(
         )
     )
     created = _optional_str(row.get("created_utc")) or datetime.now(UTC).isoformat()
+    run_dataset_id = _normal_dataset_id(dataset_id) or _dataset_id(root)
     return LensRun(
-        lens_run_id=f"indexed:{artifact.lens_id}:{_dataset_id(root)}",
+        lens_run_id=f"indexed:{artifact.lens_id}:{run_dataset_id}",
         lens_id=artifact.lens_id,
         lens_version=artifact.lens_version,
-        dataset_id=_dataset_id(root),
+        dataset_id=run_dataset_id,
         episode_ids=tuple(trace_ids),
         computed_at=created,
         result_version="probe_evidence.indexed.v1",
         status="complete" if len(predictions) or len(episode_rows) else "partial",
-        evidence_bundle_id=f"probe-evidence:indexed:{artifact.lens_id}:{_dataset_id(root)}",
+        evidence_bundle_id=f"probe-evidence:indexed:{artifact.lens_id}:{run_dataset_id}",
     )
 
 
@@ -720,6 +753,11 @@ def _positive_int(value: str | None, fallback: int) -> int:
     except ValueError:
         parsed = fallback
     return max(1, min(parsed, 500))
+
+
+def _normal_dataset_id(value: str | None) -> str | None:
+    text = str(value or "").strip()
+    return None if not text or text == "all" else text
 
 
 def _dataset_id(root: Path) -> str:

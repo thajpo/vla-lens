@@ -10,6 +10,7 @@ from vla_lens import create_synthetic_trace_dataset
 from vla_lens.dataset.index import (
     ARTIFACT_COLUMNS,
     ARTIFACT_INDEX,
+    EPISODE_INDEX,
     MODEL_SITE_COLUMNS,
     MODEL_SITE_INDEX,
     PROBE_EPISODE_COLUMNS,
@@ -240,6 +241,49 @@ def test_fastapi_probe_evidence_bundle_route_returns_canonical_payload(tmp_path)
     )
 
 
+def test_indexed_probe_evidence_adapter_filters_bundle_to_selected_dataset(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2, timesteps=2)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    _write_probe_fixture(dataset.root, trace_ids, labeled=True)
+    _set_episode_dataset_ids(dataset.root, {trace_ids[0]: "dataset-a", trace_ids[1]: "dataset-b"})
+
+    bundle = probe_evidence_bundle_from_index(dataset.root, "probe-a", dataset_id="dataset-a")
+
+    assert bundle.run.dataset_id == "dataset-a"
+    assert bundle.run.lens_run_id == "indexed:probe-a:dataset-a"
+    assert bundle.run.episode_ids == (trace_ids[0],)
+    prediction = primitives_by_kind(bundle, "prediction")[0]
+    assert prediction.episode_id == trace_ids[0]
+    ranked = [
+        moment.episode_id
+        for primitive in primitives_by_kind(bundle, "ranked_moments")
+        if isinstance(primitive, RankedMomentsEvidence)
+        for moment in primitive.moments
+    ]
+    assert set(ranked) == {trace_ids[0]}
+
+
+def test_fastapi_probe_evidence_bundle_route_honors_dataset_id_query(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2, timesteps=2)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    _write_probe_fixture(dataset.root, trace_ids, labeled=True)
+    _set_episode_dataset_ids(dataset.root, {trace_ids[0]: "dataset-a", trace_ids[1]: "dataset-b"})
+    client = TestClient(create_dashboard_app(dataset.root))
+
+    response = client.get(
+        "/api/probes/probe-a/evidence-bundle",
+        params={"dataset_id": "dataset-b", "limit": "5"},
+    )
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload["run"]["dataset_id"] == "dataset-b"
+    assert payload["run"]["lens_run_id"] == "indexed:probe-a:dataset-b"
+    assert payload["run"]["episode_ids"] == [trace_ids[1]]
+    predictions = [item for item in payload["primitives"] if item["kind"] == "prediction"]
+    assert [item["episode_id"] for item in predictions] == [trace_ids[1]]
+
+
 def _write_probe_fixture(
     root: Path,
     trace_ids: list[str],
@@ -395,3 +439,10 @@ def _write_index_table(
         "rows": int(len(out)),
     }
     manifest_path.write_text(json.dumps(manifest, indent=2, sort_keys=True), encoding="utf-8")
+
+
+def _set_episode_dataset_ids(root: Path, mapping: dict[str, str]) -> None:
+    episodes = pd.read_parquet(root / EPISODE_INDEX)
+    for trace_id, dataset_id in mapping.items():
+        episodes.loc[episodes["trace_id"].astype(str) == trace_id, "dataset_id"] = dataset_id
+    episodes.to_parquet(root / EPISODE_INDEX, index=False)

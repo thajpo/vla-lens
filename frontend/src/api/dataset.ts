@@ -38,6 +38,7 @@ import type {
   PolicyCallsResponse,
   SelectedPatch,
 } from "../types/dataset";
+import type { ProbeEvidenceBundle } from "../types/probeEvidence";
 
 export type EpisodePageParams = {
   benchmark?: string;
@@ -212,6 +213,24 @@ export function fetchProbeEvidence(
   }
   return getJson<ProbeEvidenceResponse>(
     `/api/probes/${encodeURIComponent(probeId)}/evidence?${search.toString()}`,
+    freshJsonInit(signal),
+  );
+}
+
+export function fetchProbeEvidenceBundle(
+  probeId: string,
+  params: { dataset_id?: string; limit?: number } = {},
+  signal?: AbortSignal,
+): Promise<ProbeEvidenceBundle> {
+  const search = new URLSearchParams();
+  if (params.dataset_id && params.dataset_id !== "all") {
+    search.set("dataset_id", params.dataset_id);
+  }
+  if (params.limit !== undefined && params.limit !== null) {
+    search.set("limit", String(params.limit));
+  }
+  return getJson<ProbeEvidenceBundle>(
+    `/api/probes/${encodeURIComponent(probeId)}/evidence-bundle?${search.toString()}`,
     freshJsonInit(signal),
   );
 }

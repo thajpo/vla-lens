@@ -10,10 +10,12 @@ import {
   fetchDataset,
   fetchDatasetDiagnostics,
   fetchEpisodesPage,
+  fetchProbeEvidenceBundle,
   fetchProbeIndex,
 } from "../../api/dataset";
 import type {
   ArtifactRecord,
+  DatasetEpisode,
   DiscoveryArtifactEpisodesResponse,
   DiscoveryArtifactFamily,
   EpisodeFacetValue,
@@ -21,6 +23,7 @@ import type {
   ProbeEpisodeIndex,
 } from "../../types/dataset";
 import type { WorkbenchManifest } from "../../types/workbench";
+import type { ProbeEvidenceBundle, ResearchSelectionState } from "../../types/probeEvidence";
 import { datasetBrowserCapabilityGates } from "../capabilityGating";
 import {
   COHORT_PRESETS,
@@ -36,13 +39,19 @@ import {
   episodeTitle,
   formatDatasetProbeConfidence,
   percentOf,
+  probeEvidenceContextForEpisode,
+  probeEvidenceCueForEpisode,
+  probeEvidenceRankedRows,
+  probeEvidenceSpec,
   probeRecordForEpisode,
   probeResultChartRows,
   probeLensSpec,
   probeSplitChartRows,
   probeSplitLabel,
+  rankingLabel,
   shortTrace,
   type ProbeCohortPreset,
+  type ProbeEvidenceRankedRow,
 } from "./datasetBrowserModel";
 import type { EpisodeOpenContext } from "./types";
 
@@ -121,6 +130,7 @@ export function DatasetBrowser({
   const [probeCohortPreset, setProbeCohortPreset] = useState<ProbeCohortPreset>("all");
   const [probeSplitFilter, setProbeSplitFilter] = useState("all");
   const [probePredictionFilter, setProbePredictionFilter] = useState("all");
+  const [researchSelection, setResearchSelection] = useState<ResearchSelectionState | null>(null);
   const [pageOffset, setPageOffset] = useState(0);
   const familyByType = useMemo(
     () => new Map((discoveryFamilies.data?.families ?? []).map((family) => [family.artifact_type, family])),
@@ -145,6 +155,23 @@ export function DatasetBrowser({
   );
   const selectedProbe = selectedLens?.probe;
   const activeLensArtifactId = selectedLens?.artifactId ?? "";
+  const probeEvidenceBundle = useQuery({
+    queryKey: [
+      "probe-evidence-bundle",
+      datasetIdentityKey,
+      datasetFilter,
+      selectedProbe?.artifact_id ?? NO_LENS_ID,
+    ],
+    queryFn: ({ signal }) =>
+      fetchProbeEvidenceBundle(
+        selectedProbe?.artifact_id ?? "",
+        { dataset_id: datasetFilter, limit: 50 },
+        signal,
+      ),
+    enabled: dataset.isFetched && Boolean(selectedProbe),
+    staleTime: 60_000,
+  });
+  const activeProbeEvidenceBundle = selectedProbe ? probeEvidenceBundle.data : undefined;
   const episodePageParams = useMemo<DiscoveryArtifactEpisodeParams>(
     () => ({
       benchmark: benchmarkFilter,
@@ -202,6 +229,16 @@ export function DatasetBrowser({
   const outcomes = facetValues(episodePage.data?.facets.outcome);
   const profiles = facetValues(episodePage.data?.facets.profile);
   const coverageRows = useMemo(() => datasetCoverageRows(episodes), [episodes]);
+  const rankedEvidenceRows = useMemo(
+    () => probeEvidenceRankedRows({
+      bundle: activeProbeEvidenceBundle,
+      episodes,
+      probe: selectedProbe,
+      selected: researchSelection,
+      selectedDatasetId: datasetFilter,
+    }),
+    [activeProbeEvidenceBundle, datasetFilter, episodes, researchSelection, selectedProbe],
+  );
   const totalEpisodes = dataset.data?.episode_count ?? episodePage.data?.total ?? 0;
   const visibleTotal = episodePage.data?.total ?? 0;
   const pageStart = visibleTotal ? pageOffset + 1 : 0;
@@ -223,7 +260,27 @@ export function DatasetBrowser({
     setProbeCohortPreset("all");
     setProbeSplitFilter("all");
     setProbePredictionFilter("all");
+    setResearchSelection(null);
     resetPage();
+  };
+  const openProbeMoment = (row: ProbeEvidenceRankedRow) => {
+    const selection = row.context?.researchSelection ?? null;
+    setResearchSelection(selection);
+    onOpenEpisode(row.episode?.trace_id ?? row.moment.episode_id, row.context);
+  };
+  const openDatasetEpisode = (episode: DatasetEpisode) => {
+    const evidenceContext = probeEvidenceContextForEpisode(
+      selectedProbe,
+      activeProbeEvidenceBundle,
+      episode,
+      datasetFilter,
+    );
+    if (evidenceContext?.researchSelection) {
+      setResearchSelection(evidenceContext.researchSelection);
+      onOpenEpisode(episode.trace_id, evidenceContext);
+      return;
+    }
+    onOpenEpisode(episode.trace_id, episodeOpenContextForProbe(selectedProbe, episode));
   };
 
   return (
@@ -249,7 +306,15 @@ export function DatasetBrowser({
         <>
           <SelectedProbeLensSummary
             artifact={selectedLens.artifact}
+            bundle={activeProbeEvidenceBundle}
             probe={selectedProbe}
+          />
+          <ProbeRankedEvidencePanel
+            isError={probeEvidenceBundle.isError}
+            isLoading={probeEvidenceBundle.isFetching}
+            rows={rankedEvidenceRows}
+            unavailable={activeProbeEvidenceBundle?.unavailable ?? []}
+            onOpenMoment={openProbeMoment}
           />
           <ProbeSummaryVisual
             activePredictionFilter={probePredictionFilter}
@@ -451,7 +516,7 @@ export function DatasetBrowser({
                       <button
                         className="dataset-episode-link"
                         type="button"
-                        onClick={() => onOpenEpisode(episode.trace_id, episodeOpenContextForProbe(selectedProbe, episode))}
+                        onClick={() => openDatasetEpisode(episode)}
                       >
                         <span>{episodeTitle(episode)}</span>
                         <small>{shortTrace(episode.trace_id)}</small>
@@ -469,7 +534,15 @@ export function DatasetBrowser({
                     <td>{episode.length ?? "-"}</td>
                     {selectedProbe ? (
                       <td>
-                        <ProbeEpisodeBadge record={probeRecordForEpisode(selectedProbe, episode)} />
+                        <ProbeEpisodeBadge
+                          cue={probeEvidenceCueForEpisode(
+                            activeProbeEvidenceBundle,
+                            episode,
+                            selectedProbe,
+                            datasetFilter,
+                          )}
+                          record={probeRecordForEpisode(selectedProbe, episode)}
+                        />
                       </td>
                     ) : null}
                     <td>
@@ -478,7 +551,7 @@ export function DatasetBrowser({
                         type="button"
                         title="Open episode"
                         aria-label={`Open ${episode.trace_id}`}
-                        onClick={() => onOpenEpisode(episode.trace_id, episodeOpenContextForProbe(selectedProbe, episode))}
+                        onClick={() => openDatasetEpisode(episode)}
                       >
                         <ArrowRight size={16} />
                       </button>
@@ -651,17 +724,20 @@ function LensEvidencePanel({
 
 function SelectedProbeLensSummary({
   artifact,
+  bundle,
   probe,
 }: {
   artifact?: ArtifactRecord;
+  bundle?: ProbeEvidenceBundle;
   probe: ProbeDatasetIndex;
 }) {
-  const spec = probeLensSpec(probe, artifact);
+  const spec = probeEvidenceSpec(bundle) ?? probeLensSpec(probe, artifact);
   return (
     <section className="selected-lens-summary" aria-label="Selected lens summary">
       <div className="selected-lens-title">
         <span>Probe</span>
         <strong>{probe.name}</strong>
+        {bundle ? <small>{bundle.run.dataset_id} · {bundle.run.status}</small> : null}
       </div>
       <div className="selected-lens-facts">
         <ProbeEvidenceFact
@@ -684,6 +760,60 @@ function SelectedProbeLensSummary({
           value={spec.objective.value}
           detail={spec.objective.detail}
         />
+      </div>
+    </section>
+  );
+}
+
+function ProbeRankedEvidencePanel({
+  isError,
+  isLoading,
+  rows,
+  unavailable,
+  onOpenMoment,
+}: {
+  isError: boolean;
+  isLoading: boolean;
+  rows: ProbeEvidenceRankedRow[];
+  unavailable: ProbeEvidenceBundle["unavailable"];
+  onOpenMoment: (row: ProbeEvidenceRankedRow) => void;
+}) {
+  if (isLoading) {
+    return <div className="app-message compact">Loading probe evidence...</div>;
+  }
+  if (isError) {
+    return <div className="empty-state compact">Probe evidence bundle unavailable.</div>;
+  }
+  if (!rows.length) {
+    const message = unavailable[0]?.message ?? "No ranked probe moments were returned for this dataset.";
+    return <div className="empty-state compact">{message}</div>;
+  }
+  return (
+    <section className="probe-ranked-evidence" aria-label="Ranked probe evidence">
+      <header>
+        <div>
+          <span>Ranked evidence</span>
+          <strong>Top, low, and uncertain moments</strong>
+        </div>
+        <small>{rows.length} moments from the selected probe run</small>
+      </header>
+      <div className="probe-ranked-list">
+        {rows.map((row) => (
+          <button
+            className={["probe-ranked-row", row.selected ? "active" : ""].filter(Boolean).join(" ")}
+            key={`${row.ranking}:${row.moment.episode_id}:${row.moment.timestep ?? ""}:${row.moment.policy_call ?? ""}`}
+            type="button"
+            onClick={() => onOpenMoment(row)}
+          >
+            <span className={`probe-rank-tag ${row.ranking}`}>{rankingLabel(row.ranking)}</span>
+            <strong>{row.episode ? episodeTitle(row.episode) : row.moment.episode_id}</strong>
+            <span>{row.timeLabel}</span>
+            <span>{row.scoreLabel}</span>
+            <span>{row.predictionLabel}</span>
+            <small>{row.splitLabel} · {row.resultLabel}</small>
+            <em>{row.provenanceBadges.join(" · ")}</em>
+          </button>
+        ))}
       </div>
     </section>
   );
@@ -728,7 +858,7 @@ function ProbeSummaryVisual({
     <section className="probe-evidence-plot probe-summary-visual" aria-label="Probe summary">
       <div className="probe-evidence-plot-column">
         <header>
-          <span>Split map</span>
+          <span>Indexed split map</span>
           <small className="probe-map-legend">
             <span className="wrong">wrong</span>
             <span className="high-conf-wrong">high-conf wrong</span>
@@ -764,8 +894,8 @@ function ProbeSummaryVisual({
       </div>
       <div className="probe-evidence-plot-column">
         <header>
-          <span>Result map</span>
-          <small>compatible cohort</small>
+          <span>Indexed result map</span>
+          <small>compatible cohort counts</small>
         </header>
         <div className="probe-result-bars">
           {resultRows.map((row) => (
@@ -930,12 +1060,19 @@ function discoveryEpisodePayload(value: unknown): DiscoveryArtifactEpisodesRespo
   return undefined;
 }
 
-function ProbeEpisodeBadge({ record }: { record?: ProbeEpisodeIndex }) {
+function ProbeEpisodeBadge({
+  cue,
+  record,
+}: {
+  cue?: ReturnType<typeof probeEvidenceCueForEpisode>;
+  record?: ProbeEpisodeIndex;
+}) {
   if (!record) {
     return (
       <span className="probe-episode-badge muted">
         <strong>Not scored</strong>
-        <small>No probe row</small>
+        <small>{cue?.markerLabel ?? "No probe row"}</small>
+        {cue ? <ProbeTimelineCue cue={cue} /> : null}
       </span>
     );
   }
@@ -948,6 +1085,20 @@ function ProbeEpisodeBadge({ record }: { record?: ProbeEpisodeIndex }) {
           ? `${record.correct === null || record.correct === undefined ? "scored" : record.correct ? "correct" : "wrong"} · ${formatDatasetProbeConfidence(record.confidence)}`
           : "unscored"}
       </small>
+      {cue ? (
+        <>
+          <small>{cue.markerLabel} · {cue.scoreLabel}</small>
+          <ProbeTimelineCue cue={cue} />
+        </>
+      ) : null}
     </span>
+  );
+}
+
+function ProbeTimelineCue({ cue }: { cue: NonNullable<ReturnType<typeof probeEvidenceCueForEpisode>> }) {
+  return (
+    <i className="probe-mini-timeline" aria-label={cue.markerLabel}>
+      <b style={{ left: `${cue.timelinePercent ?? 50}%` }} />
+    </i>
   );
 }
