@@ -347,12 +347,9 @@ input {
 .dataset-browser-page {
   background: #f5f7fb;
   display: grid;
-  gap: 12px;
-  justify-self: center;
-  max-width: 1320px;
+  gap: 16px;
   min-height: calc(100vh - 58px);
-  padding: 16px;
-  width: min(100%, 1320px);
+  padding: 22px;
 }
 
 .dataset-browser-header {
@@ -369,7 +366,7 @@ input {
 
 .dataset-browser-header p {
   color: #64748b;
-  font-size: 13px;
+  font-size: 12px;
   margin: 0;
   overflow-wrap: anywhere;
 }
@@ -383,8 +380,8 @@ input {
 .dataset-lens-bar {
   align-items: center;
   display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(280px, 440px) auto;
+  gap: 10px;
+  grid-template-columns: minmax(320px, 520px) auto;
   min-width: 0;
 }
 
@@ -405,7 +402,7 @@ input {
   display: grid;
   gap: 5px;
   min-width: 0;
-  padding: 9px 10px;
+  padding: 11px 12px;
 }
 
 .dataset-lens-select span {
@@ -426,23 +423,22 @@ input {
   border: 1px solid #dbe3ed;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
+  gap: 10px;
   min-width: 0;
-  padding: 8px 10px;
+  padding: 10px 12px;
 }
 
 .dataset-table-controls .dataset-search {
-  flex: 1 1 260px;
-  max-width: 360px;
+  flex: 2 1 300px;
 }
 
 .dataset-table-controls .dataset-filter {
-  flex: 0 1 126px;
-  max-width: 150px;
+  flex: 1 1 116px;
+  max-width: 170px;
 }
 
 .dataset-table-controls .text-command {
-  flex: 0 0 72px;
+  flex: 0 0 84px;
 }
 
 .dataset-table-controls.probe-mode {
@@ -454,7 +450,6 @@ input {
 
 .dataset-table-controls.probe-mode .dataset-search {
   flex: 1 1 260px;
-  max-width: 340px;
 }
 
 .dataset-table-controls.probe-mode > .dataset-filter {
@@ -476,8 +471,8 @@ input {
   font-size: 11px;
   font-weight: 850;
   height: 100%;
-  min-height: 34px;
-  padding: 0 9px;
+  min-height: 36px;
+  padding: 0 10px;
   text-transform: uppercase;
 }
 
@@ -538,10 +533,10 @@ input {
   align-items: center;
   border: 1px solid #cbd5e1;
   display: grid;
-  gap: 6px;
+  gap: 8px;
   grid-template-columns: auto minmax(0, 1fr);
-  min-height: 34px;
-  padding: 0 8px;
+  min-height: 36px;
+  padding: 0 10px;
 }
 
 .dataset-search input {
@@ -556,13 +551,8 @@ input {
   display: grid;
   font-size: 11px;
   font-weight: 800;
-  gap: 4px;
+  gap: 5px;
   text-transform: uppercase;
-}
-
-.dataset-filter select,
-.dataset-search input {
-  font-size: 12px;
 }
 
 .dataset-filter select:disabled {
@@ -579,8 +569,8 @@ input {
   font-size: 10px;
   font-weight: 850;
   letter-spacing: 0.04em;
-  min-height: 34px;
-  padding: 0 9px;
+  min-height: 36px;
+  padding: 0 10px;
   text-transform: uppercase;
 }
 
