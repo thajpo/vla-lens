@@ -355,7 +355,7 @@ input {
 
 .dataset-browser-page.probe-mode {
   align-items: start;
-  grid-template-columns: minmax(680px, 1120px) minmax(360px, 1fr);
+  grid-template-columns: minmax(620px, var(--probe-left-width, 940px)) 10px minmax(360px, 1fr);
 }
 
 .dataset-browser-page.probe-mode > .dataset-browser-header,
@@ -368,6 +368,33 @@ input {
 .dataset-browser-page.probe-mode > .app-message,
 .dataset-browser-page.probe-mode > .empty-state {
   grid-column: 1;
+}
+
+.probe-column-resizer {
+  align-self: stretch;
+  background: transparent;
+  border: 0;
+  cursor: col-resize;
+  grid-column: 2;
+  grid-row: 3 / span 8;
+  justify-content: center;
+  min-height: 100%;
+  padding: 0;
+  width: 10px;
+}
+
+.probe-column-resizer span {
+  background: #cbd5e1;
+  display: block;
+  height: 100%;
+  min-height: 360px;
+  width: 1px;
+}
+
+.probe-column-resizer:hover span,
+.probe-column-resizer:focus-visible span {
+  background: #d6a84f;
+  width: 2px;
 }
 
 .dataset-browser-header {

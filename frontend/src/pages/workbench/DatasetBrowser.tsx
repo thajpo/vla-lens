@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search } from "lucide-react";
 import {
@@ -32,6 +32,7 @@ import {
   PROBE_PREDICTION_FILTERS,
   PROBE_SPLIT_FILTER_LABELS,
   PROBE_SPLIT_FILTERS,
+  canonicalProbeSplitCategory,
   datasetCoverageRows,
   episodeBenchmark,
   episodeDatasetId,
@@ -41,6 +42,7 @@ import {
   formatDatasetProbeConfidence,
   percentOf,
   probeEvidenceContextForEpisode,
+  probeEvidenceCueForEpisode,
   probeEpisodeInspectionReason,
   probeLensWorkbenchModel,
   probeRecordForEpisode,
@@ -129,6 +131,7 @@ export function DatasetBrowser({
   const [probeSplitFilter, setProbeSplitFilter] = useState("all");
   const [probePredictionFilter, setProbePredictionFilter] = useState("all");
   const [pageOffset, setPageOffset] = useState(0);
+  const [probeLeftColumnWidth, setProbeLeftColumnWidth] = useState(940);
   const familyByType = useMemo(
     () => new Map((discoveryFamilies.data?.families ?? []).map((family) => [family.artifact_type, family])),
     [discoveryFamilies.data?.families],
@@ -151,6 +154,9 @@ export function DatasetBrowser({
     [lenses, selectedLensId],
   );
   const selectedProbe = selectedLens?.probe;
+  const probePageStyle = selectedProbe
+    ? ({ "--probe-left-width": `${probeLeftColumnWidth}px` } as CSSProperties)
+    : undefined;
   const activeLensArtifactId = selectedLens?.artifactId ?? "";
   const probeEvidenceBundle = useQuery({
     queryKey: [
@@ -244,8 +250,10 @@ export function DatasetBrowser({
     ],
   );
   const probeAnalysis = useMemo(
-    () => selectedProbe ? probeDatasetAnalysisModel(selectedProbe, episodes) : undefined,
-    [episodes, selectedProbe],
+    () => selectedProbe
+      ? probeDatasetAnalysisModel(selectedProbe, episodes, activeProbeEvidenceBundle, datasetFilter)
+      : undefined,
+    [activeProbeEvidenceBundle, datasetFilter, episodes, selectedProbe],
   );
   const totalEpisodes = dataset.data?.episode_count ?? episodePage.data?.total ?? 0;
   const visibleTotal = episodePage.data?.total ?? 0;
@@ -283,9 +291,23 @@ export function DatasetBrowser({
     }
     onOpenEpisode(episode.trace_id, episodeOpenContextForProbe(selectedProbe, episode));
   };
+  const resizeProbeColumns = (event: ReactPointerEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const startX = event.clientX;
+    const startWidth = probeLeftColumnWidth;
+    const onPointerMove = (moveEvent: PointerEvent) => {
+      setProbeLeftColumnWidth(Math.max(620, Math.min(1280, startWidth + moveEvent.clientX - startX)));
+    };
+    const onPointerUp = () => {
+      window.removeEventListener("pointermove", onPointerMove);
+      window.removeEventListener("pointerup", onPointerUp);
+    };
+    window.addEventListener("pointermove", onPointerMove);
+    window.addEventListener("pointerup", onPointerUp);
+  };
 
   return (
-    <main className={`dataset-browser-page ${selectedProbe ? "probe-mode" : ""}`}>
+    <main className={`dataset-browser-page ${selectedProbe ? "probe-mode" : ""}`} style={probePageStyle}>
       <header className="dataset-browser-header">
         <div>
           <h1>Dataset</h1>
@@ -536,6 +558,16 @@ export function DatasetBrowser({
       {episodePage.isFetching ? <div className="app-message compact">Loading episodes...</div> : null}
       {hasProbeArtifacts && probeIndex.isError ? (
         <div className="empty-state compact">Probe list unavailable.</div>
+      ) : null}
+      {selectedProbe ? (
+        <button
+          className="probe-column-resizer"
+          type="button"
+          aria-label="Resize probe dataset columns"
+          onPointerDown={resizeProbeColumns}
+        >
+          <span />
+        </button>
       ) : null}
 
       <section className={`dataset-browser-grid ${selectedProbe ? "probe-analysis-grid" : ""}`}>
@@ -1060,6 +1092,24 @@ type ProbeConfidenceBucket = {
   wrong: number;
 };
 
+type ProbeCalibrationBucket = {
+  accuracy: number | null;
+  avgConfidence: number | null;
+  confidenceSum: number;
+  correct: number;
+  label: string;
+  total: number;
+};
+
+type ProbeScatterPoint = {
+  confidence: number;
+  episodeLength: number;
+  label: string;
+  tone: "correct" | "wrong" | "unknown";
+  x: number;
+  y: number;
+};
+
 type ProbeRollingPoint = {
   accuracy: number;
   correct: number;
@@ -1067,6 +1117,25 @@ type ProbeRollingPoint = {
   label: string;
   scored: number;
   wrong: number;
+};
+
+type ProbeTemporalRow = {
+  label: string;
+  marker: string;
+  position: number;
+  score: string;
+  tone: "selected" | "warning" | "muted";
+};
+
+type ProbeCohortRow = {
+  detail: string;
+  label: string;
+  tone: "correct" | "wrong" | "muted" | "warning";
+};
+
+type ProbeCohortGroup = {
+  label: string;
+  rows: ProbeCohortRow[];
 };
 
 type ProbeConfusionRow = {
@@ -1077,11 +1146,15 @@ type ProbeConfusionRow = {
 };
 
 type ProbeDatasetAnalysisModel = {
+  calibrationRows: ProbeCalibrationBucket[];
   confidenceBuckets: ProbeConfidenceBucket[];
+  cohortGroups: ProbeCohortGroup[];
   confusionRows: ProbeConfusionRow[];
+  lengthScorePoints: ProbeScatterPoint[];
   outcomeRows: ProbeAnalysisCountRow[];
   rollingAccuracy: ProbeRollingPoint[];
   taskRows: ProbeAnalysisCountRow[];
+  temporalRows: ProbeTemporalRow[];
 };
 
 function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel }) {
@@ -1126,8 +1199,66 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
         </section>
       ) : null}
 
+      {model.calibrationRows.some((row) => row.total > 0) ? (
+        <section className="probe-analysis-card">
+          <header>
+            <span>Calibration</span>
+            <small>accuracy by confidence</small>
+          </header>
+          <div className="probe-calibration-list">
+            {model.calibrationRows.map((row) => (
+              <div className="probe-calibration-row" key={row.label}>
+                <span>{row.label}</span>
+                <i>
+                  <b className="accuracy" style={{ width: `${percentOf(row.accuracy ?? 0, 1)}%` }} />
+                  <em style={{ left: `${percentOf(row.avgConfidence ?? 0, 1)}%` }} />
+                </i>
+                <strong>{row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%`}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {model.lengthScorePoints.length ? (
+        <section className="probe-analysis-card">
+          <header>
+            <span>Confidence vs episode length</span>
+            <small>visible scored episodes</small>
+          </header>
+          <div className="probe-scatter-plot" aria-label="Confidence against episode length">
+            {model.lengthScorePoints.map((point) => (
+              <i
+                className={point.tone}
+                key={point.label}
+                style={{ left: `${point.x}%`, bottom: `${point.y}%` }}
+                title={`${point.label}: ${point.confidence.toFixed(2)} confidence, ${point.episodeLength} steps`}
+              />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
       <ProbeSliceCard title="Error by task" subtitle="visible episodes" rows={model.taskRows} />
       <ProbeSliceCard title="Error by outcome" subtitle="visible episodes" rows={model.outcomeRows} />
+
+      {model.temporalRows.length ? (
+        <section className="probe-analysis-card">
+          <header>
+            <span>Temporal evidence</span>
+            <small>ranked evidence moments</small>
+          </header>
+          <div className="probe-temporal-map">
+            {model.temporalRows.map((row) => (
+              <div className={`probe-temporal-row ${row.tone}`} key={`${row.label}-${row.marker}`}>
+                <span>{row.label}</span>
+                <i><b style={{ left: `${row.position}%` }} /></i>
+                <strong>{row.marker}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {model.confusionRows.length ? (
         <section className="probe-analysis-card">
@@ -1145,6 +1276,28 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
                 </i>
                 <strong>{row.total}</strong>
               </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {model.cohortGroups.length ? (
+        <section className="probe-analysis-card">
+          <header>
+            <span>Review cohorts</span>
+            <small>visible episodes</small>
+          </header>
+          <div className="probe-cohort-grid">
+            {model.cohortGroups.map((group) => (
+              <section key={group.label}>
+                <span>{group.label}</span>
+                {group.rows.map((row) => (
+                  <div className={`probe-cohort-row ${row.tone}`} key={`${group.label}-${row.label}`}>
+                    <strong>{row.label}</strong>
+                    <small>{row.detail}</small>
+                  </div>
+                ))}
+              </section>
             ))}
           </div>
         </section>
@@ -1188,14 +1341,20 @@ function ProbeSliceCard({
 function probeDatasetAnalysisModel(
   probe: ProbeDatasetIndex,
   episodes: DatasetEpisode[],
+  bundle: ProbeEvidenceBundle | undefined,
+  datasetFilter: string,
 ): ProbeDatasetAnalysisModel {
   const records = Object.values(probe.by_trace ?? {});
   return {
+    calibrationRows: calibrationRows(records),
     confidenceBuckets: confidenceBucketRows(records),
+    cohortGroups: reviewCohortGroups(probe, episodes),
     confusionRows: confusionRows(records),
+    lengthScorePoints: scoreLengthPoints(probe, episodes),
     outcomeRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.outcome || "Outcome missing"),
     rollingAccuracy: rollingAccuracyRows(records),
     taskRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.task_id ? `Task ${episode.task_id}` : "Task missing"),
+    temporalRows: temporalEvidenceRows(bundle, probe, episodes, datasetFilter),
   };
 }
 
@@ -1220,6 +1379,33 @@ function confidenceBucketRows(records: ProbeEpisodeIndex[]): ProbeConfidenceBuck
     if (record.correct === false && record.confidence >= 0.8) bucket.highConfWrong += 1;
   }
   return buckets;
+}
+
+function calibrationRows(records: ProbeEpisodeIndex[]): ProbeCalibrationBucket[] {
+  const rows: ProbeCalibrationBucket[] = [
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: "0-.20", total: 0 },
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".20-.40", total: 0 },
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".40-.60", total: 0 },
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".60-.80", total: 0 },
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".80-1", total: 0 },
+  ];
+  for (const record of records) {
+    if (!record.available || typeof record.confidence !== "number" || !Number.isFinite(record.confidence)) {
+      continue;
+    }
+    const index = Math.max(0, Math.min(4, Math.floor(record.confidence * 5)));
+    const row = rows[index];
+    row.total += 1;
+    row.confidenceSum += record.confidence;
+    if (record.correct === true) {
+      row.correct += 1;
+    }
+  }
+  return rows.map((row) => ({
+    ...row,
+    accuracy: row.total ? row.correct / row.total : null,
+    avgConfidence: row.total ? row.confidenceSum / row.total : null,
+  }));
 }
 
 function rollingAccuracyRows(records: ProbeEpisodeIndex[]): ProbeRollingPoint[] {
@@ -1249,6 +1435,74 @@ function rollingAccuracyRows(records: ProbeEpisodeIndex[]): ProbeRollingPoint[] 
   }
   const stride = Math.ceil(points.length / 64);
   return points.filter((_point, index) => index % stride === 0 || index === points.length - 1);
+}
+
+function scoreLengthPoints(probe: ProbeDatasetIndex, episodes: DatasetEpisode[]): ProbeScatterPoint[] {
+  const points = episodes
+    .map((episode) => {
+      const record = probeRecordForEpisode(probe, episode);
+      if (
+        !record?.available ||
+        typeof record.confidence !== "number" ||
+        !Number.isFinite(record.confidence) ||
+        typeof episode.length !== "number" ||
+        !Number.isFinite(episode.length)
+      ) {
+        return null;
+      }
+      return { episode, record };
+    })
+    .filter((item): item is { episode: DatasetEpisode; record: ProbeEpisodeIndex } => Boolean(item));
+  if (!points.length) {
+    return [];
+  }
+  const lengths = points.map((point) => point.episode.length ?? 0);
+  const minLength = Math.min(...lengths);
+  const maxLength = Math.max(...lengths);
+  const spread = Math.max(1, maxLength - minLength);
+  const sampled = points.length <= 160
+    ? points
+    : points.filter((_point, index) => index % Math.ceil(points.length / 160) === 0);
+  return sampled.map(({ episode, record }) => ({
+    confidence: record.confidence ?? 0,
+    episodeLength: episode.length ?? 0,
+    label: episodeTitle(episode),
+    tone: record.correct === true ? "correct" : record.correct === false ? "wrong" : "unknown",
+    x: percentOf((episode.length ?? 0) - minLength, spread),
+    y: percentOf(record.confidence ?? 0, 1),
+  }));
+}
+
+function temporalEvidenceRows(
+  bundle: ProbeEvidenceBundle | undefined,
+  probe: ProbeDatasetIndex,
+  episodes: DatasetEpisode[],
+  datasetFilter: string,
+): ProbeTemporalRow[] {
+  if (!bundle) {
+    return [];
+  }
+  return episodes
+    .map((episode) => {
+      const cue = probeEvidenceCueForEpisode(bundle, episode, probe, datasetFilter);
+      if (!cue || cue.timelinePercent === null) {
+        return null;
+      }
+      const lowerMarker = cue.markerLabel.toLowerCase();
+      return {
+        label: episodeTitle(episode),
+        marker: cue.markerLabel,
+        position: cue.timelinePercent,
+        score: cue.scoreLabel,
+        tone: lowerMarker.includes("uncertain")
+          ? "warning"
+          : lowerMarker.includes("bottom")
+            ? "muted"
+            : "selected",
+      };
+    })
+    .filter((row): row is ProbeTemporalRow => Boolean(row))
+    .slice(0, 14);
 }
 
 function sliceRowsForEpisodes(
@@ -1291,6 +1545,43 @@ function confusionRows(records: ProbeEpisodeIndex[]): ProbeConfusionRow[] {
   return [...rows.values()]
     .sort((left, right) => right.total - left.total || right.wrong - left.wrong || left.label.localeCompare(right.label))
     .slice(0, 8);
+}
+
+function reviewCohortGroups(probe: ProbeDatasetIndex, episodes: DatasetEpisode[]): ProbeCohortGroup[] {
+  const groups: ProbeCohortGroup[] = [
+    { label: "High-conf wrong", rows: [] },
+    { label: "Wrong", rows: [] },
+    { label: "Uncertain", rows: [] },
+    { label: "Unscored heldout", rows: [] },
+    { label: "Confident correct", rows: [] },
+  ];
+  for (const episode of episodes) {
+    const record = probeRecordForEpisode(probe, episode);
+    const confidence = typeof record?.confidence === "number" && Number.isFinite(record.confidence) ? record.confidence : null;
+    const split = canonicalProbeSplitCategory(record?.split_category);
+    const row = {
+      detail: [
+        episode.task_id ? `Task ${episode.task_id}` : "",
+        confidence === null ? "" : formatDatasetProbeConfidence(confidence),
+      ].filter(Boolean).join(" · "),
+      label: episodeTitle(episode),
+      tone: "muted" as ProbeCohortRow["tone"],
+    };
+    if (record?.correct === false && confidence !== null && confidence >= 0.8) {
+      groups[0].rows.push({ ...row, tone: "wrong" });
+    } else if (record?.correct === false) {
+      groups[1].rows.push({ ...row, tone: "warning" });
+    } else if (record?.available && (record.correct === null || record.correct === undefined || (confidence !== null && confidence >= 0.45 && confidence <= 0.65))) {
+      groups[2].rows.push({ ...row, tone: "warning" });
+    } else if (!record?.available && (split === "validation" || split === "test")) {
+      groups[3].rows.push(row);
+    } else if (record?.correct === true && confidence !== null && confidence >= 0.9) {
+      groups[4].rows.push({ ...row, tone: "correct" });
+    }
+  }
+  return groups
+    .map((group) => ({ ...group, rows: group.rows.slice(0, 4) }))
+    .filter((group) => group.rows.length);
 }
 
 function emptyAnalysisRow(label: string): ProbeAnalysisCountRow {
