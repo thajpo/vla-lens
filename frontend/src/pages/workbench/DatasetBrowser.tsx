@@ -32,7 +32,6 @@ import {
   PROBE_PREDICTION_FILTERS,
   PROBE_SPLIT_FILTER_LABELS,
   PROBE_SPLIT_FILTERS,
-  canonicalProbeSplitCategory,
   datasetCoverageRows,
   episodeBenchmark,
   episodeDatasetId,
@@ -286,7 +285,7 @@ export function DatasetBrowser({
   };
 
   return (
-    <main className="dataset-browser-page">
+    <main className={`dataset-browser-page ${selectedProbe ? "probe-mode" : ""}`}>
       <header className="dataset-browser-header">
         <div>
           <h1>Dataset</h1>
@@ -1061,6 +1060,15 @@ type ProbeConfidenceBucket = {
   wrong: number;
 };
 
+type ProbeRollingPoint = {
+  accuracy: number;
+  correct: number;
+  index: number;
+  label: string;
+  scored: number;
+  wrong: number;
+};
+
 type ProbeConfusionRow = {
   correct: number;
   label: string;
@@ -1072,44 +1080,13 @@ type ProbeDatasetAnalysisModel = {
   confidenceBuckets: ProbeConfidenceBucket[];
   confusionRows: ProbeConfusionRow[];
   outcomeRows: ProbeAnalysisCountRow[];
-  splitRows: ProbeAnalysisCountRow[];
+  rollingAccuracy: ProbeRollingPoint[];
   taskRows: ProbeAnalysisCountRow[];
 };
 
 function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel }) {
   return (
     <aside className="probe-analysis-panel" aria-label="Probe dataset analysis">
-      <section className="probe-analysis-card">
-        <header>
-          <span>Performance by split</span>
-          <small>all indexed records</small>
-        </header>
-        <table className="probe-analysis-table">
-          <thead>
-            <tr>
-              <th>Split</th>
-              <th>Scored</th>
-              <th>Correct</th>
-              <th>Wrong</th>
-              <th>High-conf wrong</th>
-              <th>Unscored</th>
-            </tr>
-          </thead>
-          <tbody>
-            {model.splitRows.map((row) => (
-              <tr key={row.label}>
-                <td>{row.label}</td>
-                <td>{row.scored}/{row.total}</td>
-                <td>{row.correct}</td>
-                <td>{row.wrong}</td>
-                <td>{row.highConfWrong}</td>
-                <td>{row.unscored}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </section>
-
       <section className="probe-analysis-card">
         <header>
           <span>Score distribution</span>
@@ -1129,6 +1106,25 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           ))}
         </div>
       </section>
+
+      {model.rollingAccuracy.length ? (
+        <section className="probe-analysis-card">
+          <header>
+            <span>Accuracy over episode order</span>
+            <small>rolling window</small>
+          </header>
+          <div className="probe-rolling-plot" aria-label="Rolling probe accuracy">
+            {model.rollingAccuracy.map((point) => (
+              <i
+                key={`${point.label}-${point.index}`}
+                title={`${point.label}: ${Math.round(point.accuracy * 100)}% accuracy, ${point.wrong} wrong / ${point.scored} scored`}
+              >
+                <b style={{ height: `${percentOf(point.accuracy, 1)}%` }} />
+              </i>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <ProbeSliceCard title="Error by task" subtitle="visible episodes" rows={model.taskRows} />
       <ProbeSliceCard title="Error by outcome" subtitle="visible episodes" rows={model.outcomeRows} />
@@ -1198,35 +1194,9 @@ function probeDatasetAnalysisModel(
     confidenceBuckets: confidenceBucketRows(records),
     confusionRows: confusionRows(records),
     outcomeRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.outcome || "Outcome missing"),
-    splitRows: splitAnalysisRows(probe, records),
+    rollingAccuracy: rollingAccuracyRows(records),
     taskRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.task_id ? `Task ${episode.task_id}` : "Task missing"),
   };
-}
-
-function splitAnalysisRows(
-  probe: ProbeDatasetIndex,
-  records: ProbeEpisodeIndex[],
-): ProbeAnalysisCountRow[] {
-  const rows = new Map<string, ProbeAnalysisCountRow>();
-  for (const label of ["Train", "Validation", "Test", "Split missing"]) {
-    rows.set(label, emptyAnalysisRow(label));
-  }
-  if (records.length) {
-    for (const record of records) {
-      incrementAnalysisRow(rowForSplit(rows, record.split_category, record.split), record);
-    }
-  } else {
-    for (const [split, stats] of Object.entries(probe.review_stats_by_split ?? {})) {
-      const row = rowForSplit(rows, split, split);
-      row.total += numericStat(stats.total);
-      row.scored += numericStat(stats.scored);
-      row.correct += numericStat(stats.correct);
-      row.wrong += numericStat(stats.wrong);
-      row.highConfWrong += numericStat(stats.highConfWrong);
-      row.unscored += numericStat(stats.unscored);
-    }
-  }
-  return [...rows.values()].map(withAccuracy).filter((row) => row.total > 0 || row.label !== "Split missing");
 }
 
 function confidenceBucketRows(records: ProbeEpisodeIndex[]): ProbeConfidenceBucket[] {
@@ -1250,6 +1220,35 @@ function confidenceBucketRows(records: ProbeEpisodeIndex[]): ProbeConfidenceBuck
     if (record.correct === false && record.confidence >= 0.8) bucket.highConfWrong += 1;
   }
   return buckets;
+}
+
+function rollingAccuracyRows(records: ProbeEpisodeIndex[]): ProbeRollingPoint[] {
+  const scored = records
+    .filter((record) => record.available && record.correct !== null && record.correct !== undefined)
+    .sort((left, right) => left.trace_id.localeCompare(right.trace_id));
+  if (!scored.length) {
+    return [];
+  }
+  const windowSize = Math.max(5, Math.min(25, Math.round(scored.length / 20)));
+  const points = scored.map((record, index) => {
+    const window = scored.slice(Math.max(0, index - windowSize + 1), index + 1);
+    const correct = window.filter((item) => item.correct === true).length;
+    const wrong = window.filter((item) => item.correct === false).length;
+    const scoredCount = correct + wrong;
+    return {
+      accuracy: scoredCount ? correct / scoredCount : 0,
+      correct,
+      index,
+      label: record.trace_id,
+      scored: scoredCount,
+      wrong,
+    };
+  });
+  if (points.length <= 64) {
+    return points;
+  }
+  const stride = Math.ceil(points.length / 64);
+  return points.filter((_point, index) => index % stride === 0 || index === points.length - 1);
 }
 
 function sliceRowsForEpisodes(
@@ -1294,22 +1293,6 @@ function confusionRows(records: ProbeEpisodeIndex[]): ProbeConfusionRow[] {
     .slice(0, 8);
 }
 
-function rowForSplit(rows: Map<string, ProbeAnalysisCountRow>, category?: string | null, fallback?: string | null) {
-  const key = canonicalProbeSplitCategory(category);
-  const label = key === "train"
-    ? "Train"
-    : key === "validation"
-      ? "Validation"
-      : key === "test"
-        ? "Test"
-        : fallback
-          ? String(fallback)
-          : "Split missing";
-  const row = rows.get(label) ?? emptyAnalysisRow(label);
-  rows.set(label, row);
-  return row;
-}
-
 function emptyAnalysisRow(label: string): ProbeAnalysisCountRow {
   return { accuracy: null, correct: 0, highConfWrong: 0, label, scored: 0, total: 0, unscored: 0, wrong: 0 };
 }
@@ -1333,10 +1316,6 @@ function withAccuracy(row: ProbeAnalysisCountRow): ProbeAnalysisCountRow {
     ...row,
     accuracy: row.scored ? row.correct / row.scored : null,
   };
-}
-
-function numericStat(value: number | undefined): number {
-  return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
 function displayValue(value: string | boolean | number): string {

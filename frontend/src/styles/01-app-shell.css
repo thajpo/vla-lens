@@ -353,6 +353,23 @@ input {
   padding: 18px 20px;
 }
 
+.dataset-browser-page.probe-mode {
+  align-items: start;
+  grid-template-columns: minmax(680px, 1120px) minmax(360px, 1fr);
+}
+
+.dataset-browser-page.probe-mode > .dataset-browser-header,
+.dataset-browser-page.probe-mode > .dataset-lens-bar {
+  grid-column: 1 / -1;
+}
+
+.dataset-browser-page.probe-mode > .probe-lens-workbench,
+.dataset-browser-page.probe-mode > .dataset-table-controls,
+.dataset-browser-page.probe-mode > .app-message,
+.dataset-browser-page.probe-mode > .empty-state {
+  grid-column: 1;
+}
+
 .dataset-browser-header {
   align-items: center;
   display: flex;
