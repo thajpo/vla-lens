@@ -75,7 +75,7 @@
 
 .dataset-browser-grid {
   display: grid;
-  gap: 16px;
+  gap: 12px;
   grid-template-columns: minmax(0, 1fr);
 }
 
@@ -90,12 +90,12 @@
   border-bottom: 1px solid #e2e8f0;
   display: flex;
   justify-content: space-between;
-  min-height: 42px;
-  padding: 0 12px;
+  min-height: 40px;
+  padding: 0 10px;
 }
 
 .dataset-browser-panel h2 {
-  font-size: 14px;
+  font-size: 15px;
   margin: 0;
 }
 
@@ -106,12 +106,23 @@
 }
 
 .dataset-episode-table-wrap {
-  max-height: calc(100vh - 300px);
+  max-height: calc(100vh - 286px);
   min-height: 260px;
   overflow: auto;
 }
 
+.dataset-episode-table {
+  font-size: 13px;
+  line-height: 1.25;
+}
+
+.dataset-episode-table th,
+.dataset-episode-table td {
+  padding: 7px 8px;
+}
+
 .dataset-episode-table th {
+  font-size: 11px;
   position: sticky;
   top: 0;
   z-index: 1;
@@ -123,7 +134,7 @@
   display: grid;
   gap: 3px;
   justify-items: start;
-  max-width: 420px;
+  max-width: 340px;
   min-height: 0;
   padding: 0;
   text-align: left;
@@ -139,7 +150,7 @@
 
 .dataset-episode-link small {
   color: #64748b;
-  font-size: 11px;
+  font-size: 12px;
 }
 
 .probe-episode-badge {
@@ -148,8 +159,8 @@
   color: #334155;
   display: inline-grid;
   gap: 2px;
-  min-width: 94px;
-  padding: 5px 7px;
+  min-width: 84px;
+  padding: 4px 6px;
 }
 
 .probe-episode-badge.correct {
@@ -504,7 +515,7 @@
   background: #fffdf8;
   border: 1px solid #d7dedc;
   display: grid;
-  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
   grid-template-areas:
     "head verdict"
     "trust trust";
@@ -514,10 +525,10 @@
 .probe-lens-head {
   border-right: 1px solid #e2e8f0;
   display: grid;
-  gap: 9px;
+  gap: 8px;
   grid-area: head;
   min-width: 0;
-  padding: 16px;
+  padding: 13px;
 }
 
 .probe-lens-head > span,
@@ -531,7 +542,7 @@
 
 .probe-lens-head h2 {
   color: #0f172a;
-  font-size: clamp(20px, 2.6vw, 34px);
+  font-size: clamp(21px, 2.2vw, 32px);
   letter-spacing: -0.04em;
   line-height: 0.98;
   margin: 0;
@@ -555,7 +566,7 @@
 
 .probe-lens-specs .probe-evidence-fact {
   border-right: 1px solid #e2e8f0;
-  padding: 10px 10px 0 0;
+  padding: 8px 8px 0 0;
 }
 
 .probe-lens-specs .probe-evidence-fact:last-child {
@@ -566,10 +577,10 @@
   align-content: start;
   background: #f8fafc;
   display: grid;
-  gap: 8px;
+  gap: 7px;
   grid-area: verdict;
   min-width: 0;
-  padding: 16px;
+  padding: 13px;
 }
 
 .probe-lens-verdict.credible {
@@ -606,7 +617,7 @@
 
 .probe-lens-metrics {
   display: grid;
-  gap: 7px;
+  gap: 6px;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   margin-top: 6px;
 }
@@ -617,7 +628,7 @@
   display: grid;
   gap: 2px;
   min-width: 0;
-  padding: 8px;
+  padding: 7px;
 }
 
 .probe-lens-metric.credible {
@@ -664,8 +675,8 @@
   color: #334155;
   font-size: 10px;
   font-weight: 850;
-  min-height: 24px;
-  padding: 4px 7px;
+  min-height: 22px;
+  padding: 3px 6px;
   text-transform: uppercase;
 }
 
@@ -681,7 +692,7 @@
 }
 
 .dataset-episode-link.probe-oriented {
-  max-width: 340px;
+  max-width: 300px;
 }
 
 .dataset-episode-link.probe-oriented span {
@@ -691,7 +702,7 @@
 .probe-inspect-reason {
   display: grid;
   gap: 3px;
-  max-width: 220px;
+  max-width: 200px;
   min-width: 0;
 }
 
@@ -723,7 +734,7 @@
 }
 
 .probe-inspect-reason .probe-mini-timeline {
-  max-width: 150px;
+  max-width: 135px;
 }
 
 .probe-evidence-table {
@@ -737,32 +748,32 @@
 
 .probe-evidence-table th:nth-child(1),
 .probe-evidence-table td:nth-child(1) {
-  width: 32%;
+  width: 30%;
 }
 
 .probe-evidence-table th:nth-child(2),
 .probe-evidence-table td:nth-child(2) {
-  width: 118px;
+  width: 112px;
 }
 
 .probe-evidence-table th:nth-child(3),
 .probe-evidence-table td:nth-child(3) {
-  width: 230px;
+  width: 208px;
 }
 
 .probe-evidence-table th:nth-child(4),
 .probe-evidence-table td:nth-child(4) {
-  width: 116px;
+  width: 106px;
 }
 
 .probe-evidence-table th:nth-child(5),
 .probe-evidence-table td:nth-child(5) {
-  width: 92px;
+  width: 86px;
 }
 
 .probe-evidence-table th:nth-child(6),
 .probe-evidence-table td:nth-child(6) {
-  width: 38px;
+  width: 34px;
 }
 
 @media (max-width: 980px) {
