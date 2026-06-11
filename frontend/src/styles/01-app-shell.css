@@ -425,8 +425,10 @@ input {
   display: flex;
   flex-wrap: wrap;
   gap: 7px;
+  max-width: 1120px;
   min-width: 0;
   padding: 8px 10px;
+  width: fit-content;
 }
 
 .dataset-table-controls .dataset-search {

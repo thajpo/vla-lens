@@ -83,6 +83,7 @@
   background: #ffffff;
   border: 1px solid #dbe3ed;
   min-width: 0;
+  width: min(100%, 1120px);
 }
 
 .dataset-browser-panel > header {
@@ -114,6 +115,7 @@
 .dataset-episode-table {
   font-size: 13px;
   line-height: 1.25;
+  width: min(100%, 1120px);
 }
 
 .dataset-episode-table th,
@@ -159,8 +161,8 @@
   color: #334155;
   display: inline-grid;
   gap: 2px;
-  min-width: 84px;
-  padding: 4px 6px;
+  min-width: 72px;
+  padding: 4px 5px;
 }
 
 .probe-episode-badge.correct {
@@ -520,6 +522,7 @@
     "head verdict"
     "trust trust";
   min-width: 0;
+  width: min(100%, 1120px);
 }
 
 .probe-lens-head {
@@ -692,7 +695,7 @@
 }
 
 .dataset-episode-link.probe-oriented {
-  max-width: 300px;
+  max-width: 260px;
 }
 
 .dataset-episode-link.probe-oriented span {
@@ -702,7 +705,7 @@
 .probe-inspect-reason {
   display: grid;
   gap: 3px;
-  max-width: 200px;
+  max-width: 176px;
   min-width: 0;
 }
 
@@ -739,6 +742,7 @@
 
 .probe-evidence-table {
   table-layout: fixed;
+  width: min(100%, 980px);
 }
 
 .probe-evidence-table th,
@@ -748,32 +752,32 @@
 
 .probe-evidence-table th:nth-child(1),
 .probe-evidence-table td:nth-child(1) {
-  width: 30%;
+  width: 260px;
 }
 
 .probe-evidence-table th:nth-child(2),
 .probe-evidence-table td:nth-child(2) {
-  width: 112px;
+  width: 88px;
 }
 
 .probe-evidence-table th:nth-child(3),
 .probe-evidence-table td:nth-child(3) {
-  width: 208px;
+  width: 178px;
 }
 
 .probe-evidence-table th:nth-child(4),
 .probe-evidence-table td:nth-child(4) {
-  width: 106px;
+  width: 88px;
 }
 
 .probe-evidence-table th:nth-child(5),
 .probe-evidence-table td:nth-child(5) {
-  width: 86px;
+  width: 76px;
 }
 
 .probe-evidence-table th:nth-child(6),
 .probe-evidence-table td:nth-child(6) {
-  width: 34px;
+  width: 32px;
 }
 
 @media (max-width: 980px) {

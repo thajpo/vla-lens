@@ -42,7 +42,6 @@ import {
   percentOf,
   probeEvidenceContextForEpisode,
   probeEpisodeInspectionReason,
-  probeEvidenceCueForEpisode,
   probeLensWorkbenchModel,
   probeRecordForEpisode,
   probeResultChartRows,
@@ -785,11 +784,10 @@ function ProbeEpisodeTableRow({
   probe: ProbeDatasetIndex;
   onOpenEpisode: (episode: DatasetEpisode) => void;
 }) {
-  const cue = probeEvidenceCueForEpisode(bundle, episode, probe, datasetFilter);
   const record = probeRecordForEpisode(probe, episode);
   const reason = probeEpisodeInspectionReason(probe, bundle, episode, datasetFilter);
   const meta = [
-    episode.task_id ? `task ${episode.task_id}` : "",
+    episode.task_id ? `Task ${episode.task_id}` : "",
     episodeSeed(episode) ? `seed ${episodeSeed(episode)}` : "",
     episode.length ? `${episode.length} steps` : "",
   ].filter(Boolean).join(" · ");
@@ -806,10 +804,7 @@ function ProbeEpisodeTableRow({
         </button>
       </td>
       <td>
-        <ProbeEpisodeBadge
-          cue={cue}
-          record={record}
-        />
+        <ProbeEpisodeBadge record={record} />
       </td>
       <td>
         <div className={`probe-inspect-reason ${reason.tone}`}>
@@ -1181,45 +1176,27 @@ function discoveryEpisodePayload(value: unknown): DiscoveryArtifactEpisodesRespo
   return undefined;
 }
 
-function ProbeEpisodeBadge({
-  cue,
-  record,
-}: {
-  cue?: ReturnType<typeof probeEvidenceCueForEpisode>;
-  record?: ProbeEpisodeIndex;
-}) {
+function ProbeEpisodeBadge({ record }: { record?: ProbeEpisodeIndex }) {
   if (!record) {
     return (
       <span className="probe-episode-badge muted">
-        <strong>Not scored</strong>
-        <small>{cue?.markerLabel ?? "No score for this episode"}</small>
-        {cue ? <ProbeTimelineCue cue={cue} /> : null}
+        <strong>Unscored</strong>
+        <small>No probe score</small>
       </span>
     );
   }
   const tone = record.correct === true ? "correct" : record.correct === false ? "incorrect" : "";
+  const result = !record.available
+    ? "Unscored"
+    : record.correct === true
+      ? "Correct"
+      : record.correct === false
+        ? "Wrong"
+        : "Scored";
   return (
     <span className={["probe-episode-badge", tone].filter(Boolean).join(" ")}>
-      <strong>{probeSplitLabel(record.split_category, record.split)}</strong>
-      <small>
-        {record.available
-          ? `${record.correct === null || record.correct === undefined ? "scored" : record.correct ? "correct" : "wrong"} · ${formatDatasetProbeConfidence(record.confidence)}`
-          : "unscored"}
-      </small>
-      {cue ? (
-        <>
-          <small>{cue.markerLabel} · {cue.scoreLabel}</small>
-          <ProbeTimelineCue cue={cue} />
-        </>
-      ) : null}
+      <strong>{result}</strong>
+      <small>{record.available ? formatDatasetProbeConfidence(record.confidence) : "No score"}</small>
     </span>
-  );
-}
-
-function ProbeTimelineCue({ cue }: { cue: NonNullable<ReturnType<typeof probeEvidenceCueForEpisode>> }) {
-  return (
-    <i className="probe-mini-timeline" aria-label={cue.markerLabel}>
-      <b style={{ left: `${cue.timelinePercent ?? 50}%` }} />
-    </i>
   );
 }
