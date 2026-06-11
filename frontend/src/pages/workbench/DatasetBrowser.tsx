@@ -32,6 +32,7 @@ import {
   PROBE_PREDICTION_FILTERS,
   PROBE_SPLIT_FILTER_LABELS,
   PROBE_SPLIT_FILTERS,
+  canonicalProbeSplitCategory,
   datasetCoverageRows,
   episodeBenchmark,
   episodeDatasetId,
@@ -242,6 +243,10 @@ export function DatasetBrowser({
       selectedLens?.artifact,
       selectedProbe,
     ],
+  );
+  const probeAnalysis = useMemo(
+    () => selectedProbe ? probeDatasetAnalysisModel(selectedProbe, episodes) : undefined,
+    [episodes, selectedProbe],
   );
   const totalEpisodes = dataset.data?.episode_count ?? episodePage.data?.total ?? 0;
   const visibleTotal = episodePage.data?.total ?? 0;
@@ -534,7 +539,7 @@ export function DatasetBrowser({
         <div className="empty-state compact">Probe list unavailable.</div>
       ) : null}
 
-      <section className="dataset-browser-grid">
+      <section className={`dataset-browser-grid ${selectedProbe ? "probe-analysis-grid" : ""}`}>
         <div className="dataset-browser-panel">
           <header>
             <h2>{selectedProbe ? "Episodes to inspect" : selectedLens ? "Episodes through lens" : "Episodes"}</h2>
@@ -611,6 +616,8 @@ export function DatasetBrowser({
             </button>
           </div>
         </div>
+
+        {selectedProbe && probeAnalysis ? <ProbeDatasetAnalysisPanel model={probeAnalysis} /> : null}
 
         <details className="dataset-details-drawer">
           <summary>
@@ -1032,6 +1039,308 @@ function ProbeSummaryVisual({
       </div>
     </section>
   );
+}
+
+type ProbeAnalysisCountRow = {
+  accuracy: number | null;
+  correct: number;
+  highConfWrong: number;
+  label: string;
+  scored: number;
+  total: number;
+  unscored: number;
+  wrong: number;
+};
+
+type ProbeConfidenceBucket = {
+  correct: number;
+  highConfWrong: number;
+  label: string;
+  total: number;
+  unknown: number;
+  wrong: number;
+};
+
+type ProbeConfusionRow = {
+  correct: number;
+  label: string;
+  total: number;
+  wrong: number;
+};
+
+type ProbeDatasetAnalysisModel = {
+  confidenceBuckets: ProbeConfidenceBucket[];
+  confusionRows: ProbeConfusionRow[];
+  outcomeRows: ProbeAnalysisCountRow[];
+  splitRows: ProbeAnalysisCountRow[];
+  taskRows: ProbeAnalysisCountRow[];
+};
+
+function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel }) {
+  return (
+    <aside className="probe-analysis-panel" aria-label="Probe dataset analysis">
+      <section className="probe-analysis-card">
+        <header>
+          <span>Performance by split</span>
+          <small>all indexed records</small>
+        </header>
+        <table className="probe-analysis-table">
+          <thead>
+            <tr>
+              <th>Split</th>
+              <th>Scored</th>
+              <th>Correct</th>
+              <th>Wrong</th>
+              <th>High-conf wrong</th>
+              <th>Unscored</th>
+            </tr>
+          </thead>
+          <tbody>
+            {model.splitRows.map((row) => (
+              <tr key={row.label}>
+                <td>{row.label}</td>
+                <td>{row.scored}/{row.total}</td>
+                <td>{row.correct}</td>
+                <td>{row.wrong}</td>
+                <td>{row.highConfWrong}</td>
+                <td>{row.unscored}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </section>
+
+      <section className="probe-analysis-card">
+        <header>
+          <span>Score distribution</span>
+          <small>confidence bins</small>
+        </header>
+        <div className="probe-analysis-bars">
+          {model.confidenceBuckets.map((bucket) => (
+            <div className="probe-analysis-bar-row" key={bucket.label}>
+              <span>{bucket.label}</span>
+              <i>
+                <b className="correct" style={{ width: `${percentOf(bucket.correct, bucket.total)}%` }} />
+                <b className="wrong" style={{ width: `${percentOf(bucket.wrong, bucket.total)}%` }} />
+                <b className="unknown" style={{ width: `${percentOf(bucket.unknown, bucket.total)}%` }} />
+              </i>
+              <strong>{bucket.total}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <ProbeSliceCard title="Error by task" subtitle="visible episodes" rows={model.taskRows} />
+      <ProbeSliceCard title="Error by outcome" subtitle="visible episodes" rows={model.outcomeRows} />
+
+      {model.confusionRows.length ? (
+        <section className="probe-analysis-card">
+          <header>
+            <span>Prediction vs label</span>
+            <small>all indexed records</small>
+          </header>
+          <div className="probe-confusion-list">
+            {model.confusionRows.map((row) => (
+              <div key={row.label}>
+                <span>{row.label}</span>
+                <i>
+                  <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
+                  <b className="wrong" style={{ width: `${percentOf(row.wrong, row.total)}%` }} />
+                </i>
+                <strong>{row.total}</strong>
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </aside>
+  );
+}
+
+function ProbeSliceCard({
+  rows,
+  subtitle,
+  title,
+}: {
+  rows: ProbeAnalysisCountRow[];
+  subtitle: string;
+  title: string;
+}) {
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <span>{title}</span>
+        <small>{subtitle}</small>
+      </header>
+      <div className="probe-slice-list">
+        {rows.length ? rows.map((row) => (
+          <div className="probe-slice-row" key={row.label}>
+            <span>{row.label}</span>
+            <i>
+              <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
+              <b className="wrong" style={{ width: `${percentOf(Math.max(0, row.wrong - row.highConfWrong), row.total)}%` }} />
+              <b className="high-conf-wrong" style={{ width: `${percentOf(row.highConfWrong, row.total)}%` }} />
+            </i>
+            <strong>{row.wrong}/{row.scored}</strong>
+          </div>
+        )) : <p>No visible scored episodes.</p>}
+      </div>
+    </section>
+  );
+}
+
+function probeDatasetAnalysisModel(
+  probe: ProbeDatasetIndex,
+  episodes: DatasetEpisode[],
+): ProbeDatasetAnalysisModel {
+  const records = Object.values(probe.by_trace ?? {});
+  return {
+    confidenceBuckets: confidenceBucketRows(records),
+    confusionRows: confusionRows(records),
+    outcomeRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.outcome || "Outcome missing"),
+    splitRows: splitAnalysisRows(probe, records),
+    taskRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.task_id ? `Task ${episode.task_id}` : "Task missing"),
+  };
+}
+
+function splitAnalysisRows(
+  probe: ProbeDatasetIndex,
+  records: ProbeEpisodeIndex[],
+): ProbeAnalysisCountRow[] {
+  const rows = new Map<string, ProbeAnalysisCountRow>();
+  for (const label of ["Train", "Validation", "Test", "Split missing"]) {
+    rows.set(label, emptyAnalysisRow(label));
+  }
+  if (records.length) {
+    for (const record of records) {
+      incrementAnalysisRow(rowForSplit(rows, record.split_category, record.split), record);
+    }
+  } else {
+    for (const [split, stats] of Object.entries(probe.review_stats_by_split ?? {})) {
+      const row = rowForSplit(rows, split, split);
+      row.total += numericStat(stats.total);
+      row.scored += numericStat(stats.scored);
+      row.correct += numericStat(stats.correct);
+      row.wrong += numericStat(stats.wrong);
+      row.highConfWrong += numericStat(stats.highConfWrong);
+      row.unscored += numericStat(stats.unscored);
+    }
+  }
+  return [...rows.values()].map(withAccuracy).filter((row) => row.total > 0 || row.label !== "Split missing");
+}
+
+function confidenceBucketRows(records: ProbeEpisodeIndex[]): ProbeConfidenceBucket[] {
+  const buckets: ProbeConfidenceBucket[] = [
+    { correct: 0, highConfWrong: 0, label: "0-.20", total: 0, unknown: 0, wrong: 0 },
+    { correct: 0, highConfWrong: 0, label: ".20-.40", total: 0, unknown: 0, wrong: 0 },
+    { correct: 0, highConfWrong: 0, label: ".40-.60", total: 0, unknown: 0, wrong: 0 },
+    { correct: 0, highConfWrong: 0, label: ".60-.80", total: 0, unknown: 0, wrong: 0 },
+    { correct: 0, highConfWrong: 0, label: ".80-1", total: 0, unknown: 0, wrong: 0 },
+  ];
+  for (const record of records) {
+    if (!record.available || typeof record.confidence !== "number" || !Number.isFinite(record.confidence)) {
+      continue;
+    }
+    const index = Math.max(0, Math.min(4, Math.floor(record.confidence * 5)));
+    const bucket = buckets[index];
+    bucket.total += 1;
+    if (record.correct === true) bucket.correct += 1;
+    else if (record.correct === false) bucket.wrong += 1;
+    else bucket.unknown += 1;
+    if (record.correct === false && record.confidence >= 0.8) bucket.highConfWrong += 1;
+  }
+  return buckets;
+}
+
+function sliceRowsForEpisodes(
+  probe: ProbeDatasetIndex,
+  episodes: DatasetEpisode[],
+  labelForEpisode: (episode: DatasetEpisode) => string,
+): ProbeAnalysisCountRow[] {
+  const rows = new Map<string, ProbeAnalysisCountRow>();
+  for (const episode of episodes) {
+    const label = labelForEpisode(episode);
+    const row = rows.get(label) ?? emptyAnalysisRow(label);
+    incrementAnalysisRow(row, probeRecordForEpisode(probe, episode));
+    rows.set(label, row);
+  }
+  return [...rows.values()]
+    .map(withAccuracy)
+    .sort((left, right) =>
+      right.highConfWrong - left.highConfWrong ||
+      right.wrong - left.wrong ||
+      right.scored - left.scored ||
+      right.total - left.total ||
+      left.label.localeCompare(right.label),
+    )
+    .slice(0, 8);
+}
+
+function confusionRows(records: ProbeEpisodeIndex[]): ProbeConfusionRow[] {
+  const rows = new Map<string, ProbeConfusionRow>();
+  for (const record of records) {
+    if (record.predicted === null || record.predicted === undefined || record.actual === null || record.actual === undefined) {
+      continue;
+    }
+    const label = `${displayValue(record.predicted)} -> ${displayValue(record.actual)}`;
+    const row = rows.get(label) ?? { correct: 0, label, total: 0, wrong: 0 };
+    row.total += 1;
+    if (record.correct === false) row.wrong += 1;
+    else row.correct += 1;
+    rows.set(label, row);
+  }
+  return [...rows.values()]
+    .sort((left, right) => right.total - left.total || right.wrong - left.wrong || left.label.localeCompare(right.label))
+    .slice(0, 8);
+}
+
+function rowForSplit(rows: Map<string, ProbeAnalysisCountRow>, category?: string | null, fallback?: string | null) {
+  const key = canonicalProbeSplitCategory(category);
+  const label = key === "train"
+    ? "Train"
+    : key === "validation"
+      ? "Validation"
+      : key === "test"
+        ? "Test"
+        : fallback
+          ? String(fallback)
+          : "Split missing";
+  const row = rows.get(label) ?? emptyAnalysisRow(label);
+  rows.set(label, row);
+  return row;
+}
+
+function emptyAnalysisRow(label: string): ProbeAnalysisCountRow {
+  return { accuracy: null, correct: 0, highConfWrong: 0, label, scored: 0, total: 0, unscored: 0, wrong: 0 };
+}
+
+function incrementAnalysisRow(row: ProbeAnalysisCountRow, record?: ProbeEpisodeIndex) {
+  row.total += 1;
+  if (!record?.available) {
+    row.unscored += 1;
+    return;
+  }
+  row.scored += 1;
+  if (record.correct === true) row.correct += 1;
+  if (record.correct === false) row.wrong += 1;
+  if (record.correct === false && typeof record.confidence === "number" && record.confidence >= 0.8) {
+    row.highConfWrong += 1;
+  }
+}
+
+function withAccuracy(row: ProbeAnalysisCountRow): ProbeAnalysisCountRow {
+  return {
+    ...row,
+    accuracy: row.scored ? row.correct / row.scored : null,
+  };
+}
+
+function numericStat(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) ? value : 0;
+}
+
+function displayValue(value: string | boolean | number): string {
+  return String(value).replaceAll("_", " ");
 }
 
 export function ArtifactsSummary({ manifest }: { manifest: WorkbenchManifest }) {

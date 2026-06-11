@@ -79,6 +79,15 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
+.dataset-browser-grid.probe-analysis-grid {
+  align-items: start;
+  grid-template-columns: minmax(620px, 980px) minmax(360px, 1fr);
+}
+
+.probe-analysis-grid .dataset-details-drawer {
+  grid-column: 1 / -1;
+}
+
 .dataset-browser-panel {
   background: #ffffff;
   border: 1px solid #dbe3ed;
@@ -780,7 +789,161 @@
   width: 32px;
 }
 
+.probe-analysis-panel {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+
+.probe-analysis-card {
+  background: #ffffff;
+  border: 1px solid #dbe3ed;
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+}
+
+.probe-analysis-card > header {
+  align-items: center;
+  border-bottom: 1px solid #edf2f7;
+  display: flex;
+  justify-content: space-between;
+  min-width: 0;
+  padding-bottom: 7px;
+}
+
+.probe-analysis-card > header span {
+  color: #0f172a;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.probe-analysis-card > header small {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.probe-analysis-table {
+  border-collapse: collapse;
+  font-size: 11px;
+  width: 100%;
+}
+
+.probe-analysis-table th,
+.probe-analysis-table td {
+  border-bottom: 1px solid #edf2f7;
+  padding: 5px 4px;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.probe-analysis-table th {
+  color: #64748b;
+  font-size: 9px;
+  font-weight: 900;
+  text-transform: uppercase;
+}
+
+.probe-analysis-bars,
+.probe-slice-list,
+.probe-confusion-list {
+  display: grid;
+  gap: 6px;
+}
+
+.probe-analysis-bar-row,
+.probe-slice-row,
+.probe-confusion-list > div {
+  align-items: center;
+  display: grid;
+  gap: 7px;
+  grid-template-columns: minmax(74px, 0.8fr) minmax(90px, 1.5fr) 42px;
+  min-width: 0;
+}
+
+.probe-slice-row {
+  grid-template-columns: minmax(92px, 1.1fr) minmax(100px, 1.5fr) 46px;
+}
+
+.probe-confusion-list > div {
+  grid-template-columns: minmax(118px, 1.2fr) minmax(90px, 1.3fr) 42px;
+}
+
+.probe-analysis-bar-row span,
+.probe-slice-row span,
+.probe-confusion-list span {
+  color: #334155;
+  font-size: 11px;
+  font-weight: 800;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.probe-analysis-bar-row strong,
+.probe-slice-row strong,
+.probe-confusion-list strong {
+  color: #0f172a;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  text-align: right;
+}
+
+.probe-analysis-bar-row i,
+.probe-slice-row i,
+.probe-confusion-list i {
+  background: #edf2f7;
+  display: flex;
+  height: 10px;
+  min-width: 0;
+  overflow: hidden;
+  width: 100%;
+}
+
+.probe-analysis-bar-row b,
+.probe-slice-row b,
+.probe-confusion-list b {
+  display: block;
+  height: 100%;
+}
+
+.probe-analysis-bar-row .correct,
+.probe-slice-row .correct,
+.probe-confusion-list .correct {
+  background: #5f8f78;
+}
+
+.probe-analysis-bar-row .wrong,
+.probe-slice-row .wrong,
+.probe-confusion-list .wrong {
+  background: #d97706;
+}
+
+.probe-analysis-bar-row .high-conf-wrong,
+.probe-slice-row .high-conf-wrong {
+  background: #b91c1c;
+}
+
+.probe-analysis-bar-row .unknown {
+  background: #94a3b8;
+}
+
+.probe-slice-list p {
+  color: #64748b;
+  font-size: 12px;
+  margin: 0;
+}
+
 @media (max-width: 980px) {
+  .dataset-browser-grid.probe-analysis-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .probe-lens-workbench {
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
