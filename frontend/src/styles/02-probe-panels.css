@@ -507,7 +507,7 @@
   grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
   grid-template-areas:
     "head verdict"
-    "trust mechanism";
+    "trust trust";
   min-width: 0;
 }
 
@@ -521,8 +521,7 @@
 }
 
 .probe-lens-head > span,
-.probe-lens-verdict > span,
-.probe-mechanism-card > header span {
+.probe-lens-verdict > span {
   color: #64748b;
   font-size: 10px;
   font-weight: 850;
@@ -659,43 +658,6 @@
   line-height: 1.25;
 }
 
-.probe-mechanism-card {
-  background: #ffffff;
-  border-top: 1px solid #e2e8f0;
-  display: grid;
-  gap: 10px;
-  grid-area: mechanism;
-  min-width: 0;
-  padding: 14px 16px;
-}
-
-.probe-mechanism-card > header {
-  display: grid;
-  gap: 4px;
-  min-width: 0;
-}
-
-.probe-mechanism-card > header strong {
-  color: #0f172a;
-  font-size: 13px;
-  font-weight: 900;
-  overflow-wrap: anywhere;
-}
-
-.probe-mechanism-card > header small,
-.probe-contributor-section > div:first-child small {
-  color: #64748b;
-  font-size: 11px;
-  line-height: 1.35;
-}
-
-.probe-mechanism-tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 5px;
-}
-
-.probe-mechanism-tags span,
 .probe-split-chip {
   background: #f8fafc;
   border: 1px solid #e2e8f0;
@@ -707,113 +669,8 @@
   text-transform: uppercase;
 }
 
-.probe-mechanism-tags span {
-  display: inline-grid;
-  gap: 1px;
-  line-height: 1.1;
-  min-height: 30px;
-  min-width: 76px;
-}
-
-.probe-mechanism-tags b {
-  color: #64748b;
-  font-size: 8px;
-  font-weight: 850;
-}
-
-.probe-contributor-section {
-  display: grid;
-  gap: 7px;
-}
-
-.probe-contributor-section > div:first-child {
-  display: grid;
-  gap: 2px;
-}
-
-.probe-contributor-section > div:first-child span {
-  color: #0f172a;
-  font-size: 11px;
-  font-weight: 900;
-}
-
-.probe-contributor-list {
-  display: grid;
-  gap: 6px;
-}
-
-.probe-contributor {
-  border-left: 3px solid #94a3b8;
-  display: grid;
-  gap: 2px 8px;
-  grid-template-columns: 56px minmax(0, 1fr);
-  min-width: 0;
-  padding: 6px 0 6px 8px;
-}
-
-.probe-contributor.positive {
-  border-left-color: #5f8f78;
-}
-
-.probe-contributor.negative {
-  border-left-color: #d97706;
-}
-
-.probe-contributor span {
-  color: #0f172a;
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 900;
-}
-
-.probe-contributor strong {
-  color: #0f172a;
-  font-size: 12px;
-  font-weight: 900;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.probe-contributor small {
-  color: #64748b;
-  font-size: 10px;
-  grid-column: 2;
-  overflow-wrap: anywhere;
-}
-
-.probe-mechanism-card p {
-  color: #64748b;
-  font-size: 12px;
-  line-height: 1.4;
-  margin: 0;
-}
-
-.probe-mechanism-missing {
-  border-top: 1px solid #e2e8f0;
-  color: #64748b;
-  font-size: 11px;
-  padding-top: 8px;
-}
-
-.probe-mechanism-missing summary {
-  cursor: pointer;
-  font-weight: 850;
-  text-transform: uppercase;
-}
-
-.probe-mechanism-missing p {
-  margin-top: 8px;
-}
-
-.probe-mechanism-missing ul {
-  margin: 8px 0 0;
-  padding-left: 18px;
-}
-
 .probe-lens-workbench .probe-summary-visual {
   border: 0;
-  border-right: 1px solid #e2e8f0;
   border-top: 1px solid #e2e8f0;
   grid-area: trust;
 }
@@ -914,7 +771,6 @@
     grid-template-areas:
       "head"
       "verdict"
-      "mechanism"
       "trust";
   }
 

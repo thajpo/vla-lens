@@ -716,7 +716,6 @@ function ProbeLensWorkbench({
           ))}
         </div>
       </aside>
-      <ProbeMechanismCard model={model} />
       <ProbeSummaryVisual
         activePredictionFilter={activePredictionFilter}
         activeSplitFilter={activeSplitFilter}
@@ -725,53 +724,6 @@ function ProbeLensWorkbench({
         onPredictionFilterChange={onPredictionFilterChange}
         onSplitFilterChange={onSplitFilterChange}
       />
-    </section>
-  );
-}
-
-function ProbeMechanismCard({ model }: { model: ProbeLensWorkbenchViewModel }) {
-  return (
-    <section className="probe-mechanism-card" aria-label="Probe readout summary">
-      <header>
-        <span>Probe reads from</span>
-        <strong>{model.mechanism.modelSite}</strong>
-        <small>The activation source used to score episodes with this probe.</small>
-      </header>
-      <div className="probe-mechanism-tags">
-        <span><b>Basis</b>{model.mechanism.basis}</span>
-        <span><b>Time</b>{model.mechanism.temporal}</span>
-        <span><b>Score</b>{model.mechanism.output}</span>
-      </div>
-      {model.mechanism.contributors.length ? (
-        <div className="probe-contributor-section">
-          <div>
-            <span>Top contributing features</span>
-            <small>Largest signed probe weights available in the saved evidence bundle.</small>
-          </div>
-          <div className="probe-contributor-list">
-            {model.mechanism.contributors.map((item) => (
-              <div className={`probe-contributor ${item.tone}`} key={item.key}>
-                <span>{item.value}</span>
-                <strong>{item.label}</strong>
-                <small>{item.detail}</small>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <p>Top contributing features were not saved for this probe bundle. Episode scores can still be ranked.</p>
-      )}
-      {model.mechanism.missing.length ? (
-        <details className="probe-mechanism-missing">
-          <summary>Why some probe evidence is unavailable</summary>
-          <p>The saved bundle does not include every evidence primitive for this lens. The dataset page can still rank episodes, but these details cannot be shown here.</p>
-          <ul>
-            {model.mechanism.missing.map((message) => (
-              <li key={message}>{message}</li>
-            ))}
-          </ul>
-        </details>
-      ) : null}
     </section>
   );
 }
