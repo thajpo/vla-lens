@@ -149,8 +149,11 @@ export type ProbeStudyControl = {
 };
 
 export type ProbeStudy = {
+  study_id?: string;
   artifact_id: string;
   artifact_type: "probe_suite" | string;
+  source_artifact_id?: string | null;
+  source_artifact_name?: string | null;
   name: string;
   created_utc?: string | null;
   target?: string | null;

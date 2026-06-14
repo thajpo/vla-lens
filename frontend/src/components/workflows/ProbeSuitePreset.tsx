@@ -66,7 +66,7 @@ const TOOLTIP = {
   shuffleStd: "Standard deviation of shuffled-label control scores.",
   skipped: "Requested probes that were not trained because required labels or columns were missing.",
   sort: "How the currently visible trained probes are ordered.",
-  study: "The saved probe-suite artifact that groups all trained probes for one research question.",
+  study: "A research-question lens artifact. One family groups trained probes and controls for the same hypothesis.",
   target: "The object role or phase being decoded by the probe.",
   top3: "Whether the true label appears in the probe's top three predictions.",
   trainEvalGap: "Train balanced accuracy minus this split's balanced accuracy. Larger values suggest overfitting.",
@@ -81,10 +81,10 @@ export function ProbeSuitePreset({ activeRunId, onRunChange }: ProbeSuitePresetP
     staleTime: 15_000,
   });
   const studies = studiesQuery.data?.studies ?? [];
-  const selectedStudyId = studies.some((study) => study.artifact_id === activeRunId)
+  const selectedStudyId = studies.some((study) => probeStudyId(study) === activeRunId)
     ? activeRunId
-    : studies[0]?.artifact_id ?? "";
-  const study = studies.find((item) => item.artifact_id === selectedStudyId);
+    : probeStudyId(studies[0]);
+  const study = studies.find((item) => probeStudyId(item) === selectedStudyId);
 
   const [targetFilter, setTargetFilter] = useState("all");
   const [splitFilter, setSplitFilter] = useState("heldout");
@@ -160,15 +160,15 @@ export function ProbeSuitePreset({ activeRunId, onRunChange }: ProbeSuitePresetP
     <div className="probe-studies-page">
       <header className="probe-study-header">
         <div>
-          <span className="probe-study-kicker">Probe study</span>
+          <span className="probe-study-kicker">Probe family</span>
           <h1>{study.name}</h1>
           <p>{study.question_label || study.target || study.artifact_id}</p>
         </div>
         <label className="probe-study-select">
-          <TooltipLabel label="Study" description={TOOLTIP.study} />
+          <TooltipLabel label="Probe family" description={TOOLTIP.study} />
           <select value={selectedStudyId} onChange={(event) => onRunChange(event.target.value)}>
             {studies.map((item) => (
-              <option key={item.artifact_id} value={item.artifact_id}>
+              <option key={probeStudyId(item)} value={probeStudyId(item)}>
                 {item.name}
               </option>
             ))}
@@ -286,6 +286,7 @@ export function ProbeSuitePreset({ activeRunId, onRunChange }: ProbeSuitePresetP
           <ReadoutTable
             readouts={sortedReadouts}
             selectedReadoutId={selectedReadout?.readout_id ?? ""}
+            study={study}
             onSelect={setSelectedReadoutId}
           />
         </section>
@@ -304,10 +305,12 @@ export function ProbeSuitePreset({ activeRunId, onRunChange }: ProbeSuitePresetP
 function ReadoutTable({
   readouts,
   selectedReadoutId,
+  study,
   onSelect,
 }: {
   readouts: ProbeStudyReadout[];
   selectedReadoutId: string;
+  study: ProbeStudy;
   onSelect: (readoutId: string) => void;
 }) {
   if (!readouts.length) {
@@ -338,7 +341,7 @@ function ReadoutTable({
               <td>
                 <button className="probe-readout-select" onClick={() => onSelect(readout.readout_id)}>
                   <strong>{formatTarget(readout.target)}</strong>
-                  <small>{readoutRoleLabel(readout)}</small>
+                  <small>{readoutRoleLabel(readout, study)}</small>
                 </button>
               </td>
               <td>{layerLabel(readout.layer)}</td>
@@ -841,11 +844,11 @@ function splitMatches(readout: ProbeStudyReadout, splitFilter: string): boolean 
   return readout.split === splitFilter;
 }
 
-function readoutRoleLabel(readout: ProbeStudyReadout): string {
-  if (readout.is_primary_target) {
-    return "primary target";
+function readoutRoleLabel(readout: ProbeStudyReadout, study: ProbeStudy): string {
+  if (readout.target === study.target) {
+    return "family target";
   }
-  return "battery target";
+  return "related target";
 }
 
 function episodeHref(study: ProbeStudy, row: Record<string, unknown>): string {
@@ -869,6 +872,10 @@ function episodeHref(study: ProbeStudy, row: Record<string, unknown>): string {
 
 function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values)).sort((left, right) => left.localeCompare(right, undefined, { numeric: true }));
+}
+
+function probeStudyId(study: ProbeStudy | undefined): string {
+  return study?.study_id || study?.artifact_id || "";
 }
 
 function layerLabel(value: ProbeStudyReadout["layer"]): string {

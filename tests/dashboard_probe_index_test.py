@@ -461,23 +461,24 @@ def test_fastapi_probe_studies_promotes_diagnostics_readouts(tmp_path):
             "target": [
                 "next_manipulated_object",
                 "next_manipulated_object",
+                "task_phase",
                 "next_action_type",
             ],
-            "status": ["ok", "ok", "skipped"],
-            "layer": [0, 4, None],
-            "split": ["val_heldout_task", "test_heldout_task", None],
-            "row_count": [4, 3, None],
-            "policy_call_count": [4, 3, None],
-            "class_count": [2, 2, None],
-            "balanced_accuracy": [0.55, 0.58, None],
-            "accuracy": [0.5, 0.67, None],
-            "macro_f1": [0.52, 0.6, None],
-            "top1_accuracy": [0.5, 0.67, None],
-            "top2_accuracy": [0.75, 1.0, None],
-            "top3_accuracy": [1.0, 1.0, None],
-            "train_balanced_accuracy": [0.9, 0.9, None],
-            "train_gap_balanced_accuracy": [0.35, 0.32, None],
-            "reason": [None, None, "missing reliable label"],
+            "status": ["ok", "ok", "ok", "skipped"],
+            "layer": [0, 4, 4, None],
+            "split": ["val_heldout_task", "test_heldout_task", "test_heldout_task", None],
+            "row_count": [4, 3, 3, None],
+            "policy_call_count": [4, 3, 3, None],
+            "class_count": [2, 2, 3, None],
+            "balanced_accuracy": [0.55, 0.58, 0.74, None],
+            "accuracy": [0.5, 0.67, 0.75, None],
+            "macro_f1": [0.52, 0.6, 0.7, None],
+            "top1_accuracy": [0.5, 0.67, 0.75, None],
+            "top2_accuracy": [0.75, 1.0, 1.0, None],
+            "top3_accuracy": [1.0, 1.0, 1.0, None],
+            "train_balanced_accuracy": [0.9, 0.9, 0.88, None],
+            "train_gap_balanced_accuracy": [0.35, 0.32, 0.14, None],
+            "reason": [None, None, None, "missing reliable label"],
         }
     ).to_parquet(diagnostics / "readout_battery_metrics.parquet", index=False)
     pd.DataFrame(
@@ -562,10 +563,21 @@ def test_fastapi_probe_studies_promotes_diagnostics_readouts(tmp_path):
 
     response = client.get("/api/probe-studies")
     payload = response.json()
-    study = next(item for item in payload["studies"] if item["artifact_id"] == saved.artifact_id)
+    study_by_target = {
+        item["target"]: item
+        for item in payload["studies"]
+        if item["artifact_id"] == saved.artifact_id
+    }
+    study = study_by_target["next_manipulated_object"]
+    phase_study = study_by_target["task_phase"]
 
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
+    assert set(study_by_target) == {"next_manipulated_object", "task_phase"}
+    assert study["study_id"] == f"{saved.artifact_id}::target=next_manipulated_object"
+    assert phase_study["study_id"] == f"{saved.artifact_id}::target=task_phase"
+    assert phase_study["source_artifact_id"] == saved.artifact_id
+    assert phase_study["name"] == "Task phase"
     assert study["diagnostics_available"] is True
     assert study["counts"]["readout_count"] == 2
     assert study["counts"]["skipped_readout_count"] == 0
@@ -575,6 +587,12 @@ def test_fastapi_probe_studies_promotes_diagnostics_readouts(tmp_path):
     assert study["readouts"][1]["split_category"] == "test"
     assert study["skipped_readouts"] == []
     assert {row["target"] for row in study["readouts"]} == {"next_manipulated_object"}
+    assert phase_study["counts"]["readout_count"] == 1
+    assert phase_study["counts"]["target_count"] == 1
+    assert phase_study["readouts"][0]["target"] == "task_phase"
+    assert phase_study["readouts"][0]["balanced_accuracy"] == 0.74
+    assert phase_study["controls"] == []
+    assert phase_study["error_examples"] == []
     assert study["controls"][0]["real_score"] == 0.62
     assert study["controls"][0]["p_value"] == 0.333
     assert study["error_examples"][0]["trace_id"] == trace_id

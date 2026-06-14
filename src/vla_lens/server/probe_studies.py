@@ -112,7 +112,26 @@ def probe_studies_payload(dataset: TraceDataset) -> dict[str, Any]:
         probe_rows = probe_rows.sort_values("created_utc", ascending=False, na_position="last")
 
     for record in probe_rows.to_dict("records"):
-        studies.append(_study_payload(dataset, record))
+        artifact = _load_artifact_or_record(dataset, record)
+        artifact_id = str(artifact.get("artifact_id") or record.get("artifact_id") or "")
+        summary, tables = _diagnostics(dataset, artifact_id, artifact)
+        metrics = _mapping(artifact.get("metrics"))
+        display = _mapping(artifact.get("display"))
+        primary_target = _primary_target(summary, metrics, display)
+        targets = _study_targets(tables, primary_target)
+        for target in targets:
+            studies.append(
+                _study_payload(
+                    dataset,
+                    record,
+                    artifact=artifact,
+                    summary=summary,
+                    tables=tables,
+                    primary_target=primary_target,
+                    target=target,
+                    family_count=len(targets),
+                )
+            )
     return {"studies": studies, "total": len(studies)}
 
 
@@ -206,38 +225,68 @@ def probe_study_episodes_payload(
     }
 
 
-def _study_payload(dataset: TraceDataset, record: Mapping[str, Any]) -> dict[str, Any]:
-    artifact = _load_artifact_or_record(dataset, record)
+def _study_payload(
+    dataset: TraceDataset,
+    record: Mapping[str, Any],
+    *,
+    artifact: Mapping[str, Any] | None = None,
+    summary: Mapping[str, Any] | None = None,
+    tables: Mapping[str, pd.DataFrame] | None = None,
+    primary_target: str | None = None,
+    target: str | None = None,
+    family_count: int = 1,
+) -> dict[str, Any]:
+    artifact = artifact or _load_artifact_or_record(dataset, record)
     artifact_id = str(artifact.get("artifact_id") or record.get("artifact_id") or "")
-    name = str(artifact.get("name") or artifact_id)
+    artifact_name = str(artifact.get("name") or artifact_id)
     metrics = _mapping(artifact.get("metrics"))
     method = _mapping(artifact.get("method"))
     selector = _mapping(artifact.get("selector"))
     display = _mapping(artifact.get("display"))
-    summary, tables = _diagnostics(dataset, artifact_id, artifact)
-    target = str(
-        summary.get("target")
-        or metrics.get("target")
-        or display.get("target")
-        or ""
+    summary = summary or {}
+    tables = tables or _diagnostics(dataset, artifact_id, artifact)[1]
+    primary_target = (
+        primary_target
+        if primary_target is not None
+        else _primary_target(summary, metrics, display)
     )
+    target = target if target is not None else primary_target
+    study_id = _study_id(artifact_id, target)
+    name = _study_name(artifact_name, target, family_count)
 
-    readouts, skipped = _readouts_from_diagnostics(tables, target, summary)
+    readouts, skipped = _readouts_from_diagnostics(tables, target, primary_target, summary)
     source = "diagnostics"
     if not readouts and not skipped:
         readouts = _readouts_from_artifact(display, metrics, target, summary)
         source = "artifact"
 
-    lead_time = _records_with_target(tables["lead_time"], target)
-    per_class = _records_with_target(tables["per_class"], target)
-    confusion = _records_with_target(tables["confusion"], target, limit=600)
-    class_support = _records_with_target(tables["class_support"], target)
-    error_examples = _error_examples(tables["errors"])
-    controls = _control_payloads(summary, tables["selection_null"])
+    lead_time = _records_with_target(tables["lead_time"], target, primary_target=primary_target)
+    per_class = _records_with_target(tables["per_class"], target, primary_target=primary_target)
+    confusion = _records_with_target(
+        tables["confusion"],
+        target,
+        primary_target=primary_target,
+        limit=600,
+    )
+    class_support = _records_with_target(
+        tables["class_support"],
+        target,
+        primary_target=primary_target,
+    )
+    error_examples = _error_examples(tables["errors"], target=target, primary_target=primary_target)
+    controls = _control_payloads(
+        summary,
+        tables["selection_null"],
+        target=target,
+        primary_target=primary_target,
+    )
 
     return {
+        "study_id": study_id,
         "artifact_id": artifact_id,
         "artifact_type": "probe_suite",
+        "source_artifact_id": artifact_id,
+        "source_artifact_name": artifact_name,
         "name": name,
         "created_utc": _clean_scalar(artifact.get("created_utc")),
         "target": target or None,
@@ -249,7 +298,14 @@ def _study_payload(dataset: TraceDataset, record: Mapping[str, Any]) -> dict[str
         "diagnostics_available": any(not table.empty for table in tables.values())
         or bool(summary),
         "source": source,
-        "counts": _counts(summary, readouts, skipped, tables),
+        "counts": _counts(
+            summary,
+            readouts,
+            skipped,
+            tables,
+            target=target,
+            primary_target=primary_target,
+        ),
         "summary": _jsonable(summary),
         "readouts": _jsonable(readouts),
         "skipped_readouts": _jsonable(skipped),
@@ -655,8 +711,60 @@ def _read_parquet(path: Path) -> pd.DataFrame:
         return pd.DataFrame()
 
 
+def _primary_target(
+    summary: Mapping[str, Any],
+    metrics: Mapping[str, Any],
+    display: Mapping[str, Any],
+) -> str:
+    return str(
+        summary.get("target")
+        or metrics.get("target")
+        or display.get("target")
+        or ""
+    )
+
+
+def _study_targets(tables: Mapping[str, pd.DataFrame], primary_target: str) -> list[str]:
+    """Return logical probe-family targets with trained readouts.
+
+    Older diagnostics artifacts can contain a battery of targets inside one
+    physical artifact. The UI should expose those as separate question families,
+    while skipped-only targets are kept out of the selector.
+    """
+
+    battery = tables["battery"]
+    if battery.empty or "target" not in battery:
+        return [primary_target] if primary_target else []
+    targets: list[str] = []
+    for row in battery.to_dict("records"):
+        target = _optional_text(row.get("target")) or primary_target
+        status = (_optional_text(row.get("status")) or "ok").lower()
+        if not target or status != "ok" or target in targets:
+            continue
+        targets.append(target)
+    if not targets and primary_target:
+        targets.append(primary_target)
+    if primary_target in targets:
+        targets = [primary_target, *[target for target in targets if target != primary_target]]
+    return targets
+
+
+def _study_id(artifact_id: str, target: str) -> str:
+    if not target:
+        return artifact_id
+    return f"{artifact_id}::target={target}"
+
+
+def _study_name(artifact_name: str, target: str, family_count: int) -> str:
+    if target:
+        label = _prediction_label(target)
+        return label if family_count > 1 else artifact_name or label
+    return artifact_name or "Probe family"
+
+
 def _readouts_from_diagnostics(
     tables: Mapping[str, pd.DataFrame],
+    target_filter: str,
     primary_target: str,
     summary: Mapping[str, Any],
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -677,7 +785,7 @@ def _readouts_from_diagnostics(
     skipped: list[dict[str, Any]] = []
     for row in battery.to_dict("records"):
         target = _optional_text(row.get("target")) or primary_target
-        if target != primary_target:
+        if target_filter and target != target_filter:
             continue
         status = _optional_text(row.get("status")) or "ok"
         layer = _clean_scalar(row.get("layer"))
@@ -769,12 +877,17 @@ def _records_with_target(
     frame: pd.DataFrame,
     target: str,
     *,
+    primary_target: str = "",
     limit: int | None = None,
 ) -> list[dict[str, Any]]:
     if frame.empty:
         return []
     out = frame.copy()
-    if target and "target" not in out:
+    if target and "target" in out:
+        out = out.loc[out["target"].astype(str) == target]
+    elif target and primary_target and target != primary_target:
+        return []
+    elif target:
         out["target"] = target
     if limit is not None:
         out = out.head(limit)
@@ -783,12 +896,21 @@ def _records_with_target(
 
 def _error_examples(
     frame: pd.DataFrame,
+    *,
+    target: str = "",
+    primary_target: str = "",
     limit: int = 600,
     per_layer_split: int = 40,
 ) -> list[dict[str, Any]]:
     if frame.empty:
         return []
     out = frame.copy()
+    if target and "target" in out:
+        out = out.loc[out["target"].astype(str) == target]
+    elif target and primary_target and target != primary_target:
+        return []
+    elif target:
+        out["target"] = target
     if "correct" in out:
         correct = out["correct"].map(_clean_bool)
         out["_wrong"] = correct == False  # noqa: E712
@@ -823,7 +945,14 @@ def _error_examples(
 def _control_payloads(
     summary: Mapping[str, Any],
     null_rows: pd.DataFrame,
+    *,
+    target: str = "",
+    primary_target: str = "",
 ) -> list[dict[str, Any]]:
+    if target and not null_rows.empty and "target" in null_rows:
+        null_rows = null_rows.loc[null_rows["target"].astype(str) == target]
+    elif target and primary_target and target != primary_target:
+        return []
     null_summary = summary.get("selection_aware_null")
     if not isinstance(null_summary, Mapping) and null_rows.empty:
         return []
@@ -870,12 +999,18 @@ def _counts(
     readouts: list[Mapping[str, Any]],
     skipped: list[Mapping[str, Any]],
     tables: Mapping[str, pd.DataFrame],
+    *,
+    target: str = "",
+    primary_target: str = "",
 ) -> dict[str, Any]:
     null_rows = tables["selection_null"]
+    null_rows_for_target = _target_scoped_frame(null_rows, target, primary_target)
     null_runs = (
-        int(null_rows["run"].nunique())
-        if not null_rows.empty and "run" in null_rows
+        int(null_rows_for_target["run"].nunique())
+        if not null_rows_for_target.empty and "run" in null_rows_for_target
         else _clean_int(_mapping(summary.get("selection_aware_null")).get("runs"))
+        if not target or target == primary_target
+        else None
     )
     return {
         "readout_count": len(readouts),
@@ -885,11 +1020,30 @@ def _counts(
         "feature_rows": _clean_int(summary.get("feature_rows")),
         "policy_call_count": _clean_int(summary.get("policy_call_count")),
         "episode_count": _clean_int(summary.get("episode_count")),
-        "class_count": _clean_int(summary.get("class_count")),
+        "class_count": _max_count(readouts, "class_count")
+        or _clean_int(summary.get("class_count")),
         "null_run_count": null_runs,
-        "null_eval_row_count": int(len(null_rows)) if not null_rows.empty else 0,
+        "null_eval_row_count": (
+            int(len(null_rows_for_target)) if not null_rows_for_target.empty else 0
+        ),
         "split_policy_call_counts": _jsonable(summary.get("split_policy_call_counts") or {}),
     }
+
+
+def _target_scoped_frame(frame: pd.DataFrame, target: str, primary_target: str) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    if target and "target" in frame:
+        return frame.loc[frame["target"].astype(str) == target]
+    if target and primary_target and target != primary_target:
+        return frame.head(0)
+    return frame
+
+
+def _max_count(rows: list[Mapping[str, Any]], key: str) -> int | None:
+    values = [_clean_int(row.get(key)) for row in rows]
+    values = [value for value in values if value is not None]
+    return max(values) if values else None
 
 
 def _load_artifact_or_record(

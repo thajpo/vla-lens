@@ -57,6 +57,7 @@ import {
   probeSplitLabel,
   shortTrace,
   type ProbeCohortPreset,
+  type ProbeLensSpec,
   type ProbeLensMetricChip,
   type ProbeLensWorkbenchViewModel,
 } from "./datasetBrowserModel";
@@ -82,8 +83,10 @@ type DatasetLens = {
   artifactId: string;
   artifactType: string;
   family?: DiscoveryArtifactFamily;
+  lensId: string;
   name: string;
   probe?: ProbeDatasetIndex;
+  probeStudy?: ProbeStudy;
 };
 
 type ProbeSummarySplitRow = {
@@ -149,6 +152,10 @@ export function DatasetBrowser({
     () => (hasProbeArtifacts ? probeIndex.data?.probes ?? [] : []),
     [hasProbeArtifacts, probeIndex.data?.probes],
   );
+  const studies = useMemo(
+    () => (hasProbeArtifacts ? probeStudies.data?.studies ?? [] : []),
+    [hasProbeArtifacts, probeStudies.data?.studies],
+  );
   const [query, setQuery] = useState("");
   const [datasetFilter, setDatasetFilter] = useState("all");
   const [benchmarkFilter, setBenchmarkFilter] = useState("all");
@@ -177,21 +184,16 @@ export function DatasetBrowser({
       artifacts: artifactIndex.data?.artifacts ?? [],
       artifactsById,
       familyByType,
-      probes,
+      studies,
     }),
-    [artifactIndex.data?.artifacts, artifactsById, familyByType, probes],
+    [artifactIndex.data?.artifacts, artifactsById, familyByType, studies],
   );
   const selectedLens = useMemo(
-    () => lenses.find((lens) => lens.artifactId === selectedLensId),
+    () => lenses.find((lens) => lens.lensId === selectedLensId),
     [lenses, selectedLensId],
   );
   const selectedProbe = selectedLens?.probe;
-  const activeProbeStudy = useMemo(
-    () => selectedProbe
-      ? probeStudies.data?.studies.find((study) => study.artifact_id === selectedProbe.artifact_id)
-      : undefined,
-    [probeStudies.data?.studies, selectedProbe],
-  );
+  const activeProbeStudy = selectedLens?.probeStudy;
   const activeProbeReadouts = activeProbeStudy?.readouts ?? [];
   const selectedProbeReadout = useMemo(
     () => selectedProbe
@@ -204,6 +206,7 @@ export function DatasetBrowser({
     ? ({ "--probe-left-width": `${probeLeftColumnWidth}px` } as CSSProperties)
     : undefined;
   const activeLensArtifactId = selectedLens?.artifactId ?? "";
+  const canFetchProbeEvidenceBundle = Boolean(selectedProbe && !selectedLens?.probeStudy);
   const probeEvidenceBundle = useQuery({
     queryKey: [
       "probe-evidence-bundle",
@@ -217,10 +220,12 @@ export function DatasetBrowser({
         { dataset_id: datasetFilter, limit: 50 },
         signal,
       ),
-    enabled: dataset.isFetched && Boolean(selectedProbe),
+    enabled: dataset.isFetched && canFetchProbeEvidenceBundle,
     staleTime: 60_000,
   });
-  const activeProbeEvidenceBundle = selectedProbe ? probeEvidenceBundle.data : undefined;
+  const activeProbeEvidenceBundle = selectedProbe && canFetchProbeEvidenceBundle
+    ? probeEvidenceBundle.data
+    : undefined;
   const episodePageParams = useMemo<DiscoveryArtifactEpisodeParams>(
     () => ({
       benchmark: benchmarkFilter,
@@ -333,7 +338,7 @@ export function DatasetBrowser({
   const probeWorkbench = useMemo(
     () => selectedProbe
       ? probeLensWorkbenchModel({
-          artifact: selectedLens?.artifact,
+          artifact: selectedLens?.probeStudy ? undefined : selectedLens?.artifact,
           bundle: activeProbeEvidenceBundle,
           probe: selectedProbe,
           totalEpisodes: dataset.data?.episode_count ?? activeEpisodePageData?.total ?? 0,
@@ -344,6 +349,7 @@ export function DatasetBrowser({
       activeEpisodePageData?.total,
       dataset.data?.episode_count,
       selectedLens?.artifact,
+      selectedLens?.probeStudy,
       selectedProbe,
     ],
   );
@@ -424,7 +430,7 @@ export function DatasetBrowser({
       <section className="dataset-lens-bar" aria-label="Dataset lens">
         <LensSelector
           lenses={lenses}
-          selectedLensId={selectedLensId}
+          selectedLensId={selectedLens?.lensId ?? NO_LENS_ID}
           onLensChange={selectLens}
         />
         {selectedLens ? <span>{activeLensFamilyLabel}</span> : null}
@@ -441,6 +447,7 @@ export function DatasetBrowser({
           readouts={activeProbeReadouts}
           model={probeWorkbench}
           probe={selectedProbe}
+          study={activeProbeStudy}
           onCohortPresetChange={(preset) => {
             setProbeCohortPreset(preset);
             setProbeSplitFilter("all");
@@ -827,6 +834,7 @@ function ProbeLensWorkbench({
   readoutEpisodeTotal,
   readoutUnavailableReason,
   readouts,
+  study,
   onCohortPresetChange,
   onPredictionFilterChange,
   onSplitFilterChange,
@@ -840,6 +848,7 @@ function ProbeLensWorkbench({
   readoutEpisodeTotal?: number;
   readoutUnavailableReason?: string;
   readouts?: ProbeStudyReadout[];
+  study?: ProbeStudy;
   onCohortPresetChange: (preset: ProbeCohortPreset) => void;
   onPredictionFilterChange: (value: string) => void;
   onSplitFilterChange: (value: string) => void;
@@ -847,32 +856,35 @@ function ProbeLensWorkbench({
   const metricChips = readout
     ? probeReadoutMetricChips(readout, readoutEpisodeSummary, readoutEpisodeTotal)
     : model.metrics;
+  const spec = study
+    ? probeStudySpec(study, model)
+    : model.spec;
   return (
     <section className="probe-lens-workbench" aria-label="Selected probe lens workbench">
       <div className="probe-lens-head">
-        <span>Selected probe lens</span>
-        <h2>{model.title}</h2>
-        <p>{model.verdict.detail}</p>
+        <span>{study ? "Selected probe family" : "Selected probe lens"}</span>
+        <h2>{study?.name ?? model.title}</h2>
+        <p>{study?.question_label || model.verdict.detail}</p>
         <div className="probe-lens-specs">
           <ProbeEvidenceFact
-            label={model.spec.prediction.label}
-            value={model.spec.prediction.value}
-            detail={model.spec.prediction.detail}
+            label={spec.prediction.label}
+            value={spec.prediction.value}
+            detail={spec.prediction.detail}
           />
           <ProbeEvidenceFact
-            label={model.spec.input.label}
-            value={model.spec.input.value}
-            detail={model.spec.input.detail}
+            label={spec.input.label}
+            value={spec.input.value}
+            detail={spec.input.detail}
           />
           <ProbeEvidenceFact
-            label={model.spec.output.label}
-            value={model.spec.output.value}
-            detail={model.spec.output.detail}
+            label={spec.output.label}
+            value={spec.output.value}
+            detail={spec.output.detail}
           />
           <ProbeEvidenceFact
-            label={model.spec.objective.label}
-            value={model.spec.objective.value}
-            detail={model.spec.objective.detail}
+            label={spec.objective.label}
+            value={spec.objective.value}
+            detail={spec.objective.detail}
           />
         </div>
       </div>
@@ -1063,13 +1075,13 @@ function LensSelector({
   return (
     <section className="dataset-lens-strip" aria-label="Dataset lens">
       <label className="dataset-lens-select">
-        <span>Dataset Lens</span>
+        <span>Lens artifact</span>
         <select value={selectedLensId} onChange={(event) => onLensChange(event.target.value)}>
           <option value={NO_LENS_ID}>None - {researchCopy.labels.episodeOrder}</option>
           {groups.map((group) => (
             <optgroup key={group.family} label={group.label}>
               {group.lenses.map((lens) => (
-                <option key={lens.artifactId} value={lens.artifactId}>
+                <option key={lens.lensId} value={lens.lensId}>
                   {lensDisplayName(lens)}{lens.artifactType === "probe_suite" ? "" : " - ranking pending"}
                 </option>
               ))}
@@ -1199,6 +1211,28 @@ function ProbeEvidenceFact({
       {visibleDetail ? <small>{visibleDetail}</small> : null}
     </div>
   );
+}
+
+function probeStudySpec(study: ProbeStudy, fallback: ProbeLensWorkbenchViewModel): ProbeLensSpec {
+  return {
+    input: {
+      ...fallback.spec.input,
+      value: study.input || fallback.spec.input.value,
+    },
+    objective: {
+      ...fallback.spec.objective,
+      value: study.objective || fallback.spec.objective.value,
+    },
+    output: {
+      ...fallback.spec.output,
+      value: study.output || fallback.spec.output.value,
+    },
+    prediction: {
+      ...fallback.spec.prediction,
+      detail: study.question_label || fallback.spec.prediction.detail,
+      value: study.prediction || study.target || fallback.spec.prediction.value,
+    },
+  };
 }
 
 function ProbeSummaryVisual({
@@ -1952,38 +1986,48 @@ function discoveryLenses({
   artifacts,
   artifactsById,
   familyByType,
-  probes,
+  studies,
 }: {
   artifacts: ArtifactRecord[];
   artifactsById: Map<string, ArtifactRecord>;
   familyByType: Map<string, DiscoveryArtifactFamily>;
-  probes: ProbeDatasetIndex[];
+  studies: ProbeStudy[];
 }): DatasetLens[] {
-  const seen = new Set<string>();
-  const lenses: DatasetLens[] = probes.map((probe) => {
-    const artifact = artifactsById.get(probe.artifact_id);
-    seen.add(probe.artifact_id);
-    return {
-      artifact,
-      artifactId: probe.artifact_id,
+  const seenLensIds = new Set<string>();
+  const seenArtifactIds = new Set<string>();
+  const lenses: DatasetLens[] = [];
+  for (const study of studies) {
+    const artifactId = String(study.artifact_id ?? "");
+    const lensId = probeStudyId(study);
+    if (!artifactId || !lensId || seenLensIds.has(lensId)) {
+      continue;
+    }
+    seenLensIds.add(lensId);
+    seenArtifactIds.add(artifactId);
+    lenses.push({
+      artifact: artifactsById.get(artifactId),
+      artifactId,
       artifactType: "probe_suite",
       family: familyByType.get("probe_suite"),
-      name: probe.name,
-      probe,
-    };
-  });
+      lensId,
+      name: study.name,
+      probe: probeFromStudy(study),
+      probeStudy: study,
+    });
+  }
   for (const artifact of artifacts) {
     const artifactId = String(artifact.artifact_id ?? "");
     const artifactType = String(artifact.artifact_type ?? "");
-    if (!artifactId || seen.has(artifactId) || !familyByType.has(artifactType)) {
+    if (!artifactId || seenArtifactIds.has(artifactId) || !familyByType.has(artifactType)) {
       continue;
     }
-    seen.add(artifactId);
+    seenArtifactIds.add(artifactId);
     lenses.push({
       artifact,
       artifactId,
       artifactType,
       family: familyByType.get(artifactType),
+      lensId: artifactId,
       name: String(artifact.name ?? artifactId),
     });
   }
@@ -2011,6 +2055,32 @@ function lensDisplayName(lens: DatasetLens): string {
   return lens.name || String(lens.artifact?.name ?? lens.artifactId);
 }
 
+function probeStudyId(study: ProbeStudy | undefined): string {
+  return study?.study_id || study?.artifact_id || "";
+}
+
+function probeFromStudy(study: ProbeStudy): ProbeDatasetIndex {
+  const bestReadout = defaultProbeReadout(study.readouts, study) ?? study.readouts[0];
+  const splitSummary: Record<string, number> = {};
+  for (const readout of study.readouts) {
+    const split = readout.split_category || readout.split || "unknown";
+    const count = readout.policy_call_count ?? readout.row_count ?? 0;
+    splitSummary[split] = (splitSummary[split] ?? 0) + count;
+  }
+  return {
+    artifact_id: study.artifact_id,
+    best_feature: bestReadout
+      ? `${probeReadoutLayerLabel(bestReadout.layer)} / ${probeReadoutSplitLabel(bestReadout)}`
+      : null,
+    best_model: study.input || null,
+    best_score: typeof bestReadout?.balanced_accuracy === "number" ? bestReadout.balanced_accuracy : null,
+    name: study.name,
+    prediction_summary: {},
+    split_summary: splitSummary,
+    target: study.target,
+  };
+}
+
 function familyLabel(artifactType: string): string {
   const labels: Record<string, string> = {
     activation_cluster: "Activation Cluster",
@@ -2018,7 +2088,7 @@ function familyLabel(artifactType: string): string {
     attention_map: "Attention Map",
     contrast_direction: "Contrast Direction",
     crosscoder_feature: "Crosscoder",
-    probe_suite: "Probe",
+    probe_suite: "Probe Family",
     sae_feature: "SAE",
     transcoder_feature: "Transcoder",
   };
