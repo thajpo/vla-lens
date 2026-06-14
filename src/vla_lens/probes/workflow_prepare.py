@@ -10,14 +10,18 @@ import numpy as np
 import pandas as pd
 
 from vla_lens.artifacts import LensArtifact
-from vla_lens.probes.workflow_types import INTERACTION_METRICS_ARTIFACT_TYPE
+from vla_lens.probes.workflow_types import (
+    INTERACTION_METRICS_ARTIFACT_TYPE,
+    OBJECT_FLOW_ARTIFACT_TYPE,
+    POLICY_CALL_LABELS_ARTIFACT_TYPE,
+)
 from vla_lens.traces import TraceDataset
 
 
 def _attach_episode_metadata(rows: pd.DataFrame, dataset: TraceDataset) -> pd.DataFrame:
     episode_index = dataset.episode_index.copy()
     if episode_index.empty:
-        return rows.copy()
+        return _merge_object_flow_timestep_labels(rows.copy(), dataset)
     episode_index = _merge_probe_split_sidecar(episode_index, dataset)
     episode_index = _merge_interaction_metrics(episode_index, dataset)
     duplicate_columns = [
@@ -26,7 +30,9 @@ def _attach_episode_metadata(rows: pd.DataFrame, dataset: TraceDataset) -> pd.Da
         if column in rows.columns and column not in {"trace_id"}
     ]
     episode_index = episode_index.drop(columns=duplicate_columns)
-    return rows.merge(episode_index, on="trace_id", how="left")
+    merged = rows.merge(episode_index, on="trace_id", how="left")
+    merged = _merge_object_flow_timestep_labels(merged, dataset)
+    return _merge_policy_call_labels(merged, dataset)
 
 
 def _merge_probe_split_sidecar(
@@ -192,6 +198,164 @@ def _latest_interaction_labels(dataset: TraceDataset) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def _merge_object_flow_timestep_labels(
+    rows: pd.DataFrame,
+    dataset: TraceDataset,
+) -> pd.DataFrame:
+    labels = _latest_object_flow_timestep_labels(dataset)
+    keys = ["trace_id", "timestep"]
+    if (
+        labels.empty
+        or any(key not in labels for key in keys)
+        or any(key not in rows for key in keys)
+    ):
+        return rows
+    label_columns = [
+        column
+        for column in [
+            "trace_id",
+            "timestep",
+            "current_contact_object",
+            "current_moved_object",
+            "current_lifted_object",
+            "next_contact_object",
+            "next_moved_object",
+            "next_lifted_object",
+            "next_manipulated_object",
+            "active_manipulated_object",
+            "active_receptacle_object",
+            "active_flow_step_index",
+            "next_flow_step_index",
+            "task_phase",
+        ]
+        if column in labels
+    ]
+    labels = labels[label_columns].drop_duplicates(subset=keys, keep="last")
+    merged = rows.merge(labels, on=keys, how="left", suffixes=("", "__object_flow"))
+    for column in list(merged.columns):
+        if not column.endswith("__object_flow"):
+            continue
+        base = column.removesuffix("__object_flow")
+        derived = merged.pop(column)
+        if base in merged:
+            missing = merged[base].isna() | (merged[base].astype(str) == "")
+            merged.loc[missing, base] = derived.loc[missing]
+            conflict = (
+                (~missing)
+                & derived.notna()
+                & (derived.astype(str) != merged[base].astype(str))
+            )
+            if bool(conflict.any()):
+                merged[f"object_flow_{base}"] = derived
+        else:
+            merged[base] = derived
+    return merged
+
+
+def _latest_object_flow_timestep_labels(dataset: TraceDataset) -> pd.DataFrame:
+    artifact = _latest_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
+    if artifact is None:
+        return pd.DataFrame()
+    outputs = dict(artifact.method.get("outputs") or {})
+    path = outputs.get("timestep_labels")
+    if not path:
+        return pd.DataFrame()
+    table_path = _artifact_output_path(dataset, str(path))
+    if table_path.exists():
+        return pd.read_parquet(table_path)
+    return pd.DataFrame()
+
+
+def _merge_policy_call_labels(
+    rows: pd.DataFrame,
+    dataset: TraceDataset,
+) -> pd.DataFrame:
+    labels = _latest_policy_call_labels(dataset)
+    keys = ["trace_id", "policy_call_index"]
+    if (
+        labels.empty
+        or any(key not in labels for key in keys)
+        or any(key not in rows for key in keys)
+    ):
+        return rows
+    label_columns = [
+        column
+        for column in [
+            "trace_id",
+            "policy_call_index",
+            "policy_call_id",
+            "observation_timestep",
+            "env_timestep_start",
+            "env_timestep_end",
+            "policy_call_label_timestep",
+            "task_phase",
+            "next_manipulated_object",
+            "active_manipulated_object",
+            "active_receptacle_object",
+            "current_contact_object",
+            "current_moved_object",
+            "current_lifted_object",
+            "next_flow_step_index",
+            "active_flow_step_index",
+            "next_object_flow_step_index",
+            "first_contact_time_next_object",
+            "first_motion_time_next_object",
+            "first_lift_time_next_object",
+            "is_pre_contact",
+            "is_pre_motion",
+            "is_pre_lift",
+            "candidate_objects",
+            "visible_candidate_objects",
+            "visible_candidate_count",
+        ]
+        if column in labels
+    ]
+    labels = labels[label_columns].drop_duplicates(subset=keys, keep="last")
+    return _merge_prefer_existing(rows, labels, on=keys, suffix="__policy_call")
+
+
+def _latest_policy_call_labels(dataset: TraceDataset) -> pd.DataFrame:
+    artifact = _latest_artifact(dataset, POLICY_CALL_LABELS_ARTIFACT_TYPE)
+    if artifact is None:
+        return pd.DataFrame()
+    outputs = dict(artifact.method.get("outputs") or {})
+    path = outputs.get("policy_call_labels")
+    if not path:
+        return pd.DataFrame()
+    table_path = _artifact_output_path(dataset, str(path))
+    if table_path.exists():
+        return pd.read_parquet(table_path)
+    return pd.DataFrame()
+
+
+def _merge_prefer_existing(
+    rows: pd.DataFrame,
+    labels: pd.DataFrame,
+    *,
+    on: Sequence[str],
+    suffix: str,
+) -> pd.DataFrame:
+    merged = rows.merge(labels, on=list(on), how="left", suffixes=("", suffix))
+    for column in list(merged.columns):
+        if not column.endswith(suffix):
+            continue
+        base = column.removesuffix(suffix)
+        derived = merged.pop(column)
+        if base in merged:
+            missing = merged[base].isna() | (merged[base].astype(str) == "")
+            merged.loc[missing, base] = derived.loc[missing]
+            conflict = (
+                (~missing)
+                & derived.notna()
+                & (derived.astype(str) != merged[base].astype(str))
+            )
+            if bool(conflict.any()):
+                merged[f"{suffix.strip('_')}_{base}"] = derived
+        else:
+            merged[base] = derived
+    return merged
+
+
 def _artifact_output_path(dataset: TraceDataset, relative_path: str) -> Path:
     path = Path(relative_path)
     if path.is_absolute():
@@ -203,11 +367,15 @@ def _artifact_output_path(dataset: TraceDataset, relative_path: str) -> Path:
 
 
 def _latest_interaction_artifact(dataset: TraceDataset) -> LensArtifact | None:
+    return _latest_artifact(dataset, INTERACTION_METRICS_ARTIFACT_TYPE)
+
+
+def _latest_artifact(dataset: TraceDataset, artifact_type: str) -> LensArtifact | None:
     table = dataset.artifact_index
     if table.empty or "artifact_type" not in table:
         return None
     matches = table.loc[
-        table["artifact_type"].astype(str) == INTERACTION_METRICS_ARTIFACT_TYPE
+        table["artifact_type"].astype(str) == artifact_type
     ].copy()
     if matches.empty:
         return None

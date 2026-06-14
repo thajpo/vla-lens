@@ -15,6 +15,8 @@ from vla_lens.probes.workflow_training import (
 from vla_lens.probes.workflow_types import (
     DEFAULT_PROBE_SPEC,
     INTERACTION_METRICS_ARTIFACT_TYPE,
+    OBJECT_FLOW_ARTIFACT_TYPE,
+    POLICY_CALL_LABELS_ARTIFACT_TYPE,
     PROBE_ARTIFACT_SCHEMA_VERSION,
     SavedProbeSuite,
 )
@@ -22,6 +24,8 @@ from vla_lens.probes.workflow_types import (
 __all__ = [
     "DEFAULT_PROBE_SPEC",
     "INTERACTION_METRICS_ARTIFACT_TYPE",
+    "OBJECT_FLOW_ARTIFACT_TYPE",
+    "POLICY_CALL_LABELS_ARTIFACT_TYPE",
     "PROBE_ARTIFACT_SCHEMA_VERSION",
     "SavedProbeSuite",
     "baseline_columns",

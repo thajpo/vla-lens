@@ -423,16 +423,118 @@ def _parse_target_objects(
         ]
         if value
     ).lower()
-    targets: list[str] = []
+    normalized_text = _normalize_text(text)
+    matches: list[dict[str, Any]] = []
     for obj in objects:
         base = str(obj["object_base_name"])
-        words = base.replace("_", " ")
-        if base and (base in _normalize_text(text) or words in text):
-            targets.append(str(obj["object_name"]))
-    targets = list(dict.fromkeys(targets))
+        best_match: dict[str, Any] | None = None
+        for alias, strength in _object_prompt_aliases(base):
+            index = _normalized_phrase_index(normalized_text, alias)
+            if index < 0:
+                continue
+            candidate = {
+                "object_name": str(obj["object_name"]),
+                "alias": alias,
+                "strength": strength,
+                "index": index,
+            }
+            if best_match is None or _target_match_sort_key(candidate) < _target_match_sort_key(
+                best_match
+            ):
+                best_match = candidate
+        if best_match is not None:
+            matches.append(best_match)
+    strong_heads = {
+        _alias_head(str(item.get("alias") or ""))
+        for item in matches
+        if int(item.get("strength", 0)) >= 3
+    }
+    matches = [
+        item
+        for item in matches
+        if int(item.get("strength", 0)) >= 3
+        or _alias_head(str(item.get("alias") or "")) not in strong_heads
+    ]
+    matches = sorted(matches, key=_target_match_sort_key)
+    targets = list(dict.fromkeys(str(item["object_name"]) for item in matches))
     if not targets:
         return [], "failed"
     return targets, "multi" if len(targets) > 1 else "single"
+
+
+def _target_match_sort_key(match: Mapping[str, Any]) -> tuple[int, int, int, str]:
+    alias = str(match.get("alias") or "")
+    token_count = len([part for part in alias.split("_") if part])
+    return (
+        int(match.get("index", 10**9)),
+        -int(match.get("strength", 0)),
+        -token_count,
+        str(match.get("object_name") or ""),
+    )
+
+
+def _object_prompt_aliases(base_name: str) -> list[tuple[str, int]]:
+    """Return normalized prompt phrases that can refer to a backend object name.
+
+    LIBERO/PyBullet object IDs often include vendor, color, or fixture-specific
+    prefixes that prompts omit, e.g. ``akita_black_bowl`` versus "black bowl".
+    The aliases below intentionally stay lexical: they make automatic labels
+    less brittle without claiming a manually curated object ontology.
+    """
+    tokens = _object_name_tokens(base_name)
+    aliases: dict[str, int] = {}
+
+    def add(parts: Sequence[str], strength: int) -> None:
+        cleaned = [part for part in parts if part and part not in _PROMPT_ALIAS_STOPWORDS]
+        if not cleaned:
+            return
+        alias = "_".join(cleaned)
+        aliases[alias] = max(strength, aliases.get(alias, 0))
+
+    add(tokens, 4)
+    for start in range(1, len(tokens)):
+        suffix = tokens[start:]
+        add(suffix, 3 if len(suffix) >= 2 else 1)
+
+    if len(tokens) >= 2:
+        head = tokens[-1]
+        for token in tokens[:-1]:
+            add([token, head], 3)
+        add([head], 1)
+        for synonym in _HEAD_SYNONYMS.get(head, ()):
+            add([synonym], 1)
+            for token in tokens[:-1]:
+                add([token, synonym], 2)
+    elif tokens:
+        head = tokens[0]
+        add([head], 4)
+        for synonym in _HEAD_SYNONYMS.get(head, ()):
+            add([synonym], 2)
+
+    return sorted(
+        aliases.items(),
+        key=lambda item: (-item[1], -len(item[0].split("_")), item[0]),
+    )
+
+
+def _object_name_tokens(base_name: str) -> list[str]:
+    return [
+        token
+        for token in _normalize_text(base_name).split("_")
+        if token and not token.isdigit()
+    ]
+
+
+def _alias_head(alias: str) -> str:
+    parts = [part for part in alias.split("_") if part]
+    return parts[-1] if parts else ""
+
+
+def _normalized_phrase_index(normalized_text: str, alias: str) -> int:
+    if not alias:
+        return -1
+    match = re.search(rf"(^|_)({re.escape(alias)})(?:s|es)?($|_)", normalized_text)
+    return -1 if match is None else match.start(2)
 
 
 def _scene_family(text: str) -> str:
@@ -480,6 +582,15 @@ def _base_object_name(name: str) -> str:
 
 def _normalize_text(text: str) -> str:
     return re.sub(r"[^a-z0-9_]+", "_", text.lower())
+
+
+_PROMPT_ALIAS_STOPWORDS = {"object", "fixture", "site", "region"}
+
+
+_HEAD_SYNONYMS: dict[str, tuple[str, ...]] = {
+    "frypan": ("pan", "frying_pan"),
+    "stove": ("burner", "cooktop"),
+}
 
 
 def _summary_metrics(episode_labels: pd.DataFrame, object_metrics: pd.DataFrame) -> dict[str, Any]:

@@ -12,6 +12,8 @@ from vla_lens.artifacts import LensArtifact
 PROBE_ARTIFACT_SCHEMA_VERSION = 3
 
 INTERACTION_METRICS_ARTIFACT_TYPE = "pi05_interaction_metrics"
+OBJECT_FLOW_ARTIFACT_TYPE = "pi05_object_flow"
+POLICY_CALL_LABELS_ARTIFACT_TYPE = "pi05_policy_call_labels"
 
 
 @dataclass(frozen=True, slots=True)

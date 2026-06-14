@@ -945,7 +945,7 @@ def _check_artifact_freshness(
                 )
             )
         for array_name, relative_path in artifact.arrays.items():
-            array_path = artifact_path.parent.parent.parent / str(relative_path)
+            array_path = _artifact_payload_path(dataset, artifact_path, str(relative_path))
             if not array_path.exists():
                 issues.append(
                     _issue(
@@ -966,15 +966,48 @@ def _artifact_json_path(dataset: TraceDataset, row: Mapping[str, Any]) -> Path |
     relative = str(row.get("path") or "")
     if not relative:
         return None
+    relative_path = Path(relative)
+    if relative_path.is_absolute():
+        return relative_path
     scope = str(row.get("artifact_scope") or row.get("scope") or "")
+    candidates: list[Path] = []
     if scope == "dataset":
         dataset_path = row.get("dataset_path")
         base = Path(str(dataset_path)) if dataset_path else dataset._dataset_artifact_root()
-        return base / relative
-    bundle_path = row.get("bundle_path")
-    if bundle_path:
-        return Path(str(bundle_path)) / relative
-    return dataset.root / relative
+        candidates.extend([base / relative_path, dataset.root / relative_path])
+    else:
+        bundle_path = row.get("bundle_path")
+        if bundle_path:
+            candidates.append(Path(str(bundle_path)) / relative_path)
+        candidates.extend(
+            [
+                dataset.root / relative_path,
+                dataset._dataset_artifact_root() / relative_path,
+            ]
+        )
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0] if candidates else dataset.root / relative_path
+
+
+def _artifact_payload_path(
+    dataset: TraceDataset,
+    artifact_path: Path,
+    relative: str,
+) -> Path:
+    path = Path(relative)
+    if path.is_absolute():
+        return path
+    candidates = [
+        artifact_path.parent.parent.parent / path,
+        dataset.root / path,
+        dataset._dataset_artifact_root() / path,
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return candidates[0]
 
 
 def _lerobot_roots_for_dataset(root: Path, dataset: TraceDataset) -> tuple[Path, ...]:

@@ -9,6 +9,8 @@ from vla_lens.probes.score_cache import (
 )
 from vla_lens.probes.suite import ProbeResult, run_probe_suite
 from vla_lens.probes.workflow import (
+    OBJECT_FLOW_ARTIFACT_TYPE,
+    POLICY_CALL_LABELS_ARTIFACT_TYPE,
     SavedProbeSuite,
     dump_probe_spec,
     load_probe_spec,
@@ -20,6 +22,8 @@ from vla_lens.probes.workflow import (
 __all__ = [
     "ProbeScoreCacheResult",
     "ProbeResult",
+    "OBJECT_FLOW_ARTIFACT_TYPE",
+    "POLICY_CALL_LABELS_ARTIFACT_TYPE",
     "SavedProbeSuite",
     "dump_probe_spec",
     "load_probe_spec",

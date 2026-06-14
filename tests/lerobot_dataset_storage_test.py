@@ -346,6 +346,26 @@ def test_lerobot_interaction_metrics_legacy_output_paths_feed_probe_targets(tmp_
     assert rows["target_contacted"].tolist() == [True]
 
 
+def test_lerobot_dataset_trust_accepts_overlay_prefixed_artifact_paths(tmp_path):
+    write_lerobot_trace_record(_interaction_record("trace-a"), tmp_path)
+    dataset = TraceDataset.open(tmp_path)
+    save_pi05_interaction_metrics_artifact(dataset)
+    artifact_index_path = tmp_path / "vla_lens" / "tables" / "artifact_index.parquet"
+    table = pd.read_parquet(artifact_index_path)
+    table["path"] = table["path"].map(lambda value: f"vla_lens/{value}")
+    table.to_parquet(artifact_index_path, index=False)
+
+    report = check_dataset_trust(
+        tmp_path,
+        require_splits=False,
+        require_activation_coverage=False,
+        require_outcome_balance=False,
+        require_artifacts=True,
+    )
+
+    assert report.valid, report.to_dict()
+
+
 def test_lerobot_probe_outputs_are_dataset_root_relative(tmp_path):
     records = [
         _minimal_record_with_model_value("trace-a", 0.0),

@@ -53,6 +53,11 @@ from vla_lens.pi05.interaction_metrics import (
     InteractionMetricsArtifact,
     save_pi05_interaction_metrics_artifact,
 )
+from vla_lens.pi05.object_flow import ObjectFlowArtifact, save_pi05_object_flow_artifact
+from vla_lens.pi05.policy_call_labels import (
+    PolicyCallLabelsArtifact,
+    save_pi05_policy_call_labels_artifact,
+)
 from vla_lens.probe_evidence import (
     ArrayRef,
     CohortSummaryEvidence,
@@ -212,12 +217,14 @@ __all__ = [
     "ModelDescriptor",
     "ModelSiteSpec",
     "ModelTraceRecord",
+    "ObjectFlowArtifact",
     "OverlayScoreSpec",
     "PanelRegistryEntry",
     "PanelRecipe",
     "PanelAvailability",
     "PanelSpec",
     "PolicyCallRecord",
+    "PolicyCallLabelsArtifact",
     "PredictionEvidence",
     "ProbeEvidenceBundle",
     "ProbeEvidenceContractError",
@@ -301,6 +308,8 @@ __all__ = [
     "save_analysis_run",
     "save_intervention_run",
     "save_pi05_interaction_metrics_artifact",
+    "save_pi05_object_flow_artifact",
+    "save_pi05_policy_call_labels_artifact",
     "save_workspace",
     "select_available_panels",
     "select_contribution_claim_level",

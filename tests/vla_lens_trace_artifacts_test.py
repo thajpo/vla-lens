@@ -1,5 +1,10 @@
 # ruff: noqa: F403,F405
+import json
+
 from tests._support.vla_lens_trace_mvp import *
+from vla_lens.pi05.object_flow import save_pi05_object_flow_artifact
+from vla_lens.pi05.policy_call_labels import save_pi05_policy_call_labels_artifact
+from vla_lens.probes.workflow_prepare import _attach_episode_metadata
 
 
 def test_pi05_interaction_metrics_derives_object_labels(tmp_path):
@@ -99,6 +104,160 @@ def test_pi05_interaction_metrics_derives_object_labels(tmp_path):
     stale_payload = _episode_interactions_payload(dataset, {"trace_id": ["red_cube_trace"]})
     assert stale_payload["available"] is False
     assert stale_payload["reason"] == "Interaction metrics artifact has no episode label table."
+
+
+def test_pi05_interaction_metrics_matches_backend_object_aliases(tmp_path):
+    root = tmp_path / "interaction-aliases"
+    bundle_path = root / "alias_trace"
+    timesteps = 4
+    positions = np.zeros((timesteps, 2, 3), dtype=np.float32)
+    manifest = TraceManifest(
+        trace_id="alias_trace",
+        episode_id="alias_trace",
+        task_id="0",
+        prompt="pick up the book and place it in the back compartment of the caddy",
+        model_id="pi05",
+        env_id="libero_10",
+        robot_id="panda",
+        outcome="success",
+        length=timesteps,
+    )
+    bundle = TraceBundle.create(
+        bundle_path,
+        manifest=manifest,
+        timesteps=pd.DataFrame({"timestep": np.arange(timesteps)}),
+        policy_calls=pd.DataFrame(
+            {
+                "policy_call_index": [0],
+                "episode_id": ["alias_trace"],
+                "observation_timestep": [0],
+            }
+        ),
+        generation_steps=pd.DataFrame({"policy_call_index": [0], "generation_step": [0]}),
+        streams=pd.DataFrame({"stream_id": ["action"], "name": ["action"], "modality": ["action"]}),
+        token_spaces=pd.DataFrame(
+            {"token_space_id": ["action"], "stream_id": ["action"], "token_count": [1]}
+        ),
+        tokens=pd.DataFrame({"token_space_id": ["action"], "token_index": [0]}),
+        scene_state=pd.DataFrame(
+            {
+                "object_index": [0, 1],
+                "object_name": ["black_book_1", "desk_caddy_1"],
+                "object_kind": ["object", "fixture"],
+            }
+        ),
+        episode_arrays={
+            "scene_object_pos": ArraySpec(positions, ["timestep", "object", "xyz"]),
+            "executed_actions": ArraySpec(
+                np.zeros((timesteps, 1), dtype=np.float32),
+                ["timestep", "action_dim"],
+            ),
+            "action_chunks": ArraySpec(
+                np.zeros((1, timesteps, 1), dtype=np.float32),
+                ["policy_call", "horizon", "action_dim"],
+            ),
+            "generation_actions": ArraySpec(
+                np.zeros((1, 1, timesteps, 1), dtype=np.float32),
+                ["policy_call", "generation_step", "horizon", "action_dim"],
+            ),
+        },
+    )
+    dataset = TraceDataset(root, [bundle])
+
+    saved = save_pi05_interaction_metrics_artifact(dataset)
+    row = saved.episode_labels.iloc[0]
+
+    assert row["target_parse_status"] == "multi"
+    assert row["primary_target_object"] == "black_book_1"
+    assert json.loads(row["target_objects"]) == ["black_book_1", "desk_caddy_1"]
+
+
+def test_pi05_object_flow_derives_role_and_timestep_labels(tmp_path):
+    dataset = _object_flow_dataset(tmp_path / "object-flow")
+
+    saved = save_pi05_object_flow_artifact(dataset, rebuild_index=False)
+
+    roles = saved.object_roles.set_index("object_name")
+    assert saved.artifact.artifact_type == "pi05_object_flow"
+    assert bool(roles.loc["red_cube_1", "role_manipulated"])
+    assert not bool(roles.loc["red_cube_1", "role_receptacle"])
+    assert bool(roles.loc["blue_bowl_1", "role_receptacle"])
+    assert not bool(roles.loc["blue_bowl_1", "role_manipulated"])
+
+    step = saved.flow_steps.iloc[0]
+    assert step["object_name"] == "red_cube_1"
+    assert step["target_object_name"] == "blue_bowl_1"
+    assert step["step_type"] == "manipulate_object"
+
+    timestep_labels = saved.timestep_labels.set_index("timestep")
+    assert timestep_labels.loc[0, "next_manipulated_object"] == "red_cube_1"
+    assert timestep_labels.loc[1, "active_manipulated_object"] == "red_cube_1"
+    assert timestep_labels.loc[1, "active_receptacle_object"] == "blue_bowl_1"
+    assert timestep_labels.loc[0, "task_phase"] == "approach"
+    assert timestep_labels.loc[1, "task_phase"] == "contact"
+    assert (dataset.root / saved.artifact.method["outputs"]["timestep_labels"]).exists()
+
+
+def test_probe_metadata_attaches_object_flow_timestep_labels(tmp_path):
+    dataset = _object_flow_dataset(tmp_path / "object-flow-probe-rows")
+    save_pi05_object_flow_artifact(dataset, rebuild_index=False)
+    rows = pd.DataFrame(
+        {
+            "trace_id": ["flow_trace", "flow_trace"],
+            "timestep": [0, 4],
+            "policy_call_index": [0, 1],
+        }
+    )
+
+    merged = _attach_episode_metadata(rows, dataset)
+
+    assert "next_manipulated_object" in merged
+    assert "active_manipulated_object" in merged
+    assert merged.loc[0, "next_manipulated_object"] == "red_cube_1"
+    assert merged.loc[1, "active_manipulated_object"] == "red_cube_1"
+    assert merged.loc[1, "active_receptacle_object"] == "blue_bowl_1"
+
+
+def test_pi05_policy_call_labels_align_object_flow_to_policy_calls(tmp_path):
+    dataset = _object_flow_dataset(tmp_path / "policy-call-labels")
+    save_pi05_object_flow_artifact(dataset, rebuild_index=False)
+
+    saved = save_pi05_policy_call_labels_artifact(dataset, rebuild_index=False)
+
+    labels = saved.policy_call_labels
+    assert saved.artifact.artifact_type == "pi05_policy_call_labels"
+    assert labels["policy_call_index"].tolist() == [0, 1, 2, 3]
+    first = labels.iloc[0]
+    second = labels.iloc[1]
+    assert first["next_manipulated_object"] == "red_cube_1"
+    assert bool(first["is_pre_contact"])
+    assert bool(first["is_pre_motion"])
+    assert not bool(second["is_pre_contact"])
+    assert not bool(second["is_pre_motion"])
+    assert json.loads(first["candidate_objects"]) == ["blue_bowl_1", "red_cube_1"]
+    assert (dataset.root / saved.artifact.method["outputs"]["policy_call_labels"]).exists()
+
+
+def test_probe_metadata_attaches_policy_call_labels(tmp_path):
+    dataset = _object_flow_dataset(tmp_path / "policy-call-probe-rows")
+    save_pi05_object_flow_artifact(dataset, rebuild_index=False)
+    save_pi05_policy_call_labels_artifact(dataset, rebuild_index=False)
+    rows = pd.DataFrame(
+        {
+            "trace_id": ["flow_trace", "flow_trace"],
+            "timestep": [0, 3],
+            "policy_call_index": [0, 1],
+        }
+    )
+
+    merged = _attach_episode_metadata(rows, dataset)
+
+    assert "is_pre_contact" in merged
+    assert "is_pre_motion" in merged
+    assert bool(merged.loc[0, "is_pre_contact"])
+    assert bool(merged.loc[0, "is_pre_motion"])
+    assert not bool(merged.loc[1, "is_pre_contact"])
+    assert not bool(merged.loc[1, "is_pre_motion"])
 
 
 def test_probe_workflow_resolves_trace_context_targets(tmp_path):
@@ -575,3 +734,83 @@ def test_selection_analysis_run_limits_artifact_arrays_to_selected_run(tmp_path)
 
     assert any(first.artifact.artifact_id in array_id for array_id in array_ids)
     assert not any(second.artifact.artifact_id in array_id for array_id in array_ids)
+
+
+def _object_flow_dataset(root) -> TraceDataset:
+    bundle_path = root / "flow_trace"
+    timesteps = 10
+    positions = np.zeros((timesteps, 2, 3), dtype=np.float32)
+    positions[:, 0] = np.array([0.0, 0.0, 0.02], dtype=np.float32)
+    positions[:, 1] = np.array([0.2, 0.0, 0.02], dtype=np.float32)
+    positions[3:, 0, 0] += 0.06
+    positions[4:, 0, 2] += 0.06
+    eef = np.repeat(np.array([[0.4, 0.4, 0.1]], dtype=np.float32), timesteps, axis=0)
+    eef[1:3] = np.array([0.0, 0.0, 0.04], dtype=np.float32)
+    manifest = TraceManifest(
+        trace_id="flow_trace",
+        episode_id="flow_trace",
+        task_id="0",
+        prompt="put the red cube in the blue bowl",
+        model_id="pi05",
+        env_id="libero_object",
+        robot_id="panda",
+        outcome="success",
+        length=timesteps,
+        metadata={"task_name": "LIBERO_OBJECT_put_the_red_cube_in_the_blue_bowl"},
+    )
+    timestep_index = pd.DataFrame(
+        {
+            "timestep": np.arange(timesteps),
+            "policy_call_index": np.arange(timesteps) // 3,
+            "horizon_index": np.arange(timesteps) % 3,
+        }
+    )
+    bundle = TraceBundle.create(
+        bundle_path,
+        manifest=manifest,
+        timesteps=timestep_index,
+        policy_calls=pd.DataFrame(
+            {
+                "policy_call_index": [0, 1, 2, 3],
+                "episode_id": ["flow_trace"] * 4,
+                "observation_timestep": [0, 3, 6, 9],
+                "env_timestep_start": [0, 3, 6, 9],
+                "env_timestep_end": [2, 5, 8, 9],
+            }
+        ),
+        generation_steps=pd.DataFrame(
+            {
+                "policy_call_index": [0, 1, 2, 3],
+                "generation_step": [0, 0, 0, 0],
+            }
+        ),
+        streams=pd.DataFrame({"stream_id": ["action"], "name": ["action"], "modality": ["action"]}),
+        token_spaces=pd.DataFrame(
+            {"token_space_id": ["action"], "stream_id": ["action"], "token_count": [1]}
+        ),
+        tokens=pd.DataFrame({"token_space_id": ["action"], "token_index": [0]}),
+        scene_state=pd.DataFrame(
+            {
+                "object_index": [0, 1],
+                "object_name": ["red_cube_1", "blue_bowl_1"],
+                "object_kind": ["object", "object"],
+            }
+        ),
+        episode_arrays={
+            "scene_object_pos": ArraySpec(positions, ["timestep", "object", "xyz"]),
+            "eef_pos": ArraySpec(eef, ["timestep", "xyz"]),
+            "executed_actions": ArraySpec(
+                np.zeros((timesteps, 1), dtype=np.float32),
+                ["timestep", "action_dim"],
+            ),
+            "action_chunks": ArraySpec(
+                np.zeros((4, 3, 1), dtype=np.float32),
+                ["policy_call", "horizon", "action_dim"],
+            ),
+            "generation_actions": ArraySpec(
+                np.zeros((4, 1, 3, 1), dtype=np.float32),
+                ["policy_call", "generation_step", "horizon", "action_dim"],
+            ),
+        },
+    )
+    return TraceDataset(root, [bundle])
