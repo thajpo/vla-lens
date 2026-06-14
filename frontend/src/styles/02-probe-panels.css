@@ -1537,6 +1537,104 @@
   min-width: 0;
 }
 
+.probe-graph-hover {
+  position: relative;
+}
+
+.probe-graph-hover:focus-visible {
+  outline: 2px solid #4f6fbe;
+  outline-offset: 2px;
+}
+
+.probe-analysis-bar-row .probe-graph-tooltip,
+.probe-slice-row .probe-graph-tooltip {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
+  display: grid;
+  gap: 6px;
+  opacity: 0;
+  padding: 9px 10px;
+  pointer-events: none;
+  position: absolute;
+  right: 0;
+  top: calc(100% + 7px);
+  transform: translateY(-3px);
+  transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
+  visibility: hidden;
+  width: min(305px, calc(100vw - 40px));
+  z-index: 30;
+}
+
+.probe-graph-hover:hover .probe-graph-tooltip,
+.probe-graph-hover:focus-visible .probe-graph-tooltip {
+  opacity: 1;
+  transform: translateY(0);
+  visibility: visible;
+}
+
+.probe-analysis-bar-row .probe-graph-tooltip-title,
+.probe-slice-row .probe-graph-tooltip-title {
+  color: #0f172a;
+  display: block;
+  font-size: 12px;
+  font-weight: 900;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.probe-analysis-bar-row .probe-graph-tooltip-line,
+.probe-slice-row .probe-graph-tooltip-line {
+  align-items: baseline;
+  color: #334155;
+  display: flex;
+  font-size: 11px;
+  font-weight: 700;
+  gap: 14px;
+  justify-content: space-between;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.probe-analysis-bar-row .probe-graph-tooltip-line span,
+.probe-slice-row .probe-graph-tooltip-line span {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.probe-analysis-bar-row .probe-graph-tooltip-line span:last-child,
+.probe-slice-row .probe-graph-tooltip-line span:last-child {
+  color: #0f172a;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
+  text-align: right;
+}
+
+.probe-analysis-bar-row .probe-graph-tooltip-note,
+.probe-slice-row .probe-graph-tooltip-note {
+  border-top: 1px solid #e2e8f0;
+  color: #64748b;
+  display: block;
+  font-size: 10px;
+  font-weight: 750;
+  line-height: 1.35;
+  margin-top: 2px;
+  min-width: 0;
+  overflow: visible;
+  padding-top: 6px;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .probe-slice-row {
   grid-template-columns: minmax(92px, 1.1fr) minmax(100px, 1.5fr) 46px;
 }

@@ -1571,7 +1571,12 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
         </header>
         <div className="probe-analysis-bars">
           {model.confidenceBuckets.map((bucket) => (
-            <div className="probe-analysis-bar-row" key={bucket.label}>
+            <div
+              aria-label={probeGraphTooltipLabel(confidenceBucketTooltip(bucket))}
+              className="probe-analysis-bar-row probe-graph-hover"
+              key={bucket.label}
+              tabIndex={0}
+            >
               <span>{bucket.label}</span>
               <i>
                 <b className="correct" style={{ width: `${percentOf(bucket.correct, bucket.total)}%` }} />
@@ -1579,6 +1584,7 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
                 <b className="unknown" style={{ width: `${percentOf(bucket.unknown, bucket.total)}%` }} />
               </i>
               <strong>{bucket.total}</strong>
+              <ProbeGraphTooltip tooltip={confidenceBucketTooltip(bucket)} />
             </div>
           ))}
         </div>
@@ -1728,7 +1734,12 @@ function ProbeSliceCard({
       </header>
       <div className="probe-slice-list">
         {rows.length ? rows.map((row, index) => (
-          <div className="probe-slice-row" key={`${row.label}-${index}`}>
+          <div
+            aria-label={probeGraphTooltipLabel(sliceRowTooltip(row, title))}
+            className="probe-slice-row probe-graph-hover"
+            key={`${row.label}-${index}`}
+            tabIndex={0}
+          >
             <span>{row.label}</span>
             <i>
               <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
@@ -1737,11 +1748,87 @@ function ProbeSliceCard({
               <b className="unknown" style={{ width: `${percentOf(row.unknown, row.total)}%` }} />
             </i>
             <strong>{row.wrong}/{row.scored}</strong>
+            <ProbeGraphTooltip tooltip={sliceRowTooltip(row, title)} />
           </div>
         )) : <p>No visible scored episodes.</p>}
       </div>
     </section>
   );
+}
+
+type ProbeGraphTooltipLine = {
+  label: string;
+  value: string;
+};
+
+type ProbeGraphTooltipModel = {
+  lines: ProbeGraphTooltipLine[];
+  note?: string;
+  title: string;
+};
+
+function ProbeGraphTooltip({ tooltip }: { tooltip: ProbeGraphTooltipModel }) {
+  return (
+    <span aria-hidden="true" className="probe-graph-tooltip" role="tooltip">
+      <span className="probe-graph-tooltip-title">{tooltip.title}</span>
+      {tooltip.lines.map((line) => (
+        <span className="probe-graph-tooltip-line" key={line.label}>
+          <span>{line.label}</span>
+          <span>{line.value}</span>
+        </span>
+      ))}
+      {tooltip.note ? <span className="probe-graph-tooltip-note">{tooltip.note}</span> : null}
+    </span>
+  );
+}
+
+function confidenceBucketTooltip(bucket: ProbeConfidenceBucket): ProbeGraphTooltipModel {
+  return {
+    lines: [
+      { label: "Scored rows", value: formatReadoutInteger(bucket.total) },
+      { label: "Correct", value: formatTooltipShare(bucket.correct, bucket.total) },
+      { label: "Wrong", value: formatTooltipShare(bucket.wrong, bucket.total) },
+      { label: "High-conf wrong", value: formatTooltipShare(bucket.highConfWrong, bucket.total) },
+      { label: "Unknown labels", value: formatTooltipShare(bucket.unknown, bucket.total) },
+    ],
+    note: bucket.total
+      ? "Rows in this confidence range; green is correct, orange is wrong, gray has unknown correctness."
+      : "No scored probe rows landed in this confidence range.",
+    title: `${bucket.label} confidence`,
+  };
+}
+
+function sliceRowTooltip(row: ProbeAnalysisCountRow, title: string): ProbeGraphTooltipModel {
+  const otherWrong = Math.max(0, row.wrong - row.highConfWrong);
+  return {
+    lines: [
+      { label: "Visible episodes", value: formatReadoutInteger(row.total) },
+      { label: "Scored", value: formatTooltipShare(row.scored, row.total) },
+      { label: "Correct", value: formatTooltipShare(row.correct, row.scored) },
+      { label: "Other wrong", value: formatTooltipShare(otherWrong, row.scored) },
+      { label: "High-conf wrong", value: formatTooltipShare(row.highConfWrong, row.scored) },
+      { label: "Unknown labels", value: formatTooltipShare(row.unknown, row.scored) },
+      { label: "Unscored", value: formatTooltipShare(row.unscored, row.total) },
+      { label: "Accuracy", value: row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%` },
+    ],
+    note: "Rows are ranked by high-confidence wrong, then wrong, then scored coverage.",
+    title: `${title}: ${row.label}`,
+  };
+}
+
+function probeGraphTooltipLabel(tooltip: ProbeGraphTooltipModel): string {
+  return [
+    tooltip.title,
+    ...tooltip.lines.map((line) => `${line.label}: ${line.value}`),
+    tooltip.note,
+  ].filter(Boolean).join(". ");
+}
+
+function formatTooltipShare(value: number, total: number): string {
+  if (!total) {
+    return formatReadoutInteger(value);
+  }
+  return `${formatReadoutInteger(value)} (${Math.round(percentOf(value, total))}%)`;
 }
 
 function probeDatasetAnalysisModel(
