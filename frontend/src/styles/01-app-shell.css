@@ -364,6 +364,7 @@ input {
 }
 
 .dataset-browser-page.probe-mode > .probe-lens-workbench,
+.dataset-browser-page.probe-mode > .probe-readout-navigator,
 .dataset-browser-page.probe-mode > .dataset-table-controls,
 .dataset-browser-page.probe-mode > .app-message,
 .dataset-browser-page.probe-mode > .empty-state {
@@ -943,6 +944,10 @@ input {
   display: inline-block;
   height: 7px;
   width: 7px;
+}
+
+.probe-map-legend .correct::before {
+  background: #7aa895;
 }
 
 .probe-map-legend .wrong::before {

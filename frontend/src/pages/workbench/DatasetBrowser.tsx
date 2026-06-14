@@ -6,12 +6,15 @@ import {
   fetchDiscoveryArtifactFamilies,
   type DiscoveryArtifactEpisodeParams,
   type EpisodePageParams,
+  type ProbeStudyEpisodeParams,
   fetchDiscoveryArtifactEpisodes,
   fetchDataset,
   fetchDatasetDiagnostics,
   fetchEpisodesPage,
   fetchProbeEvidenceBundle,
   fetchProbeIndex,
+  fetchProbeStudies,
+  fetchProbeStudyEpisodes,
 } from "../../api/dataset";
 import type {
   ArtifactRecord,
@@ -21,6 +24,10 @@ import type {
   EpisodeFacetValue,
   ProbeDatasetIndex,
   ProbeEpisodeIndex,
+  ProbeStudy,
+  ProbeStudyEpisodeSummary,
+  ProbeStudyEpisodesResponse,
+  ProbeStudyReadout,
 } from "../../types/dataset";
 import { researchCopy } from "../../copy/researchCopy";
 import type { WorkbenchManifest } from "../../types/workbench";
@@ -31,7 +38,6 @@ import {
   PROBE_PREDICTION_FILTER_LABELS,
   PROBE_PREDICTION_FILTERS,
   PROBE_SPLIT_FILTER_LABELS,
-  PROBE_SPLIT_FILTERS,
   canonicalProbeSplitCategory,
   datasetCoverageRows,
   episodeBenchmark,
@@ -51,6 +57,7 @@ import {
   probeSplitLabel,
   shortTrace,
   type ProbeCohortPreset,
+  type ProbeLensMetricChip,
   type ProbeLensWorkbenchViewModel,
 } from "./datasetBrowserModel";
 import type { EpisodeOpenContext } from "./types";
@@ -77,6 +84,16 @@ type DatasetLens = {
   family?: DiscoveryArtifactFamily;
   name: string;
   probe?: ProbeDatasetIndex;
+};
+
+type ProbeSummarySplitRow = {
+  detail?: string;
+  highConfWrong: number | null;
+  id: "test" | "train" | "validation";
+  label: string;
+  scored: number;
+  total: number;
+  wrong: number | null;
 };
 
 export function DatasetBrowser({
@@ -114,6 +131,12 @@ export function DatasetBrowser({
     enabled: dataset.isFetched && hasProbeArtifacts,
     staleTime: 60_000,
   });
+  const probeStudies = useQuery({
+    queryKey: ["probe-studies", datasetIdentityKey],
+    queryFn: fetchProbeStudies,
+    enabled: dataset.isFetched && hasProbeArtifacts,
+    staleTime: 60_000,
+  });
   const probes = useMemo(
     () => (hasProbeArtifacts ? probeIndex.data?.probes ?? [] : []),
     [hasProbeArtifacts, probeIndex.data?.probes],
@@ -130,6 +153,7 @@ export function DatasetBrowser({
   const [probeCohortPreset, setProbeCohortPreset] = useState<ProbeCohortPreset>("all");
   const [probeSplitFilter, setProbeSplitFilter] = useState("all");
   const [probePredictionFilter, setProbePredictionFilter] = useState("all");
+  const [selectedProbeReadoutId, setSelectedProbeReadoutId] = useState("");
   const [pageOffset, setPageOffset] = useState(0);
   const [probeLeftColumnWidth, setProbeLeftColumnWidth] = useState(940);
   const familyByType = useMemo(
@@ -154,6 +178,20 @@ export function DatasetBrowser({
     [lenses, selectedLensId],
   );
   const selectedProbe = selectedLens?.probe;
+  const activeProbeStudy = useMemo(
+    () => selectedProbe
+      ? probeStudies.data?.studies.find((study) => study.artifact_id === selectedProbe.artifact_id)
+      : undefined,
+    [probeStudies.data?.studies, selectedProbe],
+  );
+  const activeProbeReadouts = activeProbeStudy?.readouts ?? [];
+  const selectedProbeReadout = useMemo(
+    () => selectedProbe
+      ? activeProbeReadouts.find((readout) => readout.readout_id === selectedProbeReadoutId)
+        ?? defaultProbeReadout(activeProbeReadouts, activeProbeStudy)
+      : undefined,
+    [activeProbeReadouts, activeProbeStudy, selectedProbe, selectedProbeReadoutId],
+  );
   const probePageStyle = selectedProbe
     ? ({ "--probe-left-width": `${probeLeftColumnWidth}px` } as CSSProperties)
     : undefined;
@@ -207,17 +245,65 @@ export function DatasetBrowser({
       taskFilter,
     ],
   );
+  const probeStudyEpisodeParams = useMemo<ProbeStudyEpisodeParams>(
+    () => ({
+      benchmark: benchmarkFilter,
+      cohort_preset: probeCohortPreset,
+      dataset_id: datasetFilter,
+      layer: selectedProbeReadout?.layer,
+      limit: 100,
+      offset: pageOffset,
+      outcome: outcomeFilter,
+      prediction: probePredictionFilter,
+      profile: profileFilter,
+      q: deferredQuery,
+      sort: sortMode === "lens_interest" ? "probe_interest" : sortMode,
+      split: selectedProbeReadout?.split,
+      task_id: taskFilter,
+      target: selectedProbeReadout?.target,
+    }),
+    [
+      benchmarkFilter,
+      datasetFilter,
+      deferredQuery,
+      outcomeFilter,
+      pageOffset,
+      probeCohortPreset,
+      probePredictionFilter,
+      profileFilter,
+      selectedProbeReadout,
+      sortMode,
+      taskFilter,
+    ],
+  );
+  const useProbeReadoutEpisodes = Boolean(selectedProbe && selectedProbeReadout);
+  const waitingForProbeReadouts = Boolean(selectedProbe && probeStudies.isLoading);
   const episodePage = useQuery({
-    queryKey: ["episodes", datasetIdentityKey, activeLensArtifactId || NO_LENS_ID, episodePageParams],
-    queryFn: ({ signal }) => selectedLens
+    queryKey: [
+      "episodes",
+      datasetIdentityKey,
+      activeLensArtifactId || NO_LENS_ID,
+      selectedProbeReadout?.readout_id ?? "artifact",
+      useProbeReadoutEpisodes ? probeStudyEpisodeParams : episodePageParams,
+    ],
+    queryFn: ({ signal }) => useProbeReadoutEpisodes
+      ? fetchProbeStudyEpisodes(activeLensArtifactId, probeStudyEpisodeParams, signal)
+      : selectedLens
       ? fetchDiscoveryArtifactEpisodes(activeLensArtifactId, episodePageParams, signal)
       : fetchEpisodesPage(episodePageParams as EpisodePageParams, signal),
-    enabled: dataset.isFetched,
+    enabled: dataset.isFetched && !waitingForProbeReadouts,
     staleTime: 15_000,
   });
   const discoveryPayload = discoveryEpisodePayload(episodePage.data);
+  const probeReadoutPayload = probeStudyEpisodePayload(episodePage.data);
+  const activeProbeReadoutPayload = probeReadoutPayloadMatches(probeReadoutPayload, selectedProbeReadout)
+    ? probeReadoutPayload
+    : undefined;
   const activeLensUnavailable = Boolean(selectedLens && discoveryPayload?.available === false);
   const activeLensReason = selectedLens ? discoveryPayload?.reason ?? "" : "";
+  const activeReadoutReason = selectedProbe && activeProbeReadoutPayload?.available === false
+    ? activeProbeReadoutPayload.reason
+    : "";
   const activeLensFamilyLabel = selectedLens ? familyLabel(selectedLens.artifactType) : researchCopy.labels.episodeOrder;
   const diagnostics = useQuery({
     queryKey: ["dataset-diagnostics", datasetIdentityKey],
@@ -225,12 +311,15 @@ export function DatasetBrowser({
     enabled: episodePage.isFetched || episodePage.isError,
     staleTime: 60_000,
   });
-  const episodes = useMemo(() => episodePage.data?.episodes ?? [], [episodePage.data?.episodes]);
-  const datasetIds = facetValues(episodePage.data?.facets.dataset_id);
-  const benchmarks = facetValues(episodePage.data?.facets.benchmark);
-  const tasks = facetValues(episodePage.data?.facets.task_id);
-  const outcomes = facetValues(episodePage.data?.facets.outcome);
-  const profiles = facetValues(episodePage.data?.facets.profile);
+  const activeEpisodePageData = useProbeReadoutEpisodes
+    ? activeProbeReadoutPayload
+    : episodePage.data;
+  const episodes = useMemo(() => activeEpisodePageData?.episodes ?? [], [activeEpisodePageData?.episodes]);
+  const datasetIds = facetValues(activeEpisodePageData?.facets.dataset_id);
+  const benchmarks = facetValues(activeEpisodePageData?.facets.benchmark);
+  const tasks = facetValues(activeEpisodePageData?.facets.task_id);
+  const outcomes = facetValues(activeEpisodePageData?.facets.outcome);
+  const profiles = facetValues(activeEpisodePageData?.facets.profile);
   const coverageRows = useMemo(() => datasetCoverageRows(episodes), [episodes]);
   const probeWorkbench = useMemo(
     () => selectedProbe
@@ -238,27 +327,33 @@ export function DatasetBrowser({
           artifact: selectedLens?.artifact,
           bundle: activeProbeEvidenceBundle,
           probe: selectedProbe,
-          totalEpisodes: dataset.data?.episode_count ?? episodePage.data?.total ?? 0,
+          totalEpisodes: dataset.data?.episode_count ?? activeEpisodePageData?.total ?? 0,
         })
       : undefined,
     [
       activeProbeEvidenceBundle,
+      activeEpisodePageData?.total,
       dataset.data?.episode_count,
-      episodePage.data?.total,
       selectedLens?.artifact,
       selectedProbe,
     ],
   );
   const probeAnalysis = useMemo(
     () => selectedProbe
-      ? probeDatasetAnalysisModel(selectedProbe, episodes, activeProbeEvidenceBundle, datasetFilter)
+      ? probeDatasetAnalysisModel(
+          selectedProbe,
+          episodes,
+          activeProbeEvidenceBundle,
+          datasetFilter,
+          useProbeReadoutEpisodes ? readoutRecordsForEpisodes(episodes) : undefined,
+        )
       : undefined,
-    [activeProbeEvidenceBundle, datasetFilter, episodes, selectedProbe],
+    [activeProbeEvidenceBundle, datasetFilter, episodes, selectedProbe, useProbeReadoutEpisodes],
   );
-  const totalEpisodes = dataset.data?.episode_count ?? episodePage.data?.total ?? 0;
-  const visibleTotal = episodePage.data?.total ?? 0;
+  const totalEpisodes = dataset.data?.episode_count ?? activeEpisodePageData?.total ?? 0;
+  const visibleTotal = activeEpisodePageData?.total ?? 0;
   const pageStart = visibleTotal ? pageOffset + 1 : 0;
-  const pageEnd = Math.min(pageOffset + (episodePage.data?.limit ?? 100), visibleTotal);
+  const pageEnd = Math.min(pageOffset + (activeEpisodePageData?.limit ?? 100), visibleTotal);
   const activeFilterCount = [
     datasetFilter,
     benchmarkFilter,
@@ -276,6 +371,7 @@ export function DatasetBrowser({
     setProbeCohortPreset("all");
     setProbeSplitFilter("all");
     setProbePredictionFilter("all");
+    setSelectedProbeReadoutId("");
     resetPage();
   };
   const openDatasetEpisode = (episode: DatasetEpisode) => {
@@ -328,7 +424,11 @@ export function DatasetBrowser({
       {selectedProbe && probeWorkbench ? (
         <ProbeLensWorkbench
           activePredictionFilter={probePredictionFilter}
-          activeSplitFilter={probeSplitFilter}
+          activeSplitFilter={selectedProbeReadout?.split_category ?? probeSplitFilter}
+          readout={selectedProbeReadout}
+          readoutEpisodeSummary={activeProbeReadoutPayload?.summary}
+          readoutEpisodeTotal={useProbeReadoutEpisodes ? visibleTotal : undefined}
+          readouts={activeProbeReadouts}
           model={probeWorkbench}
           probe={selectedProbe}
           onCohortPresetChange={(preset) => {
@@ -344,12 +444,36 @@ export function DatasetBrowser({
           }}
           onSplitFilterChange={(value) => {
             setProbeCohortPreset("all");
-            setProbeSplitFilter(value);
+            const nextReadout = selectedProbeReadout
+              ? probeReadoutForSplitCategory(activeProbeReadouts, selectedProbeReadout, value)
+              : undefined;
+            if (nextReadout) {
+              setSelectedProbeReadoutId(nextReadout.readout_id);
+              setProbeSplitFilter(nextReadout.split_category ?? "all");
+            } else {
+              setProbeSplitFilter(value);
+            }
             resetPage();
           }}
         />
       ) : selectedLens ? (
         <LensEvidencePanel lens={selectedLens} ranking={discoveryPayload} />
+      ) : null}
+
+      {selectedProbe && activeProbeStudy ? (
+        <ProbeReadoutNavigator
+          readouts={activeProbeReadouts}
+          selectedReadout={selectedProbeReadout}
+          study={activeProbeStudy}
+          unavailableReason={activeReadoutReason}
+          onReadoutChange={(readoutId) => {
+            const nextReadout = activeProbeReadouts.find((readout) => readout.readout_id === readoutId);
+            setSelectedProbeReadoutId(readoutId);
+            setProbeSplitFilter(nextReadout?.split_category ?? "all");
+            setProbeCohortPreset("all");
+            resetPage();
+          }}
+        />
       ) : null}
 
       <section className={`dataset-table-controls ${selectedProbe ? "probe-mode" : ""}`} aria-label="Episode filters and sorting">
@@ -376,17 +500,6 @@ export function DatasetBrowser({
                 setProbeCohortPreset(value as ProbeCohortPreset);
                 setProbeSplitFilter("all");
                 setProbePredictionFilter("all");
-                resetPage();
-              }}
-            />
-            <FilterSelect
-              label="Split"
-              value={probeSplitFilter}
-              values={PROBE_SPLIT_FILTERS}
-              labels={PROBE_SPLIT_FILTER_LABELS}
-              onChange={(value) => {
-                setProbeCohortPreset("all");
-                setProbeSplitFilter(value);
                 resetPage();
               }}
             />
@@ -639,9 +752,9 @@ export function DatasetBrowser({
             </button>
             <button
               className="text-command"
-              disabled={episodePage.data?.next_offset === null || episodePage.data?.next_offset === undefined}
+              disabled={activeEpisodePageData?.next_offset === null || activeEpisodePageData?.next_offset === undefined}
               type="button"
-              onClick={() => setPageOffset(episodePage.data?.next_offset ?? pageOffset)}
+              onClick={() => setPageOffset(activeEpisodePageData?.next_offset ?? pageOffset)}
             >
               Next
             </button>
@@ -699,6 +812,10 @@ function ProbeLensWorkbench({
   activeSplitFilter,
   model,
   probe,
+  readout,
+  readoutEpisodeSummary,
+  readoutEpisodeTotal,
+  readouts,
   onCohortPresetChange,
   onPredictionFilterChange,
   onSplitFilterChange,
@@ -707,10 +824,17 @@ function ProbeLensWorkbench({
   activeSplitFilter: string;
   model: ProbeLensWorkbenchViewModel;
   probe: ProbeDatasetIndex;
+  readout?: ProbeStudyReadout;
+  readoutEpisodeSummary?: ProbeStudyEpisodeSummary;
+  readoutEpisodeTotal?: number;
+  readouts?: ProbeStudyReadout[];
   onCohortPresetChange: (preset: ProbeCohortPreset) => void;
   onPredictionFilterChange: (value: string) => void;
   onSplitFilterChange: (value: string) => void;
 }) {
+  const metricChips = readout
+    ? probeReadoutMetricChips(readout, readoutEpisodeSummary, readoutEpisodeTotal)
+    : model.metrics;
   return (
     <section className="probe-lens-workbench" aria-label="Selected probe lens workbench">
       <div className="probe-lens-head">
@@ -744,7 +868,7 @@ function ProbeLensWorkbench({
         <span>{model.verdict.label}</span>
         <strong>{model.verdict.headline}</strong>
         <div className="probe-lens-metrics">
-          {model.metrics.map((metric) => (
+          {metricChips.map((metric) => (
             <div className={`probe-lens-metric ${metric.tone}`} key={metric.label}>
               <span>{metric.label}</span>
               <strong>{metric.value}</strong>
@@ -757,6 +881,9 @@ function ProbeLensWorkbench({
         activePredictionFilter={activePredictionFilter}
         activeSplitFilter={activeSplitFilter}
         probe={probe}
+        readout={readout}
+        readoutEpisodeSummary={readoutEpisodeSummary}
+        readouts={readouts}
         onCohortPresetChange={onCohortPresetChange}
         onPredictionFilterChange={onPredictionFilterChange}
         onSplitFilterChange={onSplitFilterChange}
@@ -941,6 +1068,72 @@ function LensSelector({
   );
 }
 
+function ProbeReadoutNavigator({
+  readouts,
+  selectedReadout,
+  study,
+  unavailableReason,
+  onReadoutChange,
+}: {
+  readouts: ProbeStudyReadout[];
+  selectedReadout?: ProbeStudyReadout;
+  study: ProbeStudy;
+  unavailableReason?: string;
+  onReadoutChange: (readoutId: string) => void;
+}) {
+  if (!readouts.length) {
+    return (
+      <section className="probe-readout-navigator" aria-label="Probe readout scope">
+        <div>
+          <span>Readout scope</span>
+          <strong>No diagnostic readouts</strong>
+        </div>
+      </section>
+    );
+  }
+  const activeReadout = selectedReadout ?? readouts[0];
+  return (
+    <section className="probe-readout-navigator" aria-label="Probe readout scope">
+      <label className="probe-readout-picker">
+        <span>Readout scope</span>
+        <select
+          value={activeReadout.readout_id}
+          onChange={(event) => onReadoutChange(event.target.value)}
+        >
+          {readouts.map((readout) => (
+            <option key={readout.readout_id} value={readout.readout_id}>
+              {probeReadoutOptionLabel(readout)}
+            </option>
+          ))}
+        </select>
+      </label>
+      <dl className="probe-readout-scope-facts">
+        <div>
+          <dt title="The label this readout predicts from activations.">Target</dt>
+          <dd>{probeReadoutTargetLabel(activeReadout.target || study.target || "")}</dd>
+        </div>
+        <div>
+          <dt title="The activation layer used as the readout input.">Layer</dt>
+          <dd>{probeReadoutLayerLabel(activeReadout.layer)}</dd>
+        </div>
+        <div>
+          <dt title="The train, validation, or test split this readout was evaluated on.">Split</dt>
+          <dd>{probeReadoutSplitLabel(activeReadout)}</dd>
+        </div>
+        <div>
+          <dt title="Policy-call rows available to this readout before episode aggregation.">Rows</dt>
+          <dd>{activeReadout.policy_call_count ?? activeReadout.row_count ?? "-"}</dd>
+        </div>
+        <div>
+          <dt title="Balanced accuracy for this target, layer, and split.">Balanced acc.</dt>
+          <dd>{probeReadoutScoreLabel(activeReadout)}</dd>
+        </div>
+      </dl>
+      {unavailableReason ? <small className="probe-readout-warning">{unavailableReason}</small> : null}
+    </section>
+  );
+}
+
 function LensEvidencePanel({
   lens,
   ranking,
@@ -995,6 +1188,9 @@ function ProbeSummaryVisual({
   activePredictionFilter,
   activeSplitFilter,
   probe,
+  readout,
+  readoutEpisodeSummary,
+  readouts,
   onCohortPresetChange,
   onPredictionFilterChange,
   onSplitFilterChange,
@@ -1002,54 +1198,74 @@ function ProbeSummaryVisual({
   activePredictionFilter: string;
   activeSplitFilter: string;
   probe: ProbeDatasetIndex;
+  readout?: ProbeStudyReadout;
+  readoutEpisodeSummary?: ProbeStudyEpisodeSummary;
+  readouts?: ProbeStudyReadout[];
   onCohortPresetChange: (preset: ProbeCohortPreset) => void;
   onPredictionFilterChange: (value: string) => void;
   onSplitFilterChange: (value: string) => void;
 }) {
-  const splitRows = probeSplitChartRows(probe);
-  const resultRows = probeResultChartRows(probe);
+  const splitRows: ProbeSummarySplitRow[] = readout
+    ? probeReadoutSplitChartRows(readouts ?? [], readout, readoutEpisodeSummary)
+    : probeSplitChartRows(probe);
+  const resultRows = readout
+    ? probeReadoutResultChartRows(readoutEpisodeSummary)
+    : probeResultChartRows(probe);
   return (
     <section className="probe-evidence-plot probe-summary-visual" aria-label="Probe summary">
       <div className="probe-evidence-plot-column">
         <header>
-          <span>{researchCopy.labels.splitCoverage}</span>
+          <span>{readout ? "Readout splits" : researchCopy.labels.splitCoverage}</span>
           <small className="probe-map-legend">
+            <span className="correct">correct</span>
             <span className="wrong">wrong</span>
             <span className="high-conf-wrong">high-conf wrong</span>
           </small>
         </header>
         <div className="probe-split-bars">
-          {splitRows.map((row) => (
-            <button
-              className={activeSplitFilter === row.id ? "active" : ""}
-              key={row.id}
-              type="button"
-              onClick={() => onSplitFilterChange(activeSplitFilter === row.id ? "all" : row.id)}
-            >
-              <span>{row.label}</span>
-              <strong>{row.scored}/{row.total}</strong>
-              <i className="probe-evidence-bar">
-                <b style={{ width: `${percentOf(row.scored, row.total)}%` }} />
-                <em className="wrong" style={{ width: `${percentOf(row.wrong ?? 0, row.total)}%` }} />
-                <em className="high-conf-wrong" style={{ width: `${percentOf(row.highConfWrong ?? 0, row.total)}%` }} />
-              </i>
-              <small>
-                {row.total === 0
-                  ? "no episodes"
-                  : row.wrong === null
-                  ? "error counts unavailable"
-                  : `${Math.max(0, row.scored - row.wrong)} correct · ${row.wrong} wrong · ${
-                      row.highConfWrong ?? 0
-                    } high-conf wrong`}
-              </small>
-            </button>
-          ))}
+          {splitRows.map((row) => {
+            const segments = probeSplitBarSegments(row);
+            return (
+              <button
+                className={activeSplitFilter === row.id ? "active" : ""}
+                key={row.id}
+                type="button"
+                onClick={() => onSplitFilterChange(activeSplitFilter === row.id ? "all" : row.id)}
+              >
+                <span>{row.label}</span>
+                <strong>{row.scored}/{row.total}</strong>
+                <i className="probe-evidence-bar">
+                  <b style={{ left: `${segments.correctLeft}%`, width: `${segments.correctWidth}%` }} />
+                  <em
+                    className="wrong"
+                    style={{ left: `${segments.wrongLeft}%`, width: `${segments.wrongWidth}%` }}
+                  />
+                  <em
+                    className="high-conf-wrong"
+                    style={{ left: `${segments.highConfWrongLeft}%`, width: `${segments.highConfWrongWidth}%` }}
+                  />
+                </i>
+                <small>
+                  {row.detail
+                    ? row.detail
+                    : row.total === 0
+                    ? "no episodes"
+                    : row.wrong === null
+                    ? "error counts unavailable"
+                    : `${Math.max(0, row.scored - row.wrong)} correct · ${Math.max(
+                        0,
+                        row.wrong - (row.highConfWrong ?? 0),
+                      )} wrong · ${row.highConfWrong ?? 0} high-conf wrong`}
+                </small>
+              </button>
+            );
+          })}
         </div>
       </div>
       <div className="probe-evidence-plot-column">
         <header>
-          <span>{researchCopy.labels.resultCoverage}</span>
-          <small>episode counts</small>
+          <span>{readout ? "Readout results" : researchCopy.labels.resultCoverage}</span>
+          <small>{readout ? "visible episodes" : "episode counts"}</small>
         </header>
         <div className="probe-result-bars">
           {resultRows.map((row) => (
@@ -1227,10 +1443,10 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
             <small>visible scored episodes</small>
           </header>
           <div className="probe-scatter-plot" aria-label="Confidence against episode length">
-            {model.lengthScorePoints.map((point) => (
+            {model.lengthScorePoints.map((point, index) => (
               <i
                 className={point.tone}
-                key={point.label}
+                key={`${point.label}-${index}`}
                 style={{ left: `${point.x}%`, bottom: `${point.y}%` }}
                 title={`${point.label}: ${point.confidence.toFixed(2)} confidence, ${point.episodeLength} steps`}
               />
@@ -1246,11 +1462,11 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
         <section className="probe-analysis-card">
           <header>
             <span>Temporal evidence</span>
-            <small>ranked evidence moments</small>
+            <small>ranked policy calls</small>
           </header>
           <div className="probe-temporal-map">
-            {model.temporalRows.map((row) => (
-              <div className={`probe-temporal-row ${row.tone}`} key={`${row.label}-${row.marker}`}>
+            {model.temporalRows.map((row, index) => (
+              <div className={`probe-temporal-row ${row.tone}`} key={`${row.label}-${row.marker}-${index}`}>
                 <span>{row.label}</span>
                 <i><b style={{ left: `${row.position}%` }} /></i>
                 <strong>{row.marker}</strong>
@@ -1291,8 +1507,8 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
             {model.cohortGroups.map((group) => (
               <section key={group.label}>
                 <span>{group.label}</span>
-                {group.rows.map((row) => (
-                  <div className={`probe-cohort-row ${row.tone}`} key={`${group.label}-${row.label}`}>
+                {group.rows.map((row, index) => (
+                  <div className={`probe-cohort-row ${row.tone}`} key={`${group.label}-${row.label}-${index}`}>
                     <strong>{row.label}</strong>
                     <small>{row.detail}</small>
                   </div>
@@ -1322,8 +1538,8 @@ function ProbeSliceCard({
         <small>{subtitle}</small>
       </header>
       <div className="probe-slice-list">
-        {rows.length ? rows.map((row) => (
-          <div className="probe-slice-row" key={row.label}>
+        {rows.length ? rows.map((row, index) => (
+          <div className="probe-slice-row" key={`${row.label}-${index}`}>
             <span>{row.label}</span>
             <i>
               <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
@@ -1343,8 +1559,9 @@ function probeDatasetAnalysisModel(
   episodes: DatasetEpisode[],
   bundle: ProbeEvidenceBundle | undefined,
   datasetFilter: string,
+  recordsOverride?: ProbeEpisodeIndex[],
 ): ProbeDatasetAnalysisModel {
-  const records = Object.values(probe.by_trace ?? {});
+  const records = recordsOverride ?? Object.values(probe.by_trace ?? {});
   return {
     calibrationRows: calibrationRows(records),
     confidenceBuckets: confidenceBucketRows(records),
@@ -1356,6 +1573,12 @@ function probeDatasetAnalysisModel(
     taskRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.task_id ? `Task ${episode.task_id}` : "Task missing"),
     temporalRows: temporalEvidenceRows(bundle, probe, episodes, datasetFilter),
   };
+}
+
+function readoutRecordsForEpisodes(episodes: DatasetEpisode[]): ProbeEpisodeIndex[] {
+  return episodes
+    .map((episode) => episode.probe_record)
+    .filter((record): record is ProbeEpisodeIndex => Boolean(record));
 }
 
 function confidenceBucketRows(records: ProbeEpisodeIndex[]): ProbeConfidenceBucket[] {
@@ -1742,6 +1965,281 @@ function familyLabel(artifactType: string): string {
   return labels[artifactType] ?? artifactType.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
 }
 
+function defaultProbeReadout(
+  readouts: ProbeStudyReadout[],
+  study?: ProbeStudy,
+): ProbeStudyReadout | undefined {
+  if (!readouts.length) {
+    return undefined;
+  }
+  const primary = readouts.filter((readout) =>
+    readout.is_primary_target || (study?.target && readout.target === study.target),
+  );
+  const candidates = primary.length ? primary : readouts;
+  return candidates.find((readout) => readout.is_selected_layer && readout.is_test_split)
+    ?? candidates.find((readout) => readout.is_selected_layer && readout.is_selection_split)
+    ?? candidates.find((readout) => readout.is_test_split)
+    ?? candidates[0];
+}
+
+function probeReadoutPayloadMatches(
+  payload: ProbeStudyEpisodesResponse | undefined,
+  readout: ProbeStudyReadout | undefined,
+): boolean {
+  if (!payload || !readout) {
+    return false;
+  }
+  return String(payload.target ?? "") === String(readout.target ?? "")
+    && probeReadoutLayerKey(payload.layer) === probeReadoutLayerKey(readout.layer)
+    && String(payload.split ?? "") === String(readout.split ?? "");
+}
+
+function probeReadoutMetricChips(
+  readout: ProbeStudyReadout,
+  summary?: ProbeStudyEpisodeSummary,
+  episodeTotal?: number,
+): ProbeLensMetricChip[] {
+  const score = readout.balanced_accuracy;
+  const gap = readout.train_gap_balanced_accuracy;
+  const episodeCount = summary?.episode_count ?? episodeTotal;
+  return [
+    {
+      detail: `${probeReadoutLayerLabel(readout.layer)} · ${probeReadoutSplitLabel(readout)}`,
+      label: "Balanced acc.",
+      tone: probeReadoutScoreTone(score),
+      value: probeReadoutScoreLabel(readout),
+    },
+    {
+      detail: "policy-call rows in this readout",
+      label: "Policy calls",
+      tone: readout.policy_call_count ? "credible" : "unknown",
+      value: formatReadoutInteger(readout.policy_call_count ?? readout.row_count),
+    },
+    {
+      detail: "unique episodes in the current readout set",
+      label: "Episodes",
+      tone: episodeCount ? "credible" : "unknown",
+      value: formatReadoutInteger(episodeCount),
+    },
+    {
+      detail: "classes with labels for this target",
+      label: "Classes",
+      tone: readout.class_count ? "unknown" : "debug",
+      value: formatReadoutInteger(readout.class_count),
+    },
+    {
+      detail: "train balanced accuracy minus this split score",
+      label: "Train gap",
+      tone: typeof gap === "number" && Number.isFinite(gap) && gap > 0.2 ? "limited" : "unknown",
+      value: typeof gap === "number" && Number.isFinite(gap) ? gap.toFixed(3) : "-",
+    },
+  ];
+}
+
+function probeReadoutSplitChartRows(
+  readouts: ProbeStudyReadout[],
+  selectedReadout: ProbeStudyReadout,
+  summary?: ProbeStudyEpisodeSummary,
+): Array<{
+  detail?: string;
+  highConfWrong: number | null;
+  id: "test" | "train" | "validation";
+  label: string;
+  scored: number;
+  total: number;
+  wrong: number | null;
+}> {
+  const layer = probeReadoutLayerKey(selectedReadout.layer);
+  const bySplit = new Map(
+    readouts
+      .filter((readout) =>
+        readout.target === selectedReadout.target
+        && probeReadoutLayerKey(readout.layer) === layer,
+      )
+      .map((readout) => [readout.split_category, readout]),
+  );
+  return (["train", "validation", "test"] as const).map((split) => {
+    const readout = bySplit.get(split);
+    const splitCounts = readout?.split ? summary?.split_counts?.[readout.split] : undefined;
+    const total = splitCounts?.policy_call_count ?? readout?.policy_call_count ?? readout?.row_count ?? 0;
+    const wrong = splitCounts?.wrong ?? null;
+    const highConfWrong = splitCounts?.high_conf_wrong ?? null;
+    return {
+      detail: readout ? `balanced acc ${probeReadoutScoreLabel(readout)}` : "no readout",
+      highConfWrong,
+      id: split,
+      label: PROBE_SPLIT_FILTER_LABELS[split],
+      scored: total,
+      total,
+      wrong,
+    };
+  });
+}
+
+function probeSplitBarSegments(row: ProbeSummarySplitRow): {
+  correctLeft: number;
+  correctWidth: number;
+  highConfWrongLeft: number;
+  highConfWrongWidth: number;
+  wrongLeft: number;
+  wrongWidth: number;
+} {
+  const total = Math.max(0, row.total);
+  const scored = Math.min(Math.max(0, row.scored), total);
+  const wrong = Math.min(Math.max(0, row.wrong ?? 0), scored);
+  const highConfWrong = Math.min(Math.max(0, row.highConfWrong ?? 0), wrong);
+  const wrongOnly = Math.min(Math.max(0, wrong - highConfWrong), scored - highConfWrong);
+  const correct = Math.max(0, scored - wrongOnly - highConfWrong);
+  const correctWidth = percentOf(correct, row.total);
+  const wrongWidth = percentOf(wrongOnly, row.total);
+  const highConfWrongWidth = percentOf(highConfWrong, row.total);
+  return {
+    correctLeft: 0,
+    correctWidth,
+    wrongLeft: correctWidth,
+    wrongWidth,
+    highConfWrongLeft: correctWidth + wrongWidth,
+    highConfWrongWidth,
+  };
+}
+
+function probeReadoutResultChartRows(summary?: ProbeStudyEpisodeSummary): Array<{
+  active: (activePredictionFilter: string) => boolean;
+  apply: (
+    onPredictionFilterChange: (value: string) => void,
+    onCohortPresetChange: (preset: ProbeCohortPreset) => void,
+  ) => void;
+  id: string;
+  label: string;
+  total: number;
+  value: number;
+}> {
+  const total = Math.max(summary?.episode_count ?? 0, 1);
+  const scored = summary?.scored ?? 0;
+  const wrong = summary?.wrong ?? 0;
+  const highConfidence = summary?.high_confidence ?? 0;
+  const highConfWrong = summary?.high_conf_wrong ?? 0;
+  const unscored = summary?.unscored ?? 0;
+  return [
+    {
+      active: (active) => active === "scored",
+      apply: (onPredictionFilterChange) => onPredictionFilterChange("scored"),
+      id: "scored",
+      label: "Scored",
+      total,
+      value: scored,
+    },
+    {
+      active: (active) => active === "incorrect",
+      apply: (onPredictionFilterChange) => onPredictionFilterChange("incorrect"),
+      id: "wrong",
+      label: "Wrong",
+      total,
+      value: wrong,
+    },
+    {
+      active: () => false,
+      apply: (_onPredictionFilterChange, onCohortPresetChange) => onCohortPresetChange("confident_wrong"),
+      id: "confident_wrong",
+      label: "High-conf wrong",
+      total,
+      value: highConfWrong,
+    },
+    {
+      active: (active) => active === "high_confidence",
+      apply: (onPredictionFilterChange) => onPredictionFilterChange("high_confidence"),
+      id: "high_confidence",
+      label: "High confidence",
+      total,
+      value: highConfidence,
+    },
+    {
+      active: (active) => active === "unscored",
+      apply: (onPredictionFilterChange) => onPredictionFilterChange("unscored"),
+      id: "unscored",
+      label: "Unscored",
+      total,
+      value: unscored,
+    },
+  ];
+}
+
+function probeReadoutForSplitCategory(
+  readouts: ProbeStudyReadout[],
+  current: ProbeStudyReadout,
+  splitCategory: string,
+): ProbeStudyReadout | undefined {
+  if (splitCategory === "all") {
+    return current;
+  }
+  const currentLayer = probeReadoutLayerKey(current.layer);
+  return readouts.find((readout) =>
+    readout.target === current.target
+    && probeReadoutLayerKey(readout.layer) === currentLayer
+    && readout.split_category === splitCategory,
+  ) ?? readouts.find((readout) =>
+    readout.target === current.target && readout.split_category === splitCategory,
+  );
+}
+
+function probeReadoutOptionLabel(readout: ProbeStudyReadout): string {
+  return [
+    probeReadoutTargetLabel(readout.target),
+    probeReadoutLayerLabel(readout.layer),
+    probeReadoutSplitLabel(readout),
+    `balanced acc ${probeReadoutScoreLabel(readout)}`,
+  ].filter(Boolean).join(" · ");
+}
+
+function probeReadoutTargetLabel(target: string): string {
+  const labels: Record<string, string> = {
+    active_manipulated_object: "Active manipulated object",
+    active_receptacle_object: "Active receptacle",
+    next_manipulated_object: "Next manipulated object",
+    task_phase: "Task phase",
+  };
+  return labels[target] ?? target.replaceAll("_", " ");
+}
+
+function probeReadoutLayerLabel(layer: ProbeStudyReadout["layer"]): string {
+  return layer === null || layer === undefined || layer === "" ? "all layers" : `layer ${layer}`;
+}
+
+function probeReadoutLayerKey(layer: ProbeStudyReadout["layer"]): string {
+  return layer === null || layer === undefined ? "" : String(layer);
+}
+
+function probeReadoutSplitLabel(readout: ProbeStudyReadout): string {
+  const category = readout.split_category ? PROBE_SPLIT_FILTER_LABELS[readout.split_category] ?? readout.split_category : "";
+  if (!readout.split) {
+    return category || "split missing";
+  }
+  return category ? `${category} / ${readout.split}` : readout.split;
+}
+
+function probeReadoutScoreLabel(readout: ProbeStudyReadout): string {
+  return typeof readout.balanced_accuracy === "number" && Number.isFinite(readout.balanced_accuracy)
+    ? readout.balanced_accuracy.toFixed(3)
+    : "-";
+}
+
+function probeReadoutScoreTone(score: ProbeStudyReadout["balanced_accuracy"]): ProbeLensMetricChip["tone"] {
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    return "unknown";
+  }
+  if (score >= 0.7) {
+    return "credible";
+  }
+  if (score >= 0.45) {
+    return "limited";
+  }
+  return "danger";
+}
+
+function formatReadoutInteger(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? String(Math.round(value)) : "-";
+}
+
 function discoveryEpisodePayload(value: unknown): DiscoveryArtifactEpisodesResponse | undefined {
   if (
     value &&
@@ -1751,6 +2249,19 @@ function discoveryEpisodePayload(value: unknown): DiscoveryArtifactEpisodesRespo
     "available" in value
   ) {
     return value as DiscoveryArtifactEpisodesResponse;
+  }
+  return undefined;
+}
+
+function probeStudyEpisodePayload(value: unknown): ProbeStudyEpisodesResponse | undefined {
+  if (
+    value &&
+    typeof value === "object" &&
+    "artifact_id" in value &&
+    "available" in value &&
+    "episodes" in value
+  ) {
+    return value as ProbeStudyEpisodesResponse;
   }
   return undefined;
 }

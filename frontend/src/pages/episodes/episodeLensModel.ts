@@ -28,7 +28,7 @@ import {
   humanizeProbeText,
   modelLocusDisplayLabel,
   probeEvidenceDisplaySpec,
-} from "../probeDisplayCopy";
+} from "../probeDisplayCopy.ts";
 import type { ProbeLayerRef } from "./shared";
 
 export type LensRankingMode = "probe_contribution" | "raw_activation";
@@ -248,7 +248,7 @@ export function probeEvidenceFeatureRows(
     direction: row.sign ?? "unknown",
     index: featureFromContributionKey(row.key) ?? row.rank,
     label: contributionFeatureLabel(row.key, row.rank),
-    title: "Probe-weighted contribution",
+    title: contributionCaveat(row.claim_level),
     value: row.value,
   }));
 }

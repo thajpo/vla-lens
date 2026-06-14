@@ -1,7 +1,7 @@
 import type { EpisodeLensView } from "../types/dataset";
-import { researchCopy } from "../copy/researchCopy";
+import { researchCopy } from "../copy/researchCopy.ts";
 import type { EvidenceClaimLevel, ModelLocusRef, ProbeEvidenceBundle } from "../types/probeEvidence";
-import { primitivesByKind } from "../types/probeEvidence";
+import { primitivesByKind } from "../types/probeEvidence.ts";
 
 export type ProbeDisplayField = {
   detail?: string;
@@ -70,7 +70,7 @@ export function contributionCaveat(claimLevel?: EvidenceClaimLevel | string | nu
   if (claimLevel === "grouped_model_locus") {
     return "grouped activation";
   }
-  return "unlabeled feature";
+  return "not a semantic feature claim";
 }
 
 export function contributionFeatureLabel(value: string | null | undefined, fallback: number): string {
@@ -109,6 +109,7 @@ export function modelLocusDisplayLabel(locus?: ModelLocusRef | null): string {
 }
 
 export function humanizeProbeText(value: string): string {
+  const original = String(value ?? "").trim();
   const cleaned = value
     .replace(/^probe for\s+/i, "")
     .replace(/^selected\s+/i, "")
@@ -118,7 +119,10 @@ export function humanizeProbeText(value: string): string {
   if (!cleaned) {
     return "";
   }
-  return cleaned.replace(/\b\w/g, (letter) => letter.toUpperCase());
+  if (/\s/.test(original) && !/[._-]/.test(original)) {
+    return cleaned;
+  }
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1).toLowerCase();
 }
 
 export function nonRepeatingDetail(value: string, detail?: string | null): string {

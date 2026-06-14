@@ -587,7 +587,7 @@ export function defaultProbePanelSpecs(): PanelSpec[] {
       consumes: ["model_locus"],
       requires_capabilities: ["model_locus_view"],
       requires_geometry: { locus_kind: "model_locus" },
-      unavailable_copy: "Model locus is unavailable for this probe run.",
+      unavailable_copy: "Activation source is unavailable for this probe run.",
     },
     {
       panel_id: "failure_cases",

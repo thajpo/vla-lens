@@ -34,6 +34,8 @@ import type {
   PromptAttentionResponse,
   ProbeEvidenceResponse,
   ProbeIndexResponse,
+  ProbeStudyEpisodesResponse,
+  ProbeStudyResponse,
   NumericSeriesResponse,
   PolicyCallsResponse,
   SelectedPatch,
@@ -61,6 +63,15 @@ export type DiscoveryArtifactEpisodeParams = EpisodePageParams & {
   prediction?: string;
   rank_by?: string;
   split?: string;
+};
+
+export type ProbeStudyEpisodeParams = EpisodePageParams & {
+  cohort_preset?: string;
+  layer?: number | string | null;
+  prediction?: string;
+  split?: string | null;
+  split_category?: string | null;
+  target?: string | null;
 };
 
 export type DiscoveryArtifactTargetParams = {
@@ -205,6 +216,28 @@ export function fetchEpisodeProbes(traceId: string): Promise<EpisodeProbesRespon
 
 export function fetchProbeIndex(): Promise<ProbeIndexResponse> {
   return getJson<ProbeIndexResponse>("/api/probe-index", freshJsonInit());
+}
+
+export function fetchProbeStudies(): Promise<ProbeStudyResponse> {
+  return getJson<ProbeStudyResponse>("/api/probe-studies", freshJsonInit());
+}
+
+export function fetchProbeStudyEpisodes(
+  artifactId: string,
+  params: ProbeStudyEpisodeParams = {},
+  signal?: AbortSignal,
+): Promise<ProbeStudyEpisodesResponse> {
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value === undefined || value === null || value === "" || value === "all") {
+      continue;
+    }
+    search.set(key, String(value));
+  }
+  return getJson<ProbeStudyEpisodesResponse>(
+    `/api/probe-studies/${encodeURIComponent(artifactId)}/episodes?${search.toString()}`,
+    freshJsonInit(signal),
+  );
 }
 
 export function fetchProbeEvidence(

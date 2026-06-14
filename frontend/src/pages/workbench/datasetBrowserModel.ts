@@ -1,5 +1,5 @@
 import type { ArtifactRecord, DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex } from "../../types/dataset";
-import { researchCopy } from "../../copy/researchCopy";
+import { researchCopy } from "../../copy/researchCopy.ts";
 import type {
   ContributionEvidence,
   LensProvenanceEvidence,
@@ -16,7 +16,7 @@ import {
   contributionCaveat,
   humanizeProbeText,
   probeEvidenceDisplaySpec,
-} from "../probeDisplayCopy";
+} from "../probeDisplayCopy.ts";
 
 export type CoverageRow = {
   benchmark: string;
@@ -1056,7 +1056,7 @@ export function probeTrustDetail(stats: ProbeReviewStats | undefined): string {
 
 export function probeScoredCohortDetail(stats: ProbeReviewStats, rankedEpisodeTotal: number): string {
   if (rankedEpisodeTotal > 0 && rankedEpisodeTotal !== stats.scored) {
-    return `${stats.scored} scored / ${rankedEpisodeTotal} episodes`;
+    return `${stats.scored} scored / ${rankedEpisodeTotal} ranked episodes`;
   }
   return `${stats.scored} scored episodes`;
 }

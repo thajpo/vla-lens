@@ -109,6 +109,109 @@ export type ProbeIndexResponse = {
   split_source?: string | null;
 };
 
+export type ProbeStudyReadout = {
+  readout_id: string;
+  target: string;
+  status: string;
+  source: string;
+  layer?: number | string | null;
+  split?: string | null;
+  split_category?: string | null;
+  row_count?: number | null;
+  policy_call_count?: number | null;
+  class_count?: number | null;
+  balanced_accuracy?: number | null;
+  accuracy?: number | null;
+  macro_f1?: number | null;
+  top1_accuracy?: number | null;
+  top2_accuracy?: number | null;
+  top3_accuracy?: number | null;
+  train_balanced_accuracy?: number | null;
+  train_gap_balanced_accuracy?: number | null;
+  reason?: string | null;
+  is_primary_target?: boolean;
+  is_selected_layer?: boolean;
+  is_selection_split?: boolean;
+  is_test_split?: boolean;
+};
+
+export type ProbeStudyControl = {
+  kind: string;
+  label: string;
+  split?: string | null;
+  runs?: number | null;
+  selected_layer?: number | string | null;
+  real_score?: number | null;
+  null_score_mean?: number | null;
+  null_score_std?: number | null;
+  p_value?: number | null;
+  selected_layer_counts?: Record<string, number>;
+};
+
+export type ProbeStudy = {
+  artifact_id: string;
+  artifact_type: "probe_suite" | string;
+  name: string;
+  created_utc?: string | null;
+  target?: string | null;
+  question_label?: string | null;
+  prediction?: string | null;
+  input?: string | null;
+  output?: string | null;
+  objective?: string | null;
+  diagnostics_available: boolean;
+  source: "diagnostics" | "artifact" | string;
+  counts: {
+    readout_count: number;
+    skipped_readout_count: number;
+    target_count?: number | null;
+    layer_count?: number | null;
+    feature_rows?: number | null;
+    policy_call_count?: number | null;
+    episode_count?: number | null;
+    class_count?: number | null;
+    null_run_count?: number | null;
+    null_eval_row_count?: number | null;
+    split_policy_call_counts?: Record<string, number>;
+  };
+  summary: Record<string, unknown>;
+  readouts: ProbeStudyReadout[];
+  skipped_readouts: ProbeStudyReadout[];
+  controls: ProbeStudyControl[];
+  lead_time: Record<string, unknown>[];
+  per_class: Record<string, unknown>[];
+  confusion: Record<string, unknown>[];
+  class_support: Record<string, unknown>[];
+  error_examples: Record<string, unknown>[];
+};
+
+export type ProbeStudyResponse = {
+  studies: ProbeStudy[];
+  total: number;
+};
+
+export type ProbeStudyEpisodeSummary = {
+  policy_call_count: number;
+  episode_count: number;
+  scored: number;
+  unscored: number;
+  correct: number;
+  wrong: number;
+  high_confidence: number;
+  high_conf_wrong: number;
+  split_counts?: Record<
+    string,
+    {
+      policy_call_count: number;
+      scored: number;
+      correct: number;
+      wrong: number;
+      high_confidence: number;
+      high_conf_wrong: number;
+    }
+  >;
+};
+
 export type EpisodeFacetValue = {
   value: string;
   count: number;
@@ -122,6 +225,16 @@ export type EpisodePageResponse = {
   next_offset?: number | null;
   facets: Record<string, EpisodeFacetValue[]>;
   sort: string;
+};
+
+export type ProbeStudyEpisodesResponse = EpisodePageResponse & {
+  artifact_id: string;
+  available: boolean;
+  reason: string;
+  target?: string | null;
+  layer?: number | string | null;
+  split?: string | null;
+  summary?: ProbeStudyEpisodeSummary;
 };
 
 export type EpisodeNeighborsResponse = {

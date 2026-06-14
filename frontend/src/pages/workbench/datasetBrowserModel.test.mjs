@@ -87,7 +87,7 @@ test("probe scored cohort detail distinguishes compatible rows from ranked datas
       },
       1000,
     ),
-    "577 compatible scored / 1000 ranked episodes",
+    "577 scored / 1000 ranked episodes",
   );
 });
 
