@@ -692,3 +692,33 @@ def test_fastapi_openapi_includes_dashboard_routes(tmp_path):
     assert "/api/health" in payload["paths"]
     assert "/api/dataset" in payload["paths"]
     assert "/api/lens-arrays/{array_id}/slice" in payload["paths"]
+
+
+def test_dashboard_state_cached_payload_reads_signature_inside_lock(tmp_path):
+    state = state_api.DashboardState.__new__(state_api.DashboardState)
+    state.root = tmp_path
+    state.dataset = object()
+    state.dataset_signature = (1, 1)
+    state.payload_cache = {"dataset": ((1, 1), {"stale": True})}
+    state.dataset_lock = _MutatingLock(state, signature=(2, 2))
+
+    payload = state.cached_payload(
+        "dataset",
+        lambda dataset: {"fresh": dataset is state.dataset},
+    )
+
+    assert payload == {"fresh": True}
+    assert state.payload_cache["dataset"] == ((2, 2), {"fresh": True})
+
+
+class _MutatingLock:
+    def __init__(self, state: state_api.DashboardState, *, signature: tuple[int, int]):
+        self.state = state
+        self.signature = signature
+
+    def __enter__(self):
+        self.state.dataset_signature = self.signature
+        return self
+
+    def __exit__(self, exc_type, exc, traceback):
+        return False

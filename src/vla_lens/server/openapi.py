@@ -11,8 +11,6 @@ OPENAPI_URL = "/api/openapi.json"
 DOCS_URL = "/api/docs"
 REDOC_URL = "/api/redoc"
 
-REDOC_URL = "/api/redoc"
-
 API_DESCRIPTION = """
 Local dashboard API for one VLA Lens dataset root.
 

@@ -449,7 +449,7 @@ def _failure_case_evidence(
     correct = _correct_series(rows)
     if correct is None:
         return ()
-    wrong = rows.loc[correct == False].copy()  # noqa: E712
+    wrong = rows.loc[correct.eq(False)].copy()
     if score_column is not None and not wrong.empty:
         wrong["_score"] = pd.to_numeric(wrong[score_column], errors="coerce")
         wrong = wrong.sort_values("_score", ascending=False)
@@ -684,16 +684,22 @@ def _has_model_locus(
     method: Mapping[str, Any],
 ) -> bool:
     selector = _selector_from_method(method)
-    return _has_non_null(rows, "model_site_id") or _has_non_null(rows, "feature") or bool(
-        _optional_str(metrics.get("best_feature"))
-        or _optional_str(selector.get("module"))
-        or _first_int(selector.get("layers")) is not None
+    return (
+        _has_non_null(rows, "model_site_id")
+        or _has_non_null(rows, "feature")
+        or bool(
+            _optional_str(metrics.get("best_feature"))
+            or _optional_str(selector.get("module"))
+            or _first_int(selector.get("layers")) is not None
+        )
     )
 
 
 def _has_labels(rows: pd.DataFrame) -> bool:
-    return _has_non_null(rows, "actual") or _has_non_null(rows, "target_value") or _has_non_null(
-        rows, "correct"
+    return (
+        _has_non_null(rows, "actual")
+        or _has_non_null(rows, "target_value")
+        or _has_non_null(rows, "correct")
     )
 
 

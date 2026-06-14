@@ -18,6 +18,7 @@ from vla_lens.server.indexed import (
     _query_value,
     _read_table,
 )
+from vla_lens.table_io import read_optional_parquet
 from vla_lens.traces import TraceDataset
 
 READOUT_COLUMNS = [
@@ -170,9 +171,8 @@ def probe_study_episodes_payload(
             "This probe artifact does not include diagnostic episode rows.",
         )
 
-    primary_target = (
-        _optional_text(summary.get("target"))
-        or _optional_text(_mapping(artifact.get("metrics")).get("target"))
+    primary_target = _optional_text(summary.get("target")) or _optional_text(
+        _mapping(artifact.get("metrics")).get("target")
     )
     if "target" not in frame.columns:
         if target and primary_target and target != primary_target:
@@ -246,9 +246,7 @@ def _study_payload(
     summary = summary or {}
     tables = tables or _diagnostics(dataset, artifact_id, artifact)[1]
     primary_target = (
-        primary_target
-        if primary_target is not None
-        else _primary_target(summary, metrics, display)
+        primary_target if primary_target is not None else _primary_target(summary, metrics, display)
     )
     target = target if target is not None else primary_target
     study_id = _study_id(artifact_id, target)
@@ -295,8 +293,7 @@ def _study_payload(
         "input": _input_label(selector, method),
         "output": _output_label(summary, metrics),
         "objective": _objective_label(method),
-        "diagnostics_available": any(not table.empty for table in tables.values())
-        or bool(summary),
+        "diagnostics_available": any(not table.empty for table in tables.values()) or bool(summary),
         "source": source,
         "counts": _counts(
             summary,
@@ -374,11 +371,11 @@ def _filter_readout_rows(frame: pd.DataFrame, query: Mapping[str, list[str]]) ->
         correct = correct.loc[out.index]
         confidence = confidence.loc[out.index]
     elif prediction == "correct":
-        out = out.loc[correct == True]  # noqa: E712
+        out = out.loc[correct.eq(True)]
         correct = correct.loc[out.index]
         confidence = confidence.loc[out.index]
     elif prediction == "incorrect":
-        out = out.loc[correct == False]  # noqa: E712
+        out = out.loc[correct.eq(False)]
         correct = correct.loc[out.index]
         confidence = confidence.loc[out.index]
     elif prediction == "high_confidence":
@@ -398,14 +395,14 @@ def _filter_readout_rows(frame: pd.DataFrame, query: Mapping[str, list[str]]) ->
     if preset == "needs_review":
         out = out.loc[
             split_categories.isin(["validation", "test"])
-            | (correct == False)  # noqa: E712
+            | correct.eq(False)
             | confidence.isna()
             | (confidence < 0.65)
         ]
     elif preset == "heldout_wrong":
-        out = out.loc[split_categories.isin(["validation", "test"]) & (correct == False)]  # noqa: E712
+        out = out.loc[split_categories.isin(["validation", "test"]) & correct.eq(False)]
     elif preset == "confident_wrong":
-        out = out.loc[(correct == False) & (confidence >= 0.8)]  # noqa: E712
+        out = out.loc[correct.eq(False) & (confidence >= 0.8)]
     elif preset == "heldout_scored":
         out = out.loc[split_categories.isin(["validation", "test"]) & available]
     elif preset == "train_sanity":
@@ -498,13 +495,13 @@ def _readout_episode_summary(
         errors="coerce",
     )
     available = representatives.get("predicted", pd.Series(dtype=object)).map(_clean_scalar).notna()
-    wrong = correct == False  # noqa: E712
+    wrong = correct.eq(False)
     return {
         "policy_call_count": int(len(scoped_rows)),
         "episode_count": int(len(representatives)),
         "scored": int(available.sum()),
         "unscored": int((~available).sum()),
-        "correct": int((correct == True).sum()),  # noqa: E712
+        "correct": int(correct.eq(True).sum()),
         "wrong": int(wrong.sum()),
         "high_confidence": int((confidence >= 0.8).sum()),
         "high_conf_wrong": int((wrong & (confidence >= 0.8)).sum()),
@@ -540,11 +537,11 @@ def _split_summary_counts(rows: pd.DataFrame) -> dict[str, dict[str, int]]:
             errors="coerce",
         )
         available = group.get("predicted", pd.Series(dtype=object)).map(_clean_scalar).notna()
-        wrong = correct == False  # noqa: E712
+        wrong = correct.eq(False)
         out[split_name] = {
             "policy_call_count": int(len(group)),
             "scored": int(available.sum()),
-            "correct": int((correct == True).sum()),  # noqa: E712
+            "correct": int(correct.eq(True).sum()),
             "wrong": int(wrong.sum()),
             "high_confidence": int((confidence >= 0.8).sum()),
             "high_conf_wrong": int((wrong & (confidence >= 0.8)).sum()),
@@ -592,7 +589,9 @@ def _readout_episode_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "probe_split_category": row.get("split_category"),
         "probe_confidence": row.get("confidence"),
         "probe_correct": row.get("correct"),
-        "probe_correct_rate": 1.0 if _clean_bool(row.get("correct")) is True else 0.0
+        "probe_correct_rate": 1.0
+        if _clean_bool(row.get("correct")) is True
+        else 0.0
         if _clean_bool(row.get("correct")) is False
         else None,
         "probe_actual": row.get("actual"),
@@ -609,9 +608,7 @@ def _readout_feature_label(row: Mapping[str, Any]) -> str:
     token_space = _optional_text(row.get("token_space_id"))
     layer = _optional_text(row.get("layer"))
     pieces = [
-        piece
-        for piece in [model_site, token_space, f"layer {layer}" if layer else ""]
-        if piece
+        piece for piece in [model_site, token_space, f"layer {layer}" if layer else ""] if piece
     ]
     return " / ".join(pieces)
 
@@ -703,12 +700,7 @@ def _artifact_dir(dataset: TraceDataset, artifact_id: str, artifact: Mapping[str
 
 
 def _read_parquet(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame()
-    try:
-        return pd.read_parquet(path)
-    except Exception:
-        return pd.DataFrame()
+    return read_optional_parquet(path, context="probe diagnostics")
 
 
 def _primary_target(
@@ -716,12 +708,7 @@ def _primary_target(
     metrics: Mapping[str, Any],
     display: Mapping[str, Any],
 ) -> str:
-    return str(
-        summary.get("target")
-        or metrics.get("target")
-        or display.get("target")
-        or ""
-    )
+    return str(summary.get("target") or metrics.get("target") or display.get("target") or "")
 
 
 def _study_targets(tables: Mapping[str, pd.DataFrame], primary_target: str) -> list[str]:
@@ -913,7 +900,7 @@ def _error_examples(
         out["target"] = target
     if "correct" in out:
         correct = out["correct"].map(_clean_bool)
-        out["_wrong"] = correct == False  # noqa: E712
+        out["_wrong"] = correct.eq(False)
     else:
         out["_wrong"] = False
     out["_heldout"] = out.get("split", pd.Series(dtype=object)).astype(str) != "train"

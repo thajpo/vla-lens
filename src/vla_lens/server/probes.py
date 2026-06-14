@@ -18,6 +18,7 @@ from vla_lens.server.common import (
     _optional_int,
     _optional_text,
 )
+from vla_lens.table_io import read_optional_parquet
 from vla_lens.traces import TraceDataset
 
 
@@ -86,6 +87,7 @@ def _episode_interactions_payload(
         "objects": objects,
     }
 
+
 def _latest_interaction_metrics_artifact(dataset: TraceDataset) -> LensArtifact | None:
     table = dataset.artifact_index
     if table.empty or "artifact_type" not in table:
@@ -100,6 +102,7 @@ def _latest_interaction_metrics_artifact(dataset: TraceDataset) -> LensArtifact 
     except (FileNotFoundError, KeyError, ValueError):
         return None
 
+
 def _interaction_metrics_table(
     dataset: TraceDataset,
     artifact: LensArtifact,
@@ -110,12 +113,7 @@ def _interaction_metrics_table(
     if not relative_path:
         return pd.DataFrame()
     path = _artifact_output_path(dataset, str(relative_path))
-    if not path.exists():
-        return pd.DataFrame()
-    try:
-        return pd.read_parquet(path)
-    except Exception:
-        return pd.DataFrame()
+    return read_optional_parquet(path, context=f"interaction metrics {key}")
 
 
 def _artifact_output_path(dataset: TraceDataset, relative_path: str) -> Path:
@@ -162,6 +160,7 @@ def _probe_index_payload(dataset: TraceDataset) -> dict[str, Any]:
         "split_source": "probe_splits.csv" if split_sidecar else None,
     }
 
+
 def _probe_index_artifact_payload(
     dataset: TraceDataset,
     artifact_id: str,
@@ -178,9 +177,11 @@ def _probe_index_artifact_payload(
     split_sidecar = (
         split_sidecar if split_sidecar is not None else _probe_split_sidecar(dataset.root)
     )
-    trace_ids = list(trace_ids) if trace_ids is not None else [
-        bundle.manifest.trace_id for bundle in dataset.bundles
-    ]
+    trace_ids = (
+        list(trace_ids)
+        if trace_ids is not None
+        else [bundle.manifest.trace_id for bundle in dataset.bundles]
+    )
     predictions = _probe_prediction_table(dataset, artifact)
     saved_predictions = _saved_probe_prediction_tables(dataset, artifact)
     if not saved_predictions.empty:
@@ -208,13 +209,14 @@ def _probe_index_artifact_payload(
         "by_trace": by_trace,
     }
 
+
 def _probe_split_sidecar(root: Path) -> dict[str, dict[str, Any]]:
     path = root / "probe_splits.csv"
     if not path.exists():
         return {}
     try:
         frame = pd.read_csv(path)
-    except Exception:
+    except (OSError, pd.errors.ParserError, UnicodeDecodeError):
         return {}
     if frame.empty or "trace_id" not in frame:
         return {}
@@ -228,21 +230,20 @@ def _probe_split_sidecar(root: Path) -> dict[str, dict[str, Any]]:
         for row in frame.to_dict("records")
     }
 
+
 def _saved_probe_prediction_tables(dataset: TraceDataset, artifact: LensArtifact) -> pd.DataFrame:
     root = dataset.root / "workbench" / "episode_probe_predictions" / artifact.artifact_id
     if not root.exists():
         return pd.DataFrame()
     frames: list[pd.DataFrame] = []
     for path in sorted(root.glob("*.parquet")):
-        try:
-            frame = pd.read_parquet(path)
-        except Exception:
-            continue
+        frame = read_optional_parquet(path, context="saved probe prediction")
         if not frame.empty:
             frames.append(frame)
     if not frames:
         return pd.DataFrame()
     return pd.concat(frames, ignore_index=True, sort=False)
+
 
 def _probe_index_by_trace(
     trace_ids: Sequence[str],
@@ -287,6 +288,7 @@ def _probe_index_by_trace(
         }
     return by_trace
 
+
 def _best_probe_rows(predictions: pd.DataFrame, artifact: LensArtifact) -> pd.DataFrame:
     if predictions.empty:
         return predictions
@@ -303,6 +305,7 @@ def _best_probe_rows(predictions: pd.DataFrame, artifact: LensArtifact) -> pd.Da
             rows = feature_rows
     return rows
 
+
 def _probe_index_split(sidecar: Mapping[str, Any], rows: pd.DataFrame) -> str:
     sidecar_split = sidecar.get("split")
     if not _is_missing_scalar(sidecar_split):
@@ -313,6 +316,7 @@ def _probe_index_split(sidecar: Mapping[str, Any], rows: pd.DataFrame) -> str:
             if not _is_missing_scalar(value):
                 return str(value)
     return ""
+
 
 def _probe_split_category(split: str) -> str:
     text = str(split or "").strip().lower().replace("-", "_")
@@ -328,12 +332,14 @@ def _probe_split_category(split: str) -> str:
         return "validation"
     return "unknown"
 
+
 def _probe_index_split_summary(by_trace: Mapping[str, Mapping[str, Any]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for item in by_trace.values():
         category = str(item.get("split_category") or "unknown")
         counts[category] = counts.get(category, 0) + 1
     return dict(sorted(counts.items()))
+
 
 def _probe_index_prediction_summary(by_trace: Mapping[str, Mapping[str, Any]]) -> dict[str, int]:
     summary = {"scored": 0, "unscored": 0, "correct": 0, "incorrect": 0, "unknown": 0}
@@ -350,6 +356,7 @@ def _probe_index_prediction_summary(by_trace: Mapping[str, Mapping[str, Any]]) -
         else:
             summary["unknown"] += 1
     return summary
+
 
 def _probe_prediction_table(dataset: TraceDataset, artifact: LensArtifact) -> pd.DataFrame:
     from vla_lens.probes.score_cache import read_probe_score_cache
@@ -368,12 +375,8 @@ def _probe_prediction_table(dataset: TraceDataset, artifact: LensArtifact) -> pd
     path = dataset.root / str(relative_path)
     if not path.exists():
         path = dataset._dataset_artifact_root() / str(relative_path)
-    if not path.exists():
-        return pd.DataFrame()
-    try:
-        return pd.read_parquet(path)
-    except Exception:
-        return pd.DataFrame()
+    return read_optional_parquet(path, context="probe prediction")
+
 
 def _interaction_episode_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     target_objects = _json_parse(row.get("target_objects"))
@@ -396,6 +399,7 @@ def _interaction_episode_payload(row: Mapping[str, Any]) -> dict[str, Any]:
         "task_verb": _optional_text(row.get("task_verb")),
     }
 
+
 def _interaction_quality_payload(row: Mapping[str, Any]) -> dict[str, bool]:
     keys = [
         "target_parse_failed",
@@ -406,6 +410,7 @@ def _interaction_quality_payload(row: Mapping[str, Any]) -> dict[str, bool]:
         "ambiguous_first_lifted",
     ]
     return {key: _optional_bool(row.get(key)) for key in keys}
+
 
 def _interaction_object_payload(row: Mapping[str, Any]) -> dict[str, Any]:
     return {

@@ -19,6 +19,7 @@ from vla_lens.dataset.index import (
     PROBE_PREDICTIONS,
 )
 from vla_lens.server.common import _json_parse, _json_scalar, _jsonable
+from vla_lens.table_io import read_optional_parquet
 
 MAX_EPISODE_LIMIT = 500
 DEFAULT_EPISODE_LIMIT = 100
@@ -202,9 +203,7 @@ def counterfactual_pairs_from_index(root: Path) -> dict[str, Any]:
         counterfactual = metadata.get("counterfactual")
         counterfactual = dict(counterfactual) if isinstance(counterfactual, Mapping) else {}
         group_id = str(
-            counterfactual.get("group_id")
-            or metadata.get("counterfactual_group_id")
-            or ""
+            counterfactual.get("group_id") or metadata.get("counterfactual_group_id") or ""
         )
         if not group_id:
             continue
@@ -456,12 +455,7 @@ def _value_counts(frame: pd.DataFrame, column: str) -> dict[str, int]:
 
 
 def _read_table(path: Path) -> pd.DataFrame:
-    if not path.exists():
-        return pd.DataFrame()
-    try:
-        return pd.read_parquet(path)
-    except Exception:
-        return pd.DataFrame()
+    return read_optional_parquet(path, context="indexed dashboard")
 
 
 def _read_index_manifest(root: Path) -> dict[str, Any]:

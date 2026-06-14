@@ -148,15 +148,11 @@ def _episode_probe_payload(artifact: Mapping[str, Any], rows: pd.DataFrame) -> d
         "target": metrics.get("target") if isinstance(metrics, Mapping) else None,
         "metrics": _jsonable(metrics if isinstance(metrics, Mapping) else {}),
         "best_result": _jsonable(
-            display.get("best_result_details")
-            if isinstance(display, Mapping)
-            else {}
+            display.get("best_result_details") if isinstance(display, Mapping) else {}
         )
         or {},
         "target_distribution": _jsonable(
-            display.get("target_distribution")
-            if isinstance(display, Mapping)
-            else {}
+            display.get("target_distribution") if isinstance(display, Mapping) else {}
         )
         or {},
         "episode_summary": summary,
@@ -189,8 +185,7 @@ def _indexed_probe_episode_summary(
         "all_cell_mean_confidence": confidence,
         "best_feature": _none_if_missing(row.get("feature"))
         or str(metrics.get("best_feature") or ""),
-        "best_model": _none_if_missing(row.get("model"))
-        or str(metrics.get("best_model") or ""),
+        "best_model": _none_if_missing(row.get("model")) or str(metrics.get("best_model") or ""),
         "best_row": best_row[0] if best_row else {},
     }
 
@@ -240,8 +235,8 @@ def _probe_prediction_summary(rows: pd.DataFrame) -> dict[str, int]:
     return {
         "scored": int(len(rows)),
         "unscored": 0,
-        "correct": int((correct == True).sum()),  # noqa: E712
-        "incorrect": int((correct == False).sum()),  # noqa: E712
+        "correct": int(correct.eq(True).sum()),
+        "incorrect": int(correct.eq(False).sum()),
         "unknown": int((correct.isna()).sum()) if hasattr(correct, "isna") else 0,
     }
 

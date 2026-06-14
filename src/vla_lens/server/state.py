@@ -66,8 +66,8 @@ class DashboardState:
         key: str,
         build: Callable[[TraceDataset], dict[str, Any]],
     ) -> dict[str, Any]:
-        signature = self.dataset_signature or _dataset_signature(self.root)
         with self.dataset_lock:
+            signature = self.dataset_signature or _dataset_signature(self.root)
             cached = self.payload_cache.get(key)
             if cached is not None and cached[0] == signature:
                 return cached[1]

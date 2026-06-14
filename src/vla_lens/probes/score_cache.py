@@ -31,6 +31,7 @@ from vla_lens.probes.workflow_targets import (
     _target_name,
 )
 from vla_lens.selectors import ActivationQuery
+from vla_lens.table_io import read_optional_parquet
 from vla_lens.traces import TraceDataset
 
 PROBE_SCORE_CACHE_DIR = Path("tables") / "probe_score_cache"
@@ -139,13 +140,10 @@ def refresh_probe_score_cache(
 
 def read_probe_score_cache(dataset: TraceDataset, artifact_id: str) -> pd.DataFrame:
     """Return the refreshable score cache table for an artifact, if present."""
-    path = probe_score_cache_path(dataset, artifact_id)
-    if not path.exists():
-        return pd.DataFrame()
-    try:
-        return pd.read_parquet(path)
-    except Exception:
-        return pd.DataFrame()
+    return read_optional_parquet(
+        probe_score_cache_path(dataset, artifact_id),
+        context=f"probe score cache {artifact_id}",
+    )
 
 
 def probe_score_cache_path(dataset: TraceDataset, artifact_id: str) -> Path:
