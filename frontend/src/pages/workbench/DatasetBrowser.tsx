@@ -41,6 +41,9 @@ import {
   PROBE_READOUT_FILTER_MODES,
   PROBE_SPLIT_FILTER_LABELS,
   canonicalProbeSplitCategory,
+  compactProbeMetricValue,
+  compactProbeLayerLabel,
+  compactProbeReadoutLabel,
   datasetCoverageRows,
   episodeBenchmark,
   episodeDatasetId,
@@ -54,19 +57,24 @@ import {
   probeEvidenceContextForEpisode,
   probeEvidenceCueForEpisode,
   probeEpisodeInspectionReason,
+  probeFamilyHoverModel,
   probeLensWorkbenchModel,
   probeRecordForEpisode,
+  probeReadoutHoverModel,
   probeResultChartRows,
   probeSplitBarSegments,
   probeSplitChartRows,
   probeSplitLabel,
+  probeTargetDisplayLabel,
   shortTrace,
   filterProbeStudyReadouts,
+  trainedProbeDisplayId,
   type ProbeCohortPreset,
   type ProbeCalibrationBucket,
   type ProbeConfusionRow,
   type ProbeLensSpec,
   type ProbeLensMetricChip,
+  type ProbeMetadataCard,
   type ProbeReadoutFilterMode,
   type ProbeSplitChartRow,
   type ProbeLensWorkbenchViewModel,
@@ -449,7 +457,7 @@ export function DatasetBrowser({
           selectedLensId={selectedLens?.lensId ?? NO_LENS_ID}
           onLensChange={selectLens}
         />
-        {selectedLens ? <span>{activeLensFamilyLabel}</span> : null}
+        {selectedLens && !selectedProbe ? <span>{activeLensFamilyLabel}</span> : null}
       </section>
 
       {selectedProbe && probeWorkbench ? (
@@ -905,9 +913,14 @@ function ProbeLensWorkbench({
   const verdict = readout
     ? probeReadoutVerdict(readout, readoutEpisodeSummary, readoutUnavailableReason)
     : model.verdict;
+  const familyHover = study ? probeFamilyHoverModel(study) : undefined;
   return (
     <section className="probe-lens-workbench" aria-label="Selected probe lens workbench">
-      <div className="probe-lens-head">
+      <div
+        aria-label={familyHover ? metadataCardAriaLabel(familyHover) : undefined}
+        className={`probe-lens-head ${familyHover ? "probe-metadata-hover" : ""}`}
+        tabIndex={familyHover ? 0 : undefined}
+      >
         <span>{study ? "Selected probe family" : "Selected probe lens"}</span>
         <h2>{study?.name ?? model.title}</h2>
         <p>{study?.question_label || verdict.detail}</p>
@@ -933,6 +946,7 @@ function ProbeLensWorkbench({
             detail={spec.objective.detail}
           />
         </div>
+        {familyHover ? <ProbeMetadataHoverCard card={familyHover} /> : null}
       </div>
       <aside className={`probe-lens-verdict ${verdict.tone}`}>
         <span>{verdict.label}</span>
@@ -940,10 +954,15 @@ function ProbeLensWorkbench({
         {verdict.detail ? <small>{verdict.detail}</small> : null}
         <div className="probe-lens-metrics">
           {metricChips.map((metric) => (
-            <div className={`probe-lens-metric ${metric.tone}`} key={metric.label}>
+            <div
+              aria-label={metadataCardAriaLabel(metricHoverModel(metric))}
+              className={`probe-lens-metric ${metric.tone} probe-metadata-hover`}
+              key={metric.label}
+              tabIndex={0}
+            >
               <span>{metric.label}</span>
               <strong>{metric.value}</strong>
-              {metric.detail ? <small>{metric.detail}</small> : null}
+              <ProbeMetadataHoverCard card={metricHoverModel(metric)} />
             </div>
           ))}
         </div>
@@ -1119,10 +1138,13 @@ function LensSelector({
   onLensChange: (lensId: string) => void;
 }) {
   const groups = lensGroups(lenses);
+  const selectorLabel = lenses.length > 0 && lenses.every((lens) => lens.artifactType === "probe_suite")
+    ? "Probe family"
+    : "Lens artifact";
   return (
     <section className="dataset-lens-strip" aria-label="Dataset lens">
       <label className="dataset-lens-select">
-        <span>Lens artifact</span>
+        <span>{selectorLabel}</span>
         <select value={selectedLensId} onChange={(event) => onLensChange(event.target.value)}>
           <option value={NO_LENS_ID}>None - {researchCopy.labels.episodeOrder}</option>
           {groups.map((group) => (
@@ -1170,6 +1192,10 @@ function ProbeReadoutNavigator({
     );
   }
   const activeReadout = selectedReadout ?? readouts[0];
+  const readoutHover = activeReadout ? probeReadoutHoverModel(activeReadout, study) : undefined;
+  const warningHover = activeReadout && unavailableReason
+    ? readoutWarningHoverModel(activeReadout, study, unavailableReason)
+    : undefined;
   return (
     <section className="probe-readout-navigator" aria-label="Trained probe scope">
       <div className="probe-readout-controls">
@@ -1183,7 +1209,7 @@ function ProbeReadoutNavigator({
             {readouts.length ? (
               readouts.map((readout) => (
                 <option key={readout.readout_id} value={readout.readout_id}>
-                  {probeReadoutOptionLabel(readout, study)}
+                  {compactProbeReadoutLabel(readout, study)}
                 </option>
               ))
             ) : (
@@ -1209,18 +1235,22 @@ function ProbeReadoutNavigator({
       </div>
       {activeReadout ? (
         <>
-          <dl className="probe-readout-scope-facts">
+          <dl
+            aria-label={readoutHover ? metadataCardAriaLabel(readoutHover) : undefined}
+            className="probe-readout-scope-facts probe-metadata-hover"
+            tabIndex={0}
+          >
             <div>
               <dt title="The label this trained probe predicts from activations.">Target</dt>
-              <dd>{probeReadoutTargetLabel(activeReadout.target || study.target || "")}</dd>
+              <dd>{probeTargetDisplayLabel(activeReadout.target || study.target || "")}</dd>
             </div>
             <div>
               <dt title="The activation layer used as the probe input.">Layer</dt>
-              <dd>{probeReadoutLayerLabel(activeReadout.layer)}</dd>
+              <dd>{compactProbeLayerLabel(activeReadout.layer)}</dd>
             </div>
             <div>
               <dt title="The train, validation, or test split this trained probe was evaluated on.">Split</dt>
-              <dd>{probeReadoutSplitLabel(activeReadout)}</dd>
+              <dd>{probeSplitLabel(activeReadout.split_category, activeReadout.split)}</dd>
             </div>
             <div>
               <dt title="Policy-call rows available to this trained probe before episode aggregation.">Rows</dt>
@@ -1228,16 +1258,22 @@ function ProbeReadoutNavigator({
             </div>
             <div>
               <dt title="Balanced accuracy for this target, layer, and split.">Balanced acc.</dt>
-              <dd>{probeReadoutScoreLabel(activeReadout)}</dd>
+              <dd>{compactProbeMetricValue("BA", activeReadout.balanced_accuracy)}</dd>
             </div>
             <div>
               <dt title="Stable identifier for debugging or sharing this exact trained probe.">ID</dt>
               <dd><ProbeIdCopy value={trainedProbeDisplayId(activeReadout, study)} /></dd>
             </div>
+            {readoutHover ? <ProbeMetadataHoverCard card={readoutHover} /> : null}
           </dl>
-          {unavailableReason ? (
-            <small className="probe-readout-warning">
-              Episode drilldown unavailable. {humanizeProbeReadoutReason(unavailableReason)} Aggregate probe metrics are still shown.
+          {warningHover ? (
+            <small
+              aria-label={metadataCardAriaLabel(warningHover)}
+              className="probe-readout-warning probe-metadata-hover"
+              tabIndex={0}
+            >
+              Aggregate only
+              <ProbeMetadataHoverCard card={warningHover} />
             </small>
           ) : null}
         </>
@@ -1599,10 +1635,13 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           <div className="probe-rolling-plot" aria-label="Rolling probe accuracy">
             {model.rollingAccuracy.map((point) => (
               <i
+                aria-label={probeGraphTooltipLabel(rollingPointTooltip(point))}
+                className="probe-graph-hover"
                 key={`${point.label}-${point.index}`}
-                title={`${point.label}: ${Math.round(point.accuracy * 100)}% accuracy, ${point.wrong} wrong / ${point.scored} scored`}
+                tabIndex={0}
               >
                 <b style={{ height: `${percentOf(point.accuracy, 1)}%` }} />
+                <ProbeGraphTooltip tooltip={rollingPointTooltip(point)} />
               </i>
             ))}
           </div>
@@ -1617,13 +1656,19 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           </header>
           <div className="probe-calibration-list">
             {model.calibrationRows.map((row) => (
-              <div className="probe-calibration-row" key={row.label}>
+              <div
+                aria-label={probeGraphTooltipLabel(calibrationRowTooltip(row))}
+                className="probe-calibration-row probe-graph-hover"
+                key={row.label}
+                tabIndex={0}
+              >
                 <span>{row.label}</span>
                 <i>
                   <b className="accuracy" style={{ width: `${percentOf(row.accuracy ?? 0, 1)}%` }} />
                   <em style={{ left: `${percentOf(row.avgConfidence ?? 0, 1)}%` }} />
                 </i>
                 <strong>{row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%`}</strong>
+                <ProbeGraphTooltip tooltip={calibrationRowTooltip(row)} />
               </div>
             ))}
           </div>
@@ -1639,11 +1684,14 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           <div className="probe-scatter-plot" aria-label="Confidence against episode length">
             {model.lengthScorePoints.map((point, index) => (
               <i
-                className={point.tone}
+                aria-label={probeGraphTooltipLabel(scatterPointTooltip(point))}
+                className={`${point.tone} probe-graph-hover`}
                 key={`${point.label}-${index}`}
                 style={{ left: `${point.x}%`, bottom: `${point.y}%` }}
-                title={`${point.label}: ${point.confidence.toFixed(2)} confidence, ${point.episodeLength} steps`}
-              />
+                tabIndex={0}
+              >
+                <ProbeGraphTooltip tooltip={scatterPointTooltip(point)} />
+              </i>
             ))}
           </div>
         </section>
@@ -1660,10 +1708,16 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           </header>
           <div className="probe-temporal-map">
             {model.temporalRows.map((row, index) => (
-              <div className={`probe-temporal-row ${row.tone}`} key={`${row.label}-${row.marker}-${index}`}>
+              <div
+                aria-label={probeGraphTooltipLabel(temporalRowTooltip(row))}
+                className={`probe-temporal-row ${row.tone} probe-graph-hover`}
+                key={`${row.label}-${row.marker}-${index}`}
+                tabIndex={0}
+              >
                 <span>{row.label}</span>
                 <i><b style={{ left: `${row.position}%` }} /></i>
                 <strong>{row.marker}</strong>
+                <ProbeGraphTooltip tooltip={temporalRowTooltip(row)} />
               </div>
             ))}
           </div>
@@ -1678,7 +1732,12 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           </header>
           <div className="probe-confusion-list">
             {model.confusionRows.map((row) => (
-              <div key={row.label}>
+              <div
+                aria-label={probeGraphTooltipLabel(confusionRowTooltip(row))}
+                className="probe-graph-hover"
+                key={row.label}
+                tabIndex={0}
+              >
                 <span>{row.label}</span>
                 <i>
                   <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
@@ -1686,6 +1745,7 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
                   <b className="unknown" style={{ width: `${percentOf(row.unknown, row.total)}%` }} />
                 </i>
                 <strong>{row.total}</strong>
+                <ProbeGraphTooltip tooltip={confusionRowTooltip(row)} />
               </div>
             ))}
           </div>
@@ -1756,71 +1816,244 @@ function ProbeSliceCard({
   );
 }
 
-type ProbeGraphTooltipLine = {
-  label: string;
-  value: string;
-};
-
-type ProbeGraphTooltipModel = {
-  lines: ProbeGraphTooltipLine[];
-  note?: string;
-  title: string;
-};
-
-function ProbeGraphTooltip({ tooltip }: { tooltip: ProbeGraphTooltipModel }) {
+function ProbeMetadataHoverCard({
+  card,
+  className = "",
+}: {
+  card: ProbeMetadataCard;
+  className?: string;
+}) {
   return (
-    <span aria-hidden="true" className="probe-graph-tooltip" role="tooltip">
-      <span className="probe-graph-tooltip-title">{tooltip.title}</span>
-      {tooltip.lines.map((line) => (
-        <span className="probe-graph-tooltip-line" key={line.label}>
-          <span>{line.label}</span>
-          <span>{line.value}</span>
+    <span aria-hidden="true" className={["probe-metadata-card", className].filter(Boolean).join(" ")} role="tooltip">
+      <span className="probe-metadata-card-title">{card.title}</span>
+      {card.subtitle ? <span className="probe-metadata-card-subtitle">{card.subtitle}</span> : null}
+      {card.groups.map((group) => (
+        <span className="probe-metadata-card-group" key={group.title}>
+          <span className="probe-metadata-card-group-title">{group.title}</span>
+          {group.lines.map((line) => (
+            <span className="probe-metadata-card-line" key={`${group.title}-${line.label}`}>
+              <span>{line.label}</span>
+              <span>{line.value}</span>
+            </span>
+          ))}
         </span>
       ))}
-      {tooltip.note ? <span className="probe-graph-tooltip-note">{tooltip.note}</span> : null}
     </span>
   );
 }
 
-function confidenceBucketTooltip(bucket: ProbeConfidenceBucket): ProbeGraphTooltipModel {
+function ProbeGraphTooltip({ tooltip }: { tooltip: ProbeMetadataCard }) {
+  return <ProbeMetadataHoverCard card={tooltip} className="probe-graph-tooltip" />;
+}
+
+function metricHoverModel(metric: ProbeLensMetricChip): ProbeMetadataCard {
   return {
-    lines: [
-      { label: "Scored rows", value: formatReadoutInteger(bucket.total) },
-      { label: "Correct", value: formatTooltipShare(bucket.correct, bucket.total) },
-      { label: "Wrong", value: formatTooltipShare(bucket.wrong, bucket.total) },
-      { label: "High-conf wrong", value: formatTooltipShare(bucket.highConfWrong, bucket.total) },
-      { label: "Unknown labels", value: formatTooltipShare(bucket.unknown, bucket.total) },
+    groups: [
+      {
+        lines: [
+          { label: "Value", value: metric.value },
+          { label: "Tone", value: metric.tone },
+          ...(metric.detail ? [{ label: "Detail", value: metric.detail }] : []),
+        ],
+        title: "Metric",
+      },
     ],
-    note: bucket.total
-      ? "Rows in this confidence range; green is correct, orange is wrong, gray has unknown correctness."
-      : "No scored probe rows landed in this confidence range.",
+    title: metric.label,
+  };
+}
+
+function readoutWarningHoverModel(
+  readout: ProbeStudyReadout,
+  study: ProbeStudy,
+  unavailableReason: string,
+): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Reason", value: humanizeProbeReadoutReason(unavailableReason) },
+          { label: "Current readout", value: compactProbeReadoutLabel(readout, study) },
+          { label: "Aggregate metrics", value: "still shown" },
+        ],
+        title: "Episode drilldown",
+      },
+    ],
+    subtitle: "Episode table rows are unavailable for this trained probe.",
+    title: "Aggregate only",
+  };
+}
+
+function confidenceBucketTooltip(bucket: ProbeConfidenceBucket): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Scored rows", value: formatReadoutInteger(bucket.total) },
+          { label: "Correct", value: formatTooltipShare(bucket.correct, bucket.total) },
+          { label: "Wrong", value: formatTooltipShare(bucket.wrong, bucket.total) },
+          { label: "High-conf wrong", value: formatTooltipShare(bucket.highConfWrong, bucket.total) },
+          { label: "Unknown labels", value: formatTooltipShare(bucket.unknown, bucket.total) },
+        ],
+        title: "Rows",
+      },
+      {
+        lines: [
+          {
+            label: "Meaning",
+            value: bucket.total
+              ? "Rows in this confidence range; green is correct, orange is wrong, gray is unknown."
+              : "No scored probe rows landed in this confidence range.",
+          },
+        ],
+        title: "Notes",
+      },
+    ],
     title: `${bucket.label} confidence`,
   };
 }
 
-function sliceRowTooltip(row: ProbeAnalysisCountRow, title: string): ProbeGraphTooltipModel {
+function rollingPointTooltip(point: ProbeRollingPoint): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Episode", value: point.label },
+          { label: "Window index", value: String(point.index + 1) },
+          { label: "Accuracy", value: `${Math.round(point.accuracy * 100)}%` },
+          { label: "Correct", value: formatReadoutInteger(point.correct) },
+          { label: "Wrong", value: formatReadoutInteger(point.wrong) },
+          { label: "Scored", value: formatReadoutInteger(point.scored) },
+        ],
+        title: "Rolling window",
+      },
+    ],
+    title: "Accuracy over episode order",
+  };
+}
+
+function calibrationRowTooltip(row: ProbeCalibrationBucket): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Confidence bin", value: row.label },
+          { label: "Rows", value: formatReadoutInteger(row.total) },
+          { label: "Correct", value: formatTooltipShare(row.correct, row.total) },
+          { label: "Accuracy", value: row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%` },
+          { label: "Avg confidence", value: row.avgConfidence === null ? "-" : row.avgConfidence.toFixed(3) },
+        ],
+        title: "Calibration",
+      },
+      {
+        lines: [
+          { label: "Bar", value: "observed accuracy" },
+          { label: "Marker", value: "average confidence" },
+        ],
+        title: "Legend",
+      },
+    ],
+    title: `${row.label} confidence`,
+  };
+}
+
+function scatterPointTooltip(point: ProbeScatterPoint): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Episode", value: point.label },
+          { label: "Confidence", value: point.confidence.toFixed(3) },
+          { label: "Steps", value: formatReadoutInteger(point.episodeLength) },
+          { label: "Result", value: point.tone },
+        ],
+        title: "Episode",
+      },
+    ],
+    title: "Confidence vs length",
+  };
+}
+
+function temporalRowTooltip(row: ProbeTemporalRow): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Episode", value: row.label },
+          { label: "Marker", value: row.marker },
+          { label: "Timeline position", value: `${Math.round(row.position)}%` },
+          { label: "Score", value: row.score },
+          { label: "Tone", value: row.tone },
+        ],
+        title: "Temporal evidence",
+      },
+    ],
+    title: row.label,
+  };
+}
+
+function confusionRowTooltip(row: ProbeConfusionRow): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Pair", value: row.label },
+          { label: "Rows", value: formatReadoutInteger(row.total) },
+          { label: "Correct", value: formatTooltipShare(row.correct, row.total) },
+          { label: "Wrong", value: formatTooltipShare(row.wrong, row.total) },
+          { label: "Unknown labels", value: formatTooltipShare(row.unknown, row.total) },
+        ],
+        title: "Prediction vs label",
+      },
+    ],
+    title: row.label,
+  };
+}
+
+function sliceRowTooltip(row: ProbeAnalysisCountRow, title: string): ProbeMetadataCard {
   const otherWrong = Math.max(0, row.wrong - row.highConfWrong);
   return {
-    lines: [
-      { label: "Visible episodes", value: formatReadoutInteger(row.total) },
-      { label: "Scored", value: formatTooltipShare(row.scored, row.total) },
-      { label: "Correct", value: formatTooltipShare(row.correct, row.scored) },
-      { label: "Other wrong", value: formatTooltipShare(otherWrong, row.scored) },
-      { label: "High-conf wrong", value: formatTooltipShare(row.highConfWrong, row.scored) },
-      { label: "Unknown labels", value: formatTooltipShare(row.unknown, row.scored) },
-      { label: "Unscored", value: formatTooltipShare(row.unscored, row.total) },
-      { label: "Accuracy", value: row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%` },
+    groups: [
+      {
+        lines: [
+          { label: "Visible episodes", value: formatReadoutInteger(row.total) },
+          { label: "Scored", value: formatTooltipShare(row.scored, row.total) },
+          { label: "Unscored", value: formatTooltipShare(row.unscored, row.total) },
+        ],
+        title: "Rows",
+      },
+      {
+        lines: [
+          { label: "Correct", value: formatTooltipShare(row.correct, row.scored) },
+          { label: "Other wrong", value: formatTooltipShare(otherWrong, row.scored) },
+          { label: "High-conf wrong", value: formatTooltipShare(row.highConfWrong, row.scored) },
+          { label: "Unknown labels", value: formatTooltipShare(row.unknown, row.scored) },
+          { label: "Accuracy", value: row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%` },
+        ],
+        title: "Result",
+      },
+      {
+        lines: [
+          { label: "Ranking", value: "High-confidence wrong, then wrong, then scored coverage." },
+        ],
+        title: "Notes",
+      },
     ],
-    note: "Rows are ranked by high-confidence wrong, then wrong, then scored coverage.",
     title: `${title}: ${row.label}`,
   };
 }
 
-function probeGraphTooltipLabel(tooltip: ProbeGraphTooltipModel): string {
+function probeGraphTooltipLabel(tooltip: ProbeMetadataCard): string {
+  return metadataCardAriaLabel(tooltip);
+}
+
+function metadataCardAriaLabel(card: ProbeMetadataCard): string {
   return [
-    tooltip.title,
-    ...tooltip.lines.map((line) => `${line.label}: ${line.value}`),
-    tooltip.note,
+    card.title,
+    card.subtitle,
+    ...card.groups.flatMap((group) => [
+      group.title,
+      ...group.lines.map((line) => `${line.label}: ${line.value}`),
+    ]),
   ].filter(Boolean).join(". ");
 }
 
@@ -2315,13 +2548,13 @@ function probeReadoutMetricChips(
   return [
     {
       detail: `${probeReadoutLayerLabel(readout.layer)} · ${probeReadoutSplitLabel(readout)}`,
-      label: "Balanced acc.",
+      label: "BA",
       tone: probeReadoutScoreTone(score),
-      value: probeReadoutScoreLabel(readout),
+      value: compactProbeMetricValue("", score).trim(),
     },
     {
       detail: "policy-call rows in this trained probe",
-      label: "Policy calls",
+      label: "Rows",
       tone: readout.policy_call_count ? "credible" : "unknown",
       value: formatReadoutInteger(readout.policy_call_count ?? readout.row_count),
     },
@@ -2339,9 +2572,9 @@ function probeReadoutMetricChips(
     },
     {
       detail: "train balanced accuracy minus this split score",
-      label: "Train gap",
+      label: "Gap",
       tone: typeof gap === "number" && Number.isFinite(gap) && gap > 0.2 ? "limited" : "unknown",
-      value: typeof gap === "number" && Number.isFinite(gap) ? gap.toFixed(3) : "-",
+      value: compactProbeMetricValue("", gap).trim(),
     },
   ];
 }
@@ -2515,22 +2748,6 @@ function probeReadoutForSplitCategory(
   );
 }
 
-function probeReadoutOptionLabel(readout: ProbeStudyReadout, study: ProbeStudy): string {
-  return [
-    probeReadoutName(readout),
-    readout.is_primary_target ? "family target" : study.target ? "related target" : "",
-    `balanced acc ${probeReadoutScoreLabel(readout)}`,
-  ].filter(Boolean).join(" · ");
-}
-
-function probeReadoutName(readout: ProbeStudyReadout): string {
-  return [
-    probeReadoutTargetLabel(readout.target),
-    probeReadoutLayerLabel(readout.layer),
-    probeReadoutSplitLabel(readout),
-  ].filter(Boolean).join(" · ");
-}
-
 function ProbeIdCopy({ value }: { value: string }) {
   const [copied, setCopied] = useState(false);
   const copy = async () => {
@@ -2550,55 +2767,6 @@ function ProbeIdCopy({ value }: { value: string }) {
   );
 }
 
-function trainedProbeDisplayId(readout: ProbeStudyReadout, study: ProbeStudy): string {
-  return `${studyArtifactCode(study)}-${readout.trained_probe_id || trainedProbeScopeId(readout)}`;
-}
-
-function trainedProbeScopeId(readout: ProbeStudyReadout): string {
-  return [
-    targetCode(readout.target),
-    `L${idPiece(probeReadoutLayerKey(readout.layer) || "ALL", "ALL")}`,
-    idPiece(readout.split || readout.split_category || "", "NOSPLIT"),
-  ].join("-");
-}
-
-function studyArtifactCode(study: ProbeStudy): string {
-  const text = String(study.artifact_id || study.study_id || "probe");
-  const hash = text.match(/[a-f0-9]{6,}$/i)?.[0]?.slice(-6) ?? idPiece(text, "PROBE").slice(-6);
-  return `P${hash.toUpperCase()}`;
-}
-
-function targetCode(target: string): string {
-  const labels: Record<string, string> = {
-    active_manipulated_object: "AMO",
-    active_receptacle_object: "ARO",
-    next_manipulated_object: "NMO",
-    task_phase: "TPH",
-  };
-  if (labels[target]) {
-    return labels[target];
-  }
-  const pieces = target.split("_").filter(Boolean);
-  if (pieces.length >= 2) {
-    return pieces.slice(0, 4).map((piece) => piece[0]?.toUpperCase() ?? "").join("");
-  }
-  return idPiece(target, "TARGET").slice(0, 10);
-}
-
-function idPiece(value: string, fallback: string): string {
-  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "") || fallback;
-}
-
-function probeReadoutTargetLabel(target: string): string {
-  const labels: Record<string, string> = {
-    active_manipulated_object: "Active manipulated object",
-    active_receptacle_object: "Active receptacle",
-    next_manipulated_object: "Next manipulated object",
-    task_phase: "Task phase",
-  };
-  return labels[target] ?? target.replaceAll("_", " ");
-}
-
 function humanizeProbeReadoutReason(reason: string): string {
   return [
     "active_manipulated_object",
@@ -2606,7 +2774,7 @@ function humanizeProbeReadoutReason(reason: string): string {
     "next_manipulated_object",
     "task_phase",
   ].reduce(
-    (text, target) => text.replaceAll(target, probeReadoutTargetLabel(target)),
+    (text, target) => text.replaceAll(target, probeTargetDisplayLabel(target)),
     reason,
   );
 }

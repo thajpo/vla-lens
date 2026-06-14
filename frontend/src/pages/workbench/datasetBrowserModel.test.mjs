@@ -4,11 +4,14 @@ import test from "node:test";
 
 import {
   PROBE_READOUT_FILTER_MODES,
+  compactProbeReadoutLabel,
   filterProbeStudyReadouts,
+  probeFamilyHoverModel,
   probeEvidenceCueForEpisode,
   probeEvidenceContextForEpisode,
   probeEvidenceRankedRows,
   probeEvidenceSpec,
+  probeReadoutHoverModel,
   probeCalibrationRows,
   probeConfusionRows,
   probeLensSpec,
@@ -22,6 +25,10 @@ import {
 function readProbeEvidenceFixture(name) {
   const url = new URL(`../../../../tests/fixtures/probe_evidence/${name}.json`, import.meta.url);
   return JSON.parse(readFileSync(url, "utf8"));
+}
+
+function metadataLineMap(card) {
+  return new Map(card.groups.flatMap((group) => group.lines.map((line) => [`${group.title}:${line.label}`, line.value])));
 }
 
 test("probe split rows use indexed split-level review stats without by_trace", () => {
@@ -184,6 +191,110 @@ test("probe readout filtering narrows by usefulness and split", () => {
     ["train-high"],
   );
   assert.equal(filterProbeStudyReadouts(readouts, "all", study)[0].readout_id, "test-selected");
+});
+
+test("probe readout compact label keeps full metadata in hover model", () => {
+  const study = {
+    artifact_id: "probe_suite-abcd1234",
+    name: "Next manipulated object",
+    target: "next_manipulated_object",
+  };
+  const readout = {
+    accuracy: 0.51,
+    balanced_accuracy: 0.4567,
+    class_count: 10,
+    is_primary_target: true,
+    is_selected_layer: false,
+    is_selection_split: false,
+    is_test_split: true,
+    layer: 12,
+    macro_f1: 0.32,
+    policy_call_count: 135,
+    readout_id: "next_manipulated_object|layer:12|split:test_heldout_task|ok",
+    row_count: 135,
+    source: "diagnostic",
+    split: "test_heldout_task",
+    split_category: "test",
+    status: "ok",
+    target: "next_manipulated_object",
+    top1_accuracy: 0.51,
+    top2_accuracy: 0.62,
+    top3_accuracy: 0.71,
+    train_balanced_accuracy: 0.997,
+    train_gap_balanced_accuracy: 0.54,
+    trained_probe_id: "NMO-L12-TEST-HELDOUT-TASK",
+  };
+
+  assert.equal(compactProbeReadoutLabel(readout, study), "L12 · Test · BA .457");
+  const lines = metadataLineMap(probeReadoutHoverModel(readout, study));
+  assert.equal(lines.get("Metrics:Balanced accuracy"), "0.457");
+  assert.equal(lines.get("Metrics:Top-3 accuracy"), "0.710");
+  assert.equal(lines.get("Rows:Policy calls"), "135");
+  assert.equal(lines.get("Flags:Selected layer"), "false");
+  assert.equal(lines.get("Provenance:Readout ID"), readout.readout_id);
+});
+
+test("probe family hover model summarizes counts and large diagnostics", () => {
+  const study = {
+    artifact_id: "probe_suite-abcd1234",
+    artifact_type: "probe_suite",
+    class_support: [{ class: "mug", policy_call_count: 3 }],
+    confusion: [{ actual: "mug", predicted: "bowl", policy_call_count: 2 }],
+    controls: [{
+      kind: "selection_aware_null",
+      label: "Heldout test",
+      null_score_mean: 0.12,
+      p_value: 0.02,
+      real_score: 0.45,
+      runs: 50,
+      selected_layer: 12,
+      split: "test_heldout_task",
+    }],
+    counts: {
+      class_count: 10,
+      episode_count: 503,
+      feature_rows: 5715,
+      layer_count: 5,
+      null_eval_row_count: 100,
+      null_run_count: 50,
+      policy_call_count: 1143,
+      readout_count: 15,
+      skipped_readout_count: 0,
+      split_policy_call_counts: { test_heldout_task: 135, train: 702 },
+      target_count: 1,
+    },
+    created_utc: "2026-06-14T13:34:14Z",
+    diagnostics_available: true,
+    error_examples: [{ actual: "mug", confidence: 1, predicted: "bowl", task_id: "8" }],
+    input: "Expert hidden states",
+    lead_time: [{ balanced_accuracy: 0.7, lead_bucket: "2_policy_calls" }],
+    name: "Next manipulated object",
+    objective: "Linear readout",
+    output: "23 object classes",
+    per_class: [{ class: "mug", f1: 0.5 }],
+    prediction: "Next manipulated object",
+    question_label: "Which object will the robot manipulate next?",
+    readouts: [],
+    skipped_readouts: [],
+    source: "diagnostics",
+    source_artifact_id: "source-a",
+    source_artifact_name: "Probe source",
+    study_id: "study-a",
+    summary: {
+      cache_key: "abc123",
+      selected_layer: "12",
+      selection_split: "val_heldout_task",
+      test_split: "test_heldout_task",
+    },
+    target: "next_manipulated_object",
+  };
+
+  const lines = metadataLineMap(probeFamilyHoverModel(study));
+  assert.equal(lines.get("Rows:Feature rows"), "5,715");
+  assert.equal(lines.get("Diagnostics:Cache key"), "abc123");
+  assert.match(lines.get("Diagnostics:Controls"), /50 runs/);
+  assert.match(lines.get("Diagnostics:Error examples"), /1 rows/);
+  assert.equal(lines.get("Provenance:Diagnostics available"), "true");
 });
 
 test("probe scored cohort detail distinguishes compatible rows from ranked dataset total", () => {

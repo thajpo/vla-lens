@@ -1537,24 +1537,27 @@
   min-width: 0;
 }
 
+.probe-metadata-hover,
 .probe-graph-hover {
   position: relative;
 }
 
+.probe-metadata-hover:focus-visible,
 .probe-graph-hover:focus-visible {
   outline: 2px solid #4f6fbe;
   outline-offset: 2px;
 }
 
-.probe-analysis-bar-row .probe-graph-tooltip,
-.probe-slice-row .probe-graph-tooltip {
+.probe-metadata-card {
   background: #ffffff;
   border: 1px solid #cbd5e1;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
   display: grid;
-  gap: 6px;
+  gap: 8px;
+  max-height: min(560px, calc(100vh - 48px));
   opacity: 0;
-  padding: 9px 10px;
+  overflow: auto;
+  padding: 10px 11px;
   pointer-events: none;
   position: absolute;
   right: 0;
@@ -1562,19 +1565,37 @@
   transform: translateY(-3px);
   transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
   visibility: hidden;
-  width: min(305px, calc(100vw - 40px));
+  width: min(360px, calc(100vw - 40px));
   z-index: 30;
 }
 
+.probe-lens-head .probe-metadata-card {
+  left: 13px;
+  right: auto;
+}
+
+.probe-lens-metric .probe-metadata-card {
+  width: min(275px, calc(100vw - 40px));
+}
+
+.probe-readout-scope-facts .probe-metadata-card,
+.probe-readout-warning .probe-metadata-card {
+  left: 0;
+  right: auto;
+}
+
+.probe-metadata-hover:hover > .probe-metadata-card,
+.probe-metadata-hover:focus-visible > .probe-metadata-card,
+.probe-metadata-hover:focus-within > .probe-metadata-card,
 .probe-graph-hover:hover .probe-graph-tooltip,
-.probe-graph-hover:focus-visible .probe-graph-tooltip {
+.probe-graph-hover:focus-visible .probe-graph-tooltip,
+.probe-graph-hover:focus-within .probe-graph-tooltip {
   opacity: 1;
   transform: translateY(0);
   visibility: visible;
 }
 
-.probe-analysis-bar-row .probe-graph-tooltip-title,
-.probe-slice-row .probe-graph-tooltip-title {
+.probe-metadata-card-title {
   color: #0f172a;
   display: block;
   font-size: 12px;
@@ -1585,8 +1606,45 @@
   white-space: normal;
 }
 
-.probe-analysis-bar-row .probe-graph-tooltip-line,
-.probe-slice-row .probe-graph-tooltip-line {
+.probe-metadata-card-subtitle {
+  color: #475569;
+  display: block;
+  font-size: 11px;
+  font-weight: 760;
+  line-height: 1.35;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.probe-metadata-card-group {
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  padding-top: 7px;
+}
+
+.probe-metadata-card-group:first-of-type {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.probe-metadata-card-group-title {
+  color: #64748b;
+  display: block;
+  font-size: 9px;
+  font-weight: 900;
+  letter-spacing: 0.045em;
+  min-width: 0;
+  overflow: visible;
+  text-overflow: clip;
+  text-transform: uppercase;
+  white-space: normal;
+}
+
+.probe-metadata-card-line {
   align-items: baseline;
   color: #334155;
   display: flex;
@@ -1600,8 +1658,7 @@
   white-space: normal;
 }
 
-.probe-analysis-bar-row .probe-graph-tooltip-line span,
-.probe-slice-row .probe-graph-tooltip-line span {
+.probe-metadata-card-line span {
   color: inherit;
   font-size: inherit;
   font-weight: inherit;
@@ -1611,28 +1668,13 @@
   white-space: normal;
 }
 
-.probe-analysis-bar-row .probe-graph-tooltip-line span:last-child,
-.probe-slice-row .probe-graph-tooltip-line span:last-child {
+.probe-metadata-card-line span:last-child {
   color: #0f172a;
   font-variant-numeric: tabular-nums;
   font-weight: 900;
+  max-width: 190px;
+  overflow-wrap: anywhere;
   text-align: right;
-}
-
-.probe-analysis-bar-row .probe-graph-tooltip-note,
-.probe-slice-row .probe-graph-tooltip-note {
-  border-top: 1px solid #e2e8f0;
-  color: #64748b;
-  display: block;
-  font-size: 10px;
-  font-weight: 750;
-  line-height: 1.35;
-  margin-top: 2px;
-  min-width: 0;
-  overflow: visible;
-  padding-top: 6px;
-  text-overflow: clip;
-  white-space: normal;
 }
 
 .probe-slice-row {

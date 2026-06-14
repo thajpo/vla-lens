@@ -1,4 +1,12 @@
-import type { ArtifactRecord, DatasetEpisode, ProbeDatasetIndex, ProbeEpisodeIndex, ProbeStudy, ProbeStudyReadout } from "../../types/dataset";
+import type {
+  ArtifactRecord,
+  DatasetEpisode,
+  ProbeDatasetIndex,
+  ProbeEpisodeIndex,
+  ProbeStudy,
+  ProbeStudyControl,
+  ProbeStudyReadout,
+} from "../../types/dataset";
 import { researchCopy } from "../../copy/researchCopy.ts";
 import type {
   ContributionEvidence,
@@ -92,6 +100,19 @@ export type ProbeLensMetricChip = {
   label: string;
   tone: ProbeLensTone;
   value: string;
+};
+export type ProbeMetadataLine = {
+  label: string;
+  value: string;
+};
+export type ProbeMetadataGroup = {
+  lines: ProbeMetadataLine[];
+  title: string;
+};
+export type ProbeMetadataCard = {
+  groups: ProbeMetadataGroup[];
+  subtitle?: string;
+  title: string;
 };
 export type ProbeSplitChartRow = {
   detail?: string;
@@ -226,6 +247,118 @@ export const COHORT_PRESETS: Array<{ id: ProbeCohortPreset; label: string }> = [
   { id: "train_sanity", label: "Train-only check" },
 ];
 
+export function compactProbeReadoutLabel(readout: ProbeStudyReadout, study?: ProbeStudy): string {
+  return compactJoin(
+    [
+      study?.target && readout.target !== study.target ? probeTargetDisplayLabel(readout.target) : "",
+      compactProbeLayerLabel(readout.layer),
+      probeSplitLabel(readout.split_category, readout.split),
+      `BA ${formatCompactMetric(readout.balanced_accuracy)}`,
+    ],
+    " · ",
+  );
+}
+
+export function compactProbeMetricValue(prefix: string, value: number | null | undefined): string {
+  return `${prefix} ${formatCompactMetric(value)}`;
+}
+
+export function probeReadoutHoverModel(readout: ProbeStudyReadout, study?: ProbeStudy): ProbeMetadataCard {
+  return compactMetadataCard({
+    groups: [
+      metadataGroup("Scope", [
+        metadataLine("Target", probeTargetDisplayLabel(readout.target)),
+        metadataLine("Layer", readout.layer),
+        metadataLine("Split", readout.split),
+        metadataLine("Split category", probeSplitLabel(readout.split_category, readout.split)),
+      ]),
+      metadataGroup("Metrics", [
+        metadataLine("Balanced accuracy", readout.balanced_accuracy, "metric"),
+        metadataLine("Accuracy", readout.accuracy, "metric"),
+        metadataLine("Macro F1", readout.macro_f1, "metric"),
+        metadataLine("Top-1 accuracy", readout.top1_accuracy, "metric"),
+        metadataLine("Top-2 accuracy", readout.top2_accuracy, "metric"),
+        metadataLine("Top-3 accuracy", readout.top3_accuracy, "metric"),
+        metadataLine("Train balanced accuracy", readout.train_balanced_accuracy, "metric"),
+        metadataLine("Train gap", readout.train_gap_balanced_accuracy, "metric"),
+      ]),
+      metadataGroup("Rows", [
+        metadataLine("Policy calls", readout.policy_call_count, "integer"),
+        metadataLine("Rows", readout.row_count, "integer"),
+        metadataLine("Classes", readout.class_count, "integer"),
+      ]),
+      metadataGroup("Flags", [
+        metadataLine("Status", readout.status),
+        metadataLine("Source", readout.source),
+        metadataLine("Primary target", readout.is_primary_target, "boolean"),
+        metadataLine("Selected layer", readout.is_selected_layer, "boolean"),
+        metadataLine("Selection split", readout.is_selection_split, "boolean"),
+        metadataLine("Test split", readout.is_test_split, "boolean"),
+        metadataLine("Reason", readout.reason),
+      ]),
+      metadataGroup("Provenance", [
+        metadataLine("Display ID", study ? trainedProbeDisplayId(readout, study) : readout.trained_probe_id),
+        metadataLine("Readout ID", readout.readout_id),
+        metadataLine("Trained probe ID", readout.trained_probe_id),
+        metadataLine("Study ID", study?.study_id),
+        metadataLine("Artifact ID", study?.artifact_id),
+      ]),
+    ],
+    subtitle: compactProbeReadoutLabel(readout, study),
+    title: probeTargetDisplayLabel(readout.target),
+  });
+}
+
+export function probeFamilyHoverModel(study: ProbeStudy): ProbeMetadataCard {
+  return compactMetadataCard({
+    groups: [
+      metadataGroup("Scope", [
+        metadataLine("Target", study.target ? probeTargetDisplayLabel(study.target) : ""),
+        metadataLine("Question", study.question_label),
+        metadataLine("Prediction", study.prediction),
+        metadataLine("Input", study.input),
+        metadataLine("Output", study.output),
+        metadataLine("Objective", study.objective),
+      ]),
+      metadataGroup("Rows", [
+        metadataLine("Readouts", study.counts.readout_count, "integer"),
+        metadataLine("Skipped readouts", study.counts.skipped_readout_count, "integer"),
+        metadataLine("Targets", study.counts.target_count, "integer"),
+        metadataLine("Layers", study.counts.layer_count, "integer"),
+        metadataLine("Feature rows", study.counts.feature_rows, "integer"),
+        metadataLine("Policy calls", study.counts.policy_call_count, "integer"),
+        metadataLine("Episodes", study.counts.episode_count, "integer"),
+        metadataLine("Classes", study.counts.class_count, "integer"),
+        metadataLine("Null runs", study.counts.null_run_count, "integer"),
+        metadataLine("Null eval rows", study.counts.null_eval_row_count, "integer"),
+        metadataLine("Split policy calls", study.counts.split_policy_call_counts, "record"),
+      ]),
+      metadataGroup("Diagnostics", [
+        ...metadataLinesFromRecord(study.summary, "summary"),
+        metadataLine("Controls", summarizeArray(study.controls, controlSummary)),
+        metadataLine("Lead time rows", summarizeArray(study.lead_time, compactRecordSummary)),
+        metadataLine("Per-class rows", summarizeArray(study.per_class, compactRecordSummary)),
+        metadataLine("Confusion rows", summarizeArray(study.confusion, compactRecordSummary)),
+        metadataLine("Class support rows", summarizeArray(study.class_support, compactRecordSummary)),
+        metadataLine("Error examples", summarizeArray(study.error_examples, compactRecordSummary)),
+        metadataLine("Skipped readouts", summarizeArray(study.skipped_readouts, (readout) => compactProbeReadoutLabel(readout, study))),
+      ]),
+      metadataGroup("Provenance", [
+        metadataLine("Study ID", study.study_id),
+        metadataLine("Artifact ID", study.artifact_id),
+        metadataLine("Artifact type", study.artifact_type),
+        metadataLine("Source artifact ID", study.source_artifact_id),
+        metadataLine("Source artifact name", study.source_artifact_name),
+        metadataLine("Created UTC", study.created_utc),
+        metadataLine("Diagnostics available", study.diagnostics_available, "boolean"),
+        metadataLine("Source", study.source),
+      ]),
+    ],
+    subtitle: study.question_label ?? undefined,
+    title: study.name,
+  });
+}
+
 export function filterProbeStudyReadouts(
   readouts: ProbeStudyReadout[],
   filterMode: ProbeReadoutFilterMode,
@@ -317,6 +450,196 @@ function compareDescending(left: number, right: number): number {
 
 function compareProbeReadoutStable(left: ProbeStudyReadout, right: ProbeStudyReadout): number {
   return String(left.readout_id || "").localeCompare(String(right.readout_id || ""));
+}
+
+function compactMetadataCard(card: ProbeMetadataCard): ProbeMetadataCard {
+  return {
+    ...card,
+    groups: card.groups
+      .map((group) => ({ ...group, lines: group.lines.filter((line) => line.value.trim()) }))
+      .filter((group) => group.lines.length),
+  };
+}
+
+function metadataGroup(title: string, lines: Array<ProbeMetadataLine | null | undefined>): ProbeMetadataGroup {
+  return {
+    lines: lines.filter((line): line is ProbeMetadataLine => Boolean(line && line.value.trim())),
+    title,
+  };
+}
+
+function metadataLine(
+  label: string,
+  value: unknown,
+  format: "boolean" | "integer" | "metric" | "record" | "text" = "text",
+): ProbeMetadataLine | null {
+  if (!metadataValueIsPopulated(value)) {
+    return null;
+  }
+  if (format === "boolean") {
+    return { label, value: value ? "true" : "false" };
+  }
+  if (format === "integer" && typeof value === "number" && Number.isFinite(value)) {
+    return { label, value: formatInteger(value) };
+  }
+  if (format === "metric" && typeof value === "number" && Number.isFinite(value)) {
+    return { label, value: value.toFixed(3) };
+  }
+  if (format === "record") {
+    return { label, value: metadataValueSummary(value) };
+  }
+  return { label, value: metadataValueSummary(value) };
+}
+
+function metadataLinesFromRecord(record: Record<string, unknown> | undefined, prefix: string): ProbeMetadataLine[] {
+  if (!record) {
+    return [];
+  }
+  return Object.entries(record)
+    .map(([key, value]) => metadataLine(labelFromSnake(key.replace(new RegExp(`^${prefix}_?`), "")), value))
+    .filter((line): line is ProbeMetadataLine => Boolean(line));
+}
+
+function metadataValueIsPopulated(value: unknown): boolean {
+  if (value === null || value === undefined) {
+    return false;
+  }
+  if (typeof value === "string") {
+    return value.trim().length > 0;
+  }
+  if (Array.isArray(value)) {
+    return value.length > 0;
+  }
+  if (typeof value === "object") {
+    return Object.keys(value).length > 0;
+  }
+  if (typeof value === "number") {
+    return Number.isFinite(value);
+  }
+  return true;
+}
+
+function metadataValueSummary(value: unknown): string {
+  if (typeof value === "number") {
+    return Number.isInteger(value) ? formatInteger(value) : value.toFixed(3);
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  if (typeof value === "string") {
+    return value.trim();
+  }
+  if (Array.isArray(value)) {
+    return summarizeArray(value, metadataValueSummary);
+  }
+  const record = recordValue(value);
+  if (record) {
+    return compactRecordSummary(record);
+  }
+  return "";
+}
+
+function summarizeArray<T>(items: T[] | undefined, summarizeItem: (item: T) => string): string {
+  if (!items?.length) {
+    return "";
+  }
+  const examples = items
+    .slice(0, 2)
+    .map(summarizeItem)
+    .filter(Boolean)
+    .join(" · ");
+  return examples ? `${formatInteger(items.length)} rows: ${examples}` : `${formatInteger(items.length)} rows`;
+}
+
+function compactRecordSummary(record: Record<string, unknown>): string {
+  const entries = Object.entries(record)
+    .filter(([, value]) => metadataValueIsPopulated(value))
+    .slice(0, 4)
+    .map(([key, value]) => `${labelFromSnake(key)} ${metadataValueSummary(value)}`);
+  return entries.length ? entries.join(" · ") : `${formatInteger(Object.keys(record).length)} fields`;
+}
+
+function controlSummary(control: ProbeStudyControl): string {
+  return compactJoin(
+    [
+      control.kind,
+      control.split ? `split ${control.split}` : "",
+      control.runs === null || control.runs === undefined ? "" : `${formatInteger(control.runs)} runs`,
+      control.selected_layer === null || control.selected_layer === undefined ? "" : `selected ${compactProbeLayerLabel(control.selected_layer)}`,
+      typeof control.real_score === "number" ? `real ${control.real_score.toFixed(3)}` : "",
+      typeof control.null_score_mean === "number" ? `null ${control.null_score_mean.toFixed(3)}` : "",
+      typeof control.null_score_std === "number" ? `std ${control.null_score_std.toFixed(3)}` : "",
+      typeof control.p_value === "number" ? `p ${control.p_value.toFixed(3)}` : "",
+      control.selected_layer_counts ? `layer counts ${compactRecordSummary(control.selected_layer_counts)}` : "",
+    ],
+    " · ",
+  );
+}
+
+export function probeTargetDisplayLabel(target: string | null | undefined): string {
+  const labels: Record<string, string> = {
+    active_manipulated_object: "Active manipulated object",
+    active_receptacle_object: "Active receptacle",
+    next_manipulated_object: "Next manipulated object",
+    task_phase: "Task phase",
+  };
+  const value = String(target ?? "").trim();
+  return labels[value] ?? (value ? labelFromSnake(value) : "Probe target");
+}
+
+export function compactProbeLayerLabel(layer: ProbeStudyReadout["layer"]): string {
+  return layer === null || layer === undefined || layer === "" ? "All layers" : `L${layer}`;
+}
+
+export function formatCompactMetric(value: number | null | undefined): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    return "-";
+  }
+  const fixed = value.toFixed(3);
+  return fixed.startsWith("0.") ? fixed.slice(1) : fixed.startsWith("-0.") ? `-${fixed.slice(2)}` : fixed;
+}
+
+export function trainedProbeDisplayId(readout: ProbeStudyReadout, study: ProbeStudy): string {
+  return `${studyArtifactCode(study)}-${readout.trained_probe_id || trainedProbeScopeId(readout)}`;
+}
+
+function trainedProbeScopeId(readout: ProbeStudyReadout): string {
+  return [
+    targetCode(readout.target),
+    `L${idPiece(probeReadoutLayerKey(readout.layer) || "ALL", "ALL")}`,
+    idPiece(readout.split || readout.split_category || "", "NOSPLIT"),
+  ].join("-");
+}
+
+function studyArtifactCode(study: ProbeStudy): string {
+  const text = String(study.artifact_id || study.study_id || "probe");
+  const hash = text.match(/[a-f0-9]{6,}$/i)?.[0]?.slice(-6) ?? idPiece(text, "PROBE").slice(-6);
+  return `P${hash.toUpperCase()}`;
+}
+
+function targetCode(target: string): string {
+  const labels: Record<string, string> = {
+    active_manipulated_object: "AMO",
+    active_receptacle_object: "ARO",
+    next_manipulated_object: "NMO",
+    task_phase: "TPH",
+  };
+  if (labels[target]) {
+    return labels[target];
+  }
+  const pieces = target.split("_").filter(Boolean);
+  if (pieces.length >= 2) {
+    return pieces.slice(0, 4).map((piece) => piece[0]?.toUpperCase() ?? "").join("");
+  }
+  return idPiece(target, "TARGET").slice(0, 10);
+}
+
+function idPiece(value: string, fallback: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "") || fallback;
+}
+
+function probeReadoutLayerKey(layer: ProbeStudyReadout["layer"]): string {
+  return layer === null || layer === undefined ? "" : String(layer);
 }
 
 export function matchesProbeFilters(
