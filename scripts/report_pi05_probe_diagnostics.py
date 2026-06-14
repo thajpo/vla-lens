@@ -46,13 +46,6 @@ DEFAULT_ROOT = Path("/mnt/new-volume/vla-lens/pi05-broad-1000-mech-light-lerobot
 DEFAULT_SPEC = Path(
     "configs/probes/pi05_broad_1000_next_manipulated_pre_contact_expert_action_hidden.yaml"
 )
-DEFAULT_BATTERY_TARGETS = [
-    "next_manipulated_object",
-    "active_manipulated_object",
-    "active_receptacle_object",
-    "task_phase",
-    "next_action_type",
-]
 POLICY_CALL_KEYS = ["trace_id", "policy_call_index"]
 
 
@@ -107,7 +100,10 @@ def parse_args() -> argparse.Namespace:
         "--battery-target",
         action="append",
         default=[],
-        help="Additional readout target. Defaults to the first object-centric battery.",
+        help=(
+            "Target to include in this probe suite. Defaults to the spec target only. "
+            "Use separate probe-suite artifacts for different research questions."
+        ),
     )
     parser.add_argument(
         "--skip-battery",
@@ -218,9 +214,10 @@ def main() -> None:
     )
     battery = pd.DataFrame()
     if not args.skip_battery:
+        suite_targets = list(dict.fromkeys(args.battery_target or [prepared.target]))
         battery = readout_battery_from_prepared(
             prepared,
-            target_names=args.battery_target or DEFAULT_BATTERY_TARGETS,
+            target_names=suite_targets,
             max_iter=args.max_iter,
             seed=args.seed,
             top_k=args.top_k,

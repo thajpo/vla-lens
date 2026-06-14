@@ -677,6 +677,8 @@ def _readouts_from_diagnostics(
     skipped: list[dict[str, Any]] = []
     for row in battery.to_dict("records"):
         target = _optional_text(row.get("target")) or primary_target
+        if target != primary_target:
+            continue
         status = _optional_text(row.get("status")) or "ok"
         layer = _clean_scalar(row.get("layer"))
         split = _optional_text(row.get("split"))

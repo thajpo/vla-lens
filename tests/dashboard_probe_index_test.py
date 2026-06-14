@@ -568,11 +568,13 @@ def test_fastapi_probe_studies_promotes_diagnostics_readouts(tmp_path):
     assert response.headers["Cache-Control"] == "no-store"
     assert study["diagnostics_available"] is True
     assert study["counts"]["readout_count"] == 2
-    assert study["counts"]["skipped_readout_count"] == 1
+    assert study["counts"]["skipped_readout_count"] == 0
+    assert study["counts"]["target_count"] == 1
     assert study["counts"]["null_run_count"] == 2
     assert study["readouts"][0]["target"] == "next_manipulated_object"
     assert study["readouts"][1]["split_category"] == "test"
-    assert study["skipped_readouts"][0]["target"] == "next_action_type"
+    assert study["skipped_readouts"] == []
+    assert {row["target"] for row in study["readouts"]} == {"next_manipulated_object"}
     assert study["controls"][0]["real_score"] == 0.62
     assert study["controls"][0]["p_value"] == 0.333
     assert study["error_examples"][0]["trace_id"] == trace_id
