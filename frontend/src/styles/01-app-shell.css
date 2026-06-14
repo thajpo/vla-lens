@@ -1043,6 +1043,23 @@ input {
   background: #6f88c6;
 }
 
+.probe-evidence-bar.segmented {
+  display: flex;
+}
+
+.probe-evidence-bar.segmented b,
+.probe-evidence-bar.segmented em {
+  flex: 0 1 auto;
+  left: auto;
+  min-width: 0;
+  position: static;
+  top: auto;
+}
+
+.probe-evidence-bar.segmented .visible-segment {
+  min-width: 4px;
+}
+
 .probe-cohort-presets {
   border-bottom: 1px solid #e2e8f0;
   display: flex;

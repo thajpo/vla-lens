@@ -1218,7 +1218,12 @@ function ProbeSummaryVisual({
           <span>{readout ? "Readout splits" : researchCopy.labels.splitCoverage}</span>
           <small className="probe-map-legend">
             <span className="correct">correct</span>
-            <span className="wrong">wrong</span>
+            <span
+              className="wrong"
+              title="Wrong rows that are not high-confidence wrong."
+            >
+              other wrong
+            </span>
             <span className="high-conf-wrong">high-conf wrong</span>
           </small>
         </header>
@@ -1234,15 +1239,18 @@ function ProbeSummaryVisual({
               >
                 <span>{row.label}</span>
                 <strong>{row.scored}/{row.total}</strong>
-                <i className="probe-evidence-bar">
-                  <b style={{ left: `${segments.correctLeft}%`, width: `${segments.correctWidth}%` }} />
-                  <em
-                    className="wrong"
-                    style={{ left: `${segments.wrongLeft}%`, width: `${segments.wrongWidth}%` }}
+                <i className="probe-evidence-bar segmented" title={probeSplitCountDetail(row)}>
+                  <b
+                    className={segments.correctCount > 0 ? "visible-segment" : undefined}
+                    style={{ flexBasis: `${segments.correctWidth}%`, width: `${segments.correctWidth}%` }}
                   />
                   <em
-                    className="high-conf-wrong"
-                    style={{ left: `${segments.highConfWrongLeft}%`, width: `${segments.highConfWrongWidth}%` }}
+                    className={`wrong${segments.wrongOnlyCount > 0 ? " visible-segment" : ""}`}
+                    style={{ flexBasis: `${segments.wrongWidth}%`, width: `${segments.wrongWidth}%` }}
+                  />
+                  <em
+                    className={`high-conf-wrong${segments.highConfWrongCount > 0 ? " visible-segment" : ""}`}
+                    style={{ flexBasis: `${segments.highConfWrongWidth}%`, width: `${segments.highConfWrongWidth}%` }}
                   />
                 </i>
                 <small>
@@ -1252,10 +1260,7 @@ function ProbeSummaryVisual({
                     ? "no episodes"
                     : row.wrong === null
                     ? "error counts unavailable"
-                    : `${Math.max(0, row.scored - row.wrong)} correct · ${Math.max(
-                        0,
-                        row.wrong - (row.highConfWrong ?? 0),
-                      )} wrong · ${row.highConfWrong ?? 0} high-conf wrong`}
+                    : probeSplitCountDetail(row)}
                 </small>
               </button>
             );
@@ -2064,8 +2069,16 @@ function probeReadoutSplitChartRows(
     const total = splitCounts?.policy_call_count ?? readout?.policy_call_count ?? readout?.row_count ?? 0;
     const wrong = splitCounts?.wrong ?? null;
     const highConfWrong = splitCounts?.high_conf_wrong ?? null;
+    const correct = splitCounts?.correct ?? Math.max(0, total - (wrong ?? 0));
+    const wrongOnly = wrong === null ? null : Math.max(0, wrong - (highConfWrong ?? 0));
     return {
-      detail: readout ? `balanced acc ${probeReadoutScoreLabel(readout)}` : "no readout",
+      detail: readout
+        ? wrong === null
+          ? `balanced acc ${probeReadoutScoreLabel(readout)}`
+          : `${formatReadoutInteger(correct)} correct · ${formatReadoutInteger(
+              wrongOnly,
+            )} other wrong · ${formatReadoutInteger(highConfWrong)} high-conf wrong · bal acc ${probeReadoutScoreLabel(readout)}`
+        : "no readout",
       highConfWrong,
       id: split,
       label: PROBE_SPLIT_FILTER_LABELS[split],
@@ -2077,11 +2090,14 @@ function probeReadoutSplitChartRows(
 }
 
 function probeSplitBarSegments(row: ProbeSummarySplitRow): {
+  correctCount: number;
   correctLeft: number;
   correctWidth: number;
+  highConfWrongCount: number;
   highConfWrongLeft: number;
   highConfWrongWidth: number;
   wrongLeft: number;
+  wrongOnlyCount: number;
   wrongWidth: number;
 } {
   const total = Math.max(0, row.total);
@@ -2094,13 +2110,29 @@ function probeSplitBarSegments(row: ProbeSummarySplitRow): {
   const wrongWidth = percentOf(wrongOnly, row.total);
   const highConfWrongWidth = percentOf(highConfWrong, row.total);
   return {
+    correctCount: correct,
     correctLeft: 0,
     correctWidth,
+    highConfWrongCount: highConfWrong,
     wrongLeft: correctWidth,
     wrongWidth,
+    wrongOnlyCount: wrongOnly,
     highConfWrongLeft: correctWidth + wrongWidth,
     highConfWrongWidth,
   };
+}
+
+function probeSplitCountDetail(row: ProbeSummarySplitRow): string {
+  if (row.total === 0) {
+    return "no episodes";
+  }
+  if (row.wrong === null) {
+    return "error counts unavailable";
+  }
+  const segments = probeSplitBarSegments(row);
+  return `${formatReadoutInteger(segments.correctCount)} correct · ${formatReadoutInteger(
+    segments.wrongOnlyCount,
+  )} other wrong · ${formatReadoutInteger(segments.highConfWrongCount)} high-conf wrong`;
 }
 
 function probeReadoutResultChartRows(summary?: ProbeStudyEpisodeSummary): Array<{
