@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
+  PROBE_READOUT_SORT_MODES,
   probeEvidenceCueForEpisode,
   probeEvidenceContextForEpisode,
   probeEvidenceRankedRows,
@@ -15,6 +16,7 @@ import {
   probeScoredCohortDetail,
   probeSplitBarSegments,
   probeSplitChartRows,
+  sortProbeStudyReadouts,
 } from "./datasetBrowserModel.ts";
 
 function readProbeEvidenceFixture(name) {
@@ -122,6 +124,55 @@ test("probe confusion rows keep unknown correctness separate", () => {
     [bowl?.correct, bowl?.wrong, bowl?.unknown, bowl?.total],
     [0, 1, 0, 1],
   );
+});
+
+test("probe readout sorting prioritizes useful held-out readouts", () => {
+  assert.deepEqual(PROBE_READOUT_SORT_MODES, [
+    "useful",
+    "test",
+    "validation",
+    "train",
+    "score_desc",
+    "layer",
+    "target",
+  ]);
+
+  const study = { target: "next_manipulated_object" };
+  const readouts = [
+    {
+      balanced_accuracy: 0.98,
+      is_primary_target: true,
+      layer: 0,
+      readout_id: "train-high",
+      split: "train",
+      split_category: "train",
+      target: "next_manipulated_object",
+    },
+    {
+      balanced_accuracy: 0.45,
+      is_primary_target: true,
+      is_selected_layer: true,
+      is_test_split: true,
+      layer: 12,
+      readout_id: "test-selected",
+      split: "test_heldout_task",
+      split_category: "test",
+      target: "next_manipulated_object",
+    },
+    {
+      balanced_accuracy: 0.62,
+      is_primary_target: true,
+      layer: 4,
+      readout_id: "validation-mid",
+      split: "val_heldout_task",
+      split_category: "validation",
+      target: "next_manipulated_object",
+    },
+  ];
+
+  assert.equal(sortProbeStudyReadouts(readouts, "useful", study)[0].readout_id, "test-selected");
+  assert.equal(sortProbeStudyReadouts(readouts, "train", study)[0].readout_id, "train-high");
+  assert.equal(sortProbeStudyReadouts(readouts, "score_desc", study)[0].readout_id, "train-high");
 });
 
 test("probe scored cohort detail distinguishes compatible rows from ranked dataset total", () => {

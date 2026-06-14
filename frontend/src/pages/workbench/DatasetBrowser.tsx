@@ -37,6 +37,8 @@ import {
   COHORT_PRESETS,
   PROBE_PREDICTION_FILTER_LABELS,
   PROBE_PREDICTION_FILTERS,
+  PROBE_READOUT_SORT_LABELS,
+  PROBE_READOUT_SORT_MODES,
   PROBE_SPLIT_FILTER_LABELS,
   canonicalProbeSplitCategory,
   datasetCoverageRows,
@@ -59,11 +61,13 @@ import {
   probeSplitChartRows,
   probeSplitLabel,
   shortTrace,
+  sortProbeStudyReadouts,
   type ProbeCohortPreset,
   type ProbeCalibrationBucket,
   type ProbeConfusionRow,
   type ProbeLensSpec,
   type ProbeLensMetricChip,
+  type ProbeReadoutSortMode,
   type ProbeSplitChartRow,
   type ProbeLensWorkbenchViewModel,
 } from "./datasetBrowserModel";
@@ -167,6 +171,7 @@ export function DatasetBrowser({
   const [probeSplitFilter, setProbeSplitFilter] = useState("all");
   const [probePredictionFilter, setProbePredictionFilter] = useState("all");
   const [selectedProbeReadoutId, setSelectedProbeReadoutId] = useState("");
+  const [probeReadoutSortMode, setProbeReadoutSortMode] = useState<ProbeReadoutSortMode>("useful");
   const [pageOffset, setPageOffset] = useState(0);
   const [probeLeftColumnWidth, setProbeLeftColumnWidth] = useState(940);
   const familyByType = useMemo(
@@ -196,12 +201,16 @@ export function DatasetBrowser({
     () => activeProbeStudy?.readouts ?? [],
     [activeProbeStudy?.readouts],
   );
+  const sortedProbeReadouts = useMemo(
+    () => sortProbeStudyReadouts(activeProbeReadouts, probeReadoutSortMode, activeProbeStudy),
+    [activeProbeReadouts, activeProbeStudy, probeReadoutSortMode],
+  );
   const selectedProbeReadout = useMemo(
     () => selectedProbe
-      ? activeProbeReadouts.find((readout) => readout.readout_id === selectedProbeReadoutId)
-        ?? defaultProbeReadout(activeProbeReadouts, activeProbeStudy)
+      ? sortedProbeReadouts.find((readout) => readout.readout_id === selectedProbeReadoutId)
+        ?? sortedProbeReadouts[0]
       : undefined,
-    [activeProbeReadouts, activeProbeStudy, selectedProbe, selectedProbeReadoutId],
+    [selectedProbe, selectedProbeReadoutId, sortedProbeReadouts],
   );
   const probePageStyle = selectedProbe
     ? ({ "--probe-left-width": `${probeLeftColumnWidth}px` } as CSSProperties)
@@ -388,6 +397,7 @@ export function DatasetBrowser({
     setProbeSplitFilter("all");
     setProbePredictionFilter("all");
     setSelectedProbeReadoutId("");
+    setProbeReadoutSortMode("useful");
     resetPage();
   };
   const openDatasetEpisode = (episode: DatasetEpisode) => {
@@ -463,7 +473,7 @@ export function DatasetBrowser({
           onSplitFilterChange={(value) => {
             setProbeCohortPreset("all");
             const nextReadout = selectedProbeReadout
-              ? probeReadoutForSplitCategory(activeProbeReadouts, selectedProbeReadout, value)
+              ? probeReadoutForSplitCategory(sortedProbeReadouts, selectedProbeReadout, value)
               : undefined;
             if (nextReadout) {
               setSelectedProbeReadoutId(nextReadout.readout_id);
@@ -480,8 +490,9 @@ export function DatasetBrowser({
 
       {selectedProbe && activeProbeStudy ? (
         <ProbeReadoutNavigator
-          readouts={activeProbeReadouts}
+          readouts={sortedProbeReadouts}
           selectedReadout={selectedProbeReadout}
+          sortMode={probeReadoutSortMode}
           study={activeProbeStudy}
           unavailableReason={activeReadoutReason}
           onReadoutChange={(readoutId) => {
@@ -489,6 +500,10 @@ export function DatasetBrowser({
             setSelectedProbeReadoutId(readoutId);
             setProbeSplitFilter(nextReadout?.split_category ?? "all");
             setProbeCohortPreset("all");
+            resetPage();
+          }}
+          onSortChange={(sortMode) => {
+            setProbeReadoutSortMode(sortMode);
             resetPage();
           }}
         />
@@ -1101,15 +1116,19 @@ function LensSelector({
 function ProbeReadoutNavigator({
   readouts,
   selectedReadout,
+  sortMode,
   study,
   unavailableReason,
   onReadoutChange,
+  onSortChange,
 }: {
   readouts: ProbeStudyReadout[];
   selectedReadout?: ProbeStudyReadout;
+  sortMode: ProbeReadoutSortMode;
   study: ProbeStudy;
   unavailableReason?: string;
   onReadoutChange: (readoutId: string) => void;
+  onSortChange: (sortMode: ProbeReadoutSortMode) => void;
 }) {
   if (!readouts.length) {
     return (
@@ -1124,19 +1143,34 @@ function ProbeReadoutNavigator({
   const activeReadout = selectedReadout ?? readouts[0];
   return (
     <section className="probe-readout-navigator" aria-label="Trained probe scope">
-      <label className="probe-readout-picker">
-        <span>Trained probe</span>
-        <select
-          value={activeReadout.readout_id}
-          onChange={(event) => onReadoutChange(event.target.value)}
-        >
-          {readouts.map((readout) => (
-            <option key={readout.readout_id} value={readout.readout_id}>
-              {probeReadoutOptionLabel(readout, study)}
-            </option>
-          ))}
-        </select>
-      </label>
+      <div className="probe-readout-controls">
+        <label className="probe-readout-picker">
+          <span>Trained probe</span>
+          <select
+            value={activeReadout.readout_id}
+            onChange={(event) => onReadoutChange(event.target.value)}
+          >
+            {readouts.map((readout) => (
+              <option key={readout.readout_id} value={readout.readout_id}>
+                {probeReadoutOptionLabel(readout, study)}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="probe-readout-sort">
+          <span>Sort</span>
+          <select
+            value={sortMode}
+            onChange={(event) => onSortChange(event.target.value as ProbeReadoutSortMode)}
+          >
+            {PROBE_READOUT_SORT_MODES.map((mode) => (
+              <option key={mode} value={mode}>
+                {PROBE_READOUT_SORT_LABELS[mode]}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
       <dl className="probe-readout-scope-facts">
         <div>
           <dt title="The label this trained probe predicts from activations.">Target</dt>
