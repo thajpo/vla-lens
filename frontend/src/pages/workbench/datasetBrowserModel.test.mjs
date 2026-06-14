@@ -193,7 +193,7 @@ test("probe readout filtering narrows by usefulness and split", () => {
   assert.equal(filterProbeStudyReadouts(readouts, "all", study)[0].readout_id, "test-selected");
 });
 
-test("probe readout compact label keeps full metadata in hover model", () => {
+test("probe readout compact label keeps hover metadata concise", () => {
   const study = {
     artifact_id: "probe_suite-abcd1234",
     name: "Next manipulated object",
@@ -226,15 +226,17 @@ test("probe readout compact label keeps full metadata in hover model", () => {
   };
 
   assert.equal(compactProbeReadoutLabel(readout, study), "L12 · Test · BA .457");
-  const lines = metadataLineMap(probeReadoutHoverModel(readout, study));
+  const card = probeReadoutHoverModel(readout, study);
+  const lines = metadataLineMap(card);
   assert.equal(lines.get("Metrics:Balanced accuracy"), "0.457");
   assert.equal(lines.get("Metrics:Top-3 accuracy"), "0.710");
-  assert.equal(lines.get("Rows:Policy calls"), "135");
+  assert.equal(lines.get("Scope:Rows"), "135");
   assert.equal(lines.get("Flags:Selected layer"), "false");
-  assert.equal(lines.get("Provenance:Readout ID"), readout.readout_id);
+  assert.equal(lines.has("Provenance:Readout ID"), false);
+  assert.ok(card.groups.flatMap((group) => group.lines).length <= 14);
 });
 
-test("probe family hover model summarizes counts and large diagnostics", () => {
+test("probe family hover model keeps diagnostics concise", () => {
   const study = {
     artifact_id: "probe_suite-abcd1234",
     artifact_type: "probe_suite",
@@ -289,12 +291,18 @@ test("probe family hover model summarizes counts and large diagnostics", () => {
     target: "next_manipulated_object",
   };
 
-  const lines = metadataLineMap(probeFamilyHoverModel(study));
-  assert.equal(lines.get("Rows:Feature rows"), "5,715");
-  assert.equal(lines.get("Diagnostics:Cache key"), "abc123");
+  const card = probeFamilyHoverModel(study);
+  const lines = metadataLineMap(card);
+  assert.equal(lines.get("Rows:Readouts"), "15");
+  assert.equal(lines.get("Rows:Layers"), "5");
+  assert.equal(lines.get("Rows:Policy calls"), "1,143");
+  assert.equal(lines.get("Diagnostics:Selected layer"), "L12");
+  assert.equal(lines.get("Diagnostics:Selection split"), "val_heldout_task");
   assert.match(lines.get("Diagnostics:Controls"), /50 runs/);
-  assert.match(lines.get("Diagnostics:Error examples"), /1 rows/);
-  assert.equal(lines.get("Provenance:Diagnostics available"), "true");
+  assert.match(lines.get("Diagnostics:Errors"), /1 examples/);
+  assert.equal(lines.has("Diagnostics:Cache key"), false);
+  assert.equal(lines.has("Provenance:Diagnostics available"), false);
+  assert.ok(card.groups.flatMap((group) => group.lines).length <= 16);
 });
 
 test("probe scored cohort detail distinguishes compatible rows from ranked dataset total", () => {

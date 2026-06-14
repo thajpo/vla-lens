@@ -268,40 +268,24 @@ export function probeReadoutHoverModel(readout: ProbeStudyReadout, study?: Probe
     groups: [
       metadataGroup("Scope", [
         metadataLine("Target", probeTargetDisplayLabel(readout.target)),
-        metadataLine("Layer", readout.layer),
-        metadataLine("Split", readout.split),
-        metadataLine("Split category", probeSplitLabel(readout.split_category, readout.split)),
+        metadataLine("Layer", compactProbeLayerLabel(readout.layer)),
+        metadataLine("Split", probeSplitLabel(readout.split_category, readout.split)),
+        metadataLine("Rows", readout.policy_call_count ?? readout.row_count, "integer"),
+        metadataLine("Classes", readout.class_count, "integer"),
       ]),
       metadataGroup("Metrics", [
         metadataLine("Balanced accuracy", readout.balanced_accuracy, "metric"),
         metadataLine("Accuracy", readout.accuracy, "metric"),
         metadataLine("Macro F1", readout.macro_f1, "metric"),
-        metadataLine("Top-1 accuracy", readout.top1_accuracy, "metric"),
-        metadataLine("Top-2 accuracy", readout.top2_accuracy, "metric"),
         metadataLine("Top-3 accuracy", readout.top3_accuracy, "metric"),
-        metadataLine("Train balanced accuracy", readout.train_balanced_accuracy, "metric"),
         metadataLine("Train gap", readout.train_gap_balanced_accuracy, "metric"),
-      ]),
-      metadataGroup("Rows", [
-        metadataLine("Policy calls", readout.policy_call_count, "integer"),
-        metadataLine("Rows", readout.row_count, "integer"),
-        metadataLine("Classes", readout.class_count, "integer"),
       ]),
       metadataGroup("Flags", [
         metadataLine("Status", readout.status),
-        metadataLine("Source", readout.source),
-        metadataLine("Primary target", readout.is_primary_target, "boolean"),
         metadataLine("Selected layer", readout.is_selected_layer, "boolean"),
         metadataLine("Selection split", readout.is_selection_split, "boolean"),
         metadataLine("Test split", readout.is_test_split, "boolean"),
         metadataLine("Reason", readout.reason),
-      ]),
-      metadataGroup("Provenance", [
-        metadataLine("Display ID", study ? trainedProbeDisplayId(readout, study) : readout.trained_probe_id),
-        metadataLine("Readout ID", readout.readout_id),
-        metadataLine("Trained probe ID", readout.trained_probe_id),
-        metadataLine("Study ID", study?.study_id),
-        metadataLine("Artifact ID", study?.artifact_id),
       ]),
     ],
     subtitle: compactProbeReadoutLabel(readout, study),
@@ -310,48 +294,31 @@ export function probeReadoutHoverModel(readout: ProbeStudyReadout, study?: Probe
 }
 
 export function probeFamilyHoverModel(study: ProbeStudy): ProbeMetadataCard {
+  const selectedLayer = layerMetadataValue(study.summary.selected_layer);
+  const selectionSplit = stringValue(study.summary.selection_split);
+  const testSplit = stringValue(study.summary.test_split);
   return compactMetadataCard({
     groups: [
       metadataGroup("Scope", [
         metadataLine("Target", study.target ? probeTargetDisplayLabel(study.target) : ""),
         metadataLine("Question", study.question_label),
-        metadataLine("Prediction", study.prediction),
         metadataLine("Input", study.input),
         metadataLine("Output", study.output),
         metadataLine("Objective", study.objective),
       ]),
       metadataGroup("Rows", [
         metadataLine("Readouts", study.counts.readout_count, "integer"),
-        metadataLine("Skipped readouts", study.counts.skipped_readout_count, "integer"),
-        metadataLine("Targets", study.counts.target_count, "integer"),
         metadataLine("Layers", study.counts.layer_count, "integer"),
-        metadataLine("Feature rows", study.counts.feature_rows, "integer"),
         metadataLine("Policy calls", study.counts.policy_call_count, "integer"),
         metadataLine("Episodes", study.counts.episode_count, "integer"),
         metadataLine("Classes", study.counts.class_count, "integer"),
-        metadataLine("Null runs", study.counts.null_run_count, "integer"),
-        metadataLine("Null eval rows", study.counts.null_eval_row_count, "integer"),
-        metadataLine("Split policy calls", study.counts.split_policy_call_counts, "record"),
       ]),
       metadataGroup("Diagnostics", [
-        ...metadataLinesFromRecord(study.summary, "summary"),
-        metadataLine("Controls", summarizeArray(study.controls, controlSummary)),
-        metadataLine("Lead time rows", summarizeArray(study.lead_time, compactRecordSummary)),
-        metadataLine("Per-class rows", summarizeArray(study.per_class, compactRecordSummary)),
-        metadataLine("Confusion rows", summarizeArray(study.confusion, compactRecordSummary)),
-        metadataLine("Class support rows", summarizeArray(study.class_support, compactRecordSummary)),
-        metadataLine("Error examples", summarizeArray(study.error_examples, compactRecordSummary)),
-        metadataLine("Skipped readouts", summarizeArray(study.skipped_readouts, (readout) => compactProbeReadoutLabel(readout, study))),
-      ]),
-      metadataGroup("Provenance", [
-        metadataLine("Study ID", study.study_id),
-        metadataLine("Artifact ID", study.artifact_id),
-        metadataLine("Artifact type", study.artifact_type),
-        metadataLine("Source artifact ID", study.source_artifact_id),
-        metadataLine("Source artifact name", study.source_artifact_name),
-        metadataLine("Created UTC", study.created_utc),
-        metadataLine("Diagnostics available", study.diagnostics_available, "boolean"),
-        metadataLine("Source", study.source),
+        metadataLine("Selected layer", selectedLayer === null ? "" : compactProbeLayerLabel(selectedLayer)),
+        metadataLine("Selection split", selectionSplit ? probeSplitLabel(undefined, selectionSplit) : ""),
+        metadataLine("Test split", testSplit ? probeSplitLabel(undefined, testSplit) : ""),
+        metadataLine("Controls", controlsHoverSummary(study.controls)),
+        metadataLine("Errors", errorExamplesHoverSummary(study.error_examples)),
       ]),
     ],
     subtitle: study.question_label ?? undefined,
@@ -491,15 +458,6 @@ function metadataLine(
   return { label, value: metadataValueSummary(value) };
 }
 
-function metadataLinesFromRecord(record: Record<string, unknown> | undefined, prefix: string): ProbeMetadataLine[] {
-  if (!record) {
-    return [];
-  }
-  return Object.entries(record)
-    .map(([key, value]) => metadataLine(labelFromSnake(key.replace(new RegExp(`^${prefix}_?`), "")), value))
-    .filter((line): line is ProbeMetadataLine => Boolean(line));
-}
-
 function metadataValueIsPopulated(value: unknown): boolean {
   if (value === null || value === undefined) {
     return false;
@@ -559,21 +517,56 @@ function compactRecordSummary(record: Record<string, unknown>): string {
   return entries.length ? entries.join(" · ") : `${formatInteger(Object.keys(record).length)} fields`;
 }
 
-function controlSummary(control: ProbeStudyControl): string {
+function layerMetadataValue(value: unknown): ProbeStudyReadout["layer"] | null {
+  return typeof value === "string" || typeof value === "number" ? value : null;
+}
+
+function controlsHoverSummary(controls: ProbeStudyControl[]): string {
+  if (!controls.length) {
+    return "";
+  }
+  const runs = uniqueLimited(
+    controls
+      .map((control) => control.runs)
+      .filter((runs): runs is number => typeof runs === "number" && Number.isFinite(runs))
+      .map((runs) => `${formatInteger(runs)} runs`),
+  );
+  const splits = uniqueLimited(controls.map((control) => control.split).filter((split): split is string => Boolean(split)));
+  const minP = controls
+    .map((control) => control.p_value)
+    .filter((value): value is number => typeof value === "number" && Number.isFinite(value))
+    .sort((left, right) => left - right)[0];
   return compactJoin(
     [
-      control.kind,
-      control.split ? `split ${control.split}` : "",
-      control.runs === null || control.runs === undefined ? "" : `${formatInteger(control.runs)} runs`,
-      control.selected_layer === null || control.selected_layer === undefined ? "" : `selected ${compactProbeLayerLabel(control.selected_layer)}`,
-      typeof control.real_score === "number" ? `real ${control.real_score.toFixed(3)}` : "",
-      typeof control.null_score_mean === "number" ? `null ${control.null_score_mean.toFixed(3)}` : "",
-      typeof control.null_score_std === "number" ? `std ${control.null_score_std.toFixed(3)}` : "",
-      typeof control.p_value === "number" ? `p ${control.p_value.toFixed(3)}` : "",
-      control.selected_layer_counts ? `layer counts ${compactRecordSummary(control.selected_layer_counts)}` : "",
+      `${formatInteger(controls.length)} null checks`,
+      runs.join(", "),
+      splits.join(", "),
+      typeof minP === "number" ? `min p ${minP.toFixed(3)}` : "",
     ],
     " · ",
   );
+}
+
+function errorExamplesHoverSummary(examples: Record<string, unknown>[]): string {
+  if (!examples.length) {
+    return "";
+  }
+  const splits = uniqueLimited(
+    examples
+      .map((example) => stringValue(example.split))
+      .filter(Boolean),
+  );
+  return compactJoin(
+    [
+      `${formatInteger(examples.length)} examples`,
+      splits.join(", "),
+    ],
+    " · ",
+  );
+}
+
+function uniqueLimited(values: string[], limit = 2): string[] {
+  return [...new Set(values.filter(Boolean))].slice(0, limit);
 }
 
 export function probeTargetDisplayLabel(target: string | null | undefined): string {

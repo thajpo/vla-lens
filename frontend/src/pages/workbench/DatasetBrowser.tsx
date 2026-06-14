@@ -1852,8 +1852,7 @@ function metricHoverModel(metric: ProbeLensMetricChip): ProbeMetadataCard {
       {
         lines: [
           { label: "Value", value: metric.value },
-          { label: "Tone", value: metric.tone },
-          ...(metric.detail ? [{ label: "Detail", value: metric.detail }] : []),
+          ...(metric.detail ? [{ label: "Meaning", value: metric.detail }] : []),
         ],
         title: "Metric",
       },
@@ -1888,24 +1887,13 @@ function confidenceBucketTooltip(bucket: ProbeConfidenceBucket): ProbeMetadataCa
     groups: [
       {
         lines: [
-          { label: "Scored rows", value: formatReadoutInteger(bucket.total) },
+          { label: "Rows", value: formatReadoutInteger(bucket.total) },
           { label: "Correct", value: formatTooltipShare(bucket.correct, bucket.total) },
           { label: "Wrong", value: formatTooltipShare(bucket.wrong, bucket.total) },
           { label: "High-conf wrong", value: formatTooltipShare(bucket.highConfWrong, bucket.total) },
           { label: "Unknown labels", value: formatTooltipShare(bucket.unknown, bucket.total) },
         ],
-        title: "Rows",
-      },
-      {
-        lines: [
-          {
-            label: "Meaning",
-            value: bucket.total
-              ? "Rows in this confidence range; green is correct, orange is wrong, gray is unknown."
-              : "No scored probe rows landed in this confidence range.",
-          },
-        ],
-        title: "Notes",
+        title: "Confidence bin",
       },
     ],
     title: `${bucket.label} confidence`,
@@ -1917,14 +1905,13 @@ function rollingPointTooltip(point: ProbeRollingPoint): ProbeMetadataCard {
     groups: [
       {
         lines: [
-          { label: "Episode", value: point.label },
-          { label: "Window index", value: String(point.index + 1) },
           { label: "Accuracy", value: `${Math.round(point.accuracy * 100)}%` },
-          { label: "Correct", value: formatReadoutInteger(point.correct) },
-          { label: "Wrong", value: formatReadoutInteger(point.wrong) },
+          { label: "Correct", value: formatTooltipShare(point.correct, point.scored) },
+          { label: "Wrong", value: formatTooltipShare(point.wrong, point.scored) },
           { label: "Scored", value: formatReadoutInteger(point.scored) },
+          { label: "Episode", value: shortTrace(point.label) },
         ],
-        title: "Rolling window",
+        title: "Window",
       },
     ],
     title: "Accuracy over episode order",
@@ -1936,20 +1923,12 @@ function calibrationRowTooltip(row: ProbeCalibrationBucket): ProbeMetadataCard {
     groups: [
       {
         lines: [
-          { label: "Confidence bin", value: row.label },
           { label: "Rows", value: formatReadoutInteger(row.total) },
           { label: "Correct", value: formatTooltipShare(row.correct, row.total) },
           { label: "Accuracy", value: row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%` },
           { label: "Avg confidence", value: row.avgConfidence === null ? "-" : row.avgConfidence.toFixed(3) },
         ],
         title: "Calibration",
-      },
-      {
-        lines: [
-          { label: "Bar", value: "observed accuracy" },
-          { label: "Marker", value: "average confidence" },
-        ],
-        title: "Legend",
       },
     ],
     title: `${row.label} confidence`,
@@ -1961,10 +1940,10 @@ function scatterPointTooltip(point: ProbeScatterPoint): ProbeMetadataCard {
     groups: [
       {
         lines: [
-          { label: "Episode", value: point.label },
           { label: "Confidence", value: point.confidence.toFixed(3) },
           { label: "Steps", value: formatReadoutInteger(point.episodeLength) },
           { label: "Result", value: point.tone },
+          { label: "Episode", value: point.label },
         ],
         title: "Episode",
       },
@@ -1978,13 +1957,12 @@ function temporalRowTooltip(row: ProbeTemporalRow): ProbeMetadataCard {
     groups: [
       {
         lines: [
-          { label: "Episode", value: row.label },
           { label: "Marker", value: row.marker },
-          { label: "Timeline position", value: `${Math.round(row.position)}%` },
+          { label: "Position", value: `${Math.round(row.position)}%` },
           { label: "Score", value: row.score },
-          { label: "Tone", value: row.tone },
+          { label: "Episode", value: row.label },
         ],
-        title: "Temporal evidence",
+        title: "Timeline",
       },
     ],
     title: row.label,
@@ -1996,11 +1974,10 @@ function confusionRowTooltip(row: ProbeConfusionRow): ProbeMetadataCard {
     groups: [
       {
         lines: [
-          { label: "Pair", value: row.label },
           { label: "Rows", value: formatReadoutInteger(row.total) },
           { label: "Correct", value: formatTooltipShare(row.correct, row.total) },
           { label: "Wrong", value: formatTooltipShare(row.wrong, row.total) },
-          { label: "Unknown labels", value: formatTooltipShare(row.unknown, row.total) },
+          { label: "Unknown", value: formatTooltipShare(row.unknown, row.total) },
         ],
         title: "Prediction vs label",
       },
@@ -2015,27 +1992,15 @@ function sliceRowTooltip(row: ProbeAnalysisCountRow, title: string): ProbeMetada
     groups: [
       {
         lines: [
-          { label: "Visible episodes", value: formatReadoutInteger(row.total) },
+          { label: "Episodes", value: formatReadoutInteger(row.total) },
           { label: "Scored", value: formatTooltipShare(row.scored, row.total) },
           { label: "Unscored", value: formatTooltipShare(row.unscored, row.total) },
-        ],
-        title: "Rows",
-      },
-      {
-        lines: [
           { label: "Correct", value: formatTooltipShare(row.correct, row.scored) },
-          { label: "Other wrong", value: formatTooltipShare(otherWrong, row.scored) },
+          { label: "Wrong", value: formatTooltipShare(otherWrong, row.scored) },
           { label: "High-conf wrong", value: formatTooltipShare(row.highConfWrong, row.scored) },
-          { label: "Unknown labels", value: formatTooltipShare(row.unknown, row.scored) },
           { label: "Accuracy", value: row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%` },
         ],
         title: "Result",
-      },
-      {
-        lines: [
-          { label: "Ranking", value: "High-confidence wrong, then wrong, then scored coverage." },
-        ],
-        title: "Notes",
       },
     ],
     title: `${title}: ${row.label}`,

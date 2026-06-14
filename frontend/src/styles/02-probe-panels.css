@@ -1542,6 +1542,19 @@
   position: relative;
 }
 
+.probe-metadata-hover::after,
+.probe-graph-hover::after {
+  content: "";
+  display: none;
+  height: 8px;
+  left: 0;
+  min-width: 24px;
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 29;
+}
+
 .probe-metadata-hover:focus-visible,
 .probe-graph-hover:focus-visible {
   outline: 2px solid #4f6fbe;
@@ -1553,19 +1566,20 @@
   border: 1px solid #cbd5e1;
   box-shadow: 0 12px 30px rgba(15, 23, 42, 0.14);
   display: grid;
-  gap: 8px;
-  max-height: min(560px, calc(100vh - 48px));
+  gap: 6px;
+  max-height: min(320px, calc(100vh - 40px));
   opacity: 0;
+  overscroll-behavior: contain;
   overflow: auto;
   padding: 10px 11px;
   pointer-events: none;
   position: absolute;
   right: 0;
-  top: calc(100% + 7px);
+  top: calc(100% + 1px);
   transform: translateY(-3px);
   transition: opacity 120ms ease, transform 120ms ease, visibility 120ms ease;
   visibility: hidden;
-  width: min(360px, calc(100vw - 40px));
+  width: min(320px, calc(100vw - 40px));
   z-index: 30;
 }
 
@@ -1591,8 +1605,18 @@
 .probe-graph-hover:focus-visible .probe-graph-tooltip,
 .probe-graph-hover:focus-within .probe-graph-tooltip {
   opacity: 1;
+  pointer-events: auto;
   transform: translateY(0);
   visibility: visible;
+}
+
+.probe-metadata-hover:hover::after,
+.probe-metadata-hover:focus-visible::after,
+.probe-metadata-hover:focus-within::after,
+.probe-graph-hover:hover::after,
+.probe-graph-hover:focus-visible::after,
+.probe-graph-hover:focus-within::after {
+  display: block;
 }
 
 .probe-metadata-card-title {
@@ -1621,9 +1645,9 @@
 .probe-metadata-card-group {
   border-top: 1px solid #e2e8f0;
   display: grid;
-  gap: 5px;
+  gap: 4px;
   min-width: 0;
-  padding-top: 7px;
+  padding-top: 6px;
 }
 
 .probe-metadata-card-group:first-of-type {
@@ -1650,7 +1674,7 @@
   display: flex;
   font-size: 11px;
   font-weight: 700;
-  gap: 14px;
+  gap: 12px;
   justify-content: space-between;
   min-width: 0;
   overflow: visible;
@@ -1672,7 +1696,7 @@
   color: #0f172a;
   font-variant-numeric: tabular-nums;
   font-weight: 900;
-  max-width: 190px;
+  max-width: 175px;
   overflow-wrap: anywhere;
   text-align: right;
 }
@@ -1730,6 +1754,17 @@
   min-width: 0;
   overflow: hidden;
   width: 100%;
+}
+
+.probe-analysis-panel .probe-metadata-card,
+.probe-analysis-panel .probe-metadata-card span {
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.probe-analysis-panel .probe-metadata-card {
+  overflow: auto;
 }
 
 .probe-analysis-bar-row b,
