@@ -116,6 +116,21 @@ export type ProbeSplitBarSegments = {
   wrongOnlyCount: number;
   wrongWidth: number;
 };
+export type ProbeCalibrationBucket = {
+  accuracy: number | null;
+  avgConfidence: number | null;
+  confidenceSum: number;
+  correct: number;
+  label: string;
+  total: number;
+};
+export type ProbeConfusionRow = {
+  correct: number;
+  label: string;
+  total: number;
+  unknown: number;
+  wrong: number;
+};
 export type ProbeContributorSummary = {
   detail: string;
   key: string;
@@ -883,6 +898,57 @@ export function probeSplitBarSegments(row: ProbeSplitChartRow): ProbeSplitBarSeg
     wrongOnlyCount: wrongOnly,
     wrongWidth,
   };
+}
+
+export function probeCalibrationRows(records: ProbeEpisodeIndex[]): ProbeCalibrationBucket[] {
+  const rows: ProbeCalibrationBucket[] = [
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: "0-.20", total: 0 },
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".20-.40", total: 0 },
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".40-.60", total: 0 },
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".60-.80", total: 0 },
+    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".80-1", total: 0 },
+  ];
+  for (const record of records) {
+    if (
+      !record.available ||
+      typeof record.confidence !== "number" ||
+      !Number.isFinite(record.confidence) ||
+      (record.correct !== true && record.correct !== false)
+    ) {
+      continue;
+    }
+    const index = Math.max(0, Math.min(4, Math.floor(record.confidence * 5)));
+    const row = rows[index];
+    row.total += 1;
+    row.confidenceSum += record.confidence;
+    if (record.correct === true) {
+      row.correct += 1;
+    }
+  }
+  return rows.map((row) => ({
+    ...row,
+    accuracy: row.total ? row.correct / row.total : null,
+    avgConfidence: row.total ? row.confidenceSum / row.total : null,
+  }));
+}
+
+export function probeConfusionRows(records: ProbeEpisodeIndex[]): ProbeConfusionRow[] {
+  const rows = new Map<string, ProbeConfusionRow>();
+  for (const record of records) {
+    if (record.predicted === null || record.predicted === undefined || record.actual === null || record.actual === undefined) {
+      continue;
+    }
+    const label = `${displayProbeValue(record.predicted)} -> ${displayProbeValue(record.actual)}`;
+    const row = rows.get(label) ?? { correct: 0, label, total: 0, unknown: 0, wrong: 0 };
+    row.total += 1;
+    if (record.correct === false) row.wrong += 1;
+    else if (record.correct === true) row.correct += 1;
+    else row.unknown += 1;
+    rows.set(label, row);
+  }
+  return [...rows.values()]
+    .sort((left, right) => right.total - left.total || right.wrong - left.wrong || left.label.localeCompare(right.label))
+    .slice(0, 8);
 }
 
 export function probeResultChartRows(probe: ProbeDatasetIndex): Array<{
@@ -1794,6 +1860,10 @@ function formatInteger(value: number): string {
 
 export function labelFromSnake(value: string): string {
   return humanizeProbeText(value);
+}
+
+function displayProbeValue(value: string | boolean | number): string {
+  return String(value).replaceAll("_", " ");
 }
 
 export function formatSignedNumber(value: number): string {

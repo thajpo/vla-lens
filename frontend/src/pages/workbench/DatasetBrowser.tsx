@@ -47,6 +47,8 @@ import {
   episodeTitle,
   formatDatasetProbeConfidence,
   percentOf,
+  probeCalibrationRows,
+  probeConfusionRows,
   probeEvidenceContextForEpisode,
   probeEvidenceCueForEpisode,
   probeEpisodeInspectionReason,
@@ -58,6 +60,8 @@ import {
   probeSplitLabel,
   shortTrace,
   type ProbeCohortPreset,
+  type ProbeCalibrationBucket,
+  type ProbeConfusionRow,
   type ProbeLensSpec,
   type ProbeLensMetricChip,
   type ProbeSplitChartRow,
@@ -1273,7 +1277,12 @@ function ProbeSummaryVisual({
   const resultRows = readout && !showAggregatePerformance
     ? probeReadoutResultChartRows(readoutEpisodeSummary)
     : probeResultChartRows(probe);
-  const hasSplitErrorCounts = splitRows.some((row) => probeSplitBarSegments(row).hasErrorCounts);
+  const splitSegments = splitRows.map((row) => [row.id, probeSplitBarSegments(row)] as const);
+  const segmentsBySplit = new Map(splitSegments);
+  const hasSplitErrorCounts = splitSegments.some(([, segments]) => segments.hasErrorCounts);
+  const hasUnknownSplitRows = splitSegments.some(
+    ([, segments]) => !segments.hasErrorCounts && segments.unknownCount > 0,
+  );
   return (
     <section className="probe-evidence-plot probe-summary-visual" aria-label="Probe summary">
       <div className="probe-evidence-plot-column">
@@ -1291,16 +1300,17 @@ function ProbeSummaryVisual({
                 </span>
                 <span className="high-conf-wrong">high-conf wrong</span>
               </>
-            ) : (
+            ) : null}
+            {hasUnknownSplitRows ? (
               <span className="unknown" title="Correct and wrong counts are unavailable for these aggregate split rows.">
                 rows only
               </span>
-            )}
+            ) : null}
           </small>
         </header>
         <div className="probe-split-bars">
           {splitRows.map((row) => {
-            const segments = probeSplitBarSegments(row);
+            const segments = segmentsBySplit.get(row.id) ?? probeSplitBarSegments(row);
             return (
               <button
                 className={activeSplitFilter === row.id ? "active" : ""}
@@ -1413,6 +1423,7 @@ type ProbeAnalysisCountRow = {
   scored: number;
   total: number;
   unscored: number;
+  unknown: number;
   wrong: number;
 };
 
@@ -1423,15 +1434,6 @@ type ProbeConfidenceBucket = {
   total: number;
   unknown: number;
   wrong: number;
-};
-
-type ProbeCalibrationBucket = {
-  accuracy: number | null;
-  avgConfidence: number | null;
-  confidenceSum: number;
-  correct: number;
-  label: string;
-  total: number;
 };
 
 type ProbeScatterPoint = {
@@ -1469,13 +1471,6 @@ type ProbeCohortRow = {
 type ProbeCohortGroup = {
   label: string;
   rows: ProbeCohortRow[];
-};
-
-type ProbeConfusionRow = {
-  correct: number;
-  label: string;
-  total: number;
-  wrong: number;
 };
 
 type ProbeDatasetAnalysisModel = {
@@ -1606,6 +1601,7 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
                 <i>
                   <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
                   <b className="wrong" style={{ width: `${percentOf(row.wrong, row.total)}%` }} />
+                  <b className="unknown" style={{ width: `${percentOf(row.unknown, row.total)}%` }} />
                 </i>
                 <strong>{row.total}</strong>
               </div>
@@ -1662,6 +1658,7 @@ function ProbeSliceCard({
               <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
               <b className="wrong" style={{ width: `${percentOf(Math.max(0, row.wrong - row.highConfWrong), row.total)}%` }} />
               <b className="high-conf-wrong" style={{ width: `${percentOf(row.highConfWrong, row.total)}%` }} />
+              <b className="unknown" style={{ width: `${percentOf(row.unknown, row.total)}%` }} />
             </i>
             <strong>{row.wrong}/{row.scored}</strong>
           </div>
@@ -1680,10 +1677,10 @@ function probeDatasetAnalysisModel(
 ): ProbeDatasetAnalysisModel {
   const records = recordsOverride ?? Object.values(probe.by_trace ?? {});
   return {
-    calibrationRows: calibrationRows(records),
+    calibrationRows: probeCalibrationRows(records),
     confidenceBuckets: confidenceBucketRows(records),
     cohortGroups: reviewCohortGroups(probe, episodes),
-    confusionRows: confusionRows(records),
+    confusionRows: probeConfusionRows(records),
     lengthScorePoints: scoreLengthPoints(probe, episodes),
     outcomeRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.outcome || "Outcome missing"),
     rollingAccuracy: rollingAccuracyRows(records),
@@ -1719,33 +1716,6 @@ function confidenceBucketRows(records: ProbeEpisodeIndex[]): ProbeConfidenceBuck
     if (record.correct === false && record.confidence >= 0.8) bucket.highConfWrong += 1;
   }
   return buckets;
-}
-
-function calibrationRows(records: ProbeEpisodeIndex[]): ProbeCalibrationBucket[] {
-  const rows: ProbeCalibrationBucket[] = [
-    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: "0-.20", total: 0 },
-    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".20-.40", total: 0 },
-    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".40-.60", total: 0 },
-    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".60-.80", total: 0 },
-    { accuracy: null, avgConfidence: null, confidenceSum: 0, correct: 0, label: ".80-1", total: 0 },
-  ];
-  for (const record of records) {
-    if (!record.available || typeof record.confidence !== "number" || !Number.isFinite(record.confidence)) {
-      continue;
-    }
-    const index = Math.max(0, Math.min(4, Math.floor(record.confidence * 5)));
-    const row = rows[index];
-    row.total += 1;
-    row.confidenceSum += record.confidence;
-    if (record.correct === true) {
-      row.correct += 1;
-    }
-  }
-  return rows.map((row) => ({
-    ...row,
-    accuracy: row.total ? row.correct / row.total : null,
-    avgConfidence: row.total ? row.confidenceSum / row.total : null,
-  }));
 }
 
 function rollingAccuracyRows(records: ProbeEpisodeIndex[]): ProbeRollingPoint[] {
@@ -1869,24 +1839,6 @@ function sliceRowsForEpisodes(
     .slice(0, 8);
 }
 
-function confusionRows(records: ProbeEpisodeIndex[]): ProbeConfusionRow[] {
-  const rows = new Map<string, ProbeConfusionRow>();
-  for (const record of records) {
-    if (record.predicted === null || record.predicted === undefined || record.actual === null || record.actual === undefined) {
-      continue;
-    }
-    const label = `${displayValue(record.predicted)} -> ${displayValue(record.actual)}`;
-    const row = rows.get(label) ?? { correct: 0, label, total: 0, wrong: 0 };
-    row.total += 1;
-    if (record.correct === false) row.wrong += 1;
-    else row.correct += 1;
-    rows.set(label, row);
-  }
-  return [...rows.values()]
-    .sort((left, right) => right.total - left.total || right.wrong - left.wrong || left.label.localeCompare(right.label))
-    .slice(0, 8);
-}
-
 function reviewCohortGroups(probe: ProbeDatasetIndex, episodes: DatasetEpisode[]): ProbeCohortGroup[] {
   const groups: ProbeCohortGroup[] = [
     { label: "High-conf wrong", rows: [] },
@@ -1925,7 +1877,7 @@ function reviewCohortGroups(probe: ProbeDatasetIndex, episodes: DatasetEpisode[]
 }
 
 function emptyAnalysisRow(label: string): ProbeAnalysisCountRow {
-  return { accuracy: null, correct: 0, highConfWrong: 0, label, scored: 0, total: 0, unscored: 0, wrong: 0 };
+  return { accuracy: null, correct: 0, highConfWrong: 0, label, scored: 0, total: 0, unscored: 0, unknown: 0, wrong: 0 };
 }
 
 function incrementAnalysisRow(row: ProbeAnalysisCountRow, record?: ProbeEpisodeIndex) {
@@ -1936,7 +1888,8 @@ function incrementAnalysisRow(row: ProbeAnalysisCountRow, record?: ProbeEpisodeI
   }
   row.scored += 1;
   if (record.correct === true) row.correct += 1;
-  if (record.correct === false) row.wrong += 1;
+  else if (record.correct === false) row.wrong += 1;
+  else row.unknown += 1;
   if (record.correct === false && typeof record.confidence === "number" && record.confidence >= 0.8) {
     row.highConfWrong += 1;
   }
@@ -1945,12 +1898,8 @@ function incrementAnalysisRow(row: ProbeAnalysisCountRow, record?: ProbeEpisodeI
 function withAccuracy(row: ProbeAnalysisCountRow): ProbeAnalysisCountRow {
   return {
     ...row,
-    accuracy: row.scored ? row.correct / row.scored : null,
+    accuracy: row.correct + row.wrong ? row.correct / (row.correct + row.wrong) : null,
   };
-}
-
-function displayValue(value: string | boolean | number): string {
-  return String(value).replaceAll("_", " ");
 }
 
 export function ArtifactsSummary({ manifest }: { manifest: WorkbenchManifest }) {

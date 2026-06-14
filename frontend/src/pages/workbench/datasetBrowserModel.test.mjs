@@ -7,6 +7,8 @@ import {
   probeEvidenceContextForEpisode,
   probeEvidenceRankedRows,
   probeEvidenceSpec,
+  probeCalibrationRows,
+  probeConfusionRows,
   probeLensSpec,
   probeTrainingDetails,
   probeResultChartRows,
@@ -86,6 +88,40 @@ test("probe split bar segments keep unknown correctness out of correct bars", ()
   assert.equal(segments.correctWidth, 0);
   assert.equal(segments.unknownCount, 306);
   assert.equal(segments.unknownWidth, 100);
+});
+
+test("probe calibration rows ignore records without known correctness", () => {
+  const rows = probeCalibrationRows([
+    { available: true, confidence: 0.91, correct: true, trace_id: "correct-high" },
+    { available: true, confidence: 0.93, correct: null, trace_id: "unknown-high" },
+    { available: true, confidence: 0.11, correct: false, trace_id: "wrong-low" },
+  ]);
+
+  const high = rows.find((row) => row.label === ".80-1");
+  const low = rows.find((row) => row.label === "0-.20");
+  assert.equal(high?.total, 1);
+  assert.equal(high?.accuracy, 1);
+  assert.equal(low?.total, 1);
+  assert.equal(low?.accuracy, 0);
+});
+
+test("probe confusion rows keep unknown correctness separate", () => {
+  const rows = probeConfusionRows([
+    { actual: "cube", available: true, correct: true, predicted: "cube", trace_id: "correct" },
+    { actual: "cube", available: true, correct: false, predicted: "bowl", trace_id: "wrong" },
+    { actual: "cube", available: true, correct: null, predicted: "cube", trace_id: "unknown" },
+  ]);
+
+  const cube = rows.find((row) => row.label === "cube -> cube");
+  const bowl = rows.find((row) => row.label === "bowl -> cube");
+  assert.deepEqual(
+    [cube?.correct, cube?.wrong, cube?.unknown, cube?.total],
+    [1, 0, 1, 2],
+  );
+  assert.deepEqual(
+    [bowl?.correct, bowl?.wrong, bowl?.unknown, bowl?.total],
+    [0, 1, 0, 1],
+  );
 });
 
 test("probe scored cohort detail distinguishes compatible rows from ranked dataset total", () => {
