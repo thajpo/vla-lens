@@ -29,7 +29,10 @@ def test_readout_battery_exports_target_scoped_episode_rows():
         "task_phase",
     }
     assert set(browser["target"]) == {"next_manipulated_object", "task_phase"}
+    assert "trained_probe_id" in browser.columns
     assert "readout_id" in browser.columns
+    assert browser["trained_probe_id"].str.contains("NMO-L").any()
+    assert browser["trained_probe_id"].str.contains("TPH-L").any()
     assert browser["readout_id"].str.contains("target=").sum() == 0
     assert browser["readout_id"].str.contains("next_manipulated_object").any()
     assert browser["readout_id"].str.contains("task_phase").any()

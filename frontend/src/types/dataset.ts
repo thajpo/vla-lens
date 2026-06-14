@@ -111,6 +111,7 @@ export type ProbeIndexResponse = {
 
 export type ProbeStudyReadout = {
   readout_id: string;
+  trained_probe_id?: string | null;
   target: string;
   status: string;
   source: string;

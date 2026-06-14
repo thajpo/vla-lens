@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
 import time
 import warnings
 from dataclasses import dataclass
@@ -494,6 +495,10 @@ def score_readouts_with_X(
         rows["correct"] = rows["actual"].astype(str) == rows["predicted"].astype(str)
         rows["confidence"] = np.max(scores, axis=1)
         rows["layer"] = layer
+        rows["trained_probe_id"] = [
+            _trained_probe_id(target, layer, split)
+            for split in rows[split_column].astype(str)
+        ]
         rows["readout_id"] = (
             target
             + "|layer:"
@@ -1231,6 +1236,7 @@ def _write_table(frame: pd.DataFrame, path: Path, *, skip_empty: bool = False) -
 def _error_browser_frame(predictions: pd.DataFrame) -> pd.DataFrame:
     wanted = [
         "target",
+        "trained_probe_id",
         "readout_id",
         "split",
         "trace_id",
@@ -1397,6 +1403,37 @@ def _normalize_layer(value: Any) -> str:
     if number.is_integer():
         return str(int(number))
     return str(number)
+
+
+def _trained_probe_id(target: str, layer: Any, split: Any) -> str:
+    return "-".join(
+        [
+            _target_code(target),
+            f"L{_id_piece(layer, fallback='ALL')}",
+            _id_piece(split, fallback="NOSPLIT"),
+        ]
+    )
+
+
+def _target_code(target: str) -> str:
+    labels = {
+        "active_manipulated_object": "AMO",
+        "active_receptacle_object": "ARO",
+        "next_manipulated_object": "NMO",
+        "task_phase": "TPH",
+    }
+    if target in labels:
+        return labels[target]
+    pieces = [piece for piece in str(target or "").split("_") if piece]
+    if len(pieces) >= 2:
+        return "".join(piece[0].upper() for piece in pieces[:4])
+    return _id_piece(target, fallback="TARGET")[:10]
+
+
+def _id_piece(value: Any, *, fallback: str) -> str:
+    text = str(value or "").strip().upper()
+    text = re.sub(r"[^A-Z0-9]+", "-", text).strip("-")
+    return text or fallback
 
 
 def _p_value(null_scores: pd.Series, real_score: float | None) -> float | None:

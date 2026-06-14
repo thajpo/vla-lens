@@ -1127,12 +1127,22 @@ function ProbeReadoutNavigator({
         >
           {readouts.map((readout) => (
             <option key={readout.readout_id} value={readout.readout_id}>
-              {probeReadoutOptionLabel(readout)}
+              {probeReadoutOptionLabel(readout, study)}
             </option>
           ))}
         </select>
       </label>
       <dl className="probe-readout-scope-facts">
+        <div>
+          <dt title="Stable short identifier for this trained probe. Use this when referring to a probe in discussion.">
+            Probe ID
+          </dt>
+          <dd>
+            <code className="probe-id-token" title={activeReadout.readout_id}>
+              {trainedProbeDisplayId(activeReadout, study)}
+            </code>
+          </dd>
+        </div>
         <div>
           <dt title="The label this trained probe predicts from activations.">Target</dt>
           <dd>{probeReadoutTargetLabel(activeReadout.target || study.target || "")}</dd>
@@ -2370,13 +2380,53 @@ function probeReadoutForSplitCategory(
   );
 }
 
-function probeReadoutOptionLabel(readout: ProbeStudyReadout): string {
+function probeReadoutOptionLabel(readout: ProbeStudyReadout, study: ProbeStudy): string {
   return [
+    trainedProbeDisplayId(readout, study),
     probeReadoutTargetLabel(readout.target),
     probeReadoutLayerLabel(readout.layer),
     probeReadoutSplitLabel(readout),
     `balanced acc ${probeReadoutScoreLabel(readout)}`,
   ].filter(Boolean).join(" · ");
+}
+
+function trainedProbeDisplayId(readout: ProbeStudyReadout, study: ProbeStudy): string {
+  return `${studyArtifactCode(study)}-${readout.trained_probe_id || trainedProbeScopeId(readout)}`;
+}
+
+function trainedProbeScopeId(readout: ProbeStudyReadout): string {
+  return [
+    targetCode(readout.target),
+    `L${idPiece(probeReadoutLayerKey(readout.layer) || "ALL", "ALL")}`,
+    idPiece(readout.split || readout.split_category || "", "NOSPLIT"),
+  ].join("-");
+}
+
+function studyArtifactCode(study: ProbeStudy): string {
+  const text = String(study.artifact_id || study.study_id || "probe");
+  const hash = text.match(/[a-f0-9]{6,}$/i)?.[0]?.slice(-6) ?? idPiece(text, "PROBE").slice(-6);
+  return `P${hash.toUpperCase()}`;
+}
+
+function targetCode(target: string): string {
+  const labels: Record<string, string> = {
+    active_manipulated_object: "AMO",
+    active_receptacle_object: "ARO",
+    next_manipulated_object: "NMO",
+    task_phase: "TPH",
+  };
+  if (labels[target]) {
+    return labels[target];
+  }
+  const pieces = target.split("_").filter(Boolean);
+  if (pieces.length >= 2) {
+    return pieces.slice(0, 4).map((piece) => piece[0]?.toUpperCase() ?? "").join("");
+  }
+  return idPiece(target, "TARGET").slice(0, 10);
+}
+
+function idPiece(value: string, fallback: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "") || fallback;
 }
 
 function probeReadoutTargetLabel(target: string): string {

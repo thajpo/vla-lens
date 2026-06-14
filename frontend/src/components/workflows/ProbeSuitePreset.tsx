@@ -57,6 +57,7 @@ const TOOLTIP = {
   policyCall: "One model decision point that produces an action chunk.",
   policyCalls: "Number of unique policy calls included in this row.",
   prediction: "The target variable this study is trying to decode from activations.",
+  probeId: "Stable short identifier for this trained probe. Use this when referring to a probe in discussion.",
   probePrediction: "The label predicted by the trained probe.",
   readLayer: "The model layer whose activation vector was used for this trained probe.",
   readouts: "Individual trained probes for a target, layer, and split.",
@@ -321,6 +322,7 @@ function ReadoutTable({
       <table className="compact-table probe-readout-table">
         <thead>
           <tr>
+            <th><TooltipLabel label="Probe ID" description={TOOLTIP.probeId} /></th>
             <th><TooltipLabel label="Target" description={TOOLTIP.target} /></th>
             <th><TooltipLabel label="Read layer" description={TOOLTIP.readLayer} /></th>
             <th><TooltipLabel label="Eval split" description={TOOLTIP.evalSplit} /></th>
@@ -338,6 +340,11 @@ function ReadoutTable({
               className={readout.readout_id === selectedReadoutId ? "selectable-row active" : "selectable-row"}
               key={readout.readout_id}
             >
+              <td>
+                <code className="probe-id-token" title={readout.readout_id}>
+                  {trainedProbeDisplayId(readout, study)}
+                </code>
+              </td>
               <td>
                 <button className="probe-readout-select" onClick={() => onSelect(readout.readout_id)}>
                   <strong>{formatTarget(readout.target)}</strong>
@@ -388,6 +395,10 @@ function ReadoutInspector({
         <div>
           <h2>Selected probe</h2>
           <span>
+            <code className="probe-id-token" title={readout.readout_id}>
+              {trainedProbeDisplayId(readout, study)}
+            </code>
+            {" · "}
             {formatTarget(readout.target)} · layer {layerLabel(readout.layer)} · {formatSplit(readout.split)}
           </span>
         </div>
@@ -407,6 +418,14 @@ function ReadoutInspector({
         />
       </div>
       <dl className="probe-readout-facts">
+        <div>
+          <dt><TooltipLabel label="Probe ID" description={TOOLTIP.probeId} /></dt>
+          <dd>
+            <code className="probe-id-token" title={readout.readout_id}>
+              {trainedProbeDisplayId(readout, study)}
+            </code>
+          </dd>
+        </div>
         <div>
           <dt><TooltipLabel label="Train score" description={TOOLTIP.trainScore} /></dt>
           <dd>{formatMetric(readout.train_balanced_accuracy)}</dd>
@@ -849,6 +868,45 @@ function readoutRoleLabel(readout: ProbeStudyReadout, study: ProbeStudy): string
     return "family target";
   }
   return "related target";
+}
+
+function trainedProbeDisplayId(readout: ProbeStudyReadout, study: ProbeStudy): string {
+  return `${studyArtifactCode(study)}-${readout.trained_probe_id || trainedProbeScopeId(readout)}`;
+}
+
+function trainedProbeScopeId(readout: ProbeStudyReadout): string {
+  return [
+    targetCode(readout.target),
+    `L${idPiece(layerLabel(readout.layer), "ALL")}`,
+    idPiece(readout.split || readout.split_category || "", "NOSPLIT"),
+  ].join("-");
+}
+
+function studyArtifactCode(study: ProbeStudy): string {
+  const text = String(study.artifact_id || study.study_id || "probe");
+  const hash = text.match(/[a-f0-9]{6,}$/i)?.[0]?.slice(-6) ?? idPiece(text, "PROBE").slice(-6);
+  return `P${hash.toUpperCase()}`;
+}
+
+function targetCode(target: string): string {
+  const labels: Record<string, string> = {
+    active_manipulated_object: "AMO",
+    active_receptacle_object: "ARO",
+    next_manipulated_object: "NMO",
+    task_phase: "TPH",
+  };
+  if (labels[target]) {
+    return labels[target];
+  }
+  const pieces = target.split("_").filter(Boolean);
+  if (pieces.length >= 2) {
+    return pieces.slice(0, 4).map((piece) => piece[0]?.toUpperCase() ?? "").join("");
+  }
+  return idPiece(target, "TARGET").slice(0, 10);
+}
+
+function idPiece(value: string, fallback: string): string {
+  return value.trim().toUpperCase().replace(/[^A-Z0-9]+/g, "-").replace(/^-|-$/g, "") || fallback;
 }
 
 function episodeHref(study: ProbeStudy, row: Record<string, unknown>): string {
