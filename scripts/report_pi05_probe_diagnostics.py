@@ -74,6 +74,17 @@ class LayerReadout:
     rows: pd.DataFrame
 
 
+@dataclass(frozen=True, slots=True)
+class ProbeBatteryDiagnostics:
+    metrics: pd.DataFrame
+    predictions: pd.DataFrame
+    layer_metrics: pd.DataFrame
+    per_class: pd.DataFrame
+    confusion: pd.DataFrame
+    lead_time: pd.DataFrame
+    supports: dict[str, pd.DataFrame]
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
@@ -171,51 +182,61 @@ def main() -> None:
             top_k=args.top_k,
         )
 
-    predictions = score_readouts_with_X(
+    primary_predictions = score_readouts_with_X(
         prepared.X,
         readouts,
         target=prepared.target,
         split_column=prepared.split_column,
         top_k=args.top_k,
     )
-    predictions = attach_error_browser_context(prepared.dataset, predictions)
+    primary_predictions = attach_error_browser_context(prepared.dataset, primary_predictions)
 
-    layer_metrics = layer_split_metrics(
-        predictions,
+    primary_layer_metrics = layer_split_metrics(
+        primary_predictions,
         target=prepared.target,
         split_column=prepared.split_column,
     )
-    per_class = per_class_metrics(
-        predictions,
+    primary_per_class = per_class_metrics(
+        primary_predictions,
         target=prepared.target,
         split_column=prepared.split_column,
     )
-    confusion = confusion_matrix_records(
-        predictions,
+    primary_confusion = confusion_matrix_records(
+        primary_predictions,
         target=prepared.target,
         split_column=prepared.split_column,
     )
-    supports = support_tables(
+    primary_supports = support_tables(
         prepared.rows,
         target=prepared.target,
         split_column=prepared.split_column,
     )
-    lead_time = lead_time_metrics(
-        predictions,
+    primary_lead_time = lead_time_metrics(
+        primary_predictions,
         target=prepared.target,
         split_column=prepared.split_column,
     )
     bootstrap = bootstrap_intervals(
-        predictions.loc[predictions["layer"] == selected_layer],
+        primary_predictions.loc[primary_predictions["layer"] == selected_layer],
         split_values=prepared.eval_values,
         group_columns=["episode_id", "task_id"],
         runs=args.bootstrap_runs,
         seed=args.seed,
     )
+    if not bootstrap.empty:
+        bootstrap.insert(0, "target", prepared.target)
+
     battery = pd.DataFrame()
+    predictions = primary_predictions
+    layer_metrics = primary_layer_metrics
+    per_class = primary_per_class
+    confusion = primary_confusion
+    supports = primary_supports
+    lead_time = primary_lead_time
+    suite_targets = [prepared.target]
     if not args.skip_battery:
-        suite_targets = list(dict.fromkeys(args.battery_target or [prepared.target]))
-        battery = readout_battery_from_prepared(
+        suite_targets = list(dict.fromkeys([prepared.target, *args.battery_target]))
+        battery_diagnostics = readout_battery_from_prepared(
             prepared,
             target_names=suite_targets,
             max_iter=args.max_iter,
@@ -223,11 +244,23 @@ def main() -> None:
             top_k=args.top_k,
             model_name=args.model,
         )
+        battery = battery_diagnostics.metrics
+        if not battery_diagnostics.predictions.empty:
+            predictions = attach_error_browser_context(
+                prepared.dataset,
+                battery_diagnostics.predictions,
+            )
+            layer_metrics = battery_diagnostics.layer_metrics
+            per_class = battery_diagnostics.per_class
+            confusion = battery_diagnostics.confusion
+            supports = battery_diagnostics.supports
+            lead_time = battery_diagnostics.lead_time
 
     null_frame = pd.DataFrame()
     if args.null_shuffles > 0:
         null_frame = selection_aware_null(
             prepared,
+            target_names=suite_targets,
             shuffles=args.null_shuffles,
             max_iter=args.max_iter,
             seed=args.seed,
@@ -237,8 +270,8 @@ def main() -> None:
 
     summary = build_summary(
         prepared,
-        layer_metrics,
-        supports,
+        primary_layer_metrics,
+        primary_supports,
         selected_layer=selected_layer,
         null_frame=null_frame,
     )
@@ -455,11 +488,20 @@ def score_readouts_with_X(
         scores = _score_matrix(readout.model, X_layer)
         predicted = readout.classes[np.argmax(scores, axis=1)].astype(str)
         actual = rows[target].astype(str).to_numpy()
+        rows["target"] = target
         rows["actual"] = actual
         rows["predicted"] = predicted
         rows["correct"] = rows["actual"].astype(str) == rows["predicted"].astype(str)
         rows["confidence"] = np.max(scores, axis=1)
         rows["layer"] = layer
+        rows["readout_id"] = (
+            target
+            + "|layer:"
+            + str(layer)
+            + "|split:"
+            + rows[split_column].astype(str)
+            + "|ok"
+        )
         rows["policy_call_key"] = _policy_call_key(rows)
         rows["contact_lead_policy_calls"] = [
             _lead_policy_calls(row, "first_contact_time_next_object")
@@ -512,10 +554,14 @@ def layer_split_metrics(
     target: str,
     split_column: str,
 ) -> pd.DataFrame:
-    del target
     records: list[dict[str, Any]] = []
     for (layer, split), group in predictions.groupby(["layer", split_column], sort=True):
-        records.append(_metric_record(group, layer=str(layer), split=str(split)))
+        records.append(
+            {
+                "target": target,
+                **_metric_record(group, layer=str(layer), split=str(split)),
+            }
+        )
     frame = pd.DataFrame.from_records(records)
     if frame.empty:
         return frame
@@ -555,7 +601,6 @@ def per_class_metrics(
     target: str,
     split_column: str,
 ) -> pd.DataFrame:
-    del target
     records: list[dict[str, Any]] = []
     for (layer, split), group in predictions.groupby(["layer", split_column], sort=True):
         actual = group["actual"].astype(str).to_numpy()
@@ -574,6 +619,7 @@ def per_class_metrics(
             binary_predicted = predicted == label
             records.append(
                 {
+                    "target": target,
                     "layer": str(layer),
                     "split": str(split),
                     "class": label,
@@ -599,15 +645,16 @@ def confusion_matrix_records(
     target: str,
     split_column: str,
 ) -> pd.DataFrame:
-    del target
     if predictions.empty:
         return pd.DataFrame()
-    return (
+    frame = (
         predictions.groupby(["layer", split_column, "actual", "predicted"], dropna=False)
         .agg(row_count=("actual", "size"), policy_call_count=("policy_call_key", "nunique"))
         .reset_index()
         .rename(columns={split_column: "split"})
     )
+    frame.insert(0, "target", target)
+    return frame
 
 
 def support_tables(
@@ -628,11 +675,11 @@ def support_tables(
     by_phase = _group_count(policy_rows, [split_column, "task_phase"])
     by_flow_step = _group_count(policy_rows, [split_column, "next_object_flow_step_index"])
     return {
-        "policy_call_support_by_class_split": by_class,
-        "policy_call_support_by_task": by_task,
-        "policy_call_support_by_object": by_object,
-        "policy_call_support_by_phase": by_phase,
-        "policy_call_support_by_flow_step": by_flow_step,
+        "policy_call_support_by_class_split": _with_target(by_class, target),
+        "policy_call_support_by_task": _with_target(by_task, target),
+        "policy_call_support_by_object": _with_target(by_object, target),
+        "policy_call_support_by_phase": _with_target(by_phase, target),
+        "policy_call_support_by_flow_step": _with_target(by_flow_step, target),
     }
 
 
@@ -648,13 +695,20 @@ def _group_count(frame: pd.DataFrame, columns: list[str]) -> pd.DataFrame:
     )
 
 
+def _with_target(frame: pd.DataFrame, target: str) -> pd.DataFrame:
+    if frame.empty:
+        return frame
+    out = frame.copy()
+    out.insert(0, "target", target)
+    return out
+
+
 def lead_time_metrics(
     predictions: pd.DataFrame,
     *,
     target: str,
     split_column: str,
 ) -> pd.DataFrame:
-    del target
     records: list[dict[str, Any]] = []
     for bucket_column in ["contact_lead_bucket", "motion_lead_bucket"]:
         for (layer, split, bucket), group in predictions.groupby(
@@ -664,6 +718,7 @@ def lead_time_metrics(
         ):
             records.append(
                 {
+                    "target": target,
                     **_metric_record(group, layer=str(layer), split=str(split)),
                     "lead_kind": bucket_column.removesuffix("_bucket"),
                     "lead_bucket": str(bucket),
@@ -738,11 +793,16 @@ def readout_battery_from_prepared(
     seed: int,
     top_k: int,
     model_name: str,
-) -> pd.DataFrame:
-    frames: list[pd.DataFrame] = []
+) -> ProbeBatteryDiagnostics:
+    metric_frames: list[pd.DataFrame] = []
+    prediction_frames: list[pd.DataFrame] = []
+    per_class_frames: list[pd.DataFrame] = []
+    confusion_frames: list[pd.DataFrame] = []
+    lead_time_frames: list[pd.DataFrame] = []
+    support_frames: dict[str, list[pd.DataFrame]] = {}
     for target in target_names:
         if target not in prepared.rows:
-            frames.append(
+            metric_frames.append(
                 pd.DataFrame.from_records(
                     [
                         {
@@ -756,7 +816,7 @@ def readout_battery_from_prepared(
             continue
         X_target, rows_target = _drop_missing_target(prepared.X, prepared.rows, target)
         if rows_target.empty:
-            frames.append(
+            metric_frames.append(
                 pd.DataFrame.from_records(
                     [{"target": target, "status": "skipped", "reason": "no non-missing rows"}]
                 )
@@ -773,7 +833,7 @@ def readout_battery_from_prepared(
             model_name=model_name,
         )
         if not readouts:
-            frames.append(
+            metric_frames.append(
                 pd.DataFrame.from_records(
                     [
                         {
@@ -797,12 +857,59 @@ def readout_battery_from_prepared(
             target=target,
             split_column=prepared.split_column,
         )
-        metrics.insert(0, "target", target)
-        metrics.insert(1, "status", "ok")
-        frames.append(metrics)
-    if not frames:
+        battery_metrics = metrics.copy()
+        if "status" not in battery_metrics:
+            battery_metrics.insert(1, "status", "ok")
+        metric_frames.append(battery_metrics)
+        prediction_frames.append(preds)
+        per_class_frames.append(
+            per_class_metrics(preds, target=target, split_column=prepared.split_column)
+        )
+        confusion_frames.append(
+            confusion_matrix_records(preds, target=target, split_column=prepared.split_column)
+        )
+        lead_time_frames.append(
+            lead_time_metrics(preds, target=target, split_column=prepared.split_column)
+        )
+        for name, table in support_tables(
+            rows_target,
+            target=target,
+            split_column=prepared.split_column,
+        ).items():
+            support_frames.setdefault(name, []).append(table)
+    return ProbeBatteryDiagnostics(
+        metrics=_concat_frames(metric_frames),
+        predictions=_concat_frames(prediction_frames),
+        layer_metrics=_concat_frames(_ok_layer_metric_frames(metric_frames)),
+        per_class=_concat_frames(per_class_frames),
+        confusion=_concat_frames(confusion_frames),
+        lead_time=_concat_frames(lead_time_frames),
+        supports={
+            name: _concat_frames(frames)
+            for name, frames in support_frames.items()
+        },
+    )
+
+
+def _concat_frames(frames: Sequence[pd.DataFrame]) -> pd.DataFrame:
+    non_empty = [frame for frame in frames if not frame.empty]
+    if not non_empty:
         return pd.DataFrame()
-    return pd.concat(frames, ignore_index=True, sort=False)
+    return pd.concat(non_empty, ignore_index=True, sort=False)
+
+
+def _ok_layer_metric_frames(frames: Sequence[pd.DataFrame]) -> list[pd.DataFrame]:
+    out: list[pd.DataFrame] = []
+    for frame in frames:
+        if frame.empty:
+            continue
+        item = frame.copy()
+        if "status" in item:
+            item = item.loc[item["status"].astype(str) == "ok"]
+        item = item.drop(columns=["status", "reason"], errors="ignore")
+        if not item.empty:
+            out.append(item)
+    return out
 
 
 def _drop_missing_target(
@@ -818,6 +925,7 @@ def _drop_missing_target(
 def selection_aware_null(
     prepared: PreparedProbeData,
     *,
+    target_names: Sequence[str] | None = None,
     shuffles: int,
     max_iter: int,
     seed: int,
@@ -825,39 +933,80 @@ def selection_aware_null(
     model_name: str,
 ) -> pd.DataFrame:
     del top_k
+    targets = list(dict.fromkeys(target_names or [prepared.target]))
+    frames: list[pd.DataFrame] = []
+    for target in targets:
+        if target not in prepared.rows:
+            continue
+        X_target, rows_target = _drop_missing_target(prepared.X, prepared.rows, target)
+        if rows_target.empty:
+            continue
+        target_frame = _selection_aware_null_for_target(
+            X_target,
+            rows_target,
+            target=target,
+            split_column=prepared.split_column,
+            train_value=prepared.train_value,
+            selection_value=prepared.selection_value,
+            test_value=prepared.test_value,
+            shuffles=shuffles,
+            max_iter=max_iter,
+            seed=seed,
+            model_name=model_name,
+        )
+        if not target_frame.empty:
+            frames.append(target_frame)
+    return _concat_frames(frames)
+
+
+def _selection_aware_null_for_target(
+    X: np.ndarray,
+    rows: pd.DataFrame,
+    *,
+    target: str,
+    split_column: str,
+    train_value: str,
+    selection_value: str,
+    test_value: str,
+    shuffles: int,
+    max_iter: int,
+    seed: int,
+    model_name: str,
+) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     layer_groups = {
         _normalize_layer(layer): group.index.to_numpy()
-        for layer, group in prepared.rows.groupby("layer", dropna=False, sort=True)
+        for layer, group in rows.groupby("layer", dropna=False, sort=True)
     }
     records: list[dict[str, Any]] = []
     start = time.monotonic()
     for run in range(shuffles):
         shuffled = _shuffle_labels_by_policy_call(
-            prepared.rows,
-            prepared.target,
-            prepared.split_column,
+            rows,
+            target,
+            split_column,
             rng,
         )
         layer_records: list[dict[str, Any]] = []
         for layer, indices in layer_groups.items():
-            layer_rows = prepared.rows.iloc[indices].reset_index(drop=True)
+            layer_rows = rows.iloc[indices].reset_index(drop=True)
             y = shuffled[indices].astype(str)
-            split_values = layer_rows[prepared.split_column].astype(str).to_numpy()
-            train_mask = split_values == prepared.train_value
+            split_values = layer_rows[split_column].astype(str).to_numpy()
+            train_mask = split_values == train_value
             if int(train_mask.sum()) == 0 or len(np.unique(y[train_mask])) < 2:
                 continue
             model = _classifier(max_iter=max_iter, seed=seed + run, model_name=model_name)
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", ConvergenceWarning)
-                model.fit(prepared.X[indices][train_mask], y[train_mask])
-            for split in [prepared.selection_value, prepared.test_value]:
+                model.fit(X[indices][train_mask], y[train_mask])
+            for split in [selection_value, test_value]:
                 eval_mask = split_values == split
                 if int(eval_mask.sum()) == 0:
                     continue
-                pred = model.predict(prepared.X[indices][eval_mask])
+                pred = model.predict(X[indices][eval_mask])
                 layer_records.append(
                     {
+                        "target": target,
                         "run": run,
                         "layer": layer,
                         "split": split,
@@ -868,7 +1017,7 @@ def selection_aware_null(
                 )
         if layer_records:
             frame = pd.DataFrame.from_records(layer_records)
-            selection_rows = frame.loc[frame["split"] == prepared.selection_value]
+            selection_rows = frame.loc[frame["split"] == selection_value]
             if not selection_rows.empty:
                 best = selection_rows.sort_values(
                     ["score", "layer"],
@@ -881,6 +1030,7 @@ def selection_aware_null(
         if (run + 1) % 25 == 0 or run + 1 == shuffles:
             elapsed = time.monotonic() - start
             print(
+                f"selection_null_target={target} "
                 f"selection_null_progress={run + 1}/{shuffles} "
                 f"elapsed_sec={elapsed:.1f}",
                 flush=True,
@@ -1019,8 +1169,11 @@ def build_summary(
             for split, group in support.groupby("split")
         }
     if not null_frame.empty and real_selection.size:
-        selection_null = null_frame.loc[null_frame["split"] == prepared.selection_value]
-        test_null = null_frame.loc[null_frame["split"] == prepared.test_value]
+        summary_null = null_frame
+        if "target" in summary_null:
+            summary_null = summary_null.loc[summary_null["target"].astype(str) == prepared.target]
+        selection_null = summary_null.loc[summary_null["split"] == prepared.selection_value]
+        test_null = summary_null.loc[summary_null["split"] == prepared.test_value]
         summary["selection_aware_null"] = {
             "runs": int(selection_null["run"].nunique()),
             "selection_p_value": _p_value(
@@ -1077,6 +1230,8 @@ def _write_table(frame: pd.DataFrame, path: Path, *, skip_empty: bool = False) -
 
 def _error_browser_frame(predictions: pd.DataFrame) -> pd.DataFrame:
     wanted = [
+        "target",
+        "readout_id",
         "split",
         "trace_id",
         "episode_id",
