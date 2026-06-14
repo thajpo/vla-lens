@@ -225,7 +225,32 @@
   white-space: normal;
 }
 
-.probe-id-token {
+.probe-readout-select {
+  background: transparent;
+  border: 0;
+  color: #0f172a;
+  display: grid;
+  gap: 2px;
+  justify-items: start;
+  min-height: 0;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+.probe-id-copy {
+  align-items: center;
+  background: transparent;
+  border: 0;
+  color: #475569;
+  cursor: pointer;
+  display: inline-flex;
+  gap: 6px;
+  max-width: 100%;
+  padding: 0;
+}
+
+.probe-id-copy code {
   background: #eef4f2;
   border: 1px solid #cddbd6;
   color: #0f3f36;
@@ -241,17 +266,9 @@
   white-space: nowrap;
 }
 
-.probe-readout-select {
-  background: transparent;
-  border: 0;
-  color: #0f172a;
-  display: grid;
-  gap: 2px;
-  justify-items: start;
-  min-height: 0;
-  padding: 0;
-  text-align: left;
-  width: 100%;
+.probe-id-copy span {
+  font-size: 11px;
+  font-weight: 700;
 }
 
 .probe-readout-select strong {

@@ -57,7 +57,6 @@ const TOOLTIP = {
   policyCall: "One model decision point that produces an action chunk.",
   policyCalls: "Number of unique policy calls included in this row.",
   prediction: "The target variable this study is trying to decode from activations.",
-  probeId: "Stable short identifier for this trained probe. Use this when referring to a probe in discussion.",
   probePrediction: "The label predicted by the trained probe.",
   readLayer: "The model layer whose activation vector was used for this trained probe.",
   readouts: "Individual trained probes for a target, layer, and split.",
@@ -135,12 +134,6 @@ export function ProbeSuitePreset({ activeRunId, onRunChange }: ProbeSuitePresetP
       chooseDefaultReadout(sortedReadouts),
     [selectedReadoutId, sortedReadouts],
   );
-
-  useEffect(() => {
-    if (selectedReadout && selectedReadout.readout_id !== selectedReadoutId) {
-      setSelectedReadoutId(selectedReadout.readout_id);
-    }
-  }, [selectedReadout?.readout_id, selectedReadoutId]);
 
   if (studiesQuery.isLoading) {
     return <div className="app-message">Loading probe studies...</div>;
@@ -322,7 +315,6 @@ function ReadoutTable({
       <table className="compact-table probe-readout-table">
         <thead>
           <tr>
-            <th><TooltipLabel label="Probe ID" description={TOOLTIP.probeId} /></th>
             <th><TooltipLabel label="Target" description={TOOLTIP.target} /></th>
             <th><TooltipLabel label="Read layer" description={TOOLTIP.readLayer} /></th>
             <th><TooltipLabel label="Eval split" description={TOOLTIP.evalSplit} /></th>
@@ -340,11 +332,6 @@ function ReadoutTable({
               className={readout.readout_id === selectedReadoutId ? "selectable-row active" : "selectable-row"}
               key={readout.readout_id}
             >
-              <td>
-                <code className="probe-id-token" title={readout.readout_id}>
-                  {trainedProbeDisplayId(readout, study)}
-                </code>
-              </td>
               <td>
                 <button className="probe-readout-select" onClick={() => onSelect(readout.readout_id)}>
                   <strong>{formatTarget(readout.target)}</strong>
@@ -395,10 +382,6 @@ function ReadoutInspector({
         <div>
           <h2>Selected probe</h2>
           <span>
-            <code className="probe-id-token" title={readout.readout_id}>
-              {trainedProbeDisplayId(readout, study)}
-            </code>
-            {" · "}
             {formatTarget(readout.target)} · layer {layerLabel(readout.layer)} · {formatSplit(readout.split)}
           </span>
         </div>
@@ -419,12 +402,8 @@ function ReadoutInspector({
       </div>
       <dl className="probe-readout-facts">
         <div>
-          <dt><TooltipLabel label="Probe ID" description={TOOLTIP.probeId} /></dt>
-          <dd>
-            <code className="probe-id-token" title={readout.readout_id}>
-              {trainedProbeDisplayId(readout, study)}
-            </code>
-          </dd>
+          <dt>Probe ID</dt>
+          <dd><ProbeIdCopy value={trainedProbeDisplayId(readout, study)} /></dd>
         </div>
         <div>
           <dt><TooltipLabel label="Train score" description={TOOLTIP.trainScore} /></dt>
@@ -868,6 +847,25 @@ function readoutRoleLabel(readout: ProbeStudyReadout, study: ProbeStudy): string
     return "family target";
   }
   return "related target";
+}
+
+function ProbeIdCopy({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <button className="probe-id-copy" onClick={copy} title="Copy trained probe ID" type="button">
+      <code>{value}</code>
+      <span>{copied ? "Copied" : "Copy"}</span>
+    </button>
+  );
 }
 
 function trainedProbeDisplayId(readout: ProbeStudyReadout, study: ProbeStudy): string {

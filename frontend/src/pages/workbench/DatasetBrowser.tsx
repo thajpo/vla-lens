@@ -1134,16 +1134,6 @@ function ProbeReadoutNavigator({
       </label>
       <dl className="probe-readout-scope-facts">
         <div>
-          <dt title="Stable short identifier for this trained probe. Use this when referring to a probe in discussion.">
-            Probe ID
-          </dt>
-          <dd>
-            <code className="probe-id-token" title={activeReadout.readout_id}>
-              {trainedProbeDisplayId(activeReadout, study)}
-            </code>
-          </dd>
-        </div>
-        <div>
           <dt title="The label this trained probe predicts from activations.">Target</dt>
           <dd>{probeReadoutTargetLabel(activeReadout.target || study.target || "")}</dd>
         </div>
@@ -1163,10 +1153,14 @@ function ProbeReadoutNavigator({
           <dt title="Balanced accuracy for this target, layer, and split.">Balanced acc.</dt>
           <dd>{probeReadoutScoreLabel(activeReadout)}</dd>
         </div>
+        <div>
+          <dt title="Stable identifier for debugging or sharing this exact trained probe.">ID</dt>
+          <dd><ProbeIdCopy value={trainedProbeDisplayId(activeReadout, study)} /></dd>
+        </div>
       </dl>
       {unavailableReason ? (
         <small className="probe-readout-warning">
-          Episode drilldown unavailable. {unavailableReason} Aggregate probe metrics are still shown.
+          Episode drilldown unavailable. {humanizeProbeReadoutReason(unavailableReason)} Aggregate probe metrics are still shown.
         </small>
       ) : null}
     </section>
@@ -2382,12 +2376,37 @@ function probeReadoutForSplitCategory(
 
 function probeReadoutOptionLabel(readout: ProbeStudyReadout, study: ProbeStudy): string {
   return [
-    trainedProbeDisplayId(readout, study),
+    probeReadoutName(readout),
+    readout.is_primary_target ? "family target" : study.target ? "related target" : "",
+    `balanced acc ${probeReadoutScoreLabel(readout)}`,
+  ].filter(Boolean).join(" · ");
+}
+
+function probeReadoutName(readout: ProbeStudyReadout): string {
+  return [
     probeReadoutTargetLabel(readout.target),
     probeReadoutLayerLabel(readout.layer),
     probeReadoutSplitLabel(readout),
-    `balanced acc ${probeReadoutScoreLabel(readout)}`,
   ].filter(Boolean).join(" · ");
+}
+
+function ProbeIdCopy({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(value);
+      setCopied(true);
+      window.setTimeout(() => setCopied(false), 1500);
+    } catch {
+      setCopied(false);
+    }
+  };
+  return (
+    <button className="probe-id-copy" onClick={copy} title="Copy trained probe ID" type="button">
+      <code>{value}</code>
+      <span>{copied ? "Copied" : "Copy"}</span>
+    </button>
+  );
 }
 
 function trainedProbeDisplayId(readout: ProbeStudyReadout, study: ProbeStudy): string {
@@ -2437,6 +2456,18 @@ function probeReadoutTargetLabel(target: string): string {
     task_phase: "Task phase",
   };
   return labels[target] ?? target.replaceAll("_", " ");
+}
+
+function humanizeProbeReadoutReason(reason: string): string {
+  return [
+    "active_manipulated_object",
+    "active_receptacle_object",
+    "next_manipulated_object",
+    "task_phase",
+  ].reduce(
+    (text, target) => text.replaceAll(target, probeReadoutTargetLabel(target)),
+    reason,
+  );
 }
 
 function probeReadoutLayerLabel(layer: ProbeStudyReadout["layer"]): string {
