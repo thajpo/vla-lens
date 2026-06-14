@@ -53,12 +53,14 @@ import {
   probeLensWorkbenchModel,
   probeRecordForEpisode,
   probeResultChartRows,
+  probeSplitBarSegments,
   probeSplitChartRows,
   probeSplitLabel,
   shortTrace,
   type ProbeCohortPreset,
   type ProbeLensSpec,
   type ProbeLensMetricChip,
+  type ProbeSplitChartRow,
   type ProbeLensWorkbenchViewModel,
 } from "./datasetBrowserModel";
 import type { EpisodeOpenContext } from "./types";
@@ -89,15 +91,7 @@ type DatasetLens = {
   probeStudy?: ProbeStudy;
 };
 
-type ProbeSummarySplitRow = {
-  detail?: string;
-  highConfWrong: number | null;
-  id: "test" | "train" | "validation";
-  label: string;
-  scored: number;
-  total: number;
-  wrong: number | null;
-};
+type ProbeSummarySplitRow = ProbeSplitChartRow;
 
 type ProbeReadoutPerformanceRow = {
   detail: string;
@@ -194,7 +188,10 @@ export function DatasetBrowser({
   );
   const selectedProbe = selectedLens?.probe;
   const activeProbeStudy = selectedLens?.probeStudy;
-  const activeProbeReadouts = activeProbeStudy?.readouts ?? [];
+  const activeProbeReadouts = useMemo(
+    () => activeProbeStudy?.readouts ?? [],
+    [activeProbeStudy?.readouts],
+  );
   const selectedProbeReadout = useMemo(
     () => selectedProbe
       ? activeProbeReadouts.find((readout) => readout.readout_id === selectedProbeReadoutId)
@@ -859,12 +856,15 @@ function ProbeLensWorkbench({
   const spec = study
     ? probeStudySpec(study, model)
     : model.spec;
+  const verdict = readout
+    ? probeReadoutVerdict(readout, readoutEpisodeSummary, readoutUnavailableReason)
+    : model.verdict;
   return (
     <section className="probe-lens-workbench" aria-label="Selected probe lens workbench">
       <div className="probe-lens-head">
         <span>{study ? "Selected probe family" : "Selected probe lens"}</span>
         <h2>{study?.name ?? model.title}</h2>
-        <p>{study?.question_label || model.verdict.detail}</p>
+        <p>{study?.question_label || verdict.detail}</p>
         <div className="probe-lens-specs">
           <ProbeEvidenceFact
             label={spec.prediction.label}
@@ -888,9 +888,10 @@ function ProbeLensWorkbench({
           />
         </div>
       </div>
-      <aside className={`probe-lens-verdict ${model.verdict.tone}`}>
-        <span>{model.verdict.label}</span>
-        <strong>{model.verdict.headline}</strong>
+      <aside className={`probe-lens-verdict ${verdict.tone}`}>
+        <span>{verdict.label}</span>
+        <strong>{verdict.headline}</strong>
+        {verdict.detail ? <small>{verdict.detail}</small> : null}
         <div className="probe-lens-metrics">
           {metricChips.map((metric) => (
             <div className={`probe-lens-metric ${metric.tone}`} key={metric.label}>
@@ -1272,20 +1273,29 @@ function ProbeSummaryVisual({
   const resultRows = readout && !showAggregatePerformance
     ? probeReadoutResultChartRows(readoutEpisodeSummary)
     : probeResultChartRows(probe);
+  const hasSplitErrorCounts = splitRows.some((row) => probeSplitBarSegments(row).hasErrorCounts);
   return (
     <section className="probe-evidence-plot probe-summary-visual" aria-label="Probe summary">
       <div className="probe-evidence-plot-column">
         <header>
-          <span>{readout ? "Probe splits" : researchCopy.labels.splitCoverage}</span>
+          <span>{readout ? "Probe split rows" : researchCopy.labels.splitCoverage}</span>
           <small className="probe-map-legend">
-            <span className="correct">correct</span>
-            <span
-              className="wrong"
-              title="Wrong rows that are not high-confidence wrong."
-            >
-              other wrong
-            </span>
-            <span className="high-conf-wrong">high-conf wrong</span>
+            {hasSplitErrorCounts ? (
+              <>
+                <span className="correct">correct</span>
+                <span
+                  className="wrong"
+                  title="Wrong rows that are not high-confidence wrong."
+                >
+                  other wrong
+                </span>
+                <span className="high-conf-wrong">high-conf wrong</span>
+              </>
+            ) : (
+              <span className="unknown" title="Correct and wrong counts are unavailable for these aggregate split rows.">
+                rows only
+              </span>
+            )}
           </small>
         </header>
         <div className="probe-split-bars">
@@ -1299,10 +1309,13 @@ function ProbeSummaryVisual({
                 onClick={() => onSplitFilterChange(activeSplitFilter === row.id ? "all" : row.id)}
               >
                 <span>{row.label}</span>
-                <strong>{row.scored}/{row.total}</strong>
-                <i className="probe-evidence-bar segmented" title={probeSplitCountDetail(row)}>
+                <strong>{probeSplitRowCountLabel(row, segments.hasErrorCounts)}</strong>
+                <i
+                  className={`probe-evidence-bar segmented${segments.hasErrorCounts ? "" : " unknown"}`}
+                  title={probeSplitCountDetail(row)}
+                >
                   <b
-                    className={segments.correctCount > 0 ? "visible-segment" : undefined}
+                    className={segments.hasErrorCounts && segments.correctCount > 0 ? "visible-segment" : undefined}
                     style={{ flexBasis: `${segments.correctWidth}%`, width: `${segments.correctWidth}%` }}
                   />
                   <em
@@ -1313,6 +1326,12 @@ function ProbeSummaryVisual({
                     className={`high-conf-wrong${segments.highConfWrongCount > 0 ? " visible-segment" : ""}`}
                     style={{ flexBasis: `${segments.highConfWrongWidth}%`, width: `${segments.highConfWrongWidth}%` }}
                   />
+                  {!segments.hasErrorCounts ? (
+                    <b
+                      className={`unknown${segments.unknownCount > 0 ? " visible-segment" : ""}`}
+                      style={{ flexBasis: `${segments.unknownWidth}%`, width: `${segments.unknownWidth}%` }}
+                    />
+                  ) : null}
                 </i>
                 <small>
                   {row.detail
@@ -1342,7 +1361,7 @@ function ProbeSummaryVisual({
         {showAggregatePerformance ? (
           <>
             {readoutUnavailableReason ? (
-              <small className="probe-aggregate-note">{readoutUnavailableReason}</small>
+              <small className="probe-aggregate-note">{humanizeProbeReadoutReason(readoutUnavailableReason)}</small>
             ) : null}
             <div className="probe-split-bars readout-performance-bars">
               {performanceRows.map((row) => (
@@ -2128,6 +2147,51 @@ function probeReadoutPayloadMatches(
     && String(payload.split ?? "") === String(readout.split ?? "");
 }
 
+function probeReadoutVerdict(
+  readout: ProbeStudyReadout,
+  summary?: ProbeStudyEpisodeSummary,
+  unavailableReason?: string,
+): ProbeLensWorkbenchViewModel["verdict"] {
+  const score = readout.balanced_accuracy;
+  const splitLabel = probeReadoutSplitLabel(readout);
+  const scoreLabel = probeReadoutScoreLabel(readout);
+  const availabilityDetail = unavailableReason
+    ? humanizeProbeReadoutReason(unavailableReason)
+    : summary
+      ? `${formatReadoutInteger(summary.episode_count)} episode rows available for drilldown.`
+      : "Aggregate metrics are available for this trained split.";
+  if (typeof score !== "number" || !Number.isFinite(score)) {
+    return {
+      detail: availabilityDetail,
+      headline: "Score unavailable",
+      label: "Unknown",
+      tone: "unknown",
+    };
+  }
+  if (score < 0.35) {
+    return {
+      detail: `Balanced accuracy ${scoreLabel} on ${splitLabel}. ${availabilityDetail}`,
+      headline: "Weak split readout",
+      label: "Low score",
+      tone: "danger",
+    };
+  }
+  if (score < 0.7) {
+    return {
+      detail: `Balanced accuracy ${scoreLabel} on ${splitLabel}. ${availabilityDetail}`,
+      headline: "Limited split readout",
+      label: "Review",
+      tone: "limited",
+    };
+  }
+  return {
+    detail: `Balanced accuracy ${scoreLabel} on ${splitLabel}. ${availabilityDetail}`,
+    headline: "Split score available",
+    label: "Usable",
+    tone: "credible",
+  };
+}
+
 function probeReadoutMetricChips(
   readout: ProbeStudyReadout,
   summary?: ProbeStudyEpisodeSummary,
@@ -2174,15 +2238,7 @@ function probeReadoutSplitChartRows(
   readouts: ProbeStudyReadout[],
   selectedReadout: ProbeStudyReadout,
   summary?: ProbeStudyEpisodeSummary,
-): Array<{
-  detail?: string;
-  highConfWrong: number | null;
-  id: "test" | "train" | "validation";
-  label: string;
-  scored: number;
-  total: number;
-  wrong: number | null;
-}> {
+): ProbeSummarySplitRow[] {
   const layer = probeReadoutLayerKey(selectedReadout.layer);
   const bySplit = new Map(
     readouts
@@ -2203,7 +2259,7 @@ function probeReadoutSplitChartRows(
     return {
       detail: readout
         ? wrong === null
-          ? `balanced acc ${probeReadoutScoreLabel(readout)}`
+          ? `${formatReadoutInteger(total)} policy-call rows · bal acc ${probeReadoutScoreLabel(readout)}`
           : `${formatReadoutInteger(correct)} correct · ${formatReadoutInteger(
               wrongOnly,
             )} other wrong · ${formatReadoutInteger(highConfWrong)} high-conf wrong · bal acc ${probeReadoutScoreLabel(readout)}`
@@ -2249,50 +2305,23 @@ function probeReadoutPerformanceRows(
   });
 }
 
-function probeSplitBarSegments(row: ProbeSummarySplitRow): {
-  correctCount: number;
-  correctLeft: number;
-  correctWidth: number;
-  highConfWrongCount: number;
-  highConfWrongLeft: number;
-  highConfWrongWidth: number;
-  wrongLeft: number;
-  wrongOnlyCount: number;
-  wrongWidth: number;
-} {
-  const total = Math.max(0, row.total);
-  const scored = Math.min(Math.max(0, row.scored), total);
-  const wrong = Math.min(Math.max(0, row.wrong ?? 0), scored);
-  const highConfWrong = Math.min(Math.max(0, row.highConfWrong ?? 0), wrong);
-  const wrongOnly = Math.min(Math.max(0, wrong - highConfWrong), scored - highConfWrong);
-  const correct = Math.max(0, scored - wrongOnly - highConfWrong);
-  const correctWidth = percentOf(correct, row.total);
-  const wrongWidth = percentOf(wrongOnly, row.total);
-  const highConfWrongWidth = percentOf(highConfWrong, row.total);
-  return {
-    correctCount: correct,
-    correctLeft: 0,
-    correctWidth,
-    highConfWrongCount: highConfWrong,
-    wrongLeft: correctWidth,
-    wrongWidth,
-    wrongOnlyCount: wrongOnly,
-    highConfWrongLeft: correctWidth + wrongWidth,
-    highConfWrongWidth,
-  };
-}
-
 function probeSplitCountDetail(row: ProbeSummarySplitRow): string {
   if (row.total === 0) {
     return "no episodes";
   }
   if (row.wrong === null) {
-    return "error counts unavailable";
+    return `${formatReadoutInteger(row.scored)} rows; correctness counts unavailable`;
   }
   const segments = probeSplitBarSegments(row);
   return `${formatReadoutInteger(segments.correctCount)} correct · ${formatReadoutInteger(
     segments.wrongOnlyCount,
   )} other wrong · ${formatReadoutInteger(segments.highConfWrongCount)} high-conf wrong`;
+}
+
+function probeSplitRowCountLabel(row: ProbeSummarySplitRow, hasErrorCounts: boolean): string {
+  return hasErrorCounts
+    ? `${formatReadoutInteger(row.scored)}/${formatReadoutInteger(row.total)}`
+    : `${formatReadoutInteger(row.scored)} rows`;
 }
 
 function probeReadoutResultChartRows(summary?: ProbeStudyEpisodeSummary): Array<{

@@ -93,6 +93,29 @@ export type ProbeLensMetricChip = {
   tone: ProbeLensTone;
   value: string;
 };
+export type ProbeSplitChartRow = {
+  detail?: string;
+  highConfWrong: number | null;
+  id: "test" | "train" | "validation";
+  label: string;
+  scored: number;
+  total: number;
+  wrong: number | null;
+};
+export type ProbeSplitBarSegments = {
+  correctCount: number;
+  correctLeft: number;
+  correctWidth: number;
+  hasErrorCounts: boolean;
+  highConfWrongCount: number;
+  highConfWrongLeft: number;
+  highConfWrongWidth: number;
+  unknownCount: number;
+  unknownWidth: number;
+  wrongLeft: number;
+  wrongOnlyCount: number;
+  wrongWidth: number;
+};
 export type ProbeContributorSummary = {
   detail: string;
   key: string;
@@ -759,22 +782,7 @@ function numericProbeStat(value: number | undefined): number {
   return typeof value === "number" && Number.isFinite(value) ? value : 0;
 }
 
-export function probeSplitChartRows(probe: ProbeDatasetIndex): Array<{
-  highConfWrong: number | null;
-  id: "test" | "train" | "validation";
-  label: string;
-  scored: number;
-  total: number;
-  wrong: number | null;
-}> {
-  type ProbeSplitChartRow = {
-    highConfWrong: number | null;
-    id: "test" | "train" | "validation";
-    label: string;
-    scored: number;
-    total: number;
-    wrong: number | null;
-  };
+export function probeSplitChartRows(probe: ProbeDatasetIndex): ProbeSplitChartRow[] {
   const rows = new Map<"test" | "train" | "validation", ProbeSplitChartRow>([
     ["train", { highConfWrong: 0, id: "train" as const, label: "Train", scored: 0, total: 0, wrong: 0 }],
     [
@@ -832,6 +840,49 @@ export function probeSplitChartRows(probe: ProbeDatasetIndex): Array<{
     }
   }
   return [...rows.values()];
+}
+
+export function probeSplitBarSegments(row: ProbeSplitChartRow): ProbeSplitBarSegments {
+  const total = Math.max(0, row.total);
+  const scored = Math.min(Math.max(0, row.scored), total);
+  const wrongCount = row.wrong;
+  if (wrongCount === null) {
+    return {
+      correctCount: 0,
+      correctLeft: 0,
+      correctWidth: 0,
+      hasErrorCounts: false,
+      highConfWrongCount: 0,
+      highConfWrongLeft: 0,
+      highConfWrongWidth: 0,
+      unknownCount: scored,
+      unknownWidth: percentOf(scored, total),
+      wrongLeft: 0,
+      wrongOnlyCount: 0,
+      wrongWidth: 0,
+    };
+  }
+  const wrong = Math.min(Math.max(0, wrongCount), scored);
+  const highConfWrong = Math.min(Math.max(0, row.highConfWrong ?? 0), wrong);
+  const wrongOnly = Math.min(Math.max(0, wrong - highConfWrong), scored - highConfWrong);
+  const correct = Math.max(0, scored - wrongOnly - highConfWrong);
+  const correctWidth = percentOf(correct, total);
+  const wrongWidth = percentOf(wrongOnly, total);
+  const highConfWrongWidth = percentOf(highConfWrong, total);
+  return {
+    correctCount: correct,
+    correctLeft: 0,
+    correctWidth,
+    hasErrorCounts: true,
+    highConfWrongCount: highConfWrong,
+    highConfWrongLeft: correctWidth + wrongWidth,
+    highConfWrongWidth,
+    unknownCount: 0,
+    unknownWidth: 0,
+    wrongLeft: correctWidth,
+    wrongOnlyCount: wrongOnly,
+    wrongWidth,
+  };
 }
 
 export function probeResultChartRows(probe: ProbeDatasetIndex): Array<{

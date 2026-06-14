@@ -958,6 +958,10 @@ input {
   background: #dc2626;
 }
 
+.probe-map-legend .unknown::before {
+  background: #94a3b8;
+}
+
 .probe-split-bars,
 .probe-result-bars {
   display: grid;
@@ -1069,6 +1073,10 @@ input {
 
 .probe-evidence-bar.segmented .visible-segment {
   min-width: 4px;
+}
+
+.probe-evidence-bar.segmented.unknown b {
+  background: #94a3b8;
 }
 
 .probe-cohort-presets {

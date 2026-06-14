@@ -11,6 +11,7 @@ import {
   probeTrainingDetails,
   probeResultChartRows,
   probeScoredCohortDetail,
+  probeSplitBarSegments,
   probeSplitChartRows,
 } from "./datasetBrowserModel.ts";
 
@@ -68,6 +69,23 @@ test("probe split rows do not invent error counts from split totals", () => {
   assert.equal(splitRows.find((row) => row.id === "validation")?.highConfWrong, null);
   assert.equal(splitRows.find((row) => row.id === "test")?.wrong, null);
   assert.equal(splitRows.find((row) => row.id === "test")?.highConfWrong, null);
+});
+
+test("probe split bar segments keep unknown correctness out of correct bars", () => {
+  const segments = probeSplitBarSegments({
+    highConfWrong: null,
+    id: "validation",
+    label: "Validation",
+    scored: 306,
+    total: 306,
+    wrong: null,
+  });
+
+  assert.equal(segments.hasErrorCounts, false);
+  assert.equal(segments.correctCount, 0);
+  assert.equal(segments.correctWidth, 0);
+  assert.equal(segments.unknownCount, 306);
+  assert.equal(segments.unknownWidth, 100);
 });
 
 test("probe scored cohort detail distinguishes compatible rows from ranked dataset total", () => {
