@@ -37,8 +37,8 @@ import {
   COHORT_PRESETS,
   PROBE_PREDICTION_FILTER_LABELS,
   PROBE_PREDICTION_FILTERS,
-  PROBE_READOUT_SORT_LABELS,
-  PROBE_READOUT_SORT_MODES,
+  PROBE_READOUT_FILTER_LABELS,
+  PROBE_READOUT_FILTER_MODES,
   PROBE_SPLIT_FILTER_LABELS,
   canonicalProbeSplitCategory,
   datasetCoverageRows,
@@ -61,13 +61,13 @@ import {
   probeSplitChartRows,
   probeSplitLabel,
   shortTrace,
-  sortProbeStudyReadouts,
+  filterProbeStudyReadouts,
   type ProbeCohortPreset,
   type ProbeCalibrationBucket,
   type ProbeConfusionRow,
   type ProbeLensSpec,
   type ProbeLensMetricChip,
-  type ProbeReadoutSortMode,
+  type ProbeReadoutFilterMode,
   type ProbeSplitChartRow,
   type ProbeLensWorkbenchViewModel,
 } from "./datasetBrowserModel";
@@ -171,7 +171,7 @@ export function DatasetBrowser({
   const [probeSplitFilter, setProbeSplitFilter] = useState("all");
   const [probePredictionFilter, setProbePredictionFilter] = useState("all");
   const [selectedProbeReadoutId, setSelectedProbeReadoutId] = useState("");
-  const [probeReadoutSortMode, setProbeReadoutSortMode] = useState<ProbeReadoutSortMode>("useful");
+  const [probeReadoutFilterMode, setProbeReadoutFilterMode] = useState<ProbeReadoutFilterMode>("useful");
   const [pageOffset, setPageOffset] = useState(0);
   const [probeLeftColumnWidth, setProbeLeftColumnWidth] = useState(940);
   const familyByType = useMemo(
@@ -201,16 +201,16 @@ export function DatasetBrowser({
     () => activeProbeStudy?.readouts ?? [],
     [activeProbeStudy?.readouts],
   );
-  const sortedProbeReadouts = useMemo(
-    () => sortProbeStudyReadouts(activeProbeReadouts, probeReadoutSortMode, activeProbeStudy),
-    [activeProbeReadouts, activeProbeStudy, probeReadoutSortMode],
+  const filteredProbeReadouts = useMemo(
+    () => filterProbeStudyReadouts(activeProbeReadouts, probeReadoutFilterMode, activeProbeStudy),
+    [activeProbeReadouts, activeProbeStudy, probeReadoutFilterMode],
   );
   const selectedProbeReadout = useMemo(
     () => selectedProbe
-      ? sortedProbeReadouts.find((readout) => readout.readout_id === selectedProbeReadoutId)
-        ?? sortedProbeReadouts[0]
+      ? filteredProbeReadouts.find((readout) => readout.readout_id === selectedProbeReadoutId)
+        ?? filteredProbeReadouts[0]
       : undefined,
-    [selectedProbe, selectedProbeReadoutId, sortedProbeReadouts],
+    [selectedProbe, selectedProbeReadoutId, filteredProbeReadouts],
   );
   const probePageStyle = selectedProbe
     ? ({ "--probe-left-width": `${probeLeftColumnWidth}px` } as CSSProperties)
@@ -301,6 +301,9 @@ export function DatasetBrowser({
   );
   const useProbeReadoutEpisodes = Boolean(selectedProbe && selectedProbeReadout);
   const waitingForProbeReadouts = Boolean(selectedProbe && probeStudies.isLoading);
+  const readoutFilterHasNoMatches = Boolean(
+    selectedProbe && activeProbeStudy && activeProbeReadouts.length > 0 && !selectedProbeReadout,
+  );
   const episodePage = useQuery({
     queryKey: [
       "episodes",
@@ -314,7 +317,7 @@ export function DatasetBrowser({
       : selectedLens
       ? fetchDiscoveryArtifactEpisodes(activeLensArtifactId, episodePageParams, signal)
       : fetchEpisodesPage(episodePageParams as EpisodePageParams, signal),
-    enabled: dataset.isFetched && !waitingForProbeReadouts,
+    enabled: dataset.isFetched && !waitingForProbeReadouts && !readoutFilterHasNoMatches,
     staleTime: 15_000,
   });
   const discoveryPayload = discoveryEpisodePayload(episodePage.data);
@@ -335,7 +338,9 @@ export function DatasetBrowser({
     enabled: episodePage.isFetched || episodePage.isError,
     staleTime: 60_000,
   });
-  const activeEpisodePageData = useProbeReadoutEpisodes
+  const activeEpisodePageData = readoutFilterHasNoMatches
+    ? undefined
+    : useProbeReadoutEpisodes
     ? activeProbeReadoutPayload
     : episodePage.data;
   const episodes = useMemo(() => activeEpisodePageData?.episodes ?? [], [activeEpisodePageData?.episodes]);
@@ -397,7 +402,7 @@ export function DatasetBrowser({
     setProbeSplitFilter("all");
     setProbePredictionFilter("all");
     setSelectedProbeReadoutId("");
-    setProbeReadoutSortMode("useful");
+    setProbeReadoutFilterMode("useful");
     resetPage();
   };
   const openDatasetEpisode = (episode: DatasetEpisode) => {
@@ -472,12 +477,25 @@ export function DatasetBrowser({
           }}
           onSplitFilterChange={(value) => {
             setProbeCohortPreset("all");
+            let readoutFilterMode = probeReadoutFilterMode;
+            if (value === "test" || value === "validation" || value === "train") {
+              readoutFilterMode = value;
+            }
+            const splitReadouts = filterProbeStudyReadouts(
+              activeProbeReadouts,
+              readoutFilterMode,
+              activeProbeStudy,
+            );
             const nextReadout = selectedProbeReadout
-              ? probeReadoutForSplitCategory(sortedProbeReadouts, selectedProbeReadout, value)
+              ? probeReadoutForSplitCategory(splitReadouts, selectedProbeReadout, value)
               : undefined;
             if (nextReadout) {
+              const nextSplitFilter = canonicalProbeSplitCategory(nextReadout.split_category || nextReadout.split);
               setSelectedProbeReadoutId(nextReadout.readout_id);
               setProbeSplitFilter(nextReadout.split_category ?? "all");
+              if (nextSplitFilter === "test" || nextSplitFilter === "validation" || nextSplitFilter === "train") {
+                setProbeReadoutFilterMode(nextSplitFilter);
+              }
             } else {
               setProbeSplitFilter(value);
             }
@@ -490,10 +508,11 @@ export function DatasetBrowser({
 
       {selectedProbe && activeProbeStudy ? (
         <ProbeReadoutNavigator
-          readouts={sortedProbeReadouts}
+          readouts={filteredProbeReadouts}
           selectedReadout={selectedProbeReadout}
-          sortMode={probeReadoutSortMode}
+          filterMode={probeReadoutFilterMode}
           study={activeProbeStudy}
+          totalReadoutCount={activeProbeReadouts.length}
           unavailableReason={activeReadoutReason}
           onReadoutChange={(readoutId) => {
             const nextReadout = activeProbeReadouts.find((readout) => readout.readout_id === readoutId);
@@ -502,8 +521,16 @@ export function DatasetBrowser({
             setProbeCohortPreset("all");
             resetPage();
           }}
-          onSortChange={(sortMode) => {
-            setProbeReadoutSortMode(sortMode);
+          onFilterChange={(filterMode) => {
+            const nextReadouts = filterProbeStudyReadouts(activeProbeReadouts, filterMode, activeProbeStudy);
+            const nextReadout = nextReadouts.find((readout) => readout.readout_id === selectedProbeReadoutId)
+              ?? nextReadouts[0];
+            setProbeReadoutFilterMode(filterMode);
+            if (nextReadout) {
+              setProbeSplitFilter(nextReadout.split_category ?? "all");
+              setSelectedProbeReadoutId(nextReadout.readout_id);
+            }
+            setProbeCohortPreset("all");
             resetPage();
           }}
         />
@@ -1116,21 +1143,23 @@ function LensSelector({
 function ProbeReadoutNavigator({
   readouts,
   selectedReadout,
-  sortMode,
+  filterMode,
   study,
+  totalReadoutCount,
   unavailableReason,
   onReadoutChange,
-  onSortChange,
+  onFilterChange,
 }: {
   readouts: ProbeStudyReadout[];
   selectedReadout?: ProbeStudyReadout;
-  sortMode: ProbeReadoutSortMode;
+  filterMode: ProbeReadoutFilterMode;
   study: ProbeStudy;
+  totalReadoutCount: number;
   unavailableReason?: string;
   onReadoutChange: (readoutId: string) => void;
-  onSortChange: (sortMode: ProbeReadoutSortMode) => void;
+  onFilterChange: (filterMode: ProbeReadoutFilterMode) => void;
 }) {
-  if (!readouts.length) {
+  if (!totalReadoutCount) {
     return (
       <section className="probe-readout-navigator" aria-label="Trained probe scope">
         <div>
@@ -1147,61 +1176,74 @@ function ProbeReadoutNavigator({
         <label className="probe-readout-picker">
           <span>Trained probe</span>
           <select
-            value={activeReadout.readout_id}
+            value={activeReadout?.readout_id ?? ""}
             onChange={(event) => onReadoutChange(event.target.value)}
+            disabled={!readouts.length}
           >
-            {readouts.map((readout) => (
-              <option key={readout.readout_id} value={readout.readout_id}>
-                {probeReadoutOptionLabel(readout, study)}
+            {readouts.length ? (
+              readouts.map((readout) => (
+                <option key={readout.readout_id} value={readout.readout_id}>
+                  {probeReadoutOptionLabel(readout, study)}
+                </option>
+              ))
+            ) : (
+              <option value="">
+                No trained probes match
               </option>
-            ))}
+            )}
           </select>
         </label>
-        <label className="probe-readout-sort">
-          <span>Sort</span>
+        <label className="probe-readout-filter">
+          <span>Filter</span>
           <select
-            value={sortMode}
-            onChange={(event) => onSortChange(event.target.value as ProbeReadoutSortMode)}
+            value={filterMode}
+            onChange={(event) => onFilterChange(event.target.value as ProbeReadoutFilterMode)}
           >
-            {PROBE_READOUT_SORT_MODES.map((mode) => (
+            {PROBE_READOUT_FILTER_MODES.map((mode) => (
               <option key={mode} value={mode}>
-                {PROBE_READOUT_SORT_LABELS[mode]}
+                {PROBE_READOUT_FILTER_LABELS[mode]}
               </option>
             ))}
           </select>
         </label>
       </div>
-      <dl className="probe-readout-scope-facts">
-        <div>
-          <dt title="The label this trained probe predicts from activations.">Target</dt>
-          <dd>{probeReadoutTargetLabel(activeReadout.target || study.target || "")}</dd>
-        </div>
-        <div>
-          <dt title="The activation layer used as the probe input.">Layer</dt>
-          <dd>{probeReadoutLayerLabel(activeReadout.layer)}</dd>
-        </div>
-        <div>
-          <dt title="The train, validation, or test split this trained probe was evaluated on.">Split</dt>
-          <dd>{probeReadoutSplitLabel(activeReadout)}</dd>
-        </div>
-        <div>
-          <dt title="Policy-call rows available to this trained probe before episode aggregation.">Rows</dt>
-          <dd>{activeReadout.policy_call_count ?? activeReadout.row_count ?? "-"}</dd>
-        </div>
-        <div>
-          <dt title="Balanced accuracy for this target, layer, and split.">Balanced acc.</dt>
-          <dd>{probeReadoutScoreLabel(activeReadout)}</dd>
-        </div>
-        <div>
-          <dt title="Stable identifier for debugging or sharing this exact trained probe.">ID</dt>
-          <dd><ProbeIdCopy value={trainedProbeDisplayId(activeReadout, study)} /></dd>
-        </div>
-      </dl>
-      {unavailableReason ? (
-        <small className="probe-readout-warning">
-          Episode drilldown unavailable. {humanizeProbeReadoutReason(unavailableReason)} Aggregate probe metrics are still shown.
-        </small>
-      ) : null}
+      {activeReadout ? (
+        <>
+          <dl className="probe-readout-scope-facts">
+            <div>
+              <dt title="The label this trained probe predicts from activations.">Target</dt>
+              <dd>{probeReadoutTargetLabel(activeReadout.target || study.target || "")}</dd>
+            </div>
+            <div>
+              <dt title="The activation layer used as the probe input.">Layer</dt>
+              <dd>{probeReadoutLayerLabel(activeReadout.layer)}</dd>
+            </div>
+            <div>
+              <dt title="The train, validation, or test split this trained probe was evaluated on.">Split</dt>
+              <dd>{probeReadoutSplitLabel(activeReadout)}</dd>
+            </div>
+            <div>
+              <dt title="Policy-call rows available to this trained probe before episode aggregation.">Rows</dt>
+              <dd>{activeReadout.policy_call_count ?? activeReadout.row_count ?? "-"}</dd>
+            </div>
+            <div>
+              <dt title="Balanced accuracy for this target, layer, and split.">Balanced acc.</dt>
+              <dd>{probeReadoutScoreLabel(activeReadout)}</dd>
+            </div>
+            <div>
+              <dt title="Stable identifier for debugging or sharing this exact trained probe.">ID</dt>
+              <dd><ProbeIdCopy value={trainedProbeDisplayId(activeReadout, study)} /></dd>
+            </div>
+          </dl>
+          {unavailableReason ? (
+            <small className="probe-readout-warning">
+              Episode drilldown unavailable. {humanizeProbeReadoutReason(unavailableReason)} Aggregate probe metrics are still shown.
+            </small>
+          ) : null}
+        </>
+      ) : (
+        <p className="probe-readout-empty">No trained probes match this filter.</p>
+      )}
     </section>
   );
 }

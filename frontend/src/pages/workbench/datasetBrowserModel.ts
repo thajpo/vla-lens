@@ -163,34 +163,37 @@ export type ProbeEpisodeInspectionReason = {
   timelinePercent: number | null;
   tone: "good" | "warning" | "danger" | "muted" | "selected";
 };
-export type ProbeReadoutSortMode =
+export type ProbeReadoutFilterMode =
   | "useful"
   | "test"
   | "validation"
   | "train"
-  | "score_desc"
-  | "layer"
-  | "target";
+  | "selected_layer"
+  | "primary_target"
+  | "high_score"
+  | "all";
 
 export const PROBE_LIST_LIMIT = 80;
 export const EVIDENCE_EPISODE_LIMIT = 12;
-export const PROBE_READOUT_SORT_MODES: ProbeReadoutSortMode[] = [
+export const PROBE_READOUT_FILTER_MODES: ProbeReadoutFilterMode[] = [
   "useful",
   "test",
   "validation",
   "train",
-  "score_desc",
-  "layer",
-  "target",
+  "selected_layer",
+  "primary_target",
+  "high_score",
+  "all",
 ];
-export const PROBE_READOUT_SORT_LABELS: Record<ProbeReadoutSortMode, string> = {
-  useful: "Most useful",
-  test: "Test first",
-  validation: "Validation first",
-  train: "Train first",
-  score_desc: "Balanced acc.",
-  layer: "Layer",
-  target: "Target",
+export const PROBE_READOUT_FILTER_LABELS: Record<ProbeReadoutFilterMode, string> = {
+  useful: "High usefulness",
+  test: "Test",
+  validation: "Validation",
+  train: "Train",
+  selected_layer: "Selected layer",
+  primary_target: "Target match",
+  high_score: "High score",
+  all: "All trained probes",
 };
 export const PROBE_SPLIT_FILTERS = ["train", "validation", "test"] as const;
 export const PROBE_SPLIT_FILTER_LABELS: Record<string, string> = {
@@ -223,54 +226,68 @@ export const COHORT_PRESETS: Array<{ id: ProbeCohortPreset; label: string }> = [
   { id: "train_sanity", label: "Train-only check" },
 ];
 
-export function sortProbeStudyReadouts(
+export function filterProbeStudyReadouts(
   readouts: ProbeStudyReadout[],
-  sortMode: ProbeReadoutSortMode,
+  filterMode: ProbeReadoutFilterMode,
   study?: ProbeStudy,
 ): ProbeStudyReadout[] {
-  return [...readouts].sort((left, right) => compareProbeStudyReadouts(left, right, sortMode, study));
+  const orderedReadouts = sortProbeStudyReadouts(readouts, study);
+  if (filterMode === "all") {
+    return orderedReadouts;
+  }
+  if (filterMode === "useful") {
+    return highUsefulnessProbeReadouts(orderedReadouts, study);
+  }
+  return orderedReadouts.filter((readout) => matchesProbeReadoutFilter(readout, filterMode, study));
 }
 
-function compareProbeStudyReadouts(
-  left: ProbeStudyReadout,
-  right: ProbeStudyReadout,
-  sortMode: ProbeReadoutSortMode,
+function sortProbeStudyReadouts(
+  readouts: ProbeStudyReadout[],
   study?: ProbeStudy,
-): number {
-  if (sortMode === "useful") {
-    return compareDescending(probeReadoutUsefulness(left, study), probeReadoutUsefulness(right, study))
-      || compareProbeReadoutStable(left, right);
+): ProbeStudyReadout[] {
+  return [...readouts].sort((left, right) =>
+    compareDescending(probeReadoutUsefulness(left, study), probeReadoutUsefulness(right, study))
+    || compareProbeReadoutStable(left, right));
+}
+
+function highUsefulnessProbeReadouts(
+  orderedReadouts: ProbeStudyReadout[],
+  study?: ProbeStudy,
+): ProbeStudyReadout[] {
+  const selectedLayer = orderedReadouts.filter((readout) => readout.is_selected_layer);
+  if (selectedLayer.length) {
+    return selectedLayer;
   }
-  if (sortMode === "test" || sortMode === "validation" || sortMode === "train") {
-    return compareAscending(
-      probeReadoutSplitPriority(left, splitPriorityOrder(sortMode)),
-      probeReadoutSplitPriority(right, splitPriorityOrder(sortMode)),
-    )
-      || compareDescending(probeReadoutScoreValue(left), probeReadoutScoreValue(right))
-      || compareProbeReadoutStable(left, right);
+  const heldoutTarget = orderedReadouts.filter((readout) =>
+    isProbeReadoutPrimaryTarget(readout, study) && ["test", "validation"].includes(probeReadoutSplit(readout)));
+  if (heldoutTarget.length) {
+    return heldoutTarget;
   }
-  if (sortMode === "score_desc") {
-    return compareDescending(probeReadoutScoreValue(left), probeReadoutScoreValue(right))
-      || compareProbeReadoutStable(left, right);
+  return orderedReadouts.slice(0, Math.min(5, orderedReadouts.length));
+}
+
+function matchesProbeReadoutFilter(
+  readout: ProbeStudyReadout,
+  filterMode: Exclude<ProbeReadoutFilterMode, "all" | "useful">,
+  study?: ProbeStudy,
+): boolean {
+  if (filterMode === "test" || filterMode === "validation" || filterMode === "train") {
+    return probeReadoutSplit(readout) === filterMode;
   }
-  if (sortMode === "layer") {
-    return compareAscending(probeReadoutLayerSortValue(left), probeReadoutLayerSortValue(right))
-      || compareAscending(probeReadoutSplitPriority(left, ["test", "validation", "train"]), probeReadoutSplitPriority(right, ["test", "validation", "train"]))
-      || compareDescending(probeReadoutScoreValue(left), probeReadoutScoreValue(right))
-      || compareProbeReadoutStable(left, right);
+  if (filterMode === "selected_layer") {
+    return Boolean(readout.is_selected_layer);
   }
-  return String(left.target || "").localeCompare(String(right.target || ""))
-    || compareAscending(probeReadoutSplitPriority(left, ["test", "validation", "train"]), probeReadoutSplitPriority(right, ["test", "validation", "train"]))
-    || compareAscending(probeReadoutLayerSortValue(left), probeReadoutLayerSortValue(right))
-    || compareDescending(probeReadoutScoreValue(left), probeReadoutScoreValue(right))
-    || compareProbeReadoutStable(left, right);
+  if (filterMode === "primary_target") {
+    return isProbeReadoutPrimaryTarget(readout, study);
+  }
+  return probeReadoutScoreValue(readout) >= 0.8;
 }
 
 function probeReadoutUsefulness(readout: ProbeStudyReadout, study?: ProbeStudy): number {
-  const split = canonicalProbeSplitCategory(readout.split_category || readout.split);
+  const split = probeReadoutSplit(readout);
   const score = probeReadoutScoreValue(readout);
   return (
-    (readout.is_primary_target || (study?.target && readout.target === study.target) ? 100 : 0) +
+    (isProbeReadoutPrimaryTarget(readout, study) ? 100 : 0) +
     (readout.is_selected_layer ? 80 : 0) +
     (split === "test" ? 70 : split === "validation" ? 55 : split === "train" ? 20 : 0) +
     (readout.is_test_split ? 25 : 0) +
@@ -280,35 +297,18 @@ function probeReadoutUsefulness(readout: ProbeStudyReadout, study?: ProbeStudy):
   );
 }
 
-function splitPriorityOrder(mode: "test" | "validation" | "train"): string[] {
-  if (mode === "validation") {
-    return ["validation", "test", "train"];
-  }
-  if (mode === "train") {
-    return ["train", "validation", "test"];
-  }
-  return ["test", "validation", "train"];
+function isProbeReadoutPrimaryTarget(readout: ProbeStudyReadout, study?: ProbeStudy): boolean {
+  return Boolean(readout.is_primary_target || (study?.target && readout.target === study.target));
 }
 
-function probeReadoutSplitPriority(readout: ProbeStudyReadout, order: string[]): number {
-  const split = canonicalProbeSplitCategory(readout.split_category || readout.split);
-  const index = order.indexOf(split);
-  return index >= 0 ? index : order.length;
+function probeReadoutSplit(readout: ProbeStudyReadout): string {
+  return canonicalProbeSplitCategory(readout.split_category || readout.split);
 }
 
 function probeReadoutScoreValue(readout: ProbeStudyReadout): number {
   return typeof readout.balanced_accuracy === "number" && Number.isFinite(readout.balanced_accuracy)
     ? readout.balanced_accuracy
     : -1;
-}
-
-function probeReadoutLayerSortValue(readout: ProbeStudyReadout): number {
-  const layer = Number(readout.layer);
-  return Number.isFinite(layer) ? layer : Number.POSITIVE_INFINITY;
-}
-
-function compareAscending(left: number, right: number): number {
-  return left - right;
 }
 
 function compareDescending(left: number, right: number): number {

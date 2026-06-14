@@ -1228,14 +1228,14 @@
 }
 
 .probe-readout-picker,
-.probe-readout-sort {
+.probe-readout-filter {
   display: grid;
   gap: 5px;
   min-width: 0;
 }
 
 .probe-readout-picker span,
-.probe-readout-sort span,
+.probe-readout-filter span,
 .probe-readout-navigator > div > span,
 .probe-readout-scope-facts dt {
   color: #64748b;
@@ -1246,9 +1246,16 @@
 }
 
 .probe-readout-picker select,
-.probe-readout-sort select {
+.probe-readout-filter select {
   max-width: 100%;
   min-width: 0;
+}
+
+.probe-readout-empty {
+  color: #64748b;
+  font-size: 12px;
+  font-weight: 700;
+  margin: 0;
 }
 
 .probe-readout-navigator > div:not(.probe-readout-controls) {

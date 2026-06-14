@@ -3,7 +3,8 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
-  PROBE_READOUT_SORT_MODES,
+  PROBE_READOUT_FILTER_MODES,
+  filterProbeStudyReadouts,
   probeEvidenceCueForEpisode,
   probeEvidenceContextForEpisode,
   probeEvidenceRankedRows,
@@ -16,7 +17,6 @@ import {
   probeScoredCohortDetail,
   probeSplitBarSegments,
   probeSplitChartRows,
-  sortProbeStudyReadouts,
 } from "./datasetBrowserModel.ts";
 
 function readProbeEvidenceFixture(name) {
@@ -126,15 +126,16 @@ test("probe confusion rows keep unknown correctness separate", () => {
   );
 });
 
-test("probe readout sorting prioritizes useful held-out readouts", () => {
-  assert.deepEqual(PROBE_READOUT_SORT_MODES, [
+test("probe readout filtering narrows by usefulness and split", () => {
+  assert.deepEqual(PROBE_READOUT_FILTER_MODES, [
     "useful",
     "test",
     "validation",
     "train",
-    "score_desc",
-    "layer",
-    "target",
+    "selected_layer",
+    "primary_target",
+    "high_score",
+    "all",
   ]);
 
   const study = { target: "next_manipulated_object" };
@@ -170,9 +171,19 @@ test("probe readout sorting prioritizes useful held-out readouts", () => {
     },
   ];
 
-  assert.equal(sortProbeStudyReadouts(readouts, "useful", study)[0].readout_id, "test-selected");
-  assert.equal(sortProbeStudyReadouts(readouts, "train", study)[0].readout_id, "train-high");
-  assert.equal(sortProbeStudyReadouts(readouts, "score_desc", study)[0].readout_id, "train-high");
+  assert.deepEqual(
+    filterProbeStudyReadouts(readouts, "useful", study).map((readout) => readout.readout_id),
+    ["test-selected"],
+  );
+  assert.deepEqual(
+    filterProbeStudyReadouts(readouts, "train", study).map((readout) => readout.readout_id),
+    ["train-high"],
+  );
+  assert.deepEqual(
+    filterProbeStudyReadouts(readouts, "high_score", study).map((readout) => readout.readout_id),
+    ["train-high"],
+  );
+  assert.equal(filterProbeStudyReadouts(readouts, "all", study)[0].readout_id, "test-selected");
 });
 
 test("probe scored cohort detail distinguishes compatible rows from ranked dataset total", () => {
