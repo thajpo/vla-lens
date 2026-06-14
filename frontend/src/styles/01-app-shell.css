@@ -1003,6 +1003,17 @@ input {
   white-space: nowrap;
 }
 
+.probe-aggregate-note {
+  background: #f8fafc;
+  border-left: 3px solid #94a3b8;
+  color: #475569;
+  display: block;
+  font-size: 11px;
+  font-weight: 750;
+  line-height: 1.35;
+  padding: 5px 7px;
+}
+
 .probe-evidence-bar {
   align-self: center;
   background: #f1f5f9;

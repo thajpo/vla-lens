@@ -42,7 +42,7 @@ const TOOLTIP = {
   classRecall: "Of the rows whose true label was this value, the fraction the probe recovered.",
   confidence: "The probe probability assigned to its top prediction.",
   contactLead: "How far this policy call is from first contact with the target object.",
-  control: "The null-control comparison used to check whether the readout beats shuffled labels.",
+  control: "The null-control comparison used to check whether the probe beats shuffled labels.",
   evalScore: "Balanced accuracy on this evaluation split. This averages recall over labels, so rare labels matter.",
   evalSplit: "Which data split this row was evaluated on, such as validation or test.",
   futureEvent: "The future object event used for the lead-time slice, such as contact or motion.",
@@ -50,7 +50,7 @@ const TOOLTIP = {
   labels: "Number of distinct target labels present in this split.",
   macroF1: "Average F1 score across labels, giving each label equal weight.",
   nullControls: "Selection-aware shuffled-label fits used to compare against memorization or leakage.",
-  objective: "The model family or loss used to train the readout.",
+  objective: "The model family or loss used to train the probe.",
   output: "The label space the probe predicts.",
   pValue: "Fraction of shuffled-label controls that matched or beat the real score. Lower is better.",
   phase: "Object-flow phase assigned to this policy call.",
@@ -58,19 +58,19 @@ const TOOLTIP = {
   policyCalls: "Number of unique policy calls included in this row.",
   prediction: "The target variable this study is trying to decode from activations.",
   probePrediction: "The label predicted by the trained probe.",
-  readLayer: "The model layer whose activation vector was used for this readout.",
-  readouts: "Individual trained fits for a target, layer, and split.",
-  realScore: "The real readout score before label shuffling.",
-  rows: "Activation rows used for this readout after filters. Usually policy calls times selected layers.",
+  readLayer: "The model layer whose activation vector was used for this trained probe.",
+  readouts: "Individual trained probes for a target, layer, and split.",
+  realScore: "The real probe score before label shuffling.",
+  rows: "Activation rows used for this probe after filters. Usually policy calls times selected layers.",
   shuffleMean: "Average score from shuffled-label control fits.",
   shuffleStd: "Standard deviation of shuffled-label control scores.",
-  skipped: "Requested readouts that were not trained because required labels or columns were missing.",
-  sort: "How the currently visible readout rows are ordered.",
-  study: "The saved probe-suite artifact that groups all readouts for one research question.",
-  target: "The object role or phase being decoded by the readout.",
+  skipped: "Requested probes that were not trained because required labels or columns were missing.",
+  sort: "How the currently visible trained probes are ordered.",
+  study: "The saved probe-suite artifact that groups all trained probes for one research question.",
+  target: "The object role or phase being decoded by the probe.",
   top3: "Whether the true label appears in the probe's top three predictions.",
   trainEvalGap: "Train balanced accuracy minus this split's balanced accuracy. Larger values suggest overfitting.",
-  trainScore: "Balanced accuracy on the training split for the same readout.",
+  trainScore: "Balanced accuracy on the training split for the same trained probe.",
   trueLabel: "The label assigned by the episode-derived object-flow data.",
 } as const;
 
@@ -187,14 +187,14 @@ export function ProbeSuitePreset({ activeRunId, onRunChange }: ProbeSuitePresetP
         <SpecField
           description={TOOLTIP.objective}
           label="Objective"
-          value={study.objective || "Linear readout"}
+          value={study.objective || "Linear probe"}
         />
       </section>
 
       <section className="probe-study-count-band">
         <CountField
           description={TOOLTIP.readouts}
-          label="Readouts"
+          label="Probes"
           value={formatCount(study.counts.readout_count)}
           detail={`${formatCount(study.counts.target_count)} targets, ${formatCount(study.counts.layer_count)} layers`}
         />
@@ -228,7 +228,7 @@ export function ProbeSuitePreset({ activeRunId, onRunChange }: ProbeSuitePresetP
         <section className="probe-readouts-section">
           <header className="probe-section-header">
             <div>
-              <h2>Readouts</h2>
+              <h2>Trained probes</h2>
               <span>
                 {formatCount(sortedReadouts.length)} shown / {formatCount(study.readouts.length)} trained
               </span>
@@ -311,7 +311,7 @@ function ReadoutTable({
   onSelect: (readoutId: string) => void;
 }) {
   if (!readouts.length) {
-    return <div className="empty-state compact">No readouts match these filters.</div>;
+    return <div className="empty-state compact">No trained probes match these filters.</div>;
   }
   return (
     <div className="table-scroll probe-readout-table-wrap">
@@ -365,7 +365,7 @@ function ReadoutInspector({
   readout?: ProbeStudyReadout;
 }) {
   if (!readout) {
-    return <aside className="probe-readout-inspector empty-state">Select a readout.</aside>;
+    return <aside className="probe-readout-inspector empty-state">Select a trained probe.</aside>;
   }
   const leadRows = matchingRecords(study.lead_time, readout).slice(0, 12);
   const classRows = matchingRecords(study.per_class, readout)
@@ -383,7 +383,7 @@ function ReadoutInspector({
     <aside className="probe-readout-inspector">
       <header>
         <div>
-          <h2>Selected readout</h2>
+          <h2>Selected probe</h2>
           <span>
             {formatTarget(readout.target)} · layer {layerLabel(readout.layer)} · {formatSplit(readout.split)}
           </span>
@@ -438,7 +438,7 @@ function ReadoutInspector({
             render: (row) => formatCount(recordNumberOrNull(row, "policy_call_count")),
           },
         ]}
-        empty="No lead-time slice for this readout."
+        empty="No lead-time slice for this probe."
         rows={leadRows}
         title="Lead time"
       />
@@ -459,7 +459,7 @@ function ReadoutInspector({
             render: (row) => formatMetric(recordNumberOrNull(row, "precision")),
           },
         ]}
-        empty="No per-class metrics for this readout."
+        empty="No per-class metrics for this probe."
         rows={classRows}
         title="Class behavior"
       />
@@ -474,7 +474,7 @@ function ReadoutInspector({
             render: (row) => formatCount(recordNumberOrNull(row, "policy_call_count")),
           },
         ]}
-        empty="No confusion rows for this readout."
+        empty="No confusion rows for this probe."
         rows={confusionRows}
         title="Confusions"
       />
@@ -527,7 +527,7 @@ function ControlSection({
       />
       {skippedReadouts.length ? (
         <div className="probe-skipped-readouts">
-          <h3>Skipped readouts</h3>
+          <h3>Skipped probes</h3>
           <MiniTable
             columns={[
               {
@@ -536,9 +536,9 @@ function ControlSection({
                 label: "Target",
                 render: (row) => formatTarget(recordString(row, "target")),
               },
-              { description: "Why this requested readout was not trained.", key: "reason", label: "Reason" },
+              { description: "Why this requested probe was not trained.", key: "reason", label: "Reason" },
             ]}
-            empty="No skipped readouts."
+            empty="No skipped probes."
             rows={skippedReadouts as unknown as Record<string, unknown>[]}
           />
         </div>
@@ -562,7 +562,7 @@ function ErrorExampleSection({
       <header className="probe-section-header compact">
         <div>
           <h2>Error browser</h2>
-          <span>{readout ? `${formatTarget(readout.target)} · layer ${layerLabel(readout.layer)}` : "No readout selected"}</span>
+          <span>{readout ? `${formatTarget(readout.target)} · layer ${layerLabel(readout.layer)}` : "No probe selected"}</span>
         </div>
       </header>
       <MiniTable
@@ -590,7 +590,7 @@ function ErrorExampleSection({
           { description: TOOLTIP.contactLead, key: "contact_lead_bucket", label: "Contact lead", render: (row) => formatBucket(recordString(row, "contact_lead_bucket")) },
           { description: "Object-flow events after this policy call.", key: "events_after", label: "Next events" },
         ]}
-        empty={readout?.is_primary_target === false ? "Error rows are saved for the primary target only." : "No error rows for this readout."}
+        empty={readout?.is_primary_target === false ? "Error rows are saved for the primary target only." : "No error rows for this probe."}
         rows={rows}
       />
     </section>

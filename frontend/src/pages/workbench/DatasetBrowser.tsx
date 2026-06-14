@@ -96,6 +96,14 @@ type ProbeSummarySplitRow = {
   wrong: number | null;
 };
 
+type ProbeReadoutPerformanceRow = {
+  detail: string;
+  id: "test" | "train" | "validation";
+  label: string;
+  readout?: ProbeStudyReadout;
+  score: number | null;
+};
+
 export function DatasetBrowser({
   onOpenEpisode,
 }: {
@@ -304,6 +312,7 @@ export function DatasetBrowser({
   const activeReadoutReason = selectedProbe && activeProbeReadoutPayload?.available === false
     ? activeProbeReadoutPayload.reason
     : "";
+  const activeProbeRowsAvailable = activeProbeReadoutPayload?.available === true;
   const activeLensFamilyLabel = selectedLens ? familyLabel(selectedLens.artifactType) : researchCopy.labels.episodeOrder;
   const diagnostics = useQuery({
     queryKey: ["dataset-diagnostics", datasetIdentityKey],
@@ -426,8 +435,9 @@ export function DatasetBrowser({
           activePredictionFilter={probePredictionFilter}
           activeSplitFilter={selectedProbeReadout?.split_category ?? probeSplitFilter}
           readout={selectedProbeReadout}
-          readoutEpisodeSummary={activeProbeReadoutPayload?.summary}
-          readoutEpisodeTotal={useProbeReadoutEpisodes ? visibleTotal : undefined}
+          readoutEpisodeSummary={activeProbeRowsAvailable ? activeProbeReadoutPayload?.summary : undefined}
+          readoutEpisodeTotal={activeProbeRowsAvailable ? visibleTotal : undefined}
+          readoutUnavailableReason={activeReadoutReason}
           readouts={activeProbeReadouts}
           model={probeWorkbench}
           probe={selectedProbe}
@@ -815,6 +825,7 @@ function ProbeLensWorkbench({
   readout,
   readoutEpisodeSummary,
   readoutEpisodeTotal,
+  readoutUnavailableReason,
   readouts,
   onCohortPresetChange,
   onPredictionFilterChange,
@@ -827,6 +838,7 @@ function ProbeLensWorkbench({
   readout?: ProbeStudyReadout;
   readoutEpisodeSummary?: ProbeStudyEpisodeSummary;
   readoutEpisodeTotal?: number;
+  readoutUnavailableReason?: string;
   readouts?: ProbeStudyReadout[];
   onCohortPresetChange: (preset: ProbeCohortPreset) => void;
   onPredictionFilterChange: (value: string) => void;
@@ -883,6 +895,7 @@ function ProbeLensWorkbench({
         probe={probe}
         readout={readout}
         readoutEpisodeSummary={readoutEpisodeSummary}
+        readoutUnavailableReason={readoutUnavailableReason}
         readouts={readouts}
         onCohortPresetChange={onCohortPresetChange}
         onPredictionFilterChange={onPredictionFilterChange}
@@ -1083,19 +1096,19 @@ function ProbeReadoutNavigator({
 }) {
   if (!readouts.length) {
     return (
-      <section className="probe-readout-navigator" aria-label="Probe readout scope">
+      <section className="probe-readout-navigator" aria-label="Trained probe scope">
         <div>
-          <span>Readout scope</span>
-          <strong>No diagnostic readouts</strong>
+          <span>Trained probe</span>
+          <strong>No trained probes</strong>
         </div>
       </section>
     );
   }
   const activeReadout = selectedReadout ?? readouts[0];
   return (
-    <section className="probe-readout-navigator" aria-label="Probe readout scope">
+    <section className="probe-readout-navigator" aria-label="Trained probe scope">
       <label className="probe-readout-picker">
-        <span>Readout scope</span>
+        <span>Trained probe</span>
         <select
           value={activeReadout.readout_id}
           onChange={(event) => onReadoutChange(event.target.value)}
@@ -1109,19 +1122,19 @@ function ProbeReadoutNavigator({
       </label>
       <dl className="probe-readout-scope-facts">
         <div>
-          <dt title="The label this readout predicts from activations.">Target</dt>
+          <dt title="The label this trained probe predicts from activations.">Target</dt>
           <dd>{probeReadoutTargetLabel(activeReadout.target || study.target || "")}</dd>
         </div>
         <div>
-          <dt title="The activation layer used as the readout input.">Layer</dt>
+          <dt title="The activation layer used as the probe input.">Layer</dt>
           <dd>{probeReadoutLayerLabel(activeReadout.layer)}</dd>
         </div>
         <div>
-          <dt title="The train, validation, or test split this readout was evaluated on.">Split</dt>
+          <dt title="The train, validation, or test split this trained probe was evaluated on.">Split</dt>
           <dd>{probeReadoutSplitLabel(activeReadout)}</dd>
         </div>
         <div>
-          <dt title="Policy-call rows available to this readout before episode aggregation.">Rows</dt>
+          <dt title="Policy-call rows available to this trained probe before episode aggregation.">Rows</dt>
           <dd>{activeReadout.policy_call_count ?? activeReadout.row_count ?? "-"}</dd>
         </div>
         <div>
@@ -1129,7 +1142,11 @@ function ProbeReadoutNavigator({
           <dd>{probeReadoutScoreLabel(activeReadout)}</dd>
         </div>
       </dl>
-      {unavailableReason ? <small className="probe-readout-warning">{unavailableReason}</small> : null}
+      {unavailableReason ? (
+        <small className="probe-readout-warning">
+          Episode drilldown unavailable. {unavailableReason} Aggregate probe metrics are still shown.
+        </small>
+      ) : null}
     </section>
   );
 }
@@ -1190,6 +1207,7 @@ function ProbeSummaryVisual({
   probe,
   readout,
   readoutEpisodeSummary,
+  readoutUnavailableReason,
   readouts,
   onCohortPresetChange,
   onPredictionFilterChange,
@@ -1200,6 +1218,7 @@ function ProbeSummaryVisual({
   probe: ProbeDatasetIndex;
   readout?: ProbeStudyReadout;
   readoutEpisodeSummary?: ProbeStudyEpisodeSummary;
+  readoutUnavailableReason?: string;
   readouts?: ProbeStudyReadout[];
   onCohortPresetChange: (preset: ProbeCohortPreset) => void;
   onPredictionFilterChange: (value: string) => void;
@@ -1208,14 +1227,18 @@ function ProbeSummaryVisual({
   const splitRows: ProbeSummarySplitRow[] = readout
     ? probeReadoutSplitChartRows(readouts ?? [], readout, readoutEpisodeSummary)
     : probeSplitChartRows(probe);
-  const resultRows = readout
+  const showAggregatePerformance = Boolean(readout && !readoutEpisodeSummary);
+  const performanceRows = readout
+    ? probeReadoutPerformanceRows(readouts ?? [], readout)
+    : [];
+  const resultRows = readout && !showAggregatePerformance
     ? probeReadoutResultChartRows(readoutEpisodeSummary)
     : probeResultChartRows(probe);
   return (
     <section className="probe-evidence-plot probe-summary-visual" aria-label="Probe summary">
       <div className="probe-evidence-plot-column">
         <header>
-          <span>{readout ? "Readout splits" : researchCopy.labels.splitCoverage}</span>
+          <span>{readout ? "Probe splits" : researchCopy.labels.splitCoverage}</span>
           <small className="probe-map-legend">
             <span className="correct">correct</span>
             <span
@@ -1269,25 +1292,57 @@ function ProbeSummaryVisual({
       </div>
       <div className="probe-evidence-plot-column">
         <header>
-          <span>{readout ? "Readout results" : researchCopy.labels.resultCoverage}</span>
-          <small>{readout ? "visible episodes" : "episode counts"}</small>
+          <span>
+            {showAggregatePerformance
+              ? "Probe performance"
+              : readout
+              ? "Probe results"
+              : researchCopy.labels.resultCoverage}
+          </span>
+          <small>{showAggregatePerformance ? "aggregate metrics" : readout ? "visible episodes" : "episode counts"}</small>
         </header>
-        <div className="probe-result-bars">
-          {resultRows.map((row) => (
-            <button
-              className={row.active(activePredictionFilter) ? "active" : ""}
-              key={row.id}
-              type="button"
-              onClick={() => row.apply(onPredictionFilterChange, onCohortPresetChange)}
-            >
-              <span>{row.label}</span>
-              <strong>{row.value}</strong>
-              <i className="probe-evidence-bar single">
-                <b style={{ width: `${percentOf(row.value, row.total)}%` }} />
-              </i>
-            </button>
-          ))}
-        </div>
+        {showAggregatePerformance ? (
+          <>
+            {readoutUnavailableReason ? (
+              <small className="probe-aggregate-note">{readoutUnavailableReason}</small>
+            ) : null}
+            <div className="probe-split-bars readout-performance-bars">
+              {performanceRows.map((row) => (
+                <button
+                  className={activeSplitFilter === row.id ? "active" : ""}
+                  disabled={!row.readout}
+                  key={row.id}
+                  type="button"
+                  onClick={() => onSplitFilterChange(activeSplitFilter === row.id ? "all" : row.id)}
+                >
+                  <span>{row.label}</span>
+                  <strong>{row.score === null ? "-" : row.score.toFixed(3)}</strong>
+                  <i className="probe-evidence-bar single">
+                    <b style={{ width: `${percentOf(row.score ?? 0, 1)}%` }} />
+                  </i>
+                  <small>{row.detail}</small>
+                </button>
+              ))}
+            </div>
+          </>
+        ) : (
+          <div className="probe-result-bars">
+            {resultRows.map((row) => (
+              <button
+                className={row.active(activePredictionFilter) ? "active" : ""}
+                key={row.id}
+                type="button"
+                onClick={() => row.apply(onPredictionFilterChange, onCohortPresetChange)}
+              >
+                <span>{row.label}</span>
+                <strong>{row.value}</strong>
+                <i className="probe-evidence-bar single">
+                  <b style={{ width: `${percentOf(row.value, row.total)}%` }} />
+                </i>
+              </button>
+            ))}
+          </div>
+        )}
       </div>
     </section>
   );
@@ -2015,13 +2070,13 @@ function probeReadoutMetricChips(
       value: probeReadoutScoreLabel(readout),
     },
     {
-      detail: "policy-call rows in this readout",
+      detail: "policy-call rows in this trained probe",
       label: "Policy calls",
       tone: readout.policy_call_count ? "credible" : "unknown",
       value: formatReadoutInteger(readout.policy_call_count ?? readout.row_count),
     },
     {
-      detail: "unique episodes in the current readout set",
+      detail: "unique episodes in the current trained-probe set",
       label: "Episodes",
       tone: episodeCount ? "credible" : "unknown",
       value: formatReadoutInteger(episodeCount),
@@ -2078,13 +2133,44 @@ function probeReadoutSplitChartRows(
           : `${formatReadoutInteger(correct)} correct · ${formatReadoutInteger(
               wrongOnly,
             )} other wrong · ${formatReadoutInteger(highConfWrong)} high-conf wrong · bal acc ${probeReadoutScoreLabel(readout)}`
-        : "no readout",
+        : "no trained probe",
       highConfWrong,
       id: split,
       label: PROBE_SPLIT_FILTER_LABELS[split],
       scored: total,
       total,
       wrong,
+    };
+  });
+}
+
+function probeReadoutPerformanceRows(
+  readouts: ProbeStudyReadout[],
+  selectedReadout: ProbeStudyReadout,
+): ProbeReadoutPerformanceRow[] {
+  const layer = probeReadoutLayerKey(selectedReadout.layer);
+  const bySplit = new Map(
+    readouts
+      .filter((readout) =>
+        readout.target === selectedReadout.target
+        && probeReadoutLayerKey(readout.layer) === layer,
+      )
+      .map((readout) => [readout.split_category, readout]),
+  );
+  return (["train", "validation", "test"] as const).map((split) => {
+    const readout = bySplit.get(split);
+    return {
+      detail: readout
+        ? `${formatReadoutInteger(readout.policy_call_count ?? readout.row_count)} policy calls · ${formatReadoutInteger(
+            readout.class_count,
+          )} labels · train gap ${formatReadoutMetric(readout.train_gap_balanced_accuracy)}`
+        : "no trained probe",
+      id: split,
+      label: PROBE_SPLIT_FILTER_LABELS[split],
+      readout,
+      score: typeof readout?.balanced_accuracy === "number" && Number.isFinite(readout.balanced_accuracy)
+        ? readout.balanced_accuracy
+        : null,
     };
   });
 }
@@ -2270,6 +2356,10 @@ function probeReadoutScoreTone(score: ProbeStudyReadout["balanced_accuracy"]): P
 
 function formatReadoutInteger(value: number | null | undefined): string {
   return typeof value === "number" && Number.isFinite(value) ? String(Math.round(value)) : "-";
+}
+
+function formatReadoutMetric(value: number | null | undefined): string {
+  return typeof value === "number" && Number.isFinite(value) ? value.toFixed(3) : "-";
 }
 
 function discoveryEpisodePayload(value: unknown): DiscoveryArtifactEpisodesResponse | undefined {
