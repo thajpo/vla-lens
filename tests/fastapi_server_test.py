@@ -57,6 +57,8 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/episode-interactions", "get"),
     ("/api/episode-probes", "get"),
     ("/api/probe-index", "get"),
+    ("/api/probe-studies", "get"),
+    ("/api/probe-studies/{artifact_id}/episodes", "get"),
     ("/api/probes/{probe_id}/evidence", "get"),
     ("/api/probes/{probe_id}/evidence-bundle", "get"),
     ("/api/activation-sites", "get"),
@@ -360,6 +362,7 @@ def test_fastapi_representative_get_routes_return_legacy_payload_shapes(tmp_path
         ("/api/episode-interactions", {"trace_id": trace_id}, {"trace_id", "objects"}),
         ("/api/episode-probes", {"trace_id": trace_id}, {"trace_id", "probes"}),
         ("/api/probe-index", {}, {"probes", "total", "trace_count"}),
+        ("/api/probe-studies", {}, {"studies", "total"}),
         ("/api/activation-sites", {"trace_id": trace_id}, {"sites", "architecture"}),
         (
             "/api/activation-slice",
@@ -635,6 +638,7 @@ def test_fastapi_intervention_run_detail_route_saves_lists_and_reloads(tmp_path)
         "/api/episode-annotations",
         "/api/evidence-pins",
         "/api/artifacts",
+        "/api/probe-studies",
     ],
 )
 def test_fastapi_mutable_read_routes_are_no_store(tmp_path, path):

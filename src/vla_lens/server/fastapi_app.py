@@ -18,6 +18,7 @@ import vla_lens.server.indexed as indexed_api
 import vla_lens.server.indexed_probes as indexed_probes_api
 import vla_lens.server.interventions as interventions_api
 import vla_lens.server.metrics as metrics_api
+import vla_lens.server.probe_studies as probe_studies_api
 import vla_lens.server.probes as probes_api
 import vla_lens.server.spatial as spatial_api
 from vla_lens.probe_evidence_adapter import indexed_probe_evidence_bundle_payload
@@ -403,6 +404,26 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
         return _handle_json(
             request,
             lambda state, _query: indexed_probes_api.indexed_probe_index_payload(state.root),
+        )
+
+    @app.get("/api/probe-studies")
+    async def probe_studies_endpoint(request: Request) -> Response:
+        return _handle_json(
+            request,
+            lambda state, _query: probe_studies_api.probe_studies_payload(state.dataset),
+            cache_control=NO_STORE_CACHE_CONTROL,
+        )
+
+    @app.get("/api/probe-studies/{artifact_id}/episodes")
+    async def probe_study_episodes_endpoint(request: Request, artifact_id: str) -> Response:
+        return _handle_json(
+            request,
+            lambda state, query: probe_studies_api.probe_study_episodes_payload(
+                state.dataset,
+                artifact_id,
+                query,
+            ),
+            cache_control=NO_STORE_CACHE_CONTROL,
         )
 
     @app.get("/api/probes/{probe_id}/evidence")
