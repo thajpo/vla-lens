@@ -20,6 +20,9 @@ def test_readout_battery_exports_target_scoped_episode_rows():
     browser = diagnostics._error_browser_frame(result.predictions)
 
     assert set(result.metrics["target"]) == {"next_manipulated_object", "task_phase"}
+    assert "trained_probe_id" in result.metrics.columns
+    assert result.metrics["trained_probe_id"].str.contains("NMO-L").any()
+    assert result.metrics["trained_probe_id"].str.contains("TPH-L").any()
     assert set(result.layer_metrics["target"]) == {"next_manipulated_object", "task_phase"}
     assert set(result.per_class["target"]) == {"next_manipulated_object", "task_phase"}
     assert set(result.confusion["target"]) == {"next_manipulated_object", "task_phase"}

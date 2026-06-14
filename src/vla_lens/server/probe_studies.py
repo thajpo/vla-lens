@@ -23,6 +23,7 @@ from vla_lens.traces import TraceDataset
 
 READOUT_COLUMNS = [
     "readout_id",
+    "trained_probe_id",
     "target",
     "status",
     "source",
@@ -780,6 +781,8 @@ def _readouts_from_diagnostics(
         item = {
             **_readout_metric_fields(row),
             "readout_id": _readout_id(target, layer, split, status),
+            "trained_probe_id": _optional_text(row.get("trained_probe_id"))
+            or _trained_probe_id(target, layer, split),
             "target": target,
             "status": status,
             "source": "diagnostic",
@@ -817,6 +820,7 @@ def _readouts_from_artifact(
         layer = _clean_scalar(result.get("sweep_layer", result.get("layer")))
         row = {
             "readout_id": f"artifact:{index}",
+            "trained_probe_id": _trained_probe_id(primary_target, layer, split),
             "target": primary_target,
             "status": "ok",
             "source": "artifact",
@@ -1061,6 +1065,40 @@ def _readout_id(target: str, layer: Any, split: str, status: str) -> str:
     layer_value = layer if layer is not None else "all"
     split_value = split or "all"
     return f"{target or 'target'}|layer:{layer_value}|split:{split_value}|{status}"
+
+
+def _trained_probe_id(target: str, layer: Any, split: str) -> str:
+    return "-".join(
+        [
+            _target_code(target),
+            f"L{_id_piece(layer, fallback='ALL')}",
+            _id_piece(split, fallback="NOSPLIT"),
+        ]
+    )
+
+
+def _target_code(target: str) -> str:
+    labels = {
+        "active_manipulated_object": "AMO",
+        "active_receptacle_object": "ARO",
+        "next_manipulated_object": "NMO",
+        "task_phase": "TPH",
+    }
+    if target in labels:
+        return labels[target]
+    pieces = [piece for piece in str(target or "").split("_") if piece]
+    if len(pieces) >= 2:
+        return "".join(piece[0].upper() for piece in pieces[:4])
+    return _id_piece(target, fallback="TARGET")[:10]
+
+
+def _id_piece(value: Any, *, fallback: str) -> str:
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = "" if value is None else str(value).strip().upper()
+    text = "".join(char if char.isalnum() else "-" for char in text)
+    text = "-".join(piece for piece in text.split("-") if piece)
+    return text or fallback
 
 
 def _split_category(split: str) -> str | None:

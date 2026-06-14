@@ -564,6 +564,7 @@ def layer_split_metrics(
         records.append(
             {
                 "target": target,
+                "trained_probe_id": _trained_probe_id(target, layer, split),
                 **_metric_record(group, layer=str(layer), split=str(split)),
             }
         )
@@ -724,6 +725,7 @@ def lead_time_metrics(
             records.append(
                 {
                     "target": target,
+                    "trained_probe_id": _trained_probe_id(target, layer, split),
                     **_metric_record(group, layer=str(layer), split=str(split)),
                     "lead_kind": bucket_column.removesuffix("_bucket"),
                     "lead_bucket": str(bucket),
@@ -1431,7 +1433,9 @@ def _target_code(target: str) -> str:
 
 
 def _id_piece(value: Any, *, fallback: str) -> str:
-    text = str(value or "").strip().upper()
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    text = "" if value is None else str(value).strip().upper()
     text = re.sub(r"[^A-Z0-9]+", "-", text).strip("-")
     return text or fallback
 

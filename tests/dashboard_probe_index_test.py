@@ -584,12 +584,14 @@ def test_fastapi_probe_studies_promotes_diagnostics_readouts(tmp_path):
     assert study["counts"]["target_count"] == 1
     assert study["counts"]["null_run_count"] == 2
     assert study["readouts"][0]["target"] == "next_manipulated_object"
+    assert study["readouts"][0]["trained_probe_id"] == "NMO-L0-VAL-HELDOUT-TASK"
     assert study["readouts"][1]["split_category"] == "test"
     assert study["skipped_readouts"] == []
     assert {row["target"] for row in study["readouts"]} == {"next_manipulated_object"}
     assert phase_study["counts"]["readout_count"] == 1
     assert phase_study["counts"]["target_count"] == 1
     assert phase_study["readouts"][0]["target"] == "task_phase"
+    assert phase_study["readouts"][0]["trained_probe_id"] == "TPH-L4-TEST-HELDOUT-TASK"
     assert phase_study["readouts"][0]["balanced_accuracy"] == 0.74
     assert phase_study["controls"] == []
     assert phase_study["error_examples"] == []
