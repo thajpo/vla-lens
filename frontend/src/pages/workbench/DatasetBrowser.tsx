@@ -438,6 +438,34 @@ export function DatasetBrowser({
           selectedLensId={selectedLens?.lensId ?? NO_LENS_ID}
           onLensChange={selectLens}
         />
+        {selectedProbe && activeProbeStudy ? (
+          <ProbeReadoutControls
+            readouts={filteredProbeReadouts}
+            selectedReadout={selectedProbeReadout}
+            filterMode={probeReadoutFilterMode}
+            study={activeProbeStudy}
+            totalReadoutCount={activeProbeReadouts.length}
+            onReadoutChange={(readoutId) => {
+              const nextReadout = activeProbeReadouts.find((readout) => readout.readout_id === readoutId);
+              setSelectedProbeReadoutId(readoutId);
+              setProbeSplitFilter(nextReadout?.split_category ?? "all");
+              setProbeCohortPreset("all");
+              resetPage();
+            }}
+            onFilterChange={(filterMode) => {
+              const nextReadouts = filterProbeStudyReadouts(activeProbeReadouts, filterMode, activeProbeStudy);
+              const nextReadout = nextReadouts.find((readout) => readout.readout_id === selectedProbeReadoutId)
+                ?? nextReadouts[0];
+              setProbeReadoutFilterMode(filterMode);
+              if (nextReadout) {
+                setProbeSplitFilter(nextReadout.split_category ?? "all");
+                setSelectedProbeReadoutId(nextReadout.readout_id);
+              }
+              setProbeCohortPreset("all");
+              resetPage();
+            }}
+          />
+        ) : null}
         {selectedLens && !selectedProbe ? <span>{activeLensFamilyLabel}</span> : null}
       </section>
 
@@ -492,38 +520,6 @@ export function DatasetBrowser({
         />
       ) : selectedLens ? (
         <LensEvidencePanel lens={selectedLens} ranking={discoveryPayload} />
-      ) : null}
-
-      {selectedProbe && activeProbeStudy ? (
-        <ProbeReadoutNavigator
-          readouts={filteredProbeReadouts}
-          selectedReadout={selectedProbeReadout}
-          filterMode={probeReadoutFilterMode}
-          readoutEpisodeSummary={activeProbeRowsAvailable ? activeProbeReadoutPayload?.summary : undefined}
-          readoutEpisodeTotal={activeProbeRowsAvailable ? visibleTotal : undefined}
-          study={activeProbeStudy}
-          totalReadoutCount={activeProbeReadouts.length}
-          unavailableReason={activeReadoutReason}
-          onReadoutChange={(readoutId) => {
-            const nextReadout = activeProbeReadouts.find((readout) => readout.readout_id === readoutId);
-            setSelectedProbeReadoutId(readoutId);
-            setProbeSplitFilter(nextReadout?.split_category ?? "all");
-            setProbeCohortPreset("all");
-            resetPage();
-          }}
-          onFilterChange={(filterMode) => {
-            const nextReadouts = filterProbeStudyReadouts(activeProbeReadouts, filterMode, activeProbeStudy);
-            const nextReadout = nextReadouts.find((readout) => readout.readout_id === selectedProbeReadoutId)
-              ?? nextReadouts[0];
-            setProbeReadoutFilterMode(filterMode);
-            if (nextReadout) {
-              setProbeSplitFilter(nextReadout.split_category ?? "all");
-              setSelectedProbeReadoutId(nextReadout.readout_id);
-            }
-            setProbeCohortPreset("all");
-            resetPage();
-          }}
-        />
       ) : null}
 
       <section className={`dataset-table-controls ${selectedProbe ? "probe-mode" : ""}`} aria-label="Episode filters and sorting">
@@ -882,6 +878,13 @@ function ProbeLensWorkbench({
   const trainingFacts: ProbeLensTrainingFact[] = study
     ? probeStudyTrainingFacts(study, spec)
     : [spec.input, spec.output, spec.objective];
+  const selectedProbeFacts = study && readout
+    ? trainedProbeFactRows(readout, study, readoutEpisodeSummary)
+    : [];
+  const readoutHover = study && readout ? probeReadoutHoverModel(readout, study) : undefined;
+  const warningHover = study && readout && readoutUnavailableReason
+    ? readoutWarningHoverModel(readout, study, readoutUnavailableReason)
+    : undefined;
   return (
     <section className="probe-lens-workbench" aria-label="Active lens workbench">
       <div className="probe-lens-head">
@@ -914,6 +917,29 @@ function ProbeLensWorkbench({
             />
           ))}
         </div>
+        {selectedProbeFacts.length ? (
+          <div className="probe-lens-selected-readout">
+            <div className="probe-lens-selected-readout-head">
+              {readoutHover ? (
+                <InlineInfoText card={readoutHover} className="info-title-trigger" label="Selected probe" />
+              ) : (
+                <span>Selected probe</span>
+              )}
+              {readout && study ? <ProbeIdCopy value={trainedProbeDisplayId(readout, study)} /> : null}
+              {warningHover ? (
+                <InlineInfoText card={warningHover} className="info-title-trigger warning" label="Aggregate only" />
+              ) : null}
+            </div>
+            <dl className="probe-lens-selected-facts">
+              {selectedProbeFacts.map((fact) => (
+                <div key={fact.label}>
+                  <dt>{fact.label}</dt>
+                  <dd>{fact.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </div>
+        ) : null}
       </div>
       <ProbeSummaryVisual
         activePredictionFilter={activePredictionFilter}
@@ -1110,115 +1136,67 @@ function LensSelector({
   );
 }
 
-function ProbeReadoutNavigator({
+function ProbeReadoutControls({
   readouts,
   selectedReadout,
   filterMode,
-  readoutEpisodeSummary,
-  readoutEpisodeTotal,
   study,
   totalReadoutCount,
-  unavailableReason,
   onReadoutChange,
   onFilterChange,
 }: {
   readouts: ProbeStudyReadout[];
   selectedReadout?: ProbeStudyReadout;
   filterMode: ProbeReadoutFilterMode;
-  readoutEpisodeSummary?: ProbeStudyEpisodeSummary;
-  readoutEpisodeTotal?: number;
   study: ProbeStudy;
   totalReadoutCount: number;
-  unavailableReason?: string;
   onReadoutChange: (readoutId: string) => void;
   onFilterChange: (filterMode: ProbeReadoutFilterMode) => void;
 }) {
   if (!totalReadoutCount) {
     return (
-      <section className="probe-readout-navigator" aria-label="Trained probe scope">
-        <div>
-          <span>Trained probe</span>
-          <strong>No trained probes</strong>
-        </div>
-      </section>
+      <div className="probe-readout-controls empty" aria-label="Trained probe scope">
+        <span>No trained probes</span>
+      </div>
     );
   }
   const activeReadout = selectedReadout ?? readouts[0];
-  const readoutHover = activeReadout ? probeReadoutHoverModel(activeReadout, study) : undefined;
-  const readoutFacts = activeReadout
-    ? trainedProbeFactRows(activeReadout, study, readoutEpisodeSummary, readoutEpisodeTotal)
-    : [];
-  const warningHover = activeReadout && unavailableReason
-    ? readoutWarningHoverModel(activeReadout, study, unavailableReason)
-    : undefined;
   return (
-    <section className="probe-readout-navigator" aria-label="Trained probe scope">
-      <div className="probe-readout-controls">
-        <label className="probe-readout-picker">
-          <span>Trained probe</span>
-          <select
-            value={activeReadout?.readout_id ?? ""}
-            onChange={(event) => onReadoutChange(event.target.value)}
-            disabled={!readouts.length}
-          >
-            {readouts.length ? (
-              readouts.map((readout) => (
-                <option key={readout.readout_id} value={readout.readout_id}>
-                  {compactProbeReadoutLabel(readout, study)}
-                </option>
-              ))
-            ) : (
-              <option value="">
-                No trained probes match
+    <div className="probe-readout-controls" aria-label="Trained probe scope">
+      <label className="probe-readout-picker">
+        <span>Trained probe</span>
+        <select
+          value={activeReadout?.readout_id ?? ""}
+          onChange={(event) => onReadoutChange(event.target.value)}
+          disabled={!readouts.length}
+        >
+          {readouts.length ? (
+            readouts.map((readout) => (
+              <option key={readout.readout_id} value={readout.readout_id}>
+                {compactProbeReadoutLabel(readout, study)}
               </option>
-            )}
-          </select>
-        </label>
-        <label className="probe-readout-filter">
-          <span>Filter</span>
-          <select
-            value={filterMode}
-            onChange={(event) => onFilterChange(event.target.value as ProbeReadoutFilterMode)}
-          >
-            {PROBE_READOUT_FILTER_MODES.map((mode) => (
-              <option key={mode} value={mode}>
-                {PROBE_READOUT_FILTER_LABELS[mode]}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
-      {activeReadout ? (
-        <>
-          <div className="probe-readout-current">
-            {readoutHover ? (
-              <InlineInfoText card={readoutHover} className="info-title-trigger" label="Selected trained probe" />
-            ) : (
-              <span>Selected trained probe</span>
-            )}
-            <dl className="probe-readout-facts">
-              {readoutFacts.map((fact) => (
-                <div key={fact.label}>
-                  <dt>{fact.label}</dt>
-                  <dd>{fact.value}</dd>
-                </div>
-              ))}
-            </dl>
-            <small>
-              <span>ID</span>
-              <ProbeIdCopy value={trainedProbeDisplayId(activeReadout, study)} />
-            </small>
-          </div>
-          {warningHover ? (
-            <small className="probe-readout-warning">
-              <InlineInfoText card={warningHover} className="info-title-trigger" label="Aggregate only" />
-            </small>
-          ) : null}
-        </>
-      ) : (
-        <p className="probe-readout-empty">No trained probes match this filter.</p>
-      )}
-    </section>
+            ))
+          ) : (
+            <option value="">
+              No trained probes match
+            </option>
+          )}
+        </select>
+      </label>
+      <label className="probe-readout-filter">
+        <span>Probe filter</span>
+        <select
+          value={filterMode}
+          onChange={(event) => onFilterChange(event.target.value as ProbeReadoutFilterMode)}
+        >
+          {PROBE_READOUT_FILTER_MODES.map((mode) => (
+            <option key={mode} value={mode}>
+              {PROBE_READOUT_FILTER_LABELS[mode]}
+            </option>
+          ))}
+        </select>
+      </label>
+    </div>
   );
 }
 
@@ -1231,10 +1209,8 @@ function trainedProbeFactRows(
   readout: ProbeStudyReadout,
   study: ProbeStudy,
   summary?: ProbeStudyEpisodeSummary,
-  episodeTotal?: number,
 ): TrainedProbeFact[] {
-  const rowCount = readout.policy_call_count ?? readout.row_count;
-  const episodeCount = summary?.episode_count ?? episodeTotal;
+  const episodeCount = summary?.episode_count ?? study.counts.episode_count;
   const classCount = readout.class_count;
   const facts: TrainedProbeFact[] = [];
   const target = probeTargetDisplayLabel(readout.target || "");
@@ -1242,28 +1218,12 @@ function trainedProbeFactRows(
   if (target && target !== "Probe target" && target !== familyTarget) {
     facts.push({ label: "Target", value: target });
   }
-  facts.push(
-    { label: "Model location", value: probeReadoutLayerLabel(readout.layer) },
-    { label: "Data group", value: probeReadoutDataGroupLabel(readout) },
-    { label: "Balanced accuracy", value: probeReadoutScoreLabel(readout) },
-  );
-  if (typeof rowCount === "number" && Number.isFinite(rowCount)) {
-    facts.push({ label: "Rows", value: formatReadoutInteger(rowCount) });
-  }
+  facts.push({ label: "Model location", value: probeReadoutLayerLabel(readout.layer) });
   if (typeof episodeCount === "number" && Number.isFinite(episodeCount)) {
     facts.push({ label: "Episodes", value: formatReadoutInteger(episodeCount) });
   }
   if (typeof classCount === "number" && Number.isFinite(classCount)) {
     facts.push({ label: "Classes", value: formatReadoutInteger(classCount) });
-  }
-  if (typeof readout.train_gap_balanced_accuracy === "number" && Number.isFinite(readout.train_gap_balanced_accuracy)) {
-    facts.push({ label: "Train gap", value: compactProbeMetricValue("", readout.train_gap_balanced_accuracy).trim() });
-  }
-  if (typeof readout.accuracy === "number" && Number.isFinite(readout.accuracy)) {
-    facts.push({ label: "Accuracy", value: compactProbeMetricValue("", readout.accuracy).trim() });
-  }
-  if (typeof readout.macro_f1 === "number" && Number.isFinite(readout.macro_f1)) {
-    facts.push({ label: "Macro F1", value: compactProbeMetricValue("", readout.macro_f1).trim() });
   }
   return facts;
 }
@@ -1592,6 +1552,7 @@ function ProbeSummaryVisual({
   const hasUnknownSplitRows = splitSegments.some(
     ([, segments]) => !segments.hasErrorCounts && segments.unknownCount > 0,
   );
+  const metricRows = readout ? selectedProbeMetricRows(readout) : [];
   return (
     <section className="probe-evidence-plot probe-summary-visual" aria-label="Probe summary">
       <div className="probe-evidence-plot-column">
@@ -1688,6 +1649,18 @@ function ProbeSummaryVisual({
             </tbody>
           </table>
         </div>
+        {metricRows.length ? (
+          <dl className="probe-selected-metrics" aria-label="Selected probe metrics">
+            {metricRows.map((metric) => (
+              <div key={metric.label}>
+                <dt>
+                  <InlineInfoText card={metric.hoverCard} className="info-title-trigger" label={metric.label} />
+                </dt>
+                <dd>{metric.value}</dd>
+              </div>
+            ))}
+          </dl>
+        ) : null}
       </div>
       <div className="probe-evidence-plot-column">
         <header>
@@ -1760,6 +1733,50 @@ type ProbeAnalysisCountRow = {
   unknown: number;
   wrong: number;
 };
+
+type SelectedProbeMetricRow = {
+  hoverCard: ProbeMetadataCard;
+  label: string;
+  value: string;
+};
+
+function selectedProbeMetricRows(readout: ProbeStudyReadout): SelectedProbeMetricRow[] {
+  const rows: SelectedProbeMetricRow[] = [];
+  if (
+    typeof readout.train_gap_balanced_accuracy === "number"
+    && Number.isFinite(readout.train_gap_balanced_accuracy)
+  ) {
+    rows.push({
+      hoverCard: infoTextCard(
+        "Train gap",
+        "Training balanced accuracy minus this split's balanced accuracy. A larger gap can mean overfitting or a split mismatch.",
+      ),
+      label: "Train gap",
+      value: compactProbeMetricValue("", readout.train_gap_balanced_accuracy).trim(),
+    });
+  }
+  if (typeof readout.accuracy === "number" && Number.isFinite(readout.accuracy)) {
+    rows.push({
+      hoverCard: infoTextCard(
+        "Accuracy",
+        "Exact-match accuracy: correct predictions divided by scored rows for this trained probe and split.",
+      ),
+      label: "Accuracy",
+      value: compactProbeMetricValue("", readout.accuracy).trim(),
+    });
+  }
+  if (typeof readout.macro_f1 === "number" && Number.isFinite(readout.macro_f1)) {
+    rows.push({
+      hoverCard: infoTextCard(
+        "Macro F1",
+        "Average F1 score across classes, giving each class equal weight instead of weighting by class frequency.",
+      ),
+      label: "Macro F1",
+      value: compactProbeMetricValue("", readout.macro_f1).trim(),
+    });
+  }
+  return rows;
+}
 
 type ProbeConfidenceBucket = {
   correct: number;
@@ -2866,12 +2883,6 @@ function probeReadoutSplitLabel(readout: ProbeStudyReadout): string {
     return category || "split missing";
   }
   return category ? `${category} / ${readout.split}` : readout.split;
-}
-
-function probeReadoutDataGroupLabel(readout: ProbeStudyReadout): string {
-  return readout.split_category
-    ? PROBE_SPLIT_FILTER_LABELS[readout.split_category] ?? readout.split_category
-    : readout.split || "split missing";
 }
 
 function probeReadoutScoreLabel(readout: ProbeStudyReadout): string {

@@ -365,7 +365,6 @@ input {
 }
 
 .dataset-browser-page.probe-mode > .probe-lens-workbench,
-.dataset-browser-page.probe-mode > .probe-readout-navigator,
 .dataset-browser-page.probe-mode > .dataset-table-controls,
 .dataset-browser-page.probe-mode > .app-message,
 .dataset-browser-page.probe-mode > .empty-state {
@@ -398,10 +397,10 @@ input {
 }
 
 .dataset-lens-bar {
-  align-items: center;
+  align-items: end;
   display: grid;
   gap: 8px;
-  grid-template-columns: minmax(320px, 500px) auto;
+  grid-template-columns: minmax(260px, 420px) minmax(360px, 1fr) auto;
   min-width: 0;
 }
 
@@ -416,6 +415,12 @@ input {
   background: #ffffff;
   border: 1px solid #dbe3ed;
   min-width: 0;
+}
+
+@media (max-width: 980px) {
+  .dataset-lens-bar {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .dataset-lens-select {

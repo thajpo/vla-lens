@@ -1127,10 +1127,22 @@
 
 .probe-readout-controls {
   align-items: end;
+  background: #ffffff;
+  border: 1px solid #dbe3ed;
   display: grid;
   gap: 8px;
   grid-template-columns: minmax(320px, 1fr) minmax(130px, 160px);
   min-width: 0;
+  padding: 8px 9px;
+}
+
+.probe-readout-controls.empty {
+  align-items: center;
+  color: #64748b;
+  display: flex;
+  font-size: 12px;
+  font-weight: 750;
+  min-height: 40px;
 }
 
 .probe-readout-picker,
@@ -1155,6 +1167,103 @@
 .probe-readout-filter select {
   max-width: 100%;
   min-width: 0;
+}
+
+.probe-lens-selected-readout {
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 8px;
+  padding: 11px 12px;
+}
+
+.probe-lens-selected-readout-head {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.probe-lens-selected-readout-head > span,
+.probe-lens-selected-readout-head .info-title-trigger {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.probe-lens-selected-readout-head .warning {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  color: #9a3412;
+  padding: 2px 6px;
+}
+
+.probe-lens-selected-facts {
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 0;
+}
+
+.probe-lens-selected-facts div {
+  border-right: 1px solid #e2e8f0;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding-right: 10px;
+}
+
+.probe-lens-selected-facts div:last-child {
+  border-right: 0;
+}
+
+.probe-lens-selected-facts dt,
+.probe-selected-metrics dt {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.probe-lens-selected-facts dd,
+.probe-selected-metrics dd {
+  color: #0f172a;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  line-height: 1.25;
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.probe-selected-metrics {
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 8px 0 0;
+  padding-top: 8px;
+}
+
+.probe-selected-metrics div {
+  border-right: 1px solid #e2e8f0;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+  padding: 0 10px;
+}
+
+.probe-selected-metrics div:first-child {
+  padding-left: 0;
+}
+
+.probe-selected-metrics div:last-child {
+  border-right: 0;
+  padding-right: 0;
 }
 
 .probe-readout-empty {
@@ -1803,28 +1912,15 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .probe-readout-navigator {
-    grid-template-columns: minmax(0, 1fr);
-  }
-
-  .probe-readout-facts {
+  .probe-readout-controls,
+  .probe-lens-selected-facts,
+  .probe-selected-metrics {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .probe-readout-facts div:nth-child(4n) {
-    border-right: 1px solid #e2e8f0;
-  }
-
-  .probe-readout-facts div:nth-child(2n) {
+  .probe-lens-selected-facts div:nth-child(2n),
+  .probe-selected-metrics div:nth-child(2n) {
     border-right: 0;
-  }
-
-  .probe-readout-scope-facts {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
-  .probe-readout-scope-facts dd {
-    max-width: none;
   }
 }
 
