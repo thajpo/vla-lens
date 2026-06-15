@@ -860,7 +860,7 @@ input {
   white-space: nowrap;
 }
 
-.probe-lens-specs .probe-evidence-fact strong {
+.probe-lens-training .probe-evidence-fact strong {
   line-height: 1.25;
   overflow: visible;
   overflow-wrap: anywhere;
@@ -904,10 +904,24 @@ input {
   justify-content: space-between;
 }
 
+.probe-evidence-plot-column > header > span {
+  color: #0f172a;
+  font-size: 15px;
+  font-weight: 850;
+  line-height: 1.2;
+}
+
+.probe-evidence-plot-column > header > small:not(.probe-map-legend) {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .probe-map-legend {
   align-items: center;
   display: inline-flex;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
 }
 
@@ -917,7 +931,7 @@ input {
   display: inline-flex;
   font-size: 9px;
   font-weight: 850;
-  gap: 4px;
+  gap: 3px;
   text-transform: uppercase;
   white-space: nowrap;
 }
@@ -925,6 +939,7 @@ input {
 .probe-map-legend span::before {
   content: "";
   display: inline-block;
+  flex: 0 0 7px;
   height: 7px;
   width: 7px;
 }

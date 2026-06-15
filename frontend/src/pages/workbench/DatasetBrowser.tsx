@@ -1,4 +1,4 @@
-import { Fragment, useDeferredValue, useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search } from "lucide-react";
 import { InlineInfoText } from "../../components/ui/InfoHover";
@@ -877,41 +877,45 @@ function ProbeLensWorkbench({
     ? probeStudySpec(study, model)
     : model.spec;
   const familyHover = study ? probeFamilyHoverModel(study) : undefined;
+  const lensName = study?.name ?? model.title;
+  const lensQuestion = study?.question_label || spec.prediction.detail || model.verdict.detail;
+  const trainingFacts: ProbeLensTrainingFact[] = study
+    ? probeStudyTrainingFacts(study, spec)
+    : [spec.input, spec.output, spec.objective];
   return (
-    <section className="probe-lens-workbench" aria-label="Selected probe lens workbench">
+    <section className="probe-lens-workbench" aria-label="Active lens workbench">
       <div className="probe-lens-head">
         {familyHover ? (
           <InlineInfoText
             card={familyHover}
             className="info-title-trigger"
-            label={study ? "Selected probe family" : "Selected probe lens"}
+            label="Lens"
           />
         ) : (
-          <span>{study ? "Selected probe family" : "Selected probe lens"}</span>
+          <span>Lens</span>
         )}
-        <h2>{study?.name ?? model.title}</h2>
-        <p>{study?.question_label || model.verdict.detail}</p>
-        <div className="probe-lens-specs">
-          <ProbeEvidenceFact
-            label={spec.prediction.label}
-            value={spec.prediction.value}
-            detail={spec.prediction.detail}
-          />
-          <ProbeEvidenceFact
-            label={spec.input.label}
-            value={spec.input.value}
-            detail={spec.input.detail}
-          />
-          <ProbeEvidenceFact
-            label={spec.output.label}
-            value={spec.output.value}
-            detail={spec.output.detail}
-          />
-          <ProbeEvidenceFact
-            label={spec.objective.label}
-            value={spec.objective.value}
-            detail={spec.objective.detail}
-          />
+        <div className="probe-lens-title-row">
+          <h2>Active lens</h2>
+          <strong>{lensName}</strong>
+        </div>
+        <dl className="probe-lens-overview">
+          {lensQuestion ? (
+            <div>
+              <dt>Question answered</dt>
+              <dd>{lensQuestion}</dd>
+            </div>
+          ) : null}
+        </dl>
+        <div className="probe-lens-training">
+          {trainingFacts.map((fact) => (
+            <ProbeEvidenceFact
+              detail={fact.detail}
+              hoverCard={fact.hoverCard}
+              key={fact.label}
+              label={fact.label}
+              value={fact.value}
+            />
+          ))}
         </div>
       </div>
       <ProbeSummaryVisual
@@ -1086,7 +1090,7 @@ function LensSelector({
 }) {
   const groups = lensGroups(lenses);
   const selectorLabel = lenses.length > 0 && lenses.every((lens) => lens.artifactType === "probe_suite")
-    ? "Probe family"
+    ? "Lens"
     : "Lens artifact";
   return (
     <section className="dataset-lens-strip" aria-label="Dataset lens">
@@ -1298,10 +1302,12 @@ function LensEvidencePanel({
 
 function ProbeEvidenceFact({
   detail,
+  hoverCard,
   label,
   value,
 }: {
   detail?: string;
+  hoverCard?: ProbeMetadataCard;
   label: string;
   value: string;
 }) {
@@ -1310,11 +1316,198 @@ function ProbeEvidenceFact({
     : "";
   return (
     <div className="probe-evidence-fact">
-      <span>{label}</span>
+      <span>
+        {hoverCard ? <InlineInfoText card={hoverCard} className="info-title-trigger" label={label} /> : label}
+      </span>
       <strong>{value}</strong>
       {visibleDetail ? <small>{visibleDetail}</small> : null}
     </div>
   );
+}
+
+type ProbeLensTrainingFact = {
+  detail?: string;
+  hoverCard?: ProbeMetadataCard;
+  label: string;
+  value: string;
+};
+
+function probeStudyTrainingFacts(study: ProbeStudy, spec: ProbeLensSpec): ProbeLensTrainingFact[] {
+  return [
+    {
+      detail: spec.input.detail,
+      hoverCard: probeInputHoverModel(study, spec.input),
+      label: "Input data",
+      value: study.input || spec.input.value,
+    },
+    {
+      hoverCard: probeOutputHoverModel(study, spec.output),
+      label: "Output prediction",
+      value: study.output || spec.output.value,
+    },
+    {
+      detail: spec.objective.detail,
+      hoverCard: probeObjectiveHoverModel(study, spec.objective),
+      label: "Training objective",
+      value: study.objective || spec.objective.value,
+    },
+    {
+      hoverCard: probeTrainingDetailsHoverModel(study),
+      label: "Training details",
+      value: probeTrainingDetailsValue(study),
+    },
+  ];
+}
+
+function probeInputHoverModel(study: ProbeStudy, input: ProbeLensSpec["input"]): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Input data", value: study.input || input.value },
+          ...(input.detail ? [{ label: "Detail", value: input.detail }] : []),
+          { label: "Policy calls", value: formatReadoutInteger(study.counts.policy_call_count) },
+          { label: "Episodes", value: formatReadoutInteger(study.counts.episode_count) },
+        ],
+        title: "Input",
+      },
+    ],
+    title: "Input data",
+  };
+}
+
+function probeOutputHoverModel(study: ProbeStudy, output: ProbeLensSpec["output"]): ProbeMetadataCard {
+  const classLines = probeClassLines(study);
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Output", value: study.output || output.value },
+          ...(output.detail ? [{ label: "Detail", value: output.detail }] : []),
+          { label: "Class count", value: formatReadoutInteger(study.counts.class_count) },
+        ],
+        title: "Prediction Space",
+      },
+      ...(classLines.length ? [{ lines: classLines, title: "Classes" }] : []),
+    ],
+    title: "Output prediction",
+  };
+}
+
+function probeObjectiveHoverModel(study: ProbeStudy, objective: ProbeLensSpec["objective"]): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Objective", value: study.objective || objective.value },
+          ...(objective.detail ? [{ label: "Detail", value: objective.detail }] : []),
+          { label: "Source", value: study.source },
+        ],
+        title: "Training",
+      },
+    ],
+    title: "Training objective",
+  };
+}
+
+function probeTrainingDetailsHoverModel(study: ProbeStudy): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Readouts", value: formatReadoutInteger(study.counts.readout_count) },
+          { label: "Layers", value: formatReadoutInteger(study.counts.layer_count) },
+          { label: "Policy calls", value: formatReadoutInteger(study.counts.policy_call_count) },
+          { label: "Episodes", value: formatReadoutInteger(study.counts.episode_count) },
+          { label: "Classes", value: formatReadoutInteger(study.counts.class_count) },
+        ],
+        title: "Rows",
+      },
+      {
+        lines: [
+          { label: "Selected layer", value: simpleSummaryValue(study.summary.selected_layer) },
+          { label: "Selection split", value: simpleSummaryValue(study.summary.selection_split) },
+          { label: "Test split", value: simpleSummaryValue(study.summary.test_split) },
+          { label: "Controls", value: formatReadoutInteger(study.controls.length) },
+          { label: "Summary", value: compactObjectSummary(study.summary) },
+        ],
+        title: "Procedure",
+      },
+    ],
+    title: "Training details",
+  };
+}
+
+function probeTrainingDetailsValue(study: ProbeStudy): string {
+  const layers = typeof study.counts.layer_count === "number" && Number.isFinite(study.counts.layer_count)
+    ? `${formatReadoutInteger(study.counts.layer_count)} layers`
+    : "";
+  const readouts = typeof study.counts.readout_count === "number" && Number.isFinite(study.counts.readout_count)
+    ? `${formatReadoutInteger(study.counts.readout_count)} readouts`
+    : "";
+  return [layers, readouts].filter(Boolean).join(" · ") || "See details";
+}
+
+function probeClassLines(study: ProbeStudy): Array<{ label: string; value: string }> {
+  const records = [...(study.class_support ?? []), ...(study.per_class ?? [])];
+  const seen = new Set<string>();
+  const lines: Array<{ label: string; value: string }> = [];
+  for (const record of records) {
+    const label = classRecordLabel(record);
+    if (!label || seen.has(label)) {
+      continue;
+    }
+    seen.add(label);
+    lines.push({ label, value: classRecordValue(record) });
+  }
+  return lines;
+}
+
+function classRecordLabel(record: Record<string, unknown>): string {
+  for (const key of ["class", "class_name", "label", "target", "target_class", "value", "name", "object"]) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return String(value);
+    }
+  }
+  return "";
+}
+
+function classRecordValue(record: Record<string, unknown>): string {
+  for (const key of ["support", "count", "rows", "policy_call_count", "n"]) {
+    const value = record[key];
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return `${formatReadoutInteger(value)} rows`;
+    }
+  }
+  const metric = ["balanced_accuracy", "accuracy", "f1", "macro_f1"]
+    .map((key) => [key, record[key]] as const)
+    .find(([, value]) => typeof value === "number" && Number.isFinite(value));
+  return metric ? formatReadoutMetric(metric[1] as number) : "present";
+}
+
+function simpleSummaryValue(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return Number.isInteger(value) ? formatReadoutInteger(value) : formatReadoutMetric(value);
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  if (typeof value === "boolean") {
+    return value ? "true" : "false";
+  }
+  return "";
+}
+
+function compactObjectSummary(record: Record<string, unknown>): string {
+  return Object.entries(record)
+    .filter(([, value]) => value !== null && value !== undefined && value !== "")
+    .slice(0, 4)
+    .map(([key, value]) => `${key}: ${simpleSummaryValue(value) || "set"}`)
+    .join(" · ");
 }
 
 function probeStudySpec(study: ProbeStudy, fallback: ProbeLensWorkbenchViewModel): ProbeLensSpec {
@@ -1485,7 +1678,9 @@ function ProbeSummaryVisual({
               ? "Probe results"
               : researchCopy.labels.resultCoverage}
           </span>
-          <small>{showAggregatePerformance ? "aggregate metrics" : readout ? "visible episodes" : "episode counts"}</small>
+          {showAggregatePerformance || !readout ? (
+            <small>{showAggregatePerformance ? "aggregate metrics" : "episode counts"}</small>
+          ) : null}
         </header>
         {showAggregatePerformance ? (
           <>
@@ -1559,7 +1754,6 @@ type ProbeScatterPoint = {
   confidence: number;
   episodeLength: number;
   label: string;
-  policyCallIndex: number | null;
   tone: "correct" | "high-conf-wrong" | "wrong" | "unknown";
   x: number;
   y: number;
@@ -1607,7 +1801,6 @@ type ProbeDatasetAnalysisModel = {
 
 function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel }) {
   const lengthAxis = scatterLengthAxis(model.lengthScorePoints);
-  const hasPolicyCallMarkers = model.lengthScorePoints.some((point) => point.policyCallIndex !== null);
   return (
     <aside className="probe-analysis-panel" aria-label="Probe dataset analysis">
       <section className="probe-analysis-card">
@@ -1690,9 +1883,9 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           <header>
             <ProbeAnalysisTitle
               title="Confidence by length"
-              description="Each dot is a visible scored episode. Horizontal position is episode length; vertical position is probe confidence. Thin stems mark the scored policy call when available."
+              description="Each dot is a visible scored episode. Horizontal position is episode length; vertical position is probe confidence."
             />
-            <small>{hasPolicyCallMarkers ? "episode length + policy call" : "episode length"}</small>
+            <small>episode length</small>
           </header>
           <div className="probe-scatter-shell">
             <span className="probe-scatter-axis-label y">Confidence</span>
@@ -1701,29 +1894,17 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
               <span className="probe-scatter-tick y mid">.5</span>
               <span className="probe-scatter-tick y bottom">0</span>
               {model.lengthScorePoints.map((point, index) => (
-                <Fragment key={`${point.label}-${index}`}>
-                  {point.policyCallIndex !== null ? (
-                    <span
-                      aria-hidden="true"
-                      className="probe-policy-call-stem"
-                      style={{
-                        bottom: "0",
-                        left: `${paddedPlotPercent(point.x)}%`,
-                      }}
-                    />
-                  ) : null}
-                  <i
-                    aria-label={scatterPointLabel(point)}
-                    className={point.tone}
-                    style={{
-                      left: `${paddedPlotPercent(point.x)}%`,
-                      bottom: `${paddedPlotPercent(point.y)}%`,
-                    }}
-                    title={scatterPointLabel(point)}
-                  />
-                </Fragment>
+                <i
+                  aria-label={scatterPointLabel(point)}
+                  className={point.tone}
+                  key={`${point.label}-${index}`}
+                  style={{
+                    left: `${paddedPlotPercent(point.x)}%`,
+                    bottom: `${paddedPlotPercent(point.y)}%`,
+                  }}
+                  title={scatterPointLabel(point)}
+                />
               ))}
-              {hasPolicyCallMarkers ? <span className="probe-policy-call-legend">policy call</span> : null}
             </div>
             <div className="probe-scatter-x-axis">
               <span>{lengthAxis.min}</span>
@@ -1855,7 +2036,6 @@ function scatterPointLabel(point: ProbeScatterPoint): string {
     point.label,
     `confidence ${formatReadoutMetric(point.confidence)}`,
     `${formatReadoutInteger(point.episodeLength)} steps`,
-    point.policyCallIndex === null ? "" : `policy call ${formatReadoutInteger(point.policyCallIndex)}`,
   ].filter(Boolean).join(" · ");
 }
 
@@ -2124,9 +2304,6 @@ function scoreLengthPoints(probe: ProbeDatasetIndex, episodes: DatasetEpisode[])
     confidence: record.confidence ?? 0,
     episodeLength: episode.length ?? 0,
     label: episodeTitle(episode),
-    policyCallIndex: typeof record.policy_call_index === "number" && Number.isFinite(record.policy_call_index)
-      ? record.policy_call_index
-      : null,
     tone: record.correct === true
       ? "correct"
       : record.correct === false && (record.confidence ?? 0) >= 0.8

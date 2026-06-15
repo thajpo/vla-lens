@@ -1009,10 +1009,10 @@
 
 .probe-lens-head {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   grid-area: head;
   min-width: 0;
-  padding: 13px;
+  padding: 15px 15px 18px;
   position: relative;
 }
 
@@ -1033,27 +1033,66 @@
   max-width: 840px;
 }
 
-.probe-lens-head p {
-  color: #475569;
-  font-size: 14px;
-  line-height: 1.45;
-  margin: 0;
-  max-width: 760px;
+.probe-lens-title-row {
+  align-items: baseline;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  min-width: 0;
 }
 
-.probe-lens-specs {
+.probe-lens-title-row > strong {
+  color: #334155;
+  font-size: 16px;
+  font-weight: 800;
+  line-height: 1.1;
+  min-width: 0;
+}
+
+.probe-lens-overview {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  max-width: 780px;
+  min-width: 0;
+}
+
+.probe-lens-overview div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.probe-lens-overview dt {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.probe-lens-overview dd {
+  color: #475569;
+  font-size: 14px;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.probe-lens-training {
   border-top: 1px solid #e2e8f0;
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 4px;
+  margin-top: 8px;
+  padding-top: 10px;
 }
 
-.probe-lens-specs .probe-evidence-fact {
+.probe-lens-training .probe-evidence-fact {
   border-right: 1px solid #e2e8f0;
   padding: 8px 8px 0 0;
 }
 
-.probe-lens-specs .probe-evidence-fact:last-child {
+.probe-lens-training .probe-evidence-fact:last-child {
   border-right: 0;
 }
 
@@ -1072,6 +1111,7 @@
   border: 0;
   border-top: 1px solid #e2e8f0;
   grid-area: trust;
+  padding-top: 10px;
 }
 
 .probe-readout-navigator {
@@ -1520,55 +1560,6 @@
   bottom: 6px;
 }
 
-.probe-policy-call-stem {
-  background: rgba(15, 23, 42, 0.24);
-  bottom: 0;
-  display: block;
-  height: 13px;
-  pointer-events: none;
-  position: absolute;
-  transform: translateX(-50%);
-  width: 1px;
-  z-index: 1;
-}
-
-.probe-policy-call-stem::after {
-  background: rgba(15, 23, 42, 0.36);
-  border-radius: 999px;
-  bottom: -2px;
-  content: "";
-  height: 5px;
-  left: 50%;
-  position: absolute;
-  transform: translateX(-50%);
-  width: 5px;
-}
-
-.probe-policy-call-legend {
-  align-items: center;
-  background: rgba(248, 250, 252, 0.86);
-  border: 1px solid #e2e8f0;
-  bottom: 6px;
-  color: #64748b;
-  display: inline-flex;
-  font-size: 10px;
-  font-weight: 700;
-  gap: 5px;
-  padding: 2px 5px;
-  position: absolute;
-  right: 6px;
-  text-transform: uppercase;
-  z-index: 3;
-}
-
-.probe-policy-call-legend::before {
-  background: rgba(15, 23, 42, 0.28);
-  content: "";
-  display: block;
-  height: 12px;
-  width: 1px;
-}
-
 .probe-scatter-plot i {
   border: 1px solid #ffffff;
   border-radius: 999px;
@@ -1810,7 +1801,7 @@
     border-right: 0;
   }
 
-  .probe-lens-specs {
+  .probe-lens-training {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
