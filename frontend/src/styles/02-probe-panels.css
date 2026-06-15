@@ -1600,10 +1600,8 @@
 
 .probe-metadata-hover:hover > .probe-metadata-card,
 .probe-metadata-hover:focus-visible > .probe-metadata-card,
-.probe-metadata-hover:focus-within > .probe-metadata-card,
 .probe-graph-hover:hover .probe-graph-tooltip,
-.probe-graph-hover:focus-visible .probe-graph-tooltip,
-.probe-graph-hover:focus-within .probe-graph-tooltip {
+.probe-graph-hover:focus-visible .probe-graph-tooltip {
   opacity: 1;
   pointer-events: auto;
   transform: translateY(0);
@@ -1612,10 +1610,8 @@
 
 .probe-metadata-hover:hover::after,
 .probe-metadata-hover:focus-visible::after,
-.probe-metadata-hover:focus-within::after,
 .probe-graph-hover:hover::after,
-.probe-graph-hover:focus-visible::after,
-.probe-graph-hover:focus-within::after {
+.probe-graph-hover:focus-visible::after {
   display: block;
 }
 
