@@ -418,7 +418,24 @@ def test_fastapi_probe_studies_promotes_diagnostics_readouts(tmp_path):
                 "layers": [0, 4],
                 "token_space": "pi05.action_suffix",
             },
-            method={"probe": {"model": "sgd_logistic"}},
+            method={
+                "normalization": {"method": "standardize"},
+                "probe": {
+                    "type": "classification",
+                    "library": "sklearn",
+                    "hyperparams": {
+                        "linear": {
+                            "model": "LogisticRegression",
+                            "max_iter": 1000,
+                            "class_weight": "balanced",
+                        }
+                    },
+                    "primary_model": "linear",
+                    "trained_on_split": "train",
+                },
+                "target": {"kind": "classification"},
+                "evaluation": {"primary_metric": "balanced_accuracy"},
+            },
             metrics={"target": "next_manipulated_object"},
         )
     )
@@ -583,6 +600,11 @@ def test_fastapi_probe_studies_promotes_diagnostics_readouts(tmp_path):
     assert study["counts"]["skipped_readout_count"] == 0
     assert study["counts"]["target_count"] == 1
     assert study["counts"]["null_run_count"] == 2
+    assert study["objective"] == "Multiclass logistic regression"
+    assert study["training_summary"]["objective"] == "Multiclass logistic regression"
+    assert study["training_summary"]["preprocessing"] == "standardized X"
+    assert "class-balanced" in study["training_summary"]["hyperparameters"]
+    assert "max iter 1000" in study["training_summary"]["hyperparameters"]
     assert study["readouts"][0]["target"] == "next_manipulated_object"
     assert study["readouts"][0]["trained_probe_id"] == "NMO-L0-VAL-HELDOUT-TASK"
     assert study["readouts"][1]["split_category"] == "test"

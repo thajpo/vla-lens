@@ -149,6 +149,18 @@ export type ProbeStudyControl = {
   selected_layer_counts?: Record<string, number>;
 };
 
+export type ProbeStudyTrainingSummary = {
+  objective?: string | null;
+  target_type?: string | null;
+  estimator?: string | null;
+  library?: string | null;
+  preprocessing?: string | null;
+  hyperparameters?: string[];
+  trained_on?: string | null;
+  selected_on?: string | null;
+  metric?: string | null;
+};
+
 export type ProbeStudy = {
   study_id?: string;
   artifact_id: string;
@@ -163,6 +175,7 @@ export type ProbeStudy = {
   input?: string | null;
   output?: string | null;
   objective?: string | null;
+  training_summary?: ProbeStudyTrainingSummary;
   diagnostics_available: boolean;
   source: "diagnostics" | "artifact" | string;
   counts: {

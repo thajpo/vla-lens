@@ -293,7 +293,8 @@ def _study_payload(
         "prediction": _prediction_label(target),
         "input": _input_label(selector, method),
         "output": _output_label(summary, metrics),
-        "objective": _objective_label(method),
+        "objective": _objective_label(method, summary, metrics),
+        "training_summary": _training_summary(method, summary, metrics),
         "diagnostics_available": any(not table.empty for table in tables.values()) or bool(summary),
         "source": source,
         "counts": _counts(
@@ -1165,7 +1166,14 @@ def _output_label(summary: Mapping[str, Any], metrics: Mapping[str, Any]) -> str
     return "Class label"
 
 
-def _objective_label(method: Mapping[str, Any]) -> str:
+def _objective_label(
+    method: Mapping[str, Any],
+    summary: Mapping[str, Any] | None = None,
+    metrics: Mapping[str, Any] | None = None,
+) -> str:
+    training = _training_summary(method, summary or {}, metrics or {})
+    if training.get("objective"):
+        return str(training["objective"])
     probe = method.get("probe")
     if isinstance(probe, Mapping):
         model = probe.get("model") or probe.get("classifier")
@@ -1173,6 +1181,121 @@ def _objective_label(method: Mapping[str, Any]) -> str:
             return str(model).replace("_", " ")
     model = method.get("model") or method.get("classifier")
     return str(model).replace("_", " ") if model else "Linear readout"
+
+
+def _training_summary(
+    method: Mapping[str, Any],
+    summary: Mapping[str, Any],
+    metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    probe = _mapping(method.get("probe"))
+    target = _mapping(method.get("target"))
+    evaluation = _mapping(method.get("evaluation"))
+    normalization = _mapping(method.get("normalization"))
+    best_state = _mapping(probe.get("best_model_state"))
+    hyperparams = _mapping(probe.get("hyperparams"))
+
+    primary_model = str(
+        probe.get("primary_model")
+        or best_state.get("model")
+        or method.get("model")
+        or method.get("classifier")
+        or ""
+    )
+    target_type = str(
+        target.get("kind")
+        or probe.get("type")
+        or best_state.get("probe_type")
+        or ""
+    )
+    class_count = _clean_int(summary.get("class_count") or metrics.get("class_count"))
+    objective = _training_objective_label(primary_model, target_type, class_count)
+    params = _mapping(hyperparams.get(primary_model)) or _mapping(
+        hyperparams.get(primary_model.lower())
+    )
+    estimator = str(params.get("model") or primary_model or "").replace("_", " ")
+    preprocessing = _normalization_label(normalization)
+    hyperparameter_lines = _hyperparameter_lines(params)
+
+    split = _mapping(method.get("split"))
+    trained_on = _clean_scalar(split.get("train_value") or probe.get("trained_on_split"))
+    selected_on = _clean_scalar(
+        split.get("selection_value")
+        or evaluation.get("selection_split")
+        or method.get("selection_value")
+    )
+    metric = _clean_scalar(evaluation.get("primary_metric") or evaluation.get("metric"))
+
+    payload = {
+        "objective": objective,
+        "target_type": _clean_scalar(target_type.replace("_", " ") if target_type else None),
+        "estimator": _clean_scalar(estimator),
+        "library": _clean_scalar(probe.get("library")),
+        "preprocessing": preprocessing,
+        "hyperparameters": hyperparameter_lines,
+        "trained_on": trained_on,
+        "selected_on": selected_on,
+        "metric": _clean_scalar(str(metric).replace("_", " ") if metric else None),
+    }
+    return {key: value for key, value in payload.items() if value not in (None, "", [])}
+
+
+def _training_objective_label(model: str, target_type: str, class_count: int | None) -> str | None:
+    model_key = model.lower()
+    target_key = target_type.lower()
+    regression = "regression" in target_key or target_key == "continuous"
+    classification = "classification" in target_key or bool(class_count)
+    if "linear" in model_key:
+        if regression:
+            return "Ridge regression"
+        if classification:
+            return (
+                "Multiclass logistic regression"
+                if class_count and class_count > 2
+                else "Binary logistic regression"
+            )
+    if "mlp" in model_key:
+        if regression:
+            return "MLP regression"
+        if classification:
+            return (
+                "Multiclass MLP classifier"
+                if class_count and class_count > 2
+                else "Binary MLP classifier"
+            )
+    if model:
+        if regression:
+            return f"{model.replace('_', ' ')} regression"
+        if classification:
+            return f"{model.replace('_', ' ')} classification"
+    if regression:
+        return "Regression probe"
+    if classification:
+        return "Classification probe"
+    return None
+
+
+def _normalization_label(normalization: Mapping[str, Any]) -> str | None:
+    method = str(normalization.get("method") or "")
+    if method == "standardize":
+        return "standardized X"
+    return method.replace("_", " ") if method else None
+
+
+def _hyperparameter_lines(params: Mapping[str, Any]) -> list[str]:
+    lines: list[str] = []
+    for key in ["class_weight", "alpha", "max_iter", "hidden_layer_sizes", "random_state"]:
+        value = params.get(key)
+        if value is None:
+            continue
+        clean = _clean_scalar(value)
+        if isinstance(clean, list):
+            clean = ", ".join(str(item) for item in clean)
+        if key == "class_weight" and clean == "balanced":
+            lines.append("class-balanced")
+        else:
+            lines.append(f"{key.replace('_', ' ')} {clean}")
+    return lines
 
 
 def _clean_record(row: Mapping[str, Any]) -> dict[str, Any]:

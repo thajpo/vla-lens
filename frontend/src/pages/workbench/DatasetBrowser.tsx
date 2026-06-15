@@ -1392,14 +1392,18 @@ function probeOutputHoverModel(study: ProbeStudy, output: ProbeLensSpec["output"
 }
 
 function probeObjectiveHoverModel(study: ProbeStudy, objective: ProbeLensSpec["objective"]): ProbeMetadataCard {
+  const training = study.training_summary;
   return {
     groups: [
       {
         lines: [
-          { label: "Objective", value: study.objective || objective.value },
+          { label: "Objective", value: training?.objective || study.objective || objective.value },
+          { label: "Target type", value: training?.target_type || "" },
+          { label: "Estimator", value: training?.estimator || "" },
           ...(objective.detail ? [{ label: "Detail", value: objective.detail }] : []),
+          { label: "Metric", value: training?.metric || "" },
           { label: "Source", value: study.source },
-        ],
+        ].filter((line) => line.value),
         title: "Training",
       },
     ],
@@ -1408,8 +1412,19 @@ function probeObjectiveHoverModel(study: ProbeStudy, objective: ProbeLensSpec["o
 }
 
 function probeTrainingDetailsHoverModel(study: ProbeStudy): ProbeMetadataCard {
+  const training = study.training_summary;
   return {
     groups: [
+      {
+        lines: [
+          { label: "Preprocessing", value: training?.preprocessing || "" },
+          { label: "Hyperparameters", value: training?.hyperparameters?.join(" · ") || "" },
+          { label: "Library", value: training?.library || "" },
+          { label: "Train split", value: training?.trained_on || "" },
+          { label: "Selected on", value: training?.selected_on || "" },
+        ].filter((line) => line.value),
+        title: "Recipe",
+      },
       {
         lines: [
           { label: "Readouts", value: formatReadoutInteger(study.counts.readout_count) },
@@ -1436,6 +1451,14 @@ function probeTrainingDetailsHoverModel(study: ProbeStudy): ProbeMetadataCard {
 }
 
 function probeTrainingDetailsValue(study: ProbeStudy): string {
+  const training = study.training_summary;
+  const recipe = [
+    training?.preprocessing,
+    ...(training?.hyperparameters ?? []),
+  ].filter(Boolean);
+  if (recipe.length) {
+    return recipe.slice(0, 3).join(" · ");
+  }
   const layers = typeof study.counts.layer_count === "number" && Number.isFinite(study.counts.layer_count)
     ? `${formatReadoutInteger(study.counts.layer_count)} layers`
     : "";
@@ -1515,7 +1538,7 @@ function probeStudySpec(study: ProbeStudy, fallback: ProbeLensWorkbenchViewModel
     },
     objective: {
       ...fallback.spec.objective,
-      value: study.objective || fallback.spec.objective.value,
+      value: study.training_summary?.objective || study.objective || fallback.spec.objective.value,
     },
     output: {
       ...fallback.spec.output,
