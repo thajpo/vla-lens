@@ -1520,6 +1520,55 @@
   bottom: 6px;
 }
 
+.probe-policy-call-stem {
+  background: rgba(15, 23, 42, 0.24);
+  bottom: 0;
+  display: block;
+  height: 13px;
+  pointer-events: none;
+  position: absolute;
+  transform: translateX(-50%);
+  width: 1px;
+  z-index: 1;
+}
+
+.probe-policy-call-stem::after {
+  background: rgba(15, 23, 42, 0.36);
+  border-radius: 999px;
+  bottom: -2px;
+  content: "";
+  height: 5px;
+  left: 50%;
+  position: absolute;
+  transform: translateX(-50%);
+  width: 5px;
+}
+
+.probe-policy-call-legend {
+  align-items: center;
+  background: rgba(248, 250, 252, 0.86);
+  border: 1px solid #e2e8f0;
+  bottom: 6px;
+  color: #64748b;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 700;
+  gap: 5px;
+  padding: 2px 5px;
+  position: absolute;
+  right: 6px;
+  text-transform: uppercase;
+  z-index: 3;
+}
+
+.probe-policy-call-legend::before {
+  background: rgba(15, 23, 42, 0.28);
+  content: "";
+  display: block;
+  height: 12px;
+  width: 1px;
+}
+
 .probe-scatter-plot i {
   border: 1px solid #ffffff;
   border-radius: 999px;
@@ -1528,6 +1577,7 @@
   position: absolute;
   transform: translate(-50%, 50%);
   width: 9px;
+  z-index: 2;
 }
 
 .probe-scatter-plot i.correct {

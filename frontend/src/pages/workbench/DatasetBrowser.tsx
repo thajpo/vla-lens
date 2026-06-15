@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { Fragment, useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search } from "lucide-react";
 import { InlineInfoText } from "../../components/ui/InfoHover";
@@ -1559,6 +1559,7 @@ type ProbeScatterPoint = {
   confidence: number;
   episodeLength: number;
   label: string;
+  policyCallIndex: number | null;
   tone: "correct" | "high-conf-wrong" | "wrong" | "unknown";
   x: number;
   y: number;
@@ -1606,6 +1607,7 @@ type ProbeDatasetAnalysisModel = {
 
 function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel }) {
   const lengthAxis = scatterLengthAxis(model.lengthScorePoints);
+  const hasPolicyCallMarkers = model.lengthScorePoints.some((point) => point.policyCallIndex !== null);
   return (
     <aside className="probe-analysis-panel" aria-label="Probe dataset analysis">
       <section className="probe-analysis-card">
@@ -1688,9 +1690,9 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           <header>
             <ProbeAnalysisTitle
               title="Confidence by length"
-              description="Each dot is a visible scored episode. Horizontal position is episode length; vertical position is probe confidence."
+              description="Each dot is a visible scored episode. Horizontal position is episode length; vertical position is probe confidence. Thin stems mark the scored policy call when available."
             />
-            <small>episode length</small>
+            <small>{hasPolicyCallMarkers ? "episode length + policy call" : "episode length"}</small>
           </header>
           <div className="probe-scatter-shell">
             <span className="probe-scatter-axis-label y">Confidence</span>
@@ -1699,15 +1701,29 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
               <span className="probe-scatter-tick y mid">.5</span>
               <span className="probe-scatter-tick y bottom">0</span>
               {model.lengthScorePoints.map((point, index) => (
-                <i
-                  className={point.tone}
-                  key={`${point.label}-${index}`}
-                  style={{
-                    left: `${paddedPlotPercent(point.x)}%`,
-                    bottom: `${paddedPlotPercent(point.y)}%`,
-                  }}
-                />
+                <Fragment key={`${point.label}-${index}`}>
+                  {point.policyCallIndex !== null ? (
+                    <span
+                      aria-hidden="true"
+                      className="probe-policy-call-stem"
+                      style={{
+                        bottom: "0",
+                        left: `${paddedPlotPercent(point.x)}%`,
+                      }}
+                    />
+                  ) : null}
+                  <i
+                    aria-label={scatterPointLabel(point)}
+                    className={point.tone}
+                    style={{
+                      left: `${paddedPlotPercent(point.x)}%`,
+                      bottom: `${paddedPlotPercent(point.y)}%`,
+                    }}
+                    title={scatterPointLabel(point)}
+                  />
+                </Fragment>
               ))}
+              {hasPolicyCallMarkers ? <span className="probe-policy-call-legend">policy call</span> : null}
             </div>
             <div className="probe-scatter-x-axis">
               <span>{lengthAxis.min}</span>
@@ -1832,6 +1848,15 @@ function scatterLengthAxis(points: ProbeScatterPoint[]): { max: string; min: str
 function paddedPlotPercent(value: number): number {
   const bounded = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
   return 6 + bounded * 0.88;
+}
+
+function scatterPointLabel(point: ProbeScatterPoint): string {
+  return [
+    point.label,
+    `confidence ${formatReadoutMetric(point.confidence)}`,
+    `${formatReadoutInteger(point.episodeLength)} steps`,
+    point.policyCallIndex === null ? "" : `policy call ${formatReadoutInteger(point.policyCallIndex)}`,
+  ].filter(Boolean).join(" · ");
 }
 
 function ProbeSliceCard({
@@ -2099,6 +2124,9 @@ function scoreLengthPoints(probe: ProbeDatasetIndex, episodes: DatasetEpisode[])
     confidence: record.confidence ?? 0,
     episodeLength: episode.length ?? 0,
     label: episodeTitle(episode),
+    policyCallIndex: typeof record.policy_call_index === "number" && Number.isFinite(record.policy_call_index)
+      ? record.policy_call_index
+      : null,
     tone: record.correct === true
       ? "correct"
       : record.correct === false && (record.confidence ?? 0) >= 0.8
