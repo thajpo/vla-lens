@@ -253,7 +253,7 @@ export function compactProbeReadoutLabel(readout: ProbeStudyReadout, study?: Pro
       study?.target && readout.target !== study.target ? probeTargetDisplayLabel(readout.target) : "",
       compactProbeLayerLabel(readout.layer),
       probeSplitLabel(readout.split_category, readout.split),
-      `BA ${formatCompactMetric(readout.balanced_accuracy)}`,
+      `Balanced acc. ${formatCompactMetric(readout.balanced_accuracy)}`,
     ],
     " · ",
   );

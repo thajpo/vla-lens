@@ -1230,7 +1230,7 @@ function probeReadoutSummaryLine(readout: ProbeStudyReadout, study: ProbeStudy):
     probeTargetDisplayLabel(readout.target || study.target || ""),
     compactProbeLayerLabel(readout.layer),
     probeSplitLabel(readout.split_category, readout.split),
-    compactProbeMetricValue("BA", readout.balanced_accuracy),
+    compactProbeMetricValue("Balanced acc.", readout.balanced_accuracy),
     countPart(rowCount, "rows"),
     countPart(classCount, "classes"),
   ].filter(Boolean).join(" · ");
@@ -1390,7 +1390,7 @@ function ProbeSummaryVisual({
                 <th>Correct</th>
                 <th>Wrong</th>
                 <th>High-conf wrong</th>
-                <th>BA</th>
+                <th>Balanced acc.</th>
                 <th>Map</th>
               </tr>
             </thead>
@@ -2458,7 +2458,7 @@ function probeReadoutMetricChips(
   return [
     {
       detail: `${probeReadoutLayerLabel(readout.layer)} · ${probeReadoutSplitLabel(readout)}`,
-      label: "BA",
+      label: "Balanced acc.",
       tone: probeReadoutScoreTone(score),
       value: compactProbeMetricValue("", score).trim(),
     },

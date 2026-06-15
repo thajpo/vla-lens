@@ -225,7 +225,7 @@ test("probe readout compact label keeps hover metadata concise", () => {
     trained_probe_id: "NMO-L12-TEST-HELDOUT-TASK",
   };
 
-  assert.equal(compactProbeReadoutLabel(readout, study), "L12 · Test · BA .457");
+  assert.equal(compactProbeReadoutLabel(readout, study), "L12 · Test · Balanced acc. .457");
   const card = probeReadoutHoverModel(readout, study);
   const lines = metadataLineMap(card);
   assert.equal(lines.get("Metrics:Balanced accuracy"), "0.457");
