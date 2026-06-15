@@ -355,7 +355,8 @@ input {
 
 .dataset-browser-page.probe-mode {
   align-items: start;
-  grid-template-columns: minmax(620px, var(--probe-left-width, 940px)) 10px minmax(360px, 1fr);
+  column-gap: 16px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
 }
 
 .dataset-browser-page.probe-mode > .dataset-browser-header,
@@ -369,33 +370,6 @@ input {
 .dataset-browser-page.probe-mode > .app-message,
 .dataset-browser-page.probe-mode > .empty-state {
   grid-column: 1;
-}
-
-.probe-column-resizer {
-  align-self: stretch;
-  background: transparent;
-  border: 0;
-  cursor: col-resize;
-  grid-column: 2;
-  grid-row: 3 / span 8;
-  justify-content: center;
-  min-height: 100%;
-  padding: 0;
-  width: 10px;
-}
-
-.probe-column-resizer span {
-  background: #cbd5e1;
-  display: block;
-  height: 100%;
-  min-height: 360px;
-  width: 1px;
-}
-
-.probe-column-resizer:hover span,
-.probe-column-resizer:focus-visible span {
-  background: #d6a84f;
-  width: 2px;
 }
 
 .dataset-browser-header {
@@ -495,6 +469,7 @@ input {
   background: #fffdf8;
   gap: 6px;
   padding: 8px 10px;
+  width: 100%;
 }
 
 .dataset-table-controls.probe-mode .dataset-search {
@@ -885,6 +860,14 @@ input {
   white-space: nowrap;
 }
 
+.probe-lens-specs .probe-evidence-fact strong {
+  line-height: 1.25;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .probe-evidence-fact small {
   line-height: 1.25;
 }
@@ -955,7 +938,7 @@ input {
 }
 
 .probe-map-legend .high-conf-wrong::before {
-  background: #dc2626;
+  background: #c43a32;
 }
 
 .probe-map-legend .unknown::before {
@@ -966,6 +949,64 @@ input {
 .probe-result-bars {
   display: grid;
   gap: 6px;
+}
+
+.probe-split-table-wrap {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.probe-split-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+
+.probe-split-table th,
+.probe-split-table td {
+  border-bottom: 1px solid #e2e8f0;
+  color: #334155;
+  font-variant-numeric: tabular-nums;
+  padding: 7px 6px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.probe-split-table thead th {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: none;
+}
+
+.probe-split-table th:first-child,
+.probe-split-table td:first-child {
+  text-align: left;
+}
+
+.probe-split-table tbody th {
+  font-weight: 750;
+}
+
+.probe-split-table tbody tr.active {
+  background: #fffaf0;
+  box-shadow: inset 3px 0 0 #b7791f;
+}
+
+.probe-split-table button {
+  background: transparent;
+  border: 0;
+  color: #0f172a;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 800;
+  padding: 0;
+  text-align: left;
+}
+
+.probe-split-table .probe-evidence-bar {
+  min-width: 92px;
+  width: 100%;
 }
 
 .probe-split-bars button,
@@ -1049,7 +1090,7 @@ input {
 }
 
 .probe-evidence-bar em.high-conf-wrong {
-  background: #dc2626;
+  background: #c43a32;
   opacity: 0.92;
   z-index: 2;
 }

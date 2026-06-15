@@ -581,6 +581,11 @@
   overflow: auto;
 }
 
+.dataset-browser-page.probe-mode .dataset-episode-table-wrap {
+  max-height: none;
+  overflow: visible;
+}
+
 .dataset-episode-table {
   font-size: 13px;
   line-height: 1.25;
@@ -617,6 +622,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   width: 100%;
+}
+
+.dataset-browser-page.probe-mode .dataset-episode-link.probe-oriented span {
+  line-height: 1.25;
+  overflow: visible;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .dataset-episode-link small {
@@ -1007,16 +1020,16 @@
 .probe-lens-head > span,
 .probe-lens-verdict > span {
   color: #64748b;
-  font-size: 10px;
-  font-weight: 850;
-  letter-spacing: 0.045em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
 .probe-lens-head h2 {
   color: #0f172a;
   font-size: clamp(21px, 2.2vw, 32px);
-  letter-spacing: -0.04em;
+  letter-spacing: 0;
   line-height: 0.98;
   margin: 0;
   max-width: 840px;
@@ -1076,8 +1089,8 @@
 .probe-lens-verdict > strong {
   color: #0f172a;
   font-size: 18px;
-  font-weight: 920;
-  letter-spacing: -0.02em;
+  font-weight: 850;
+  letter-spacing: 0;
   line-height: 1.05;
 }
 
@@ -1123,9 +1136,9 @@
 
 .probe-lens-metric span {
   color: #64748b;
-  font-size: 9px;
-  font-weight: 850;
-  letter-spacing: 0.045em;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -1133,7 +1146,7 @@
   color: #0f172a;
   font-size: 17px;
   font-variant-numeric: tabular-nums;
-  font-weight: 920;
+  font-weight: 850;
 }
 
 .probe-lens-metric small {
@@ -1192,9 +1205,9 @@
 .probe-readout-navigator > div > span,
 .probe-readout-scope-facts dt {
   color: #64748b;
-  font-size: 9px;
-  font-weight: 850;
-  letter-spacing: 0.045em;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
   text-transform: uppercase;
 }
 
@@ -1250,12 +1263,55 @@
   white-space: nowrap;
 }
 
+.probe-readout-current {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 38px 8px 9px;
+  position: relative;
+}
+
+.probe-readout-current > span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.probe-readout-current strong {
+  color: #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.probe-readout-current small {
+  align-items: center;
+  color: #64748b;
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 11px;
+  gap: 6px;
+  line-height: 1.35;
+}
+
+.probe-readout-current small > span {
+  font-weight: 700;
+}
+
 .probe-readout-warning {
+  align-items: center;
   background: #fff7ed;
   border: 1px solid #fed7aa;
   color: #9a3412;
+  display: inline-flex;
   font-size: 11px;
   font-weight: 750;
+  gap: 6px;
   grid-column: 1 / -1;
   line-height: 1.35;
   padding: 6px 7px;
@@ -1354,8 +1410,8 @@
 
 .probe-analysis-panel {
   display: grid;
-  gap: 10px;
-  grid-column: 3;
+  gap: 12px;
+  grid-column: 2;
   grid-row: 3 / span 8;
   min-width: 0;
 }
@@ -1364,9 +1420,9 @@
   background: #ffffff;
   border: 1px solid #dbe3ed;
   display: grid;
-  gap: 8px;
+  gap: 10px;
   min-width: 0;
-  padding: 10px;
+  padding: 12px;
   position: relative;
 }
 
@@ -1376,19 +1432,19 @@
   display: flex;
   justify-content: space-between;
   min-width: 0;
-  padding: 0 28px 7px 0;
+  padding: 0 0 8px;
 }
 
 .probe-analysis-card > header span {
   color: #0f172a;
-  font-size: 12px;
-  font-weight: 900;
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .probe-analysis-card > header small {
   color: #64748b;
   font-size: 10px;
-  font-weight: 800;
+  font-weight: 700;
   text-transform: uppercase;
 }
 
@@ -1430,7 +1486,7 @@
   border: 1px solid #e2e8f0;
   display: flex;
   gap: 2px;
-  height: 94px;
+  height: 112px;
   padding: 8px 7px 6px;
 }
 
@@ -1449,24 +1505,85 @@
   width: 100%;
 }
 
+.probe-scatter-shell {
+  display: grid;
+  gap: 7px;
+  grid-template-columns: 24px minmax(0, 1fr);
+  min-width: 0;
+}
+
+.probe-scatter-axis-label.y {
+  align-self: center;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  justify-self: center;
+  text-transform: uppercase;
+  transform: rotate(-90deg);
+  white-space: nowrap;
+}
+
 .probe-scatter-plot {
   background:
     linear-gradient(to right, rgba(148, 163, 184, 0.22) 1px, transparent 1px) 0 0 / 25% 100%,
     linear-gradient(to top, rgba(148, 163, 184, 0.22) 1px, transparent 1px) 0 0 / 100% 25%,
     #f8fafc;
   border: 1px solid #e2e8f0;
-  height: 150px;
+  height: 190px;
   position: relative;
+}
+
+.probe-scatter-x-axis {
+  align-items: center;
+  color: #64748b;
+  display: grid;
+  font-size: 10px;
+  font-weight: 700;
+  grid-column: 2;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+
+.probe-scatter-x-axis strong {
+  color: #475569;
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.probe-scatter-x-axis span:last-child {
+  text-align: right;
+}
+
+.probe-scatter-tick {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  left: 6px;
+  position: absolute;
+  z-index: 1;
+}
+
+.probe-scatter-tick.top {
+  top: 6px;
+}
+
+.probe-scatter-tick.mid {
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.probe-scatter-tick.bottom {
+  bottom: 6px;
 }
 
 .probe-scatter-plot i {
   border: 1px solid #ffffff;
   border-radius: 999px;
   display: block;
-  height: 8px;
+  height: 9px;
   position: absolute;
   transform: translate(-50%, 50%);
-  width: 8px;
+  width: 9px;
 }
 
 .probe-scatter-plot i.correct {
@@ -1474,7 +1591,7 @@
 }
 
 .probe-scatter-plot i.wrong {
-  background: #b91c1c;
+  background: #c43a32;
 }
 
 .probe-scatter-plot i.unknown {
@@ -1516,11 +1633,12 @@
 .probe-temporal-row span {
   color: #334155;
   font-size: 11px;
-  font-weight: 800;
+  font-weight: 700;
+  line-height: 1.25;
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  white-space: normal;
 }
 
 .probe-analysis-bar-row strong,
@@ -1531,7 +1649,7 @@
   color: #0f172a;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
-  font-weight: 900;
+  font-weight: 800;
   text-align: right;
 }
 
@@ -1602,12 +1720,12 @@
 .probe-analysis-bar-row .wrong,
 .probe-slice-row .wrong,
 .probe-confusion-list .wrong {
-  background: #d97706;
+  background: #d08326;
 }
 
 .probe-analysis-bar-row .high-conf-wrong,
 .probe-slice-row .high-conf-wrong {
-  background: #b91c1c;
+  background: #c43a32;
 }
 
 .probe-analysis-bar-row .unknown,

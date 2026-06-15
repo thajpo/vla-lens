@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search } from "lucide-react";
 import { InfoIconTrigger, InlineInfoText } from "../../components/ui/InfoHover";
@@ -183,7 +183,6 @@ export function DatasetBrowser({
   const [selectedProbeReadoutId, setSelectedProbeReadoutId] = useState("");
   const [probeReadoutFilterMode, setProbeReadoutFilterMode] = useState<ProbeReadoutFilterMode>("useful");
   const [pageOffset, setPageOffset] = useState(0);
-  const [probeLeftColumnWidth, setProbeLeftColumnWidth] = useState(940);
   const familyByType = useMemo(
     () => new Map((discoveryFamilies.data?.families ?? []).map((family) => [family.artifact_type, family])),
     [discoveryFamilies.data?.families],
@@ -222,9 +221,6 @@ export function DatasetBrowser({
       : undefined,
     [selectedProbe, selectedProbeReadoutId, filteredProbeReadouts],
   );
-  const probePageStyle = selectedProbe
-    ? ({ "--probe-left-width": `${probeLeftColumnWidth}px` } as CSSProperties)
-    : undefined;
   const activeLensArtifactId = selectedLens?.artifactId ?? "";
   const canFetchProbeEvidenceBundle = Boolean(selectedProbe && !selectedLens?.probeStudy);
   const probeEvidenceBundle = useQuery({
@@ -428,23 +424,8 @@ export function DatasetBrowser({
     }
     onOpenEpisode(episode.trace_id, episodeOpenContextForProbe(selectedProbe, episode));
   };
-  const resizeProbeColumns = (event: ReactPointerEvent<HTMLButtonElement>) => {
-    event.preventDefault();
-    const startX = event.clientX;
-    const startWidth = probeLeftColumnWidth;
-    const onPointerMove = (moveEvent: PointerEvent) => {
-      setProbeLeftColumnWidth(Math.max(620, Math.min(1280, startWidth + moveEvent.clientX - startX)));
-    };
-    const onPointerUp = () => {
-      window.removeEventListener("pointermove", onPointerMove);
-      window.removeEventListener("pointerup", onPointerUp);
-    };
-    window.addEventListener("pointermove", onPointerMove);
-    window.addEventListener("pointerup", onPointerUp);
-  };
-
   return (
-    <main className={`dataset-browser-page ${selectedProbe ? "probe-mode" : ""}`} style={probePageStyle}>
+    <main className={`dataset-browser-page ${selectedProbe ? "probe-mode" : ""}`}>
       <header className="dataset-browser-header">
         <div>
           <h1>Dataset</h1>
@@ -742,17 +723,6 @@ export function DatasetBrowser({
       {hasProbeArtifacts && probeIndex.isError ? (
         <div className="empty-state compact">Probe list unavailable.</div>
       ) : null}
-      {selectedProbe ? (
-        <button
-          className="probe-column-resizer"
-          type="button"
-          aria-label="Resize probe dataset columns"
-          onPointerDown={resizeProbeColumns}
-        >
-          <span />
-        </button>
-      ) : null}
-
       <section className={`dataset-browser-grid ${selectedProbe ? "probe-analysis-grid" : ""}`}>
         <div className="dataset-browser-panel">
           <header>
@@ -1185,6 +1155,7 @@ function ProbeReadoutNavigator({
   }
   const activeReadout = selectedReadout ?? readouts[0];
   const readoutHover = activeReadout ? probeReadoutHoverModel(activeReadout, study) : undefined;
+  const readoutSummary = activeReadout ? probeReadoutSummaryLine(activeReadout, study) : "";
   const warningHover = activeReadout && unavailableReason
     ? readoutWarningHoverModel(activeReadout, study, unavailableReason)
     : undefined;
@@ -1227,65 +1198,15 @@ function ProbeReadoutNavigator({
       </div>
       {activeReadout ? (
         <>
-          <dl
-            className="probe-readout-scope-facts"
-          >
+          <div className="probe-readout-current">
             {readoutHover ? <InfoIconTrigger card={readoutHover} className="info-hover-corner" /> : null}
-            <div>
-              <dt>
-                <InlineInfoText
-                  card={infoTextCard("Target", "The label this trained probe predicts from activations.")}
-                  label="Target"
-                />
-              </dt>
-              <dd>{probeTargetDisplayLabel(activeReadout.target || study.target || "")}</dd>
-            </div>
-            <div>
-              <dt>
-                <InlineInfoText
-                  card={infoTextCard("Layer", "The activation layer used as the probe input.")}
-                  label="Layer"
-                />
-              </dt>
-              <dd>{compactProbeLayerLabel(activeReadout.layer)}</dd>
-            </div>
-            <div>
-              <dt>
-                <InlineInfoText
-                  card={infoTextCard("Split", "The train, validation, or test split this trained probe was evaluated on.")}
-                  label="Split"
-                />
-              </dt>
-              <dd>{probeSplitLabel(activeReadout.split_category, activeReadout.split)}</dd>
-            </div>
-            <div>
-              <dt>
-                <InlineInfoText
-                  card={infoTextCard("Rows", "Policy-call rows available to this trained probe before episode aggregation.")}
-                  label="Rows"
-                />
-              </dt>
-              <dd>{activeReadout.policy_call_count ?? activeReadout.row_count ?? "-"}</dd>
-            </div>
-            <div>
-              <dt>
-                <InlineInfoText
-                  card={infoTextCard("Balanced acc.", "Balanced accuracy for this target, layer, and split.")}
-                  label="Balanced acc."
-                />
-              </dt>
-              <dd>{compactProbeMetricValue("BA", activeReadout.balanced_accuracy)}</dd>
-            </div>
-            <div>
-              <dt>
-                <InlineInfoText
-                  card={infoTextCard("ID", "Stable identifier for debugging or sharing this exact trained probe.")}
-                  label="ID"
-                />
-              </dt>
-              <dd><ProbeIdCopy value={trainedProbeDisplayId(activeReadout, study)} /></dd>
-            </div>
-          </dl>
+            <span>Current probe</span>
+            <strong>{readoutSummary}</strong>
+            <small>
+              <span>ID</span>
+              <ProbeIdCopy value={trainedProbeDisplayId(activeReadout, study)} />
+            </small>
+          </div>
           {warningHover ? (
             <small className="probe-readout-warning">
               Aggregate only
@@ -1298,6 +1219,21 @@ function ProbeReadoutNavigator({
       )}
     </section>
   );
+}
+
+function probeReadoutSummaryLine(readout: ProbeStudyReadout, study: ProbeStudy): string {
+  const rowCount = readout.policy_call_count ?? readout.row_count;
+  const classCount = readout.class_count;
+  const countPart = (value: number | null | undefined, label: string) =>
+    typeof value === "number" && Number.isFinite(value) ? `${formatReadoutInteger(value)} ${label}` : "";
+  return [
+    probeTargetDisplayLabel(readout.target || study.target || ""),
+    compactProbeLayerLabel(readout.layer),
+    probeSplitLabel(readout.split_category, readout.split),
+    compactProbeMetricValue("BA", readout.balanced_accuracy),
+    countPart(rowCount, "rows"),
+    countPart(classCount, "classes"),
+  ].filter(Boolean).join(" · ");
 }
 
 function LensEvidencePanel({
@@ -1407,6 +1343,7 @@ function ProbeSummaryVisual({
     : probeResultChartRows(probe);
   const splitSegments = splitRows.map((row) => [row.id, probeSplitBarSegments(row)] as const);
   const segmentsBySplit = new Map(splitSegments);
+  const performanceBySplit = new Map(performanceRows.map((row) => [row.id, row] as const));
   const hasSplitErrorCounts = splitSegments.some(([, segments]) => segments.hasErrorCounts);
   const hasUnknownSplitRows = splitSegments.some(
     ([, segments]) => !segments.hasErrorCounts && segments.unknownCount > 0,
@@ -1444,53 +1381,68 @@ function ProbeSummaryVisual({
             ) : null}
           </small>
         </header>
-        <div className="probe-split-bars">
-          {splitRows.map((row) => {
-            const segments = segmentsBySplit.get(row.id) ?? probeSplitBarSegments(row);
-            return (
-              <button
-                className={activeSplitFilter === row.id ? "active" : ""}
-                key={row.id}
-                type="button"
-                onClick={() => onSplitFilterChange(activeSplitFilter === row.id ? "all" : row.id)}
-              >
-                <span>{row.label}</span>
-                <strong>{probeSplitRowCountLabel(row, segments.hasErrorCounts)}</strong>
-                <i
-                  className={`probe-evidence-bar segmented${segments.hasErrorCounts ? "" : " unknown"}`}
-                  title={probeSplitCountDetail(row)}
-                >
-                  <b
-                    className={segments.hasErrorCounts && segments.correctCount > 0 ? "visible-segment" : undefined}
-                    style={{ flexBasis: `${segments.correctWidth}%`, width: `${segments.correctWidth}%` }}
-                  />
-                  <em
-                    className={`wrong${segments.wrongOnlyCount > 0 ? " visible-segment" : ""}`}
-                    style={{ flexBasis: `${segments.wrongWidth}%`, width: `${segments.wrongWidth}%` }}
-                  />
-                  <em
-                    className={`high-conf-wrong${segments.highConfWrongCount > 0 ? " visible-segment" : ""}`}
-                    style={{ flexBasis: `${segments.highConfWrongWidth}%`, width: `${segments.highConfWrongWidth}%` }}
-                  />
-                  {!segments.hasErrorCounts ? (
-                    <b
-                      className={`unknown${segments.unknownCount > 0 ? " visible-segment" : ""}`}
-                      style={{ flexBasis: `${segments.unknownWidth}%`, width: `${segments.unknownWidth}%` }}
-                    />
-                  ) : null}
-                </i>
-                <small>
-                  {row.detail
-                    ? row.detail
-                    : row.total === 0
-                    ? "no episodes"
-                    : row.wrong === null
-                    ? "error counts unavailable"
-                    : probeSplitCountDetail(row)}
-                </small>
-              </button>
-            );
-          })}
+        <div className="probe-split-table-wrap">
+          <table className="probe-split-table">
+            <thead>
+              <tr>
+                <th>Split</th>
+                <th>Rows</th>
+                <th>Correct</th>
+                <th>Wrong</th>
+                <th>High-conf wrong</th>
+                <th>BA</th>
+                <th>Map</th>
+              </tr>
+            </thead>
+            <tbody>
+              {splitRows.map((row) => {
+                const segments = segmentsBySplit.get(row.id) ?? probeSplitBarSegments(row);
+                const performance = performanceBySplit.get(row.id);
+                return (
+                  <tr className={activeSplitFilter === row.id ? "active" : ""} key={row.id}>
+                    <th scope="row">
+                      <button
+                        type="button"
+                        onClick={() => onSplitFilterChange(activeSplitFilter === row.id ? "all" : row.id)}
+                      >
+                        {row.label}
+                      </button>
+                    </th>
+                    <td>{probeSplitRowCountLabel(row, segments.hasErrorCounts)}</td>
+                    <td>{segments.hasErrorCounts ? formatReadoutInteger(segments.correctCount) : "-"}</td>
+                    <td>{segments.hasErrorCounts ? formatReadoutInteger(row.wrong) : "-"}</td>
+                    <td>{segments.hasErrorCounts ? formatReadoutInteger(segments.highConfWrongCount) : "-"}</td>
+                    <td>{performance?.score === null || performance?.score === undefined ? "-" : compactProbeMetricValue("", performance.score).trim()}</td>
+                    <td>
+                      <i
+                        className={`probe-evidence-bar segmented${segments.hasErrorCounts ? "" : " unknown"}`}
+                        title={probeSplitCountDetail(row)}
+                      >
+                        <b
+                          className={segments.hasErrorCounts && segments.correctCount > 0 ? "visible-segment" : undefined}
+                          style={{ flexBasis: `${segments.correctWidth}%`, width: `${segments.correctWidth}%` }}
+                        />
+                        <em
+                          className={`wrong${segments.wrongOnlyCount > 0 ? " visible-segment" : ""}`}
+                          style={{ flexBasis: `${segments.wrongWidth}%`, width: `${segments.wrongWidth}%` }}
+                        />
+                        <em
+                          className={`high-conf-wrong${segments.highConfWrongCount > 0 ? " visible-segment" : ""}`}
+                          style={{ flexBasis: `${segments.highConfWrongWidth}%`, width: `${segments.highConfWrongWidth}%` }}
+                        />
+                        {!segments.hasErrorCounts ? (
+                          <b
+                            className={`unknown${segments.unknownCount > 0 ? " visible-segment" : ""}`}
+                            style={{ flexBasis: `${segments.unknownWidth}%`, width: `${segments.unknownWidth}%` }}
+                          />
+                        ) : null}
+                      </i>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
       <div className="probe-evidence-plot-column">
@@ -1622,15 +1574,15 @@ type ProbeDatasetAnalysisModel = {
 };
 
 function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel }) {
+  const lengthAxis = scatterLengthAxis(model.lengthScorePoints);
   return (
     <aside className="probe-analysis-panel" aria-label="Probe dataset analysis">
       <section className="probe-analysis-card">
-        <InfoIconTrigger
-          card={infoTextCard("Score distribution", "Confidence bins for scored probe rows. Green is correct, orange is wrong, gray is unknown.")}
-          className="info-hover-corner"
-        />
         <header>
-          <span>Score distribution</span>
+          <ProbeAnalysisTitle
+            title="Score distribution"
+            description="Confidence bins for scored probe rows. Green is correct, orange is wrong, gray is unknown."
+          />
           <small>confidence bins</small>
         </header>
         <div className="probe-analysis-bars">
@@ -1653,13 +1605,12 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.rollingAccuracy.length ? (
         <section className="probe-analysis-card">
-          <InfoIconTrigger
-            card={infoTextCard("Accuracy over episode order", "Rolling probe accuracy over the visible scored episode order. Bars summarize recent correct vs wrong probe results.")}
-            className="info-hover-corner"
-          />
           <header>
-            <span>Accuracy over episode order</span>
-            <small>rolling window</small>
+            <ProbeAnalysisTitle
+              title="Accuracy over episodes"
+              description="Probe accuracy over the visible scored episode order. Bars summarize recent correct vs wrong probe results."
+            />
+            <small>episode order</small>
           </header>
           <div className="probe-rolling-plot" aria-label="Rolling probe accuracy">
             {model.rollingAccuracy.map((point) => (
@@ -1675,12 +1626,11 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.calibrationRows.some((row) => row.total > 0) ? (
         <section className="probe-analysis-card">
-          <InfoIconTrigger
-            card={infoTextCard("Calibration", "Compares observed accuracy with probe confidence in each confidence bin.")}
-            className="info-hover-corner"
-          />
           <header>
-            <span>Calibration</span>
+            <ProbeAnalysisTitle
+              title="Calibration"
+              description="Compares observed accuracy with probe confidence in each confidence bin."
+            />
             <small>accuracy by confidence</small>
           </header>
           <div className="probe-calibration-list">
@@ -1703,22 +1653,35 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.lengthScorePoints.length ? (
         <section className="probe-analysis-card">
-          <InfoIconTrigger
-            card={infoTextCard("Confidence vs episode length", "Each dot is a visible scored episode. Horizontal position is episode length; vertical position is probe confidence.")}
-            className="info-hover-corner"
-          />
           <header>
-            <span>Confidence vs episode length</span>
-            <small>visible scored episodes</small>
+            <ProbeAnalysisTitle
+              title="Confidence by length"
+              description="Each dot is a visible scored episode. Horizontal position is episode length; vertical position is probe confidence."
+            />
+            <small>episode length</small>
           </header>
-          <div className="probe-scatter-plot" aria-label="Confidence against episode length">
-            {model.lengthScorePoints.map((point, index) => (
-              <i
-                className={point.tone}
-                key={`${point.label}-${index}`}
-                style={{ left: `${point.x}%`, bottom: `${point.y}%` }}
-              />
-            ))}
+          <div className="probe-scatter-shell">
+            <span className="probe-scatter-axis-label y">Confidence</span>
+            <div className="probe-scatter-plot" aria-label="Confidence by episode length">
+              <span className="probe-scatter-tick y top">1.0</span>
+              <span className="probe-scatter-tick y mid">.5</span>
+              <span className="probe-scatter-tick y bottom">0</span>
+              {model.lengthScorePoints.map((point, index) => (
+                <i
+                  className={point.tone}
+                  key={`${point.label}-${index}`}
+                  style={{
+                    left: `${paddedPlotPercent(point.x)}%`,
+                    bottom: `${paddedPlotPercent(point.y)}%`,
+                  }}
+                />
+              ))}
+            </div>
+            <div className="probe-scatter-x-axis">
+              <span>{lengthAxis.min}</span>
+              <strong>Episode length</strong>
+              <span>{lengthAxis.max}</span>
+            </div>
           </div>
         </section>
       ) : null}
@@ -1728,12 +1691,11 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.temporalRows.length ? (
         <section className="probe-analysis-card">
-          <InfoIconTrigger
-            card={infoTextCard("Temporal evidence", "Ranked probe evidence projected onto episode progress and policy-call position.")}
-            className="info-hover-corner"
-          />
           <header>
-            <span>Temporal evidence</span>
+            <ProbeAnalysisTitle
+              title="Temporal evidence"
+              description="Ranked probe evidence projected onto episode progress and policy-call position."
+            />
             <small>ranked policy calls</small>
           </header>
           <div className="probe-temporal-map">
@@ -1753,12 +1715,11 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.confusionRows.length ? (
         <section className="probe-analysis-card">
-          <InfoIconTrigger
-            card={infoTextCard("Prediction vs label", "Rows are predicted-label to true-label pairs. Green is correct, orange is wrong, gray is unknown.")}
-            className="info-hover-corner"
-          />
           <header>
-            <span>Prediction vs label</span>
+            <ProbeAnalysisTitle
+              title="Predicted vs actual"
+              description="Rows are predicted-label to actual-label pairs. Green is correct, orange is wrong, gray is unknown."
+            />
             <small>all indexed records</small>
           </header>
           <div className="probe-confusion-list">
@@ -1804,6 +1765,43 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
   );
 }
 
+function ProbeAnalysisTitle({
+  description,
+  title,
+}: {
+  description: string;
+  title: string;
+}) {
+  return (
+    <InlineInfoText
+      card={infoTextCard(title, description)}
+      className="info-title-trigger"
+      label={title}
+    />
+  );
+}
+
+function scatterLengthAxis(points: ProbeScatterPoint[]): { max: string; min: string } {
+  if (!points.length) {
+    return { max: "-", min: "-" };
+  }
+  const lengths = points.map((point) => point.episodeLength).filter((value) => Number.isFinite(value));
+  if (!lengths.length) {
+    return { max: "-", min: "-" };
+  }
+  const min = Math.min(...lengths);
+  const max = Math.max(...lengths);
+  return {
+    max: `${formatReadoutInteger(max)} steps`,
+    min: `${formatReadoutInteger(min)} steps`,
+  };
+}
+
+function paddedPlotPercent(value: number): number {
+  const bounded = Math.max(0, Math.min(100, Number.isFinite(value) ? value : 0));
+  return 6 + bounded * 0.88;
+}
+
 function ProbeSliceCard({
   rows,
   subtitle,
@@ -1815,12 +1813,11 @@ function ProbeSliceCard({
 }) {
   return (
     <section className="probe-analysis-card">
-      <InfoIconTrigger
-        card={infoTextCard(title, "Visible episodes grouped by this slice. Bars separate correct, wrong, high-confidence wrong, and unknown labels.")}
-        className="info-hover-corner"
-      />
       <header>
-        <span>{title}</span>
+        <ProbeAnalysisTitle
+          title={title}
+          description="Visible episodes grouped by this slice. Bars separate correct, wrong, high-confidence wrong, and unknown labels."
+        />
         <small>{subtitle}</small>
       </header>
       <div className="probe-slice-list">
@@ -1942,7 +1939,7 @@ function confusionRowTooltip(row: ProbeConfusionRow): ProbeMetadataCard {
           { label: "Wrong", value: formatTooltipShare(row.wrong, row.total) },
           { label: "Unknown", value: formatTooltipShare(row.unknown, row.total) },
         ],
-        title: "Prediction vs label",
+        title: "Predicted vs actual",
       },
     ],
     title: row.label,
@@ -2509,10 +2506,13 @@ function probeReadoutSplitChartRows(
   return (["train", "validation", "test"] as const).map((split) => {
     const readout = bySplit.get(split);
     const splitCounts = readout?.split ? summary?.split_counts?.[readout.split] : undefined;
+    const selectedSplitCounts = readout?.readout_id === selectedReadout.readout_id && summary
+      ? summary
+      : undefined;
     const total = splitCounts?.policy_call_count ?? readout?.policy_call_count ?? readout?.row_count ?? 0;
-    const wrong = splitCounts?.wrong ?? null;
-    const highConfWrong = splitCounts?.high_conf_wrong ?? null;
-    const correct = splitCounts?.correct ?? Math.max(0, total - (wrong ?? 0));
+    const wrong = splitCounts?.wrong ?? selectedSplitCounts?.wrong ?? null;
+    const highConfWrong = splitCounts?.high_conf_wrong ?? selectedSplitCounts?.high_conf_wrong ?? null;
+    const correct = splitCounts?.correct ?? selectedSplitCounts?.correct ?? Math.max(0, total - (wrong ?? 0));
     const wrongOnly = wrong === null ? null : Math.max(0, wrong - (highConfWrong ?? 0));
     return {
       detail: readout
