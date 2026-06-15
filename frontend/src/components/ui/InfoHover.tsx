@@ -7,38 +7,11 @@ type InfoHoverCardProps = {
   id?: string;
 };
 
-type InfoIconTriggerProps = {
-  card: InfoHoverCardData;
-  className?: string;
-  label?: string;
-};
-
 type InlineInfoTextProps = {
   card: InfoHoverCardData;
   className?: string;
   label: string;
 };
-
-export function InfoIconTrigger({
-  card,
-  className = "",
-  label,
-}: InfoIconTriggerProps) {
-  const tooltipId = useId();
-  return (
-    <span className={["info-hover-trigger info-icon-trigger", className].filter(Boolean).join(" ")}>
-      <button
-        aria-describedby={tooltipId}
-        aria-label={label ?? `About ${card.title}`}
-        className="info-hover-button info-icon-button"
-        type="button"
-      >
-        i
-      </button>
-      <InfoHoverCard card={card} id={tooltipId} />
-    </span>
-  );
-}
 
 export function InlineInfoText({
   card,

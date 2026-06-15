@@ -1,7 +1,7 @@
 import { useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search } from "lucide-react";
-import { InfoIconTrigger, InlineInfoText } from "../../components/ui/InfoHover";
+import { InlineInfoText } from "../../components/ui/InfoHover";
 import { infoTextCard } from "../../components/ui/infoHoverModel";
 import {
   fetchArtifacts,
@@ -889,8 +889,15 @@ function ProbeLensWorkbench({
   return (
     <section className="probe-lens-workbench" aria-label="Selected probe lens workbench">
       <div className="probe-lens-head">
-        {familyHover ? <InfoIconTrigger card={familyHover} className="info-hover-corner" /> : null}
-        <span>{study ? "Selected probe family" : "Selected probe lens"}</span>
+        {familyHover ? (
+          <InlineInfoText
+            card={familyHover}
+            className="info-title-trigger"
+            label={study ? "Selected probe family" : "Selected probe lens"}
+          />
+        ) : (
+          <span>{study ? "Selected probe family" : "Selected probe lens"}</span>
+        )}
         <h2>{study?.name ?? model.title}</h2>
         <p>{study?.question_label || verdict.detail}</p>
         <div className="probe-lens-specs">
@@ -1199,8 +1206,11 @@ function ProbeReadoutNavigator({
       {activeReadout ? (
         <>
           <div className="probe-readout-current">
-            {readoutHover ? <InfoIconTrigger card={readoutHover} className="info-hover-corner" /> : null}
-            <span>Current probe</span>
+            {readoutHover ? (
+              <InlineInfoText card={readoutHover} className="info-title-trigger" label="Current probe" />
+            ) : (
+              <span>Current probe</span>
+            )}
             <strong>{readoutSummary}</strong>
             <small>
               <span>ID</span>
@@ -1209,8 +1219,7 @@ function ProbeReadoutNavigator({
           </div>
           {warningHover ? (
             <small className="probe-readout-warning">
-              Aggregate only
-              <InfoIconTrigger card={warningHover} />
+              <InlineInfoText card={warningHover} className="info-title-trigger" label="Aggregate only" />
             </small>
           ) : null}
         </>
@@ -1410,7 +1419,7 @@ function ProbeSummaryVisual({
                     </th>
                     <td>{probeSplitRowCountLabel(row, segments.hasErrorCounts)}</td>
                     <td>{segments.hasErrorCounts ? formatReadoutInteger(segments.correctCount) : "-"}</td>
-                    <td>{segments.hasErrorCounts ? formatReadoutInteger(row.wrong) : "-"}</td>
+                    <td>{segments.hasErrorCounts ? formatReadoutInteger(segments.wrongOnlyCount) : "-"}</td>
                     <td>{segments.hasErrorCounts ? formatReadoutInteger(segments.highConfWrongCount) : "-"}</td>
                     <td>{performance?.score === null || performance?.score === undefined ? "-" : compactProbeMetricValue("", performance.score).trim()}</td>
                     <td>
@@ -1528,7 +1537,7 @@ type ProbeScatterPoint = {
   confidence: number;
   episodeLength: number;
   label: string;
-  tone: "correct" | "wrong" | "unknown";
+  tone: "correct" | "high-conf-wrong" | "wrong" | "unknown";
   x: number;
   y: number;
 };
@@ -1595,6 +1604,7 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
               <i>
                 <b className="correct" style={{ width: `${percentOf(bucket.correct, bucket.total)}%` }} />
                 <b className="wrong" style={{ width: `${percentOf(bucket.wrong, bucket.total)}%` }} />
+                <b className="high-conf-wrong" style={{ width: `${percentOf(bucket.highConfWrong, bucket.total)}%` }} />
                 <b className="unknown" style={{ width: `${percentOf(bucket.unknown, bucket.total)}%` }} />
               </i>
               <strong>{bucket.total}</strong>
@@ -1829,11 +1839,11 @@ function ProbeSliceCard({
             <InlineInfoText card={sliceRowTooltip(row, title)} label={row.label} />
             <i>
               <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
-              <b className="wrong" style={{ width: `${percentOf(Math.max(0, row.wrong - row.highConfWrong), row.total)}%` }} />
+              <b className="wrong" style={{ width: `${percentOf(row.wrong, row.total)}%` }} />
               <b className="high-conf-wrong" style={{ width: `${percentOf(row.highConfWrong, row.total)}%` }} />
               <b className="unknown" style={{ width: `${percentOf(row.unknown, row.total)}%` }} />
             </i>
-            <strong>{row.wrong}/{row.scored}</strong>
+            <strong>{row.wrong + row.highConfWrong}/{row.scored}</strong>
           </div>
         )) : <p>No visible scored episodes.</p>}
       </div>
@@ -1947,7 +1957,6 @@ function confusionRowTooltip(row: ProbeConfusionRow): ProbeMetadataCard {
 }
 
 function sliceRowTooltip(row: ProbeAnalysisCountRow, title: string): ProbeMetadataCard {
-  const otherWrong = Math.max(0, row.wrong - row.highConfWrong);
   return {
     groups: [
       {
@@ -1956,7 +1965,7 @@ function sliceRowTooltip(row: ProbeAnalysisCountRow, title: string): ProbeMetada
           { label: "Scored", value: formatTooltipShare(row.scored, row.total) },
           { label: "Unscored", value: formatTooltipShare(row.unscored, row.total) },
           { label: "Correct", value: formatTooltipShare(row.correct, row.scored) },
-          { label: "Wrong", value: formatTooltipShare(otherWrong, row.scored) },
+          { label: "Wrong", value: formatTooltipShare(row.wrong, row.scored) },
           { label: "High-conf wrong", value: formatTooltipShare(row.highConfWrong, row.scored) },
           { label: "Accuracy", value: row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%` },
         ],
@@ -2017,9 +2026,9 @@ function confidenceBucketRows(records: ProbeEpisodeIndex[]): ProbeConfidenceBuck
     const bucket = buckets[index];
     bucket.total += 1;
     if (record.correct === true) bucket.correct += 1;
+    else if (record.correct === false && record.confidence >= 0.8) bucket.highConfWrong += 1;
     else if (record.correct === false) bucket.wrong += 1;
     else bucket.unknown += 1;
-    if (record.correct === false && record.confidence >= 0.8) bucket.highConfWrong += 1;
   }
   return buckets;
 }
@@ -2083,7 +2092,13 @@ function scoreLengthPoints(probe: ProbeDatasetIndex, episodes: DatasetEpisode[])
     confidence: record.confidence ?? 0,
     episodeLength: episode.length ?? 0,
     label: episodeTitle(episode),
-    tone: record.correct === true ? "correct" : record.correct === false ? "wrong" : "unknown",
+    tone: record.correct === true
+      ? "correct"
+      : record.correct === false && (record.confidence ?? 0) >= 0.8
+        ? "high-conf-wrong"
+        : record.correct === false
+          ? "wrong"
+          : "unknown",
     x: percentOf((episode.length ?? 0) - minLength, spread),
     y: percentOf(record.confidence ?? 0, 1),
   }));
@@ -2137,7 +2152,7 @@ function sliceRowsForEpisodes(
     .map(withAccuracy)
     .sort((left, right) =>
       right.highConfWrong - left.highConfWrong ||
-      right.wrong - left.wrong ||
+      (right.wrong + right.highConfWrong) - (left.wrong + left.highConfWrong) ||
       right.scored - left.scored ||
       right.total - left.total ||
       left.label.localeCompare(right.label),
@@ -2194,17 +2209,16 @@ function incrementAnalysisRow(row: ProbeAnalysisCountRow, record?: ProbeEpisodeI
   }
   row.scored += 1;
   if (record.correct === true) row.correct += 1;
+  else if (record.correct === false && typeof record.confidence === "number" && record.confidence >= 0.8) row.highConfWrong += 1;
   else if (record.correct === false) row.wrong += 1;
   else row.unknown += 1;
-  if (record.correct === false && typeof record.confidence === "number" && record.confidence >= 0.8) {
-    row.highConfWrong += 1;
-  }
 }
 
 function withAccuracy(row: ProbeAnalysisCountRow): ProbeAnalysisCountRow {
+  const wrongTotal = row.wrong + row.highConfWrong;
   return {
     ...row,
-    accuracy: row.correct + row.wrong ? row.correct / (row.correct + row.wrong) : null,
+    accuracy: row.correct + wrongTotal ? row.correct / (row.correct + wrongTotal) : null,
   };
 }
 
@@ -2598,6 +2612,7 @@ function probeReadoutResultChartRows(summary?: ProbeStudyEpisodeSummary): Array<
   const wrong = summary?.wrong ?? 0;
   const highConfidence = summary?.high_confidence ?? 0;
   const highConfWrong = summary?.high_conf_wrong ?? 0;
+  const wrongOnly = Math.max(0, wrong - highConfWrong);
   const unscored = summary?.unscored ?? 0;
   return [
     {
@@ -2614,7 +2629,7 @@ function probeReadoutResultChartRows(summary?: ProbeStudyEpisodeSummary): Array<
       id: "wrong",
       label: "Wrong",
       total,
-      value: wrong,
+      value: wrongOnly,
     },
     {
       active: () => false,

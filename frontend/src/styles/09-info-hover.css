@@ -30,39 +30,6 @@
   padding: 0;
 }
 
-.info-icon-trigger {
-  z-index: 38;
-}
-
-.info-hover-corner {
-  position: absolute;
-  right: 8px;
-  top: 8px;
-}
-
-.info-icon-button {
-  align-items: center;
-  background: #eef2f7;
-  border: 1px solid #cbd5e1;
-  border-radius: 999px;
-  color: #0f172a;
-  display: inline-flex;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 12px;
-  font-style: italic;
-  font-weight: 900;
-  height: 20px;
-  justify-content: center;
-  line-height: 1;
-  width: 20px;
-}
-
-.info-icon-button:hover,
-.info-icon-button:focus-visible {
-  background: #e2e8f0;
-  border-color: #94a3b8;
-}
-
 .info-inline-button {
   border-bottom: 1px dotted rgba(15, 23, 42, 0.62);
   color: inherit;
