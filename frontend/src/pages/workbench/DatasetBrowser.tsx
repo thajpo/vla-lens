@@ -1,6 +1,8 @@
 import { useDeferredValue, useMemo, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search } from "lucide-react";
+import { InfoIconTrigger, InlineInfoText } from "../../components/ui/InfoHover";
+import { infoTextCard } from "../../components/ui/infoHoverModel";
 import {
   fetchArtifacts,
   fetchDiscoveryArtifactFamilies,
@@ -916,11 +918,8 @@ function ProbeLensWorkbench({
   const familyHover = study ? probeFamilyHoverModel(study) : undefined;
   return (
     <section className="probe-lens-workbench" aria-label="Selected probe lens workbench">
-      <div
-        aria-label={familyHover ? metadataCardAriaLabel(familyHover) : undefined}
-        className={`probe-lens-head ${familyHover ? "probe-metadata-hover" : ""}`}
-        tabIndex={familyHover ? 0 : undefined}
-      >
+      <div className="probe-lens-head">
+        {familyHover ? <InfoIconTrigger card={familyHover} className="info-hover-corner" /> : null}
         <span>{study ? "Selected probe family" : "Selected probe lens"}</span>
         <h2>{study?.name ?? model.title}</h2>
         <p>{study?.question_label || verdict.detail}</p>
@@ -946,7 +945,6 @@ function ProbeLensWorkbench({
             detail={spec.objective.detail}
           />
         </div>
-        {familyHover ? <ProbeMetadataHoverCard card={familyHover} /> : null}
       </div>
       <aside className={`probe-lens-verdict ${verdict.tone}`}>
         <span>{verdict.label}</span>
@@ -954,15 +952,9 @@ function ProbeLensWorkbench({
         {verdict.detail ? <small>{verdict.detail}</small> : null}
         <div className="probe-lens-metrics">
           {metricChips.map((metric) => (
-            <div
-              aria-label={metadataCardAriaLabel(metricHoverModel(metric))}
-              className={`probe-lens-metric ${metric.tone} probe-metadata-hover`}
-              key={metric.label}
-              tabIndex={0}
-            >
-              <span>{metric.label}</span>
+            <div className={`probe-lens-metric ${metric.tone}`} key={metric.label}>
+              <span><InlineInfoText card={metricHoverModel(metric)} label={metric.label} /></span>
               <strong>{metric.value}</strong>
-              <ProbeMetadataHoverCard card={metricHoverModel(metric)} />
             </div>
           ))}
         </div>
@@ -1236,44 +1228,68 @@ function ProbeReadoutNavigator({
       {activeReadout ? (
         <>
           <dl
-            aria-label={readoutHover ? metadataCardAriaLabel(readoutHover) : undefined}
-            className="probe-readout-scope-facts probe-metadata-hover"
-            tabIndex={0}
+            className="probe-readout-scope-facts"
           >
+            {readoutHover ? <InfoIconTrigger card={readoutHover} className="info-hover-corner" /> : null}
             <div>
-              <dt title="The label this trained probe predicts from activations.">Target</dt>
+              <dt>
+                <InlineInfoText
+                  card={infoTextCard("Target", "The label this trained probe predicts from activations.")}
+                  label="Target"
+                />
+              </dt>
               <dd>{probeTargetDisplayLabel(activeReadout.target || study.target || "")}</dd>
             </div>
             <div>
-              <dt title="The activation layer used as the probe input.">Layer</dt>
+              <dt>
+                <InlineInfoText
+                  card={infoTextCard("Layer", "The activation layer used as the probe input.")}
+                  label="Layer"
+                />
+              </dt>
               <dd>{compactProbeLayerLabel(activeReadout.layer)}</dd>
             </div>
             <div>
-              <dt title="The train, validation, or test split this trained probe was evaluated on.">Split</dt>
+              <dt>
+                <InlineInfoText
+                  card={infoTextCard("Split", "The train, validation, or test split this trained probe was evaluated on.")}
+                  label="Split"
+                />
+              </dt>
               <dd>{probeSplitLabel(activeReadout.split_category, activeReadout.split)}</dd>
             </div>
             <div>
-              <dt title="Policy-call rows available to this trained probe before episode aggregation.">Rows</dt>
+              <dt>
+                <InlineInfoText
+                  card={infoTextCard("Rows", "Policy-call rows available to this trained probe before episode aggregation.")}
+                  label="Rows"
+                />
+              </dt>
               <dd>{activeReadout.policy_call_count ?? activeReadout.row_count ?? "-"}</dd>
             </div>
             <div>
-              <dt title="Balanced accuracy for this target, layer, and split.">Balanced acc.</dt>
+              <dt>
+                <InlineInfoText
+                  card={infoTextCard("Balanced acc.", "Balanced accuracy for this target, layer, and split.")}
+                  label="Balanced acc."
+                />
+              </dt>
               <dd>{compactProbeMetricValue("BA", activeReadout.balanced_accuracy)}</dd>
             </div>
             <div>
-              <dt title="Stable identifier for debugging or sharing this exact trained probe.">ID</dt>
+              <dt>
+                <InlineInfoText
+                  card={infoTextCard("ID", "Stable identifier for debugging or sharing this exact trained probe.")}
+                  label="ID"
+                />
+              </dt>
               <dd><ProbeIdCopy value={trainedProbeDisplayId(activeReadout, study)} /></dd>
             </div>
-            {readoutHover ? <ProbeMetadataHoverCard card={readoutHover} /> : null}
           </dl>
           {warningHover ? (
-            <small
-              aria-label={metadataCardAriaLabel(warningHover)}
-              className="probe-readout-warning probe-metadata-hover"
-              tabIndex={0}
-            >
+            <small className="probe-readout-warning">
               Aggregate only
-              <ProbeMetadataHoverCard card={warningHover} />
+              <InfoIconTrigger card={warningHover} />
             </small>
           ) : null}
         </>
@@ -1404,18 +1420,26 @@ function ProbeSummaryVisual({
             {hasSplitErrorCounts ? (
               <>
                 <span className="correct">correct</span>
-                <span
-                  className="wrong"
-                  title="Wrong rows that are not high-confidence wrong."
-                >
-                  other wrong
+                <span className="wrong">
+                  <InlineInfoText
+                    card={infoTextCard("Other wrong", "Wrong rows that are not high-confidence wrong.")}
+                    label="other wrong"
+                  />
                 </span>
-                <span className="high-conf-wrong">high-conf wrong</span>
+                <span className="high-conf-wrong">
+                  <InlineInfoText
+                    card={infoTextCard("High-conf wrong", "Wrong rows where the probe was highly confident in the wrong prediction.")}
+                    label="high-conf wrong"
+                  />
+                </span>
               </>
             ) : null}
             {hasUnknownSplitRows ? (
-              <span className="unknown" title="Correct and wrong counts are unavailable for these aggregate split rows.">
-                rows only
+              <span className="unknown">
+                <InlineInfoText
+                  card={infoTextCard("Rows only", "Correct and wrong counts are unavailable for these aggregate split rows.")}
+                  label="rows only"
+                />
               </span>
             ) : null}
           </small>
@@ -1601,6 +1625,10 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
   return (
     <aside className="probe-analysis-panel" aria-label="Probe dataset analysis">
       <section className="probe-analysis-card">
+        <InfoIconTrigger
+          card={infoTextCard("Score distribution", "Confidence bins for scored probe rows. Green is correct, orange is wrong, gray is unknown.")}
+          className="info-hover-corner"
+        />
         <header>
           <span>Score distribution</span>
           <small>confidence bins</small>
@@ -1608,19 +1636,16 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
         <div className="probe-analysis-bars">
           {model.confidenceBuckets.map((bucket) => (
             <div
-              aria-label={probeGraphTooltipLabel(confidenceBucketTooltip(bucket))}
-              className="probe-analysis-bar-row probe-graph-hover"
+              className="probe-analysis-bar-row"
               key={bucket.label}
-              tabIndex={0}
             >
-              <span>{bucket.label}</span>
+              <InlineInfoText card={confidenceBucketTooltip(bucket)} label={bucket.label} />
               <i>
                 <b className="correct" style={{ width: `${percentOf(bucket.correct, bucket.total)}%` }} />
                 <b className="wrong" style={{ width: `${percentOf(bucket.wrong, bucket.total)}%` }} />
                 <b className="unknown" style={{ width: `${percentOf(bucket.unknown, bucket.total)}%` }} />
               </i>
               <strong>{bucket.total}</strong>
-              <ProbeGraphTooltip tooltip={confidenceBucketTooltip(bucket)} />
             </div>
           ))}
         </div>
@@ -1628,6 +1653,10 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.rollingAccuracy.length ? (
         <section className="probe-analysis-card">
+          <InfoIconTrigger
+            card={infoTextCard("Accuracy over episode order", "Rolling probe accuracy over the visible scored episode order. Bars summarize recent correct vs wrong probe results.")}
+            className="info-hover-corner"
+          />
           <header>
             <span>Accuracy over episode order</span>
             <small>rolling window</small>
@@ -1635,13 +1664,9 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           <div className="probe-rolling-plot" aria-label="Rolling probe accuracy">
             {model.rollingAccuracy.map((point) => (
               <i
-                aria-label={probeGraphTooltipLabel(rollingPointTooltip(point))}
-                className="probe-graph-hover"
                 key={`${point.label}-${point.index}`}
-                tabIndex={0}
               >
                 <b style={{ height: `${percentOf(point.accuracy, 1)}%` }} />
-                <ProbeGraphTooltip tooltip={rollingPointTooltip(point)} />
               </i>
             ))}
           </div>
@@ -1650,6 +1675,10 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.calibrationRows.some((row) => row.total > 0) ? (
         <section className="probe-analysis-card">
+          <InfoIconTrigger
+            card={infoTextCard("Calibration", "Compares observed accuracy with probe confidence in each confidence bin.")}
+            className="info-hover-corner"
+          />
           <header>
             <span>Calibration</span>
             <small>accuracy by confidence</small>
@@ -1657,18 +1686,15 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           <div className="probe-calibration-list">
             {model.calibrationRows.map((row) => (
               <div
-                aria-label={probeGraphTooltipLabel(calibrationRowTooltip(row))}
-                className="probe-calibration-row probe-graph-hover"
+                className="probe-calibration-row"
                 key={row.label}
-                tabIndex={0}
               >
-                <span>{row.label}</span>
+                <InlineInfoText card={calibrationRowTooltip(row)} label={row.label} />
                 <i>
                   <b className="accuracy" style={{ width: `${percentOf(row.accuracy ?? 0, 1)}%` }} />
                   <em style={{ left: `${percentOf(row.avgConfidence ?? 0, 1)}%` }} />
                 </i>
                 <strong>{row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%`}</strong>
-                <ProbeGraphTooltip tooltip={calibrationRowTooltip(row)} />
               </div>
             ))}
           </div>
@@ -1677,6 +1703,10 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.lengthScorePoints.length ? (
         <section className="probe-analysis-card">
+          <InfoIconTrigger
+            card={infoTextCard("Confidence vs episode length", "Each dot is a visible scored episode. Horizontal position is episode length; vertical position is probe confidence.")}
+            className="info-hover-corner"
+          />
           <header>
             <span>Confidence vs episode length</span>
             <small>visible scored episodes</small>
@@ -1684,14 +1714,10 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           <div className="probe-scatter-plot" aria-label="Confidence against episode length">
             {model.lengthScorePoints.map((point, index) => (
               <i
-                aria-label={probeGraphTooltipLabel(scatterPointTooltip(point))}
-                className={`${point.tone} probe-graph-hover`}
+                className={point.tone}
                 key={`${point.label}-${index}`}
                 style={{ left: `${point.x}%`, bottom: `${point.y}%` }}
-                tabIndex={0}
-              >
-                <ProbeGraphTooltip tooltip={scatterPointTooltip(point)} />
-              </i>
+              />
             ))}
           </div>
         </section>
@@ -1702,6 +1728,10 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.temporalRows.length ? (
         <section className="probe-analysis-card">
+          <InfoIconTrigger
+            card={infoTextCard("Temporal evidence", "Ranked probe evidence projected onto episode progress and policy-call position.")}
+            className="info-hover-corner"
+          />
           <header>
             <span>Temporal evidence</span>
             <small>ranked policy calls</small>
@@ -1709,15 +1739,12 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           <div className="probe-temporal-map">
             {model.temporalRows.map((row, index) => (
               <div
-                aria-label={probeGraphTooltipLabel(temporalRowTooltip(row))}
-                className={`probe-temporal-row ${row.tone} probe-graph-hover`}
+                className={`probe-temporal-row ${row.tone}`}
                 key={`${row.label}-${row.marker}-${index}`}
-                tabIndex={0}
               >
-                <span>{row.label}</span>
+                <InlineInfoText card={temporalRowTooltip(row)} label={row.label} />
                 <i><b style={{ left: `${row.position}%` }} /></i>
                 <strong>{row.marker}</strong>
-                <ProbeGraphTooltip tooltip={temporalRowTooltip(row)} />
               </div>
             ))}
           </div>
@@ -1726,6 +1753,10 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
 
       {model.confusionRows.length ? (
         <section className="probe-analysis-card">
+          <InfoIconTrigger
+            card={infoTextCard("Prediction vs label", "Rows are predicted-label to true-label pairs. Green is correct, orange is wrong, gray is unknown.")}
+            className="info-hover-corner"
+          />
           <header>
             <span>Prediction vs label</span>
             <small>all indexed records</small>
@@ -1733,19 +1764,15 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
           <div className="probe-confusion-list">
             {model.confusionRows.map((row) => (
               <div
-                aria-label={probeGraphTooltipLabel(confusionRowTooltip(row))}
-                className="probe-graph-hover"
                 key={row.label}
-                tabIndex={0}
               >
-                <span>{row.label}</span>
+                <InlineInfoText card={confusionRowTooltip(row)} label={row.label} />
                 <i>
                   <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
                   <b className="wrong" style={{ width: `${percentOf(row.wrong, row.total)}%` }} />
                   <b className="unknown" style={{ width: `${percentOf(row.unknown, row.total)}%` }} />
                 </i>
                 <strong>{row.total}</strong>
-                <ProbeGraphTooltip tooltip={confusionRowTooltip(row)} />
               </div>
             ))}
           </div>
@@ -1788,6 +1815,10 @@ function ProbeSliceCard({
 }) {
   return (
     <section className="probe-analysis-card">
+      <InfoIconTrigger
+        card={infoTextCard(title, "Visible episodes grouped by this slice. Bars separate correct, wrong, high-confidence wrong, and unknown labels.")}
+        className="info-hover-corner"
+      />
       <header>
         <span>{title}</span>
         <small>{subtitle}</small>
@@ -1795,12 +1826,10 @@ function ProbeSliceCard({
       <div className="probe-slice-list">
         {rows.length ? rows.map((row, index) => (
           <div
-            aria-label={probeGraphTooltipLabel(sliceRowTooltip(row, title))}
-            className="probe-slice-row probe-graph-hover"
+            className="probe-slice-row"
             key={`${row.label}-${index}`}
-            tabIndex={0}
           >
-            <span>{row.label}</span>
+            <InlineInfoText card={sliceRowTooltip(row, title)} label={row.label} />
             <i>
               <b className="correct" style={{ width: `${percentOf(row.correct, row.total)}%` }} />
               <b className="wrong" style={{ width: `${percentOf(Math.max(0, row.wrong - row.highConfWrong), row.total)}%` }} />
@@ -1808,42 +1837,11 @@ function ProbeSliceCard({
               <b className="unknown" style={{ width: `${percentOf(row.unknown, row.total)}%` }} />
             </i>
             <strong>{row.wrong}/{row.scored}</strong>
-            <ProbeGraphTooltip tooltip={sliceRowTooltip(row, title)} />
           </div>
         )) : <p>No visible scored episodes.</p>}
       </div>
     </section>
   );
-}
-
-function ProbeMetadataHoverCard({
-  card,
-  className = "",
-}: {
-  card: ProbeMetadataCard;
-  className?: string;
-}) {
-  return (
-    <span aria-hidden="true" className={["probe-metadata-card", className].filter(Boolean).join(" ")} role="tooltip">
-      <span className="probe-metadata-card-title">{card.title}</span>
-      {card.subtitle ? <span className="probe-metadata-card-subtitle">{card.subtitle}</span> : null}
-      {card.groups.map((group) => (
-        <span className="probe-metadata-card-group" key={group.title}>
-          <span className="probe-metadata-card-group-title">{group.title}</span>
-          {group.lines.map((line) => (
-            <span className="probe-metadata-card-line" key={`${group.title}-${line.label}`}>
-              <span>{line.label}</span>
-              <span>{line.value}</span>
-            </span>
-          ))}
-        </span>
-      ))}
-    </span>
-  );
-}
-
-function ProbeGraphTooltip({ tooltip }: { tooltip: ProbeMetadataCard }) {
-  return <ProbeMetadataHoverCard card={tooltip} className="probe-graph-tooltip" />;
 }
 
 function metricHoverModel(metric: ProbeLensMetricChip): ProbeMetadataCard {
@@ -1900,24 +1898,6 @@ function confidenceBucketTooltip(bucket: ProbeConfidenceBucket): ProbeMetadataCa
   };
 }
 
-function rollingPointTooltip(point: ProbeRollingPoint): ProbeMetadataCard {
-  return {
-    groups: [
-      {
-        lines: [
-          { label: "Accuracy", value: `${Math.round(point.accuracy * 100)}%` },
-          { label: "Correct", value: formatTooltipShare(point.correct, point.scored) },
-          { label: "Wrong", value: formatTooltipShare(point.wrong, point.scored) },
-          { label: "Scored", value: formatReadoutInteger(point.scored) },
-          { label: "Episode", value: shortTrace(point.label) },
-        ],
-        title: "Window",
-      },
-    ],
-    title: "Accuracy over episode order",
-  };
-}
-
 function calibrationRowTooltip(row: ProbeCalibrationBucket): ProbeMetadataCard {
   return {
     groups: [
@@ -1932,23 +1912,6 @@ function calibrationRowTooltip(row: ProbeCalibrationBucket): ProbeMetadataCard {
       },
     ],
     title: `${row.label} confidence`,
-  };
-}
-
-function scatterPointTooltip(point: ProbeScatterPoint): ProbeMetadataCard {
-  return {
-    groups: [
-      {
-        lines: [
-          { label: "Confidence", value: point.confidence.toFixed(3) },
-          { label: "Steps", value: formatReadoutInteger(point.episodeLength) },
-          { label: "Result", value: point.tone },
-          { label: "Episode", value: point.label },
-        ],
-        title: "Episode",
-      },
-    ],
-    title: "Confidence vs length",
   };
 }
 
@@ -2005,21 +1968,6 @@ function sliceRowTooltip(row: ProbeAnalysisCountRow, title: string): ProbeMetada
     ],
     title: `${title}: ${row.label}`,
   };
-}
-
-function probeGraphTooltipLabel(tooltip: ProbeMetadataCard): string {
-  return metadataCardAriaLabel(tooltip);
-}
-
-function metadataCardAriaLabel(card: ProbeMetadataCard): string {
-  return [
-    card.title,
-    card.subtitle,
-    ...card.groups.flatMap((group) => [
-      group.title,
-      ...group.lines.map((line) => `${line.label}: ${line.value}`),
-    ]),
-  ].filter(Boolean).join(". ");
 }
 
 function formatTooltipShare(value: number, total: number): string {

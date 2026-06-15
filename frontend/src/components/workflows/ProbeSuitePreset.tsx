@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { fetchProbeStudies } from "../../api/dataset";
+import { InlineInfoText } from "../ui/InfoHover";
+import { infoTextCard } from "../ui/infoHoverModel";
 import type { ProbeStudy, ProbeStudyControl, ProbeStudyReadout } from "../../types/dataset";
 
 type ProbeSuitePresetProps = {
@@ -705,17 +707,7 @@ function TooltipLabel({
   if (!description) {
     return <span>{label}</span>;
   }
-  return (
-    <span
-      aria-label={`${label}: ${description}`}
-      className="probe-tooltip-label"
-      data-tooltip={description}
-      tabIndex={0}
-      title={description}
-    >
-      {label}
-    </span>
-  );
+  return <InlineInfoText card={infoTextCard(label, description)} label={label} />;
 }
 
 function MetricCell({ value, invert = false }: { value?: number | null; invert?: boolean }) {
