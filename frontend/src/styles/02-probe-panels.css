@@ -1034,16 +1034,14 @@
 }
 
 .probe-lens-title-row {
-  align-items: baseline;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
+  display: grid;
+  gap: 5px;
   min-width: 0;
 }
 
 .probe-lens-title-row > strong {
   color: #334155;
-  font-size: 16px;
+  font-size: 17px;
   font-weight: 800;
   line-height: 1.1;
   min-width: 0;

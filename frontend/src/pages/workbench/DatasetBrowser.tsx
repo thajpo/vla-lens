@@ -885,17 +885,14 @@ function ProbeLensWorkbench({
   return (
     <section className="probe-lens-workbench" aria-label="Active lens workbench">
       <div className="probe-lens-head">
-        {familyHover ? (
-          <InlineInfoText
-            card={familyHover}
-            className="info-title-trigger"
-            label="Lens"
-          />
-        ) : (
-          <span>Lens</span>
-        )}
         <div className="probe-lens-title-row">
-          <h2>Active lens</h2>
+          <h2>
+            {familyHover ? (
+              <InlineInfoText card={familyHover} className="info-title-trigger" label="Active lens" />
+            ) : (
+              "Active lens"
+            )}
+          </h2>
           <strong>{lensName}</strong>
         </div>
         <dl className="probe-lens-overview">
@@ -1580,14 +1577,14 @@ function ProbeSummaryVisual({
           <small className="probe-map-legend">
             {hasSplitErrorCounts ? (
               <>
-                <span className="correct">correct</span>
-                <span className="wrong">
+                <span className="legend-item correct">correct</span>
+                <span className="legend-item wrong">
                   <InlineInfoText
                     card={infoTextCard("Other wrong", "Wrong rows that are not high-confidence wrong.")}
                     label="other wrong"
                   />
                 </span>
-                <span className="high-conf-wrong">
+                <span className="legend-item high-conf-wrong">
                   <InlineInfoText
                     card={infoTextCard("High-conf wrong", "Wrong rows where the probe was highly confident in the wrong prediction.")}
                     label="high-conf wrong"
@@ -1596,7 +1593,7 @@ function ProbeSummaryVisual({
               </>
             ) : null}
             {hasUnknownSplitRows ? (
-              <span className="unknown">
+              <span className="legend-item unknown">
                 <InlineInfoText
                   card={infoTextCard("Rows only", "Correct and wrong counts are unavailable for these aggregate split rows.")}
                   label="rows only"

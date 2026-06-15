@@ -925,7 +925,7 @@ input {
   min-width: 0;
 }
 
-.probe-map-legend span {
+.probe-map-legend > .legend-item {
   align-items: center;
   color: #64748b;
   display: inline-flex;
@@ -936,7 +936,7 @@ input {
   white-space: nowrap;
 }
 
-.probe-map-legend span::before {
+.probe-map-legend > .legend-item::before {
   content: "";
   display: inline-block;
   flex: 0 0 7px;
