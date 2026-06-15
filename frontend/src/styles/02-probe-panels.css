@@ -999,16 +999,15 @@
   background: #ffffff;
   border: 1px solid #dbe3ed;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);
+  grid-template-columns: minmax(0, 1fr);
   grid-template-areas:
-    "head verdict"
-    "trust trust";
+    "head"
+    "trust";
   min-width: 0;
   width: min(100%, 1120px);
 }
 
 .probe-lens-head {
-  border-right: 1px solid #e2e8f0;
   display: grid;
   gap: 8px;
   grid-area: head;
@@ -1017,8 +1016,7 @@
   position: relative;
 }
 
-.probe-lens-head > span,
-.probe-lens-verdict > span {
+.probe-lens-head > span {
   color: #64748b;
   font-size: 11px;
   font-weight: 700;
@@ -1057,124 +1055,6 @@
 
 .probe-lens-specs .probe-evidence-fact:last-child {
   border-right: 0;
-}
-
-.probe-lens-verdict {
-  align-content: start;
-  background: #ffffff;
-  display: grid;
-  gap: 7px;
-  grid-area: verdict;
-  min-width: 0;
-  padding: 13px;
-  position: relative;
-}
-
-.probe-lens-verdict::before {
-  background: #94a3b8;
-  bottom: 0;
-  content: "";
-  left: 0;
-  position: absolute;
-  top: 0;
-  width: 3px;
-}
-
-.probe-lens-verdict.credible::before {
-  background: #5f8f78;
-}
-
-.probe-lens-verdict.limited::before {
-  background: #d08326;
-}
-
-.probe-lens-verdict.debug::before,
-.probe-lens-verdict.unknown::before {
-  background: #94a3b8;
-}
-
-.probe-lens-verdict.danger::before {
-  background: #c43a32;
-}
-
-.probe-lens-verdict > strong {
-  color: #0f172a;
-  font-size: 18px;
-  font-weight: 850;
-  letter-spacing: 0;
-  line-height: 1.05;
-}
-
-.probe-lens-verdict > small {
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 780;
-  overflow-wrap: anywhere;
-}
-
-.probe-lens-metrics {
-  display: grid;
-  gap: 6px;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  margin-top: 6px;
-}
-
-.probe-lens-metric {
-  background: #ffffff;
-  border: 1px solid #e2e8f0;
-  display: grid;
-  gap: 2px;
-  min-width: 0;
-  padding: 7px;
-  position: relative;
-}
-
-.probe-lens-metric::before {
-  background: #94a3b8;
-  bottom: 6px;
-  content: "";
-  left: 0;
-  position: absolute;
-  top: 6px;
-  width: 2px;
-}
-
-.probe-lens-metric.credible::before {
-  background: #5f8f78;
-}
-
-.probe-lens-metric.limited::before {
-  background: #d08326;
-}
-
-.probe-lens-metric.danger::before {
-  background: #c43a32;
-}
-
-.probe-lens-metric.debug::before,
-.probe-lens-metric.unknown::before {
-  background: #94a3b8;
-}
-
-.probe-lens-metric span {
-  color: #64748b;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0;
-  text-transform: uppercase;
-}
-
-.probe-lens-metric strong {
-  color: #0f172a;
-  font-size: 17px;
-  font-variant-numeric: tabular-nums;
-  font-weight: 850;
-}
-
-.probe-lens-metric small {
-  color: #64748b;
-  font-size: 10px;
-  line-height: 1.25;
 }
 
 .probe-split-chip {
@@ -1289,7 +1169,7 @@
   background: #ffffff;
   border: 1px solid #e2e8f0;
   display: grid;
-  gap: 4px;
+  gap: 8px;
   min-width: 0;
   padding: 8px 9px;
   position: relative;
@@ -1308,6 +1188,48 @@
   font-size: 13px;
   font-weight: 800;
   line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.probe-readout-facts {
+  border: 1px solid #e2e8f0;
+  border-bottom: 0;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  min-width: 0;
+}
+
+.probe-readout-facts div {
+  border-bottom: 1px solid #e2e8f0;
+  border-right: 1px solid #e2e8f0;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 7px 8px;
+}
+
+.probe-readout-facts div:nth-child(4n) {
+  border-right: 0;
+}
+
+.probe-readout-facts dt {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.probe-readout-facts dd {
+  color: #0f172a;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 850;
+  line-height: 1.25;
+  margin: 0;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
@@ -1830,7 +1752,6 @@
     grid-template-columns: minmax(0, 1fr);
     grid-template-areas:
       "head"
-      "verdict"
       "trust";
   }
 
@@ -1843,12 +1764,20 @@
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .probe-lens-metrics {
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-  }
-
   .probe-readout-navigator {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .probe-readout-facts {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .probe-readout-facts div:nth-child(4n) {
+    border-right: 1px solid #e2e8f0;
+  }
+
+  .probe-readout-facts div:nth-child(2n) {
+    border-right: 0;
   }
 
   .probe-readout-scope-facts {
