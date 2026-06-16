@@ -1376,6 +1376,59 @@
   text-transform: uppercase;
 }
 
+.probe-map-legend,
+.probe-analysis-card > header .probe-map-legend {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+  justify-content: flex-end;
+  text-transform: none;
+}
+
+.legend-item {
+  align-items: center;
+  color: #64748b;
+  display: inline-flex;
+  font-size: 10px;
+  font-weight: 700;
+  gap: 4px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.legend-item::before {
+  background: #94a3b8;
+  content: "";
+  display: inline-block;
+  height: 7px;
+  width: 7px;
+}
+
+.legend-item.correct::before {
+  background: #5f8f78;
+}
+
+.legend-item.wrong::before {
+  background: #d08326;
+}
+
+.legend-item.high-conf-wrong::before {
+  background: #c43a32;
+}
+
+.legend-item.train::before {
+  background: #7897b2;
+}
+
+.legend-item.validation::before {
+  background: #d6a84f;
+}
+
+.legend-item.test::before {
+  background: #4f8f7a;
+}
+
 .probe-analysis-table {
   border-collapse: collapse;
   font-size: 11px;
@@ -1401,9 +1454,24 @@
 .probe-slice-list,
 .probe-confusion-list,
 .probe-calibration-list,
-.probe-temporal-map {
+.probe-temporal-map,
+.probe-class-mix-list,
+.probe-class-gap-list,
+.probe-class-confusion-list,
+.probe-class-failure-list {
   display: grid;
   gap: 6px;
+}
+
+.probe-class-table th,
+.probe-class-table td {
+  white-space: normal;
+}
+
+.probe-class-table th:not(:first-child),
+.probe-class-table td:not(:first-child) {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
 }
 
 .probe-rolling-plot {
@@ -1535,7 +1603,9 @@
 .probe-slice-row,
 .probe-confusion-list > div,
 .probe-calibration-row,
-.probe-temporal-row {
+.probe-temporal-row,
+.probe-class-mix-row,
+.probe-class-gap-row {
   align-items: center;
   display: grid;
   gap: 7px;
@@ -1559,11 +1629,46 @@
   grid-template-columns: minmax(110px, 1fr) minmax(90px, 1.35fr) minmax(84px, 0.8fr);
 }
 
+.probe-class-mix-row,
+.probe-class-gap-row {
+  grid-template-columns: minmax(118px, 1.1fr) minmax(100px, 1.4fr) 50px;
+}
+
+.probe-class-confusion-row {
+  align-items: start;
+  border-bottom: 1px solid #edf2f7;
+  display: grid;
+  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) 48px;
+  min-width: 0;
+  padding: 5px 0;
+}
+
+.probe-class-failure-row {
+  border-left: 3px solid #d08326;
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  padding: 4px 0 4px 8px;
+}
+
+.probe-class-failure-row.wrong {
+  border-left-color: #c43a32;
+}
+
+.probe-class-failure-row.muted {
+  border-left-color: #94a3b8;
+}
+
 .probe-analysis-bar-row span,
 .probe-slice-row span,
 .probe-confusion-list span,
 .probe-calibration-row span,
-.probe-temporal-row span {
+.probe-temporal-row span,
+.probe-class-mix-row span,
+.probe-class-gap-row span,
+.probe-class-confusion-row span,
+.probe-class-failure-row span {
   color: #334155;
   font-size: 11px;
   font-weight: 700;
@@ -1578,7 +1683,10 @@
 .probe-slice-row strong,
 .probe-confusion-list strong,
 .probe-calibration-row strong,
-.probe-temporal-row strong {
+.probe-temporal-row strong,
+.probe-class-mix-row strong,
+.probe-class-gap-row strong,
+.probe-class-confusion-row strong {
   color: #0f172a;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -1586,11 +1694,19 @@
   text-align: right;
 }
 
+.probe-class-failure-row small {
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.3;
+}
+
 .probe-analysis-bar-row i,
 .probe-slice-row i,
 .probe-confusion-list i,
 .probe-calibration-row i,
-.probe-temporal-row i {
+.probe-temporal-row i,
+.probe-class-mix-row i,
+.probe-class-gap-row i {
   background: #edf2f7;
   display: flex;
   height: 10px;
@@ -1603,7 +1719,9 @@
 .probe-slice-row b,
 .probe-confusion-list b,
 .probe-calibration-row b,
-.probe-temporal-row b {
+.probe-temporal-row b,
+.probe-class-mix-row b,
+.probe-class-gap-row b {
   display: block;
   height: 100%;
 }
@@ -1665,6 +1783,26 @@
 .probe-slice-row .unknown,
 .probe-confusion-list .unknown {
   background: #94a3b8;
+}
+
+.probe-class-mix-row .train {
+  background: #7897b2;
+}
+
+.probe-class-mix-row .validation {
+  background: #d6a84f;
+}
+
+.probe-class-mix-row .test {
+  background: #4f8f7a;
+}
+
+.probe-class-mix-row .unknown {
+  background: #cbd5e1;
+}
+
+.probe-class-gap-row b {
+  background: #d08326;
 }
 
 .probe-slice-list p {

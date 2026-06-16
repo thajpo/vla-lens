@@ -380,9 +380,19 @@ export function DatasetBrowser({
           activeProbeEvidenceBundle,
           datasetFilter,
           useProbeReadoutEpisodes ? readoutRecordsForEpisodes(episodes) : undefined,
+          activeProbeStudy,
+          selectedProbeReadout,
         )
       : undefined,
-    [activeProbeEvidenceBundle, datasetFilter, episodes, selectedProbe, useProbeReadoutEpisodes],
+    [
+      activeProbeEvidenceBundle,
+      activeProbeStudy,
+      datasetFilter,
+      episodes,
+      selectedProbe,
+      selectedProbeReadout,
+      useProbeReadoutEpisodes,
+    ],
   );
   const totalEpisodes = dataset.data?.episode_count ?? activeEpisodePageData?.total ?? 0;
   const visibleTotal = activeEpisodePageData?.total ?? 0;
@@ -1554,6 +1564,126 @@ function classRecordValue(record: Record<string, unknown>): string {
   return metric ? formatReadoutMetric(metric[1] as number) : "present";
 }
 
+function recordText(record: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = record[key];
+    if (value === null || value === undefined) {
+      continue;
+    }
+    const text = String(value).trim();
+    if (text) {
+      return text;
+    }
+  }
+  return "";
+}
+
+function recordNumberValue(record: Record<string, unknown>, keys: string[]): number | null {
+  for (const key of keys) {
+    const value = record[key];
+    if (value === null || value === undefined || value === "") {
+      continue;
+    }
+    const number = typeof value === "number" ? value : Number(value);
+    if (Number.isFinite(number)) {
+      return number;
+    }
+  }
+  return null;
+}
+
+function classSupportCount(record: Record<string, unknown>): number {
+  return recordNumberValue(record, [
+    "policy_call_support",
+    "policy_call_count",
+    "row_support",
+    "row_count",
+    "support",
+    "count",
+    "rows",
+    "n",
+  ]) ?? 0;
+}
+
+function classMetric(record: Record<string, unknown>, keys: string[]): number | null {
+  return recordNumberValue(record, keys);
+}
+
+function emptyWeightedMetric(): WeightedMetric {
+  return { total: 0, weight: 0 };
+}
+
+function addWeightedMetric(metric: WeightedMetric, value: number | null, weight: number) {
+  if (value === null || !Number.isFinite(value)) {
+    return;
+  }
+  const safeWeight = Math.max(1, weight);
+  metric.total += value * safeWeight;
+  metric.weight += safeWeight;
+}
+
+function weightedMetricValue(metric: WeightedMetric): number | null {
+  return metric.weight ? metric.total / metric.weight : null;
+}
+
+function classPerformanceRank(row: ProbeClassPerformanceRow): number {
+  return row.f1 ?? row.balancedAccuracy ?? row.recall ?? 1;
+}
+
+function probeDiagnosticRecords(
+  rows: Record<string, unknown>[],
+  readout: ProbeStudyReadout | undefined,
+  options: { layer: boolean; split: boolean },
+): Record<string, unknown>[] {
+  if (!readout) {
+    return rows;
+  }
+  let filtered = rows;
+  const targetRows = filtered.filter((row) => {
+    const target = recordText(row, ["target"]);
+    return !target || target === readout.target;
+  });
+  if (targetRows.length) {
+    filtered = targetRows;
+  }
+  if (options.layer) {
+    const layerRows = filtered.filter((row) => probeDiagnosticLayerMatches(row, readout));
+    if (layerRows.length) {
+      filtered = layerRows;
+    }
+  }
+  if (options.split) {
+    const splitRows = filtered.filter((row) => probeDiagnosticSplitMatches(row, readout));
+    if (splitRows.length) {
+      filtered = splitRows;
+    }
+  }
+  return filtered;
+}
+
+function probeDiagnosticLayerMatches(record: Record<string, unknown>, readout: ProbeStudyReadout): boolean {
+  const rowLayer = recordText(record, ["layer", "selected_layer"]);
+  const readoutLayer = probeReadoutLayerKey(readout.layer);
+  return !rowLayer || !readoutLayer || rowLayer === readoutLayer || rowLayer === `layer ${readoutLayer}`;
+}
+
+function probeDiagnosticSplitMatches(record: Record<string, unknown>, readout: ProbeStudyReadout): boolean {
+  const rowSplit = recordText(record, ["split", "eval_split", "split_category"]);
+  if (!rowSplit) {
+    return true;
+  }
+  if (readout.split && rowSplit === readout.split) {
+    return true;
+  }
+  const rowCategory = canonicalProbeSplitCategory(rowSplit);
+  const readoutCategory = canonicalProbeSplitCategory(readout.split_category || readout.split);
+  return rowCategory !== "unknown" && rowCategory === readoutCategory;
+}
+
+function probeDiagnosticSplitCategory(record: Record<string, unknown>): string {
+  return canonicalProbeSplitCategory(recordText(record, ["split_category", "split", "eval_split"]));
+}
+
 function simpleSummaryValue(value: unknown): string {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Number.isInteger(value) ? formatReadoutInteger(value) : formatReadoutMetric(value);
@@ -1912,8 +2042,57 @@ type ProbeCohortGroup = {
   rows: ProbeCohortRow[];
 };
 
+type ProbeClassMixRow = {
+  label: string;
+  test: number;
+  total: number;
+  train: number;
+  unknown: number;
+  validation: number;
+};
+
+type ProbeClassPerformanceRow = {
+  balancedAccuracy: number | null;
+  f1: number | null;
+  label: string;
+  precision: number | null;
+  recall: number | null;
+  support: number;
+};
+
+type ProbeClassGapRow = {
+  gap: number | null;
+  heldoutScore: number | null;
+  label: string;
+  support: number;
+  trainScore: number | null;
+};
+
+type ProbeClassConfusionRow = {
+  actual: string;
+  count: number;
+  label: string;
+  predicted: string;
+};
+
+type ProbeClassFailureRow = {
+  detail: string;
+  label: string;
+  tone: "wrong" | "warning" | "muted";
+};
+
+type WeightedMetric = {
+  total: number;
+  weight: number;
+};
+
 type ProbeDatasetAnalysisModel = {
   calibrationRows: ProbeCalibrationBucket[];
+  classConfusionRows: ProbeClassConfusionRow[];
+  classFailureRows: ProbeClassFailureRow[];
+  classGapRows: ProbeClassGapRow[];
+  classMixRows: ProbeClassMixRow[];
+  classPerformanceRows: ProbeClassPerformanceRow[];
   confidenceBuckets: ProbeConfidenceBucket[];
   cohortGroups: ProbeCohortGroup[];
   confusionRows: ProbeConfusionRow[];
@@ -2040,6 +2219,12 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
         </section>
       ) : null}
 
+      {model.classMixRows.length ? <ProbeClassMixCard rows={model.classMixRows} /> : null}
+      {model.classPerformanceRows.length ? <ProbeClassPerformanceCard rows={model.classPerformanceRows} /> : null}
+      {model.classGapRows.length ? <ProbeClassGapCard rows={model.classGapRows} /> : null}
+      {model.classConfusionRows.length ? <ProbeClassConfusionCard rows={model.classConfusionRows} /> : null}
+      {model.classFailureRows.length ? <ProbeClassFailureCard rows={model.classFailureRows} /> : null}
+
       <ProbeSliceCard title="Error by task" subtitle="visible episodes" rows={model.taskRows} />
       <ProbeSliceCard title="Error by outcome" subtitle="visible episodes" rows={model.outcomeRows} />
 
@@ -2164,6 +2349,145 @@ function scatterPointLabel(point: ProbeScatterPoint): string {
   ].filter(Boolean).join(" · ");
 }
 
+function ProbeClassMixCard({ rows }: { rows: ProbeClassMixRow[] }) {
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <ProbeAnalysisTitle
+          title="Class mix"
+          description="Policy-call rows by target label and data group. Use this to spot labels that dominate the probe."
+        />
+        <small className="probe-map-legend">
+          <span className="legend-item train">train</span>
+          <span className="legend-item validation">validation</span>
+          <span className="legend-item test">test</span>
+          <span className="legend-item unknown">unknown</span>
+        </small>
+      </header>
+      <div className="probe-class-mix-list">
+        {rows.map((row) => (
+          <div className="probe-class-mix-row" key={row.label}>
+            <InlineInfoText card={classMixRowTooltip(row)} label={row.label} />
+            <i>
+              <b className="train" style={{ width: `${percentOf(row.train, row.total)}%` }} />
+              <b className="validation" style={{ width: `${percentOf(row.validation, row.total)}%` }} />
+              <b className="test" style={{ width: `${percentOf(row.test, row.total)}%` }} />
+              <b className="unknown" style={{ width: `${percentOf(row.unknown, row.total)}%` }} />
+            </i>
+            <strong>{formatReadoutInteger(row.total)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProbeClassPerformanceCard({ rows }: { rows: ProbeClassPerformanceRow[] }) {
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <ProbeAnalysisTitle
+          title="Per-class performance"
+          description="Worst exported target labels for the selected trained probe. Recall shows how often rows from that true label were recovered."
+        />
+        <small>selected probe</small>
+      </header>
+      <table className="probe-analysis-table probe-class-table">
+        <thead>
+          <tr>
+            <th>Class</th>
+            <th>Rows</th>
+            <th>Recall</th>
+            <th>Precision</th>
+            <th>F1</th>
+            <th>Balanced acc.</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.label}>
+              <td><InlineInfoText card={classPerformanceRowTooltip(row)} label={row.label} /></td>
+              <td>{formatReadoutInteger(row.support)}</td>
+              <td>{formatReadoutMetric(row.recall)}</td>
+              <td>{formatReadoutMetric(row.precision)}</td>
+              <td>{formatReadoutMetric(row.f1)}</td>
+              <td>{formatReadoutMetric(row.balancedAccuracy)}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function ProbeClassGapCard({ rows }: { rows: ProbeClassGapRow[] }) {
+  const maxGap = Math.max(...rows.map((row) => Math.max(0, row.gap ?? 0)), 0.01);
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <ProbeAnalysisTitle
+          title="Train-to-heldout gaps"
+          description="Labels where train performance is higher than validation or test performance. Large positive gaps can indicate class-specific overfitting."
+        />
+        <small>selected probe</small>
+      </header>
+      <div className="probe-class-gap-list">
+        {rows.map((row) => (
+          <div className="probe-class-gap-row" key={row.label}>
+            <InlineInfoText card={classGapRowTooltip(row)} label={row.label} />
+            <i><b style={{ width: `${percentOf(Math.max(0, row.gap ?? 0), maxGap)}%` }} /></i>
+            <strong>{formatReadoutMetric(row.gap)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProbeClassConfusionCard({ rows }: { rows: ProbeClassConfusionRow[] }) {
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <ProbeAnalysisTitle
+          title="Common confusions"
+          description="Most common wrong true-label to predicted-label pairs for the selected trained probe."
+        />
+        <small>selected probe</small>
+      </header>
+      <div className="probe-class-confusion-list">
+        {rows.map((row) => (
+          <div className="probe-class-confusion-row" key={row.label}>
+            <InlineInfoText card={classConfusionRowTooltip(row)} label={`${row.actual} -> ${row.predicted}`} />
+            <strong>{formatReadoutInteger(row.count)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProbeClassFailureCard({ rows }: { rows: ProbeClassFailureRow[] }) {
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <ProbeAnalysisTitle
+          title="High-confidence failures"
+          description="Exported wrong examples where the selected trained probe was confident. Use these as candidates for episode inspection."
+        />
+        <small>examples</small>
+      </header>
+      <div className="probe-class-failure-list">
+        {rows.map((row, index) => (
+          <div className={`probe-class-failure-row ${row.tone}`} key={`${row.label}-${index}`}>
+            <InlineInfoText card={classFailureRowTooltip(row)} label={row.label} />
+            <small>{row.detail}</small>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ProbeSliceCard({
   rows,
   subtitle,
@@ -2239,6 +2563,90 @@ function confidenceBucketTooltip(bucket: ProbeConfidenceBucket): ProbeMetadataCa
       },
     ],
     title: `${bucket.label} confidence`,
+  };
+}
+
+function classMixRowTooltip(row: ProbeClassMixRow): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Rows", value: formatReadoutInteger(row.total) },
+          { label: "Train", value: formatTooltipShare(row.train, row.total) },
+          { label: "Validation", value: formatTooltipShare(row.validation, row.total) },
+          { label: "Test", value: formatTooltipShare(row.test, row.total) },
+          { label: "Unknown split", value: formatTooltipShare(row.unknown, row.total) },
+        ],
+        title: "Class mix",
+      },
+    ],
+    title: row.label,
+  };
+}
+
+function classPerformanceRowTooltip(row: ProbeClassPerformanceRow): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Rows", value: formatReadoutInteger(row.support) },
+          { label: "Recall", value: formatReadoutMetric(row.recall) },
+          { label: "Precision", value: formatReadoutMetric(row.precision) },
+          { label: "F1", value: formatReadoutMetric(row.f1) },
+          { label: "Balanced acc.", value: formatReadoutMetric(row.balancedAccuracy) },
+        ],
+        title: "Per-class performance",
+      },
+    ],
+    title: row.label,
+  };
+}
+
+function classGapRowTooltip(row: ProbeClassGapRow): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Train score", value: formatReadoutMetric(row.trainScore) },
+          { label: "Heldout score", value: formatReadoutMetric(row.heldoutScore) },
+          { label: "Gap", value: formatReadoutMetric(row.gap) },
+          { label: "Rows", value: formatReadoutInteger(row.support) },
+        ],
+        title: "Generalization gap",
+      },
+    ],
+    title: row.label,
+  };
+}
+
+function classConfusionRowTooltip(row: ProbeClassConfusionRow): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "True label", value: row.actual },
+          { label: "Probe prediction", value: row.predicted },
+          { label: "Rows", value: formatReadoutInteger(row.count) },
+        ],
+        title: "Confusion",
+      },
+    ],
+    title: row.label,
+  };
+}
+
+function classFailureRowTooltip(row: ProbeClassFailureRow): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Episode", value: row.label },
+          { label: "Failure", value: row.detail },
+        ],
+        title: "Example",
+      },
+    ],
+    title: row.label,
   };
 }
 
@@ -2326,10 +2734,18 @@ function probeDatasetAnalysisModel(
   bundle: ProbeEvidenceBundle | undefined,
   datasetFilter: string,
   recordsOverride?: ProbeEpisodeIndex[],
+  study?: ProbeStudy,
+  readout?: ProbeStudyReadout,
 ): ProbeDatasetAnalysisModel {
   const records = recordsOverride ?? Object.values(probe.by_trace ?? {});
+  const classDiagnostics = probeClassDiagnostics(study, readout);
   return {
     calibrationRows: probeCalibrationRows(records),
+    classConfusionRows: classDiagnostics.classConfusionRows,
+    classFailureRows: classDiagnostics.classFailureRows,
+    classGapRows: classDiagnostics.classGapRows,
+    classMixRows: classDiagnostics.classMixRows,
+    classPerformanceRows: classDiagnostics.classPerformanceRows,
     confidenceBuckets: confidenceBucketRows(records),
     cohortGroups: reviewCohortGroups(probe, episodes),
     confusionRows: probeConfusionRows(records),
@@ -2345,6 +2761,239 @@ function readoutRecordsForEpisodes(episodes: DatasetEpisode[]): ProbeEpisodeInde
   return episodes
     .map((episode) => episode.probe_record)
     .filter((record): record is ProbeEpisodeIndex => Boolean(record));
+}
+
+function probeClassDiagnostics(
+  study?: ProbeStudy,
+  readout?: ProbeStudyReadout,
+): Pick<
+  ProbeDatasetAnalysisModel,
+  "classConfusionRows" | "classFailureRows" | "classGapRows" | "classMixRows" | "classPerformanceRows"
+> {
+  if (!study) {
+    return {
+      classConfusionRows: [],
+      classFailureRows: [],
+      classGapRows: [],
+      classMixRows: [],
+      classPerformanceRows: [],
+    };
+  }
+  return {
+    classConfusionRows: probeClassConfusionRows(study, readout),
+    classFailureRows: probeClassFailureRows(study, readout),
+    classGapRows: probeClassGapRows(study, readout),
+    classMixRows: probeClassMixRows(study, readout),
+    classPerformanceRows: probeClassPerformanceRows(study, readout),
+  };
+}
+
+function probeClassMixRows(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassMixRow[] {
+  const sourceRows = study.class_support.length ? study.class_support : study.per_class;
+  const rows = probeDiagnosticRecords(sourceRows, readout, { layer: false, split: false });
+  const byLabel = new Map<string, ProbeClassMixRow>();
+  for (const record of rows) {
+    const label = classRecordLabel(record);
+    const count = classSupportCount(record);
+    if (!label || count <= 0) {
+      continue;
+    }
+    const row = byLabel.get(label) ?? { label, test: 0, total: 0, train: 0, unknown: 0, validation: 0 };
+    const split = probeDiagnosticSplitCategory(record);
+    if (split === "train") {
+      row.train += count;
+    } else if (split === "validation") {
+      row.validation += count;
+    } else if (split === "test") {
+      row.test += count;
+    } else {
+      row.unknown += count;
+    }
+    row.total += count;
+    byLabel.set(label, row);
+  }
+  return [...byLabel.values()]
+    .sort((left, right) => right.total - left.total || left.label.localeCompare(right.label))
+    .slice(0, 12);
+}
+
+function probeClassPerformanceRows(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassPerformanceRow[] {
+  const rows = probeDiagnosticRecords(study.per_class, readout, { layer: true, split: true });
+  const byLabel = new Map<string, {
+    balancedAccuracy: WeightedMetric;
+    f1: WeightedMetric;
+    precision: WeightedMetric;
+    recall: WeightedMetric;
+    support: number;
+  }>();
+  for (const record of rows) {
+    const label = classRecordLabel(record);
+    if (!label) {
+      continue;
+    }
+    const support = classSupportCount(record);
+    const weight = Math.max(support, 1);
+    const row = byLabel.get(label) ?? {
+      balancedAccuracy: emptyWeightedMetric(),
+      f1: emptyWeightedMetric(),
+      precision: emptyWeightedMetric(),
+      recall: emptyWeightedMetric(),
+      support: 0,
+    };
+    row.support += support;
+    addWeightedMetric(row.balancedAccuracy, classMetric(record, [
+      "one_vs_rest_balanced_accuracy",
+      "balanced_accuracy",
+      "accuracy",
+    ]), weight);
+    addWeightedMetric(row.f1, classMetric(record, ["f1", "macro_f1"]), weight);
+    addWeightedMetric(row.precision, classMetric(record, ["precision"]), weight);
+    addWeightedMetric(row.recall, classMetric(record, ["recall"]), weight);
+    byLabel.set(label, row);
+  }
+  return [...byLabel.entries()]
+    .map(([label, row]) => ({
+      balancedAccuracy: weightedMetricValue(row.balancedAccuracy),
+      f1: weightedMetricValue(row.f1),
+      label,
+      precision: weightedMetricValue(row.precision),
+      recall: weightedMetricValue(row.recall),
+      support: row.support,
+    }))
+    .filter((row) =>
+      row.support > 0
+      || row.balancedAccuracy !== null
+      || row.f1 !== null
+      || row.precision !== null
+      || row.recall !== null,
+    )
+    .sort((left, right) =>
+      classPerformanceRank(left) - classPerformanceRank(right)
+      || right.support - left.support
+      || left.label.localeCompare(right.label),
+    )
+    .slice(0, 10);
+}
+
+function probeClassGapRows(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassGapRow[] {
+  const rows = probeDiagnosticRecords(study.per_class, readout, { layer: true, split: false });
+  const byLabel = new Map<string, {
+    support: number;
+    test: WeightedMetric;
+    train: WeightedMetric;
+    validation: WeightedMetric;
+  }>();
+  for (const record of rows) {
+    const label = classRecordLabel(record);
+    const score = classMetric(record, ["one_vs_rest_balanced_accuracy", "balanced_accuracy", "f1", "recall"]);
+    if (!label || score === null) {
+      continue;
+    }
+    const support = classSupportCount(record);
+    const row = byLabel.get(label) ?? {
+      support: 0,
+      test: emptyWeightedMetric(),
+      train: emptyWeightedMetric(),
+      validation: emptyWeightedMetric(),
+    };
+    const split = probeDiagnosticSplitCategory(record);
+    if (split === "train" || split === "validation" || split === "test") {
+      addWeightedMetric(row[split], score, Math.max(support, 1));
+      row.support += support;
+      byLabel.set(label, row);
+    }
+  }
+  const selectedSplit = canonicalProbeSplitCategory(readout?.split_category || readout?.split);
+  return [...byLabel.entries()]
+    .map(([label, row]) => {
+      const trainScore = weightedMetricValue(row.train);
+      const validationScore = weightedMetricValue(row.validation);
+      const testScore = weightedMetricValue(row.test);
+      const heldoutScore = selectedSplit === "validation"
+        ? validationScore ?? testScore
+        : selectedSplit === "test"
+          ? testScore ?? validationScore
+          : testScore ?? validationScore;
+      return {
+        gap: trainScore !== null && heldoutScore !== null ? trainScore - heldoutScore : null,
+        heldoutScore,
+        label,
+        support: row.support,
+        trainScore,
+      };
+    })
+    .filter((row) => row.gap !== null && row.gap > 0)
+    .sort((left, right) =>
+      (right.gap ?? 0) - (left.gap ?? 0)
+      || right.support - left.support
+      || left.label.localeCompare(right.label),
+    )
+    .slice(0, 8);
+}
+
+function probeClassConfusionRows(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassConfusionRow[] {
+  const rows = probeDiagnosticRecords(study.confusion, readout, { layer: true, split: true });
+  const byPair = new Map<string, ProbeClassConfusionRow>();
+  for (const record of rows) {
+    const actual = recordText(record, ["actual", "actual_label", "true", "true_label", "class"]);
+    const predicted = recordText(record, ["predicted", "predicted_label", "prediction", "probe_prediction"]);
+    const count = recordNumberValue(record, ["policy_call_count", "row_count", "count", "rows", "n"]) ?? 0;
+    if (!actual || !predicted || actual === predicted || count <= 0) {
+      continue;
+    }
+    const key = `${actual}\u0000${predicted}`;
+    const row = byPair.get(key) ?? { actual, count: 0, label: `${actual} -> ${predicted}`, predicted };
+    row.count += count;
+    byPair.set(key, row);
+  }
+  return [...byPair.values()]
+    .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
+    .slice(0, 10);
+}
+
+function probeClassFailureRows(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassFailureRow[] {
+  const rows = probeDiagnosticRecords(study.error_examples, readout, { layer: true, split: true });
+  return rows
+    .map((record): { confidence: number | null; row: ProbeClassFailureRow } | null => {
+      const actual = recordText(record, ["actual", "actual_label", "true", "true_label"]);
+      const predicted = recordText(record, ["predicted", "predicted_label", "prediction", "probe_prediction"]);
+      const confidence = recordNumberValue(record, ["confidence", "score", "probability"]);
+      const traceId = recordText(record, ["trace_id", "episode_id"]);
+      const taskId = recordText(record, ["task_id", "task"]);
+      const policyCall = recordNumberValue(record, ["policy_call_index", "policy_call", "call_index"]);
+      const correct = recordText(record, ["correct"]).toLowerCase();
+      if (
+        (!actual && !predicted)
+        || confidence === null
+        || confidence < 0.8
+        || correct === "true"
+        || Boolean(actual && predicted && actual === predicted)
+      ) {
+        return null;
+      }
+      const label = traceId ? shortTrace(traceId) : taskId ? `Task ${taskId}` : `${actual || "actual"} -> ${predicted || "predicted"}`;
+      const detail = [
+        actual || predicted ? `${actual || "actual"} -> ${predicted || "predicted"}` : "",
+        `conf ${formatReadoutMetric(confidence)}`,
+        taskId ? `Task ${taskId}` : "",
+        policyCall === null ? "" : `call ${formatReadoutInteger(policyCall)}`,
+      ].filter(Boolean).join(" · ");
+      if (!detail) {
+        return null;
+      }
+      return {
+        confidence,
+        row: {
+          detail,
+          label,
+          tone: "wrong",
+        },
+      };
+    })
+    .filter((item): item is { confidence: number | null; row: ProbeClassFailureRow } => item !== null)
+    .sort((left, right) => (right.confidence ?? -1) - (left.confidence ?? -1) || left.row.label.localeCompare(right.row.label))
+    .map((item) => item.row)
+    .slice(0, 8);
 }
 
 function confidenceBucketRows(records: ProbeEpisodeIndex[]): ProbeConfidenceBucket[] {
