@@ -1078,7 +1078,7 @@
 .probe-lens-training {
   display: grid;
   gap: 10px 16px;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
 }
 
 .probe-lens-training .probe-evidence-fact {
@@ -1175,7 +1175,7 @@
 .probe-lens-selected-facts {
   display: grid;
   gap: 10px 16px;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
   margin: 0;
 }
 
@@ -1205,6 +1205,23 @@
   margin: 0;
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.probe-lens-id-row {
+  align-items: center;
+  border-top: 1px solid #e2e8f0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+}
+
+.probe-lens-id-row > span {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 750;
+  letter-spacing: 0;
+  text-transform: uppercase;
 }
 
 .probe-selected-metrics-section {

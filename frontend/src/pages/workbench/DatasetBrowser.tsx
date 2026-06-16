@@ -879,7 +879,7 @@ function ProbeLensWorkbench({
     ? probeStudyTrainingFacts(study, spec)
     : [spec.input, spec.output, spec.objective];
   const selectedProbeFacts = study && readout
-    ? trainedProbeFactRows(readout, study, readoutEpisodeSummary)
+    ? trainedProbeFactRows(readout, study)
     : [];
   const readoutHover = study && readout ? probeReadoutHoverModel(readout, study) : undefined;
   const warningHover = study && readout && readoutUnavailableReason
@@ -928,21 +928,30 @@ function ProbeLensWorkbench({
                   "Selected probe"
                 )}
               </h3>
-              <div>
-                {readout && study ? <ProbeIdCopy value={trainedProbeDisplayId(readout, study)} /> : null}
-                {warningHover ? (
-                  <InlineInfoText card={warningHover} className="info-title-trigger warning" label="Aggregate only" />
-                ) : null}
-              </div>
+              {warningHover ? (
+                <InlineInfoText card={warningHover} className="info-title-trigger warning" label="Aggregate only" />
+              ) : null}
             </div>
             <dl className="probe-lens-selected-facts">
               {selectedProbeFacts.map((fact) => (
                 <div key={fact.label}>
-                  <dt>{fact.label}</dt>
+                  <dt>
+                    {fact.hoverCard ? (
+                      <InlineInfoText card={fact.hoverCard} className="info-title-trigger" label={fact.label} />
+                    ) : (
+                      fact.label
+                    )}
+                  </dt>
                   <dd>{fact.value}</dd>
                 </div>
               ))}
             </dl>
+            {readout && study ? (
+              <div className="probe-lens-id-row">
+                <span>Probe ID</span>
+                <ProbeIdCopy value={trainedProbeDisplayId(readout, study)} />
+              </div>
+            ) : null}
           </section>
         ) : null}
       </div>
@@ -1206,6 +1215,7 @@ function ProbeReadoutControls({
 }
 
 type TrainedProbeFact = {
+  hoverCard?: ProbeMetadataCard;
   label: string;
   value: string;
 };
@@ -1213,9 +1223,7 @@ type TrainedProbeFact = {
 function trainedProbeFactRows(
   readout: ProbeStudyReadout,
   study: ProbeStudy,
-  summary?: ProbeStudyEpisodeSummary,
 ): TrainedProbeFact[] {
-  const episodeCount = summary?.episode_count ?? study.counts.episode_count;
   const classCount = readout.class_count;
   const facts: TrainedProbeFact[] = [];
   const target = probeTargetDisplayLabel(readout.target || "");
@@ -1224,11 +1232,12 @@ function trainedProbeFactRows(
     facts.push({ label: "Target", value: target });
   }
   facts.push({ label: "Model location", value: probeReadoutLayerLabel(readout.layer) });
-  if (typeof episodeCount === "number" && Number.isFinite(episodeCount)) {
-    facts.push({ label: "Episodes", value: formatReadoutInteger(episodeCount) });
-  }
   if (typeof classCount === "number" && Number.isFinite(classCount)) {
-    facts.push({ label: "Classes", value: formatReadoutInteger(classCount) });
+    facts.push({
+      hoverCard: probeClassHoverModel(study, classCount, "Selected probe classes"),
+      label: "Classes",
+      value: formatReadoutInteger(classCount),
+    });
   }
   return facts;
 }
@@ -1295,6 +1304,7 @@ type ProbeLensTrainingFact = {
 };
 
 function probeStudyTrainingFacts(study: ProbeStudy, spec: ProbeLensSpec): ProbeLensTrainingFact[] {
+  const classCount = study.counts.class_count;
   return [
     {
       detail: spec.input.detail,
@@ -1304,12 +1314,17 @@ function probeStudyTrainingFacts(study: ProbeStudy, spec: ProbeLensSpec): ProbeL
     },
     {
       hoverCard: probeOutputHoverModel(study, spec.output),
-      label: "Output",
-      value: study.output || spec.output.value,
+      label: "Target",
+      value: study.prediction || spec.prediction.value,
+    },
+    {
+      hoverCard: probeClassHoverModel(study, classCount, "Training classes"),
+      label: "Classes",
+      value: classCountLabel(classCount, study.output || spec.output.value),
     },
     {
       detail: spec.objective.detail,
-      hoverCard: probeObjectiveHoverModel(study, spec.objective),
+      hoverCard: probeObjectiveHoverModel(study, spec),
       label: "Objective",
       value: probeObjectiveVisibleValue(study, spec),
     },
@@ -1338,7 +1353,19 @@ function probeReadoutDataGroupName(readout: ProbeStudyReadout): string {
 
 function probeObjectiveVisibleValue(study: ProbeStudy, spec: ProbeLensSpec): string {
   const value = study.training_summary?.objective || study.objective || spec.objective.value;
-  return value === "Linear readout" ? "Linear probe" : value;
+  if (value && value !== "Linear readout") {
+    return value;
+  }
+  const classCount = study.counts.class_count;
+  if (typeof classCount === "number" && Number.isFinite(classCount)) {
+    if (classCount > 2) {
+      return "Multiclass classification";
+    }
+    if (classCount === 2) {
+      return "Binary classification";
+    }
+  }
+  return "Linear probe";
 }
 
 function probeInputHoverModel(study: ProbeStudy, input: ProbeLensSpec["input"]): ProbeMetadataCard {
@@ -1376,13 +1403,42 @@ function probeOutputHoverModel(study: ProbeStudy, output: ProbeLensSpec["output"
   };
 }
 
-function probeObjectiveHoverModel(study: ProbeStudy, objective: ProbeLensSpec["objective"]): ProbeMetadataCard {
-  const training = study.training_summary;
+function probeClassHoverModel(
+  study: ProbeStudy,
+  classCount: number | null | undefined,
+  title: string,
+): ProbeMetadataCard {
+  const classLines = probeClassLines(study);
   return {
     groups: [
       {
         lines: [
-          { label: "Objective", value: training?.objective || study.objective || objective.value },
+          { label: "Target", value: study.prediction || probeTargetDisplayLabel(study.target || "") },
+          { label: "Class count", value: formatReadoutInteger(classCount) },
+          { label: "Source", value: "diagnostics class support" },
+        ],
+        title: "Summary",
+      },
+      {
+        lines: classLines.length
+          ? classLines
+          : [{ label: "Classes", value: "Class labels were not exported for this lens." }],
+        title: "Labels",
+      },
+    ],
+    title,
+  };
+}
+
+function probeObjectiveHoverModel(study: ProbeStudy, spec: ProbeLensSpec): ProbeMetadataCard {
+  const training = study.training_summary;
+  const objective = spec.objective;
+  const objectiveValue = probeObjectiveVisibleValue(study, spec);
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Objective", value: objectiveValue },
           { label: "Target type", value: training?.target_type || "" },
           { label: "Estimator", value: training?.estimator || "" },
           ...(objective.detail ? [{ label: "Detail", value: objective.detail }] : []),
@@ -1394,6 +1450,13 @@ function probeObjectiveHoverModel(study: ProbeStudy, objective: ProbeLensSpec["o
     ],
     title: "Training objective",
   };
+}
+
+function classCountLabel(classCount: number | null | undefined, fallback: string): string {
+  if (typeof classCount === "number" && Number.isFinite(classCount)) {
+    return `${formatReadoutInteger(classCount)} classes`;
+  }
+  return fallback;
 }
 
 function probeTrainingDetailsHoverModel(study: ProbeStudy): ProbeMetadataCard {
