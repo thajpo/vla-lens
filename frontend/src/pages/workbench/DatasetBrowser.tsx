@@ -898,37 +898,42 @@ function ProbeLensWorkbench({
           </h2>
           <strong>{lensName}</strong>
         </div>
-        <dl className="probe-lens-overview">
-          {lensQuestion ? (
-            <div>
-              <dt>Question answered</dt>
-              <dd>{lensQuestion}</dd>
-            </div>
-          ) : null}
-        </dl>
-        <div className="probe-lens-training">
-          {trainingFacts.map((fact) => (
-            <ProbeEvidenceFact
-              detail={fact.detail}
-              hoverCard={fact.hoverCard}
-              key={fact.label}
-              label={fact.label}
-              value={fact.value}
-            />
-          ))}
-        </div>
+        {lensQuestion ? (
+          <section className="probe-lens-section">
+            <h3>Question</h3>
+            <p>{lensQuestion}</p>
+          </section>
+        ) : null}
+        <section className="probe-lens-section">
+          <h3>Training recipe</h3>
+          <div className="probe-lens-training">
+            {trainingFacts.map((fact) => (
+              <ProbeEvidenceFact
+                detail={fact.detail}
+                hoverCard={fact.hoverCard}
+                key={fact.label}
+                label={fact.label}
+                value={fact.value}
+              />
+            ))}
+          </div>
+        </section>
         {selectedProbeFacts.length ? (
-          <div className="probe-lens-selected-readout">
+          <section className="probe-lens-section probe-lens-selected-readout">
             <div className="probe-lens-selected-readout-head">
-              {readoutHover ? (
-                <InlineInfoText card={readoutHover} className="info-title-trigger" label="Selected probe" />
-              ) : (
-                <span>Selected probe</span>
-              )}
-              {readout && study ? <ProbeIdCopy value={trainedProbeDisplayId(readout, study)} /> : null}
-              {warningHover ? (
-                <InlineInfoText card={warningHover} className="info-title-trigger warning" label="Aggregate only" />
-              ) : null}
+              <h3>
+                {readoutHover ? (
+                  <InlineInfoText card={readoutHover} className="info-title-trigger" label="Selected probe" />
+                ) : (
+                  "Selected probe"
+                )}
+              </h3>
+              <div>
+                {readout && study ? <ProbeIdCopy value={trainedProbeDisplayId(readout, study)} /> : null}
+                {warningHover ? (
+                  <InlineInfoText card={warningHover} className="info-title-trigger warning" label="Aggregate only" />
+                ) : null}
+              </div>
             </div>
             <dl className="probe-lens-selected-facts">
               {selectedProbeFacts.map((fact) => (
@@ -938,7 +943,7 @@ function ProbeLensWorkbench({
                 </div>
               ))}
             </dl>
-          </div>
+          </section>
         ) : null}
       </div>
       <ProbeSummaryVisual
@@ -1173,7 +1178,7 @@ function ProbeReadoutControls({
           {readouts.length ? (
             readouts.map((readout) => (
               <option key={readout.readout_id} value={readout.readout_id}>
-                {compactProbeReadoutLabel(readout, study)}
+                {probeReadoutSelectorLabel(readout, study)}
               </option>
             ))
           ) : (
@@ -1294,26 +1299,46 @@ function probeStudyTrainingFacts(study: ProbeStudy, spec: ProbeLensSpec): ProbeL
     {
       detail: spec.input.detail,
       hoverCard: probeInputHoverModel(study, spec.input),
-      label: "Input data",
+      label: "Input",
       value: study.input || spec.input.value,
     },
     {
       hoverCard: probeOutputHoverModel(study, spec.output),
-      label: "Output prediction",
+      label: "Output",
       value: study.output || spec.output.value,
     },
     {
       detail: spec.objective.detail,
       hoverCard: probeObjectiveHoverModel(study, spec.objective),
-      label: "Training objective",
-      value: study.objective || spec.objective.value,
+      label: "Objective",
+      value: probeObjectiveVisibleValue(study, spec),
     },
     {
       hoverCard: probeTrainingDetailsHoverModel(study),
-      label: "Training details",
+      label: study.training_summary ? "Recipe" : "Variants",
       value: probeTrainingDetailsValue(study),
     },
   ];
+}
+
+function probeReadoutSelectorLabel(readout: ProbeStudyReadout, study: ProbeStudy): string {
+  return [
+    study.target && readout.target !== study.target ? probeTargetDisplayLabel(readout.target) : "",
+    probeReadoutLayerLabel(readout.layer),
+    probeReadoutDataGroupName(readout),
+  ].filter(Boolean).join(" · ");
+}
+
+function probeReadoutDataGroupName(readout: ProbeStudyReadout): string {
+  const category = readout.split_category
+    ? PROBE_SPLIT_FILTER_LABELS[readout.split_category] ?? readout.split_category
+    : "";
+  return category || readout.split || "split missing";
+}
+
+function probeObjectiveVisibleValue(study: ProbeStudy, spec: ProbeLensSpec): string {
+  const value = study.training_summary?.objective || study.objective || spec.objective.value;
+  return value === "Linear readout" ? "Linear probe" : value;
 }
 
 function probeInputHoverModel(study: ProbeStudy, input: ProbeLensSpec["input"]): ProbeMetadataCard {
@@ -1420,12 +1445,9 @@ function probeTrainingDetailsValue(study: ProbeStudy): string {
     return recipe.slice(0, 3).join(" · ");
   }
   const layers = typeof study.counts.layer_count === "number" && Number.isFinite(study.counts.layer_count)
-    ? `${formatReadoutInteger(study.counts.layer_count)} layers`
+    ? `${formatReadoutInteger(study.counts.layer_count)} layer sweep`
     : "";
-  const readouts = typeof study.counts.readout_count === "number" && Number.isFinite(study.counts.readout_count)
-    ? `${formatReadoutInteger(study.counts.readout_count)} readouts`
-    : "";
-  return [layers, readouts].filter(Boolean).join(" · ") || "See details";
+  return layers || "See metadata";
 }
 
 function probeClassLines(study: ProbeStudy): Array<{ label: string; value: string }> {
@@ -1498,7 +1520,7 @@ function probeStudySpec(study: ProbeStudy, fallback: ProbeLensWorkbenchViewModel
     },
     objective: {
       ...fallback.spec.objective,
-      value: study.training_summary?.objective || study.objective || fallback.spec.objective.value,
+      value: probeObjectiveVisibleValue(study, fallback.spec),
     },
     output: {
       ...fallback.spec.output,
@@ -1557,7 +1579,7 @@ function ProbeSummaryVisual({
     <section className="probe-evidence-plot probe-summary-visual" aria-label="Probe summary">
       <div className="probe-evidence-plot-column">
         <header>
-          <span>{readout ? "Probe split rows" : researchCopy.labels.splitCoverage}</span>
+          <span>{readout ? "Split evidence" : researchCopy.labels.splitCoverage}</span>
           <small className="probe-map-legend">
             {hasSplitErrorCounts ? (
               <>
@@ -1593,7 +1615,7 @@ function ProbeSummaryVisual({
                 <th>Split</th>
                 <th>Rows</th>
                 <th>Correct</th>
-                <th>Wrong</th>
+                <th>Other wrong</th>
                 <th>High-conf wrong</th>
                 <th>Balanced acc.</th>
                 <th>Map</th>
@@ -1650,25 +1672,28 @@ function ProbeSummaryVisual({
           </table>
         </div>
         {metricRows.length ? (
-          <dl className="probe-selected-metrics" aria-label="Selected probe metrics">
-            {metricRows.map((metric) => (
-              <div key={metric.label}>
-                <dt>
-                  <InlineInfoText card={metric.hoverCard} className="info-title-trigger" label={metric.label} />
-                </dt>
-                <dd>{metric.value}</dd>
-              </div>
-            ))}
-          </dl>
+          <section className="probe-selected-metrics-section" aria-label="Selected probe metrics">
+            <h3>Selected probe metrics</h3>
+            <dl className="probe-selected-metrics">
+              {metricRows.map((metric) => (
+                <div key={metric.label}>
+                  <dt>
+                    <InlineInfoText card={metric.hoverCard} className="info-title-trigger" label={metric.label} />
+                  </dt>
+                  <dd>{metric.value}</dd>
+                </div>
+              ))}
+            </dl>
+          </section>
         ) : null}
       </div>
       <div className="probe-evidence-plot-column">
         <header>
           <span>
             {showAggregatePerformance
-              ? "Probe performance"
+              ? "Split performance"
               : readout
-              ? "Probe results"
+              ? "Episode results"
               : researchCopy.labels.resultCoverage}
           </span>
           {showAggregatePerformance || !readout ? (
@@ -2143,7 +2168,7 @@ function confidenceBucketTooltip(bucket: ProbeConfidenceBucket): ProbeMetadataCa
         lines: [
           { label: "Rows", value: formatReadoutInteger(bucket.total) },
           { label: "Correct", value: formatTooltipShare(bucket.correct, bucket.total) },
-          { label: "Wrong", value: formatTooltipShare(bucket.wrong, bucket.total) },
+          { label: "Other wrong", value: formatTooltipShare(bucket.wrong, bucket.total) },
           { label: "High-conf wrong", value: formatTooltipShare(bucket.highConfWrong, bucket.total) },
           { label: "Unknown labels", value: formatTooltipShare(bucket.unknown, bucket.total) },
         ],
@@ -2214,7 +2239,7 @@ function sliceRowTooltip(row: ProbeAnalysisCountRow, title: string): ProbeMetada
           { label: "Scored", value: formatTooltipShare(row.scored, row.total) },
           { label: "Unscored", value: formatTooltipShare(row.unscored, row.total) },
           { label: "Correct", value: formatTooltipShare(row.correct, row.scored) },
-          { label: "Wrong", value: formatTooltipShare(row.wrong, row.scored) },
+          { label: "Other wrong", value: formatTooltipShare(row.wrong, row.scored) },
           { label: "High-conf wrong", value: formatTooltipShare(row.highConfWrong, row.scored) },
           { label: "Accuracy", value: row.accuracy === null ? "-" : `${Math.round(row.accuracy * 100)}%` },
         ],
@@ -2412,7 +2437,7 @@ function sliceRowsForEpisodes(
 function reviewCohortGroups(probe: ProbeDatasetIndex, episodes: DatasetEpisode[]): ProbeCohortGroup[] {
   const groups: ProbeCohortGroup[] = [
     { label: "High-conf wrong", rows: [] },
-    { label: "Wrong", rows: [] },
+    { label: "Other wrong", rows: [] },
     { label: "Uncertain", rows: [] },
     { label: "Unscored heldout", rows: [] },
     { label: "Confident correct", rows: [] },
@@ -2789,7 +2814,7 @@ function probeReadoutResultChartRows(summary?: ProbeStudyEpisodeSummary): Array<
       active: (active) => active === "incorrect",
       apply: (onPredictionFilterChange) => onPredictionFilterChange("incorrect"),
       id: "wrong",
-      label: "Wrong",
+      label: "Other wrong",
       total,
       value: wrongOnly,
     },
