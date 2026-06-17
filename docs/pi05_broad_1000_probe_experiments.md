@@ -2,7 +2,7 @@
 
 Status: active experiment registry.
 
-Last updated: May 27, 2026.
+Last updated: June 17, 2026.
 
 This document is the review surface for the PI0.5 broad 1000 probe campaign.
 The probes are not new capture. They train on the existing mech-light activation
@@ -18,7 +18,8 @@ features plus post-processed interaction labels.
 - Selection split: `val_heldout_task`
 - Final report split: `test_heldout_task`
 - Primary model: linear probe
-- Secondary capacity check: one-hidden-layer MLP
+- Current first-pass configs use linear probes. MLP capacity checks should be
+  separate exploratory branches, not part of the first claim-bearing run.
 - Primary classification metric: balanced accuracy
 - Saved diagnostics: predictions, per-split metrics, per-group metrics, null metrics, metadata baselines, linear weights when available
 - Runtime contract: normal repo work, saved-trace analysis, probe training, UI
@@ -40,9 +41,9 @@ features plus post-processed interaction labels.
   `uv run python scripts/validate_vla_lens_dataset_trust.py "/mnt/new-volume/vla-lens/pi05-broad-1000-mech-light-lerobot-v3"`.
   The gate is local and read-only; it checks schema/overlay validity, split
   sidecars, activation coverage, outcome balance, and artifact freshness.
-- Latest local gate: passed on 2026-05-26 with 1000 episodes, 34000 activation
+- Latest local gate: passed on 2026-06-17 with 1000 episodes, 34000 activation
   site rows, 1.0 activation coverage, train/val/test split counts of
-  600/200/200 episodes, and 7 checked artifacts.
+  600/200/200 episodes, and 11 checked artifacts.
 
 ## Artifact Contract
 
@@ -119,6 +120,67 @@ UI meaning:
 ## Completed VLA-Lens Artifacts
 
 These are the probe artifacts already present on the broad-1000 dataset.
+Legacy entries that predate the mandatory `policy_call_index` metadata baseline
+are preserved for context, but they are superseded when the same question was
+rerun in the June 17 stronger-baseline round below.
+
+## June 17, 2026 Stronger-Baseline Round
+
+Purpose: rerun the most plausible interaction/outcome probes after applying
+`docs/probe_hypothesis_guidance.md`. The key change was adding
+`policy_call_index` as a metadata baseline and limiting the first pass to
+linear probes. Preflight was clean for the six runnable interaction/outcome
+specs after this change; the VLM-prefix target-parse spec was not runnable on
+this dataset because the selector matched no rows.
+
+- Campaign artifact:
+  `probe_campaign-pi0.5-broad-1000-probe-research-round-1-e6fa9055b3`
+- Command shape:
+  `uv run python scripts/run_vla_lens_probe_batch.py ... --run --fail-fast`
+- Trained specs:
+  target moved, target lifted, target contacted, and outcome.
+- Held-out task split remains the final report split. Sites were selected on
+  `val_heldout_task`.
+
+| Probe | Artifact | Val score | Val baseline | Delta | Selected site | Test score | Test baseline | Test delta | Main baseline |
+| --- | --- | ---: | ---: | ---: | --- | ---: | ---: | ---: | --- |
+| `target_moved` | `probe_suite-pi0.5-broad-1000-target-moved---expert-action-hidden-39fb62eadb` | 0.563 | 0.582 | -0.019 | `layer=12.0, policy_call_index=4` | 0.548 | 0.580 | -0.032 | benchmark |
+| `target_lifted` | `probe_suite-pi0.5-broad-1000-target-lifted---expert-action-hidden-6f9a08c7cd` | 0.677 | 0.793 | -0.116 | `layer=17.0, policy_call_index=4` | 0.543 | 0.653 | -0.110 | primary target object |
+| `target_contacted` | `probe_suite-pi0.5-broad-1000-target-contacted---expert-action-hidden-1302462495` | 0.764 | 0.767 | -0.003 | `layer=17.0, policy_call_index=5` | 0.386 | 0.642 | -0.256 | primary target object |
+| `outcome` | `probe_suite-pi0.5-broad-1000-outcome-robust---action-head-input-51bcf9926f` | 0.677 | 0.700 | -0.023 | `policy_call_index 6` | 0.889 | 0.981 | -0.093 | benchmark |
+
+Interpretation:
+
+- This is mostly a negative result. None of the selected activation probes beat
+  the strongest metadata baseline on validation once `policy_call_index` was
+  included.
+- The old target-moved and target-contacted positive deltas were not robust to
+  this baseline revision. Treat those older artifacts as useful UI/regression
+  examples, not as current evidence for a decodable mechanism.
+- The target-contacted probe came closest on validation, but its selected site
+  collapsed on the final held-out split. At the selected site
+  `layer=17, policy_call_index=5`, test rows had 29 actual positives but 82
+  predicted positives, driving balanced accuracy down to `0.386`. Do not
+  promote it to intervention work without a new locked confirmation design.
+- Some test-best sites show positive deltas, especially target-contacted
+  `layer=17, policy_call_index=6`, but those are ad hoc test observations and
+  should be treated only as hypothesis generators.
+- Outcome has high raw test score at the selected policy call, but benchmark
+  metadata performs even better. This is likely task/benchmark difficulty, not
+  a clean failure mechanism.
+
+Recommended next probe work:
+
+- Do not rerun broad episode-level target moved/lifted/contacted as-is. The
+  labels are too well explained by object/task/timing metadata.
+- Prefer narrower, temporally local questions such as "will target contact
+  occur within the next 1-2 policy calls?" or target-vs-distractor choices
+  before contact. These should reduce the episode-level metadata prior.
+- If revisiting outcome, stratify by benchmark/task or train within a task
+  family so benchmark identity cannot dominate the baseline.
+- Keep first-moved and first-lifted filtered specs as possible next candidates,
+  but treat them as object-choice probes requiring the same policy-call and
+  target-object baselines.
 
 ### Target Moved - Expert Action Hidden
 
@@ -132,9 +194,11 @@ These are the probe artifacts already present on the broad-1000 dataset.
 - Delta: `+0.089`
 - Null p-value: `0.048`
 - Best site: `layer=4.0, policy_call_index=6`
+- Status: legacy/superseded by the June 17 stronger-baseline rerun.
 - Interpretation: this clears the metadata baseline on the selection split and
   is worth inspecting in the probe-suite UI before deciding whether to run a
-  causal follow-up or a neighboring target-contact/lift probe.
+  causal follow-up or a neighboring target-contact/lift probe. After adding
+  `policy_call_index` as a baseline, the rerun did not clear metadata baselines.
 
 ### Target Contacted - Expert Action Hidden
 
@@ -148,6 +212,7 @@ These are the probe artifacts already present on the broad-1000 dataset.
 - Delta: `+0.091`
 - Null p-value: `0.048`
 - Best site: `layer=0.0, policy_call_index=6`
+- Status: legacy/superseded by the June 17 stronger-baseline rerun.
 - Selection split: `val_heldout_task`
 - Final held-out split aggregate balanced accuracy: `0.804`
 - Source episodes: `1000`
@@ -157,7 +222,8 @@ These are the probe artifacts already present on the broad-1000 dataset.
 - Interpretation: this clears the strongest metadata baseline on the selection
   split and survives final held-out-task aggregation. Per-group performance is
   uneven, so treat this as a candidate for UI inspection and localization work,
-  not as proof that the site causally controls target contact.
+  not as proof that the site causally controls target contact. After adding
+  `policy_call_index` as a baseline, the rerun did not clear metadata baselines.
 
 ### First Moved Is Target - Action Head Output
 
@@ -193,25 +259,22 @@ These are the probe artifacts already present on the broad-1000 dataset.
 
 ## Active Next Run
 
-The first integration probe and two object-interaction probes have been run.
-Do not rerun the outcome action-head-input, target-moved expert-action-hidden,
-or target-contacted expert-action-hidden probes unless the UI/artifact loader
-needs a regression check.
+The first stronger-baseline interaction/outcome round has been run. Do not
+rerun the broad episode-level outcome, target-moved, target-lifted, or
+target-contacted probes as-is unless the UI/artifact loader needs a regression
+check.
 
 Recommended next work after UI review:
-- Inspect the target-contacted artifact in the dashboard/workbench, especially
-  `layer=0.0, policy_call_index=6`, prediction traces, confusion slices, and
-  low-scoring groups.
-- If the goal is physical interaction localization, run neighboring-window
-  analysis around the target-contacted best site before proposing any replay or
-  intervention.
-- If the goal is a new broad probe, choose `target_lifted` only after checking
-  class support, or choose filtered `first_moved_is_target` for target-relative
-  binding.
+- Design a temporally local target-contact or target-motion probe rather than
+  predicting episode-level "ever contacted/moved/lifted" labels.
+- Use target-vs-distractor or next-1-to-2-policy-call labels to reduce task and
+  object priors.
+- Run filtered first-moved/first-lifted probes only if the preflight support
+  remains clean and the metadata baselines include `policy_call_index`.
 
-Current interpretation: target contact is decodable above metadata and null
-baselines, but the evidence is still observational. The next claim upgrade
-requires localization consistency plus a concrete replay/intervention plan.
+Current interpretation: broad episode-level target interaction and outcome
+labels are not good enough for the next intervention candidate. They are mostly
+explained by metadata baselines once timing is included.
 
 ## Feature Contracts
 

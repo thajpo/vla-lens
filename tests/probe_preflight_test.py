@@ -3,7 +3,11 @@ from __future__ import annotations
 import pandas as pd
 
 from vla_lens import create_synthetic_trace_dataset
-from vla_lens.probes import format_probe_preflight_markdown, probe_preflight_report
+from vla_lens.probes import (
+    format_probe_preflight_markdown,
+    probe_preflight_report,
+    train_probe_artifact_from_spec,
+)
 
 
 def test_probe_preflight_reports_sweep_baselines_and_leakage(tmp_path):
@@ -53,6 +57,23 @@ def test_probe_preflight_markdown_is_reviewable(tmp_path):
     assert "outcome" in markdown
     assert "Planned readouts: 8" in markdown
     assert "target column" in markdown
+
+
+def test_probe_training_persists_research_framing_from_spec(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
+    _write_probe_splits(
+        dataset.root,
+        ["train", "train", "train", "train", "val_heldout_task", "test_heldout_task"],
+    )
+
+    saved = train_probe_artifact_from_spec(dataset, _outcome_probe_spec())
+
+    assert saved.artifact.method["research"] == {
+        "hypothesis_family": "test fixture",
+        "intended_claim": "synthetic outcome information is decodable",
+        "question": "Can outcome be decoded from synthetic action hidden states?",
+    }
+    assert saved.artifact.display["research"] == saved.artifact.method["research"]
 
 
 def _write_probe_splits(root, splits: list[str]) -> None:

@@ -1,5 +1,8 @@
 # Probe training uses saved activations in the normal repo environment, not capture wrappers.
 name: PI0.5 broad 1000 outcome robust - action head input
+question: Is final episode success/failure linearly decodable from action head input?
+hypothesis_family: outcome / failure prediction
+intended_claim: outcome signal is linearly decodable from action head input above metadata baselines
 target:
   kind: outcome
 features:
@@ -27,6 +30,7 @@ baseline:
   - scene_family
   - task_verb
   - primary_target_object
+  - policy_call_index
 probe:
-  models: [linear, mlp]
+  models: [linear]
 sweep: policy_call_index

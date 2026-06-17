@@ -1,5 +1,8 @@
 # Probe training uses saved activations in the normal repo environment, not capture wrappers.
 name: PI0.5 broad 1000 first moved is target filtered - expert action hidden
+question: Is the first unambiguous moved object the instructed target?
+hypothesis_family: object choice / first interaction
+intended_claim: first moved target correctness is linearly decodable from expert action hidden states above metadata baselines
 target:
   kind: first_moved_is_target
   missing_policy: drop
@@ -34,6 +37,7 @@ baseline:
   - scene_family
   - task_verb
   - primary_target_object
+  - policy_call_index
 probe:
-  models: [linear, mlp]
+  models: [linear]
 sweep: [layer, policy_call_index]

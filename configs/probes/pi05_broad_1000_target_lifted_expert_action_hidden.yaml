@@ -1,5 +1,8 @@
 # Probe training uses saved activations in the normal repo environment, not capture wrappers.
 name: PI0.5 broad 1000 target lifted - expert action hidden
+question: Has the instructed target object been lifted by this episode?
+hypothesis_family: motor execution / target interaction
+intended_claim: target lift state is linearly decodable from expert action hidden states above metadata baselines
 target:
   kind: target_lifted
   missing_policy: drop
@@ -28,6 +31,7 @@ baseline:
   - scene_family
   - task_verb
   - primary_target_object
+  - policy_call_index
 probe:
-  models: [linear, mlp]
+  models: [linear]
 sweep: [layer, policy_call_index]

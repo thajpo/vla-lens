@@ -195,7 +195,7 @@ def _save_campaign_artifact(
         tags=("probe", "campaign"),
     )
     saved = dataset.save_artifact(artifact)
-    artifact_dir = dataset.root / relative_dir
+    artifact_dir = dataset._dataset_artifact_root() / relative_dir
     artifact_dir.mkdir(parents=True, exist_ok=True)
     frame.to_parquet(artifact_dir / "campaign_summary.parquet", index=False)
     (artifact_dir / "run_manifest.json").write_text(

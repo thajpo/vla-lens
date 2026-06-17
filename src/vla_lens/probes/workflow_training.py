@@ -74,6 +74,7 @@ def train_probe_artifact(
     eval_values: Sequence[str] | None = None,
     selection_value: str | None = None,
     probe_models: Sequence[str] = ("linear",),
+    research: Mapping[str, Any] | None = None,
 ) -> SavedProbeSuite:
     """Train simple probes from an activation selector and save a ``LensArtifact``."""
     feature_matrix = dataset.select_model_sites(selector).materialize(cache=True)
@@ -159,9 +160,11 @@ def train_probe_artifact(
         if "feature_scale" in model_arrays
         else None,
     }
+    research_framing = _probe_research_framing(research)
     method = {
         "workflow": "train_probe_artifact",
         "probe_artifact_schema_version": PROBE_ARTIFACT_SCHEMA_VERSION,
+        "research": research_framing,
         "lineage": _probe_lineage(random_seed=None),
         "source": _probe_source(dataset, rows),
         "input": _probe_input(selector, rows, X, feature_matrix.cache_key),
@@ -271,6 +274,7 @@ def train_probe_artifact(
         metrics=metrics,
         display={
             "kind": "probe_suite",
+            "research": research_framing,
             "results": _records(results),
             "best_result_details": _best_result_details(
                 results,
@@ -375,7 +379,15 @@ def train_probe_artifact_from_spec(
         probe_models=[
             str(value) for value in normalized.get("probe", {}).get("models", ["linear"])
         ],
+        research=normalized,
     )
+
+
+def _probe_research_framing(spec: Mapping[str, Any] | None) -> dict[str, Any]:
+    if not spec:
+        return {}
+    keys = ["question", "hypothesis_family", "intended_claim"]
+    return {key: str(spec[key]) for key in keys if spec.get(key) not in {None, ""}}
 
 
 def _dataset_output_dir(dataset: TraceDataset, artifact_id: str) -> Path:

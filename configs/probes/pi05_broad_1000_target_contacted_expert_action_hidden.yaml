@@ -1,5 +1,8 @@
 # Probe training uses saved activations in the normal repo environment, not capture wrappers.
 name: PI0.5 broad 1000 target contacted - expert action hidden
+question: Has the policy contacted the instructed target object by this episode?
+hypothesis_family: object choice before contact / target interaction
+intended_claim: target contact state is linearly decodable from expert action hidden states above metadata baselines
 target:
   kind: target_contacted
   missing_policy: drop
@@ -28,6 +31,7 @@ baseline:
   - scene_family
   - task_verb
   - primary_target_object
+  - policy_call_index
 probe:
-  models: [linear, mlp]
+  models: [linear]
 sweep: [layer, policy_call_index]
