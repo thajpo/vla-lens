@@ -1458,9 +1458,34 @@
 .probe-class-mix-list,
 .probe-class-gap-list,
 .probe-class-confusion-list,
-.probe-class-failure-list {
+.probe-class-failure-list,
+.probe-null-control-list {
   display: grid;
   gap: 6px;
+}
+
+.probe-layer-split-table th,
+.probe-layer-split-table td {
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+  white-space: normal;
+}
+
+.probe-layer-split-table tbody th {
+  color: #334155;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: left;
+}
+
+.probe-layer-split-table td {
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.probe-layer-split-table td.selected {
+  box-shadow: inset 0 0 0 2px #b7791f;
 }
 
 .probe-class-table th,
@@ -1599,13 +1624,18 @@
   background: #94a3b8;
 }
 
+.probe-class-recall-plot i.warning {
+  background: #d08326;
+}
+
 .probe-analysis-bar-row,
 .probe-slice-row,
 .probe-confusion-list > div,
 .probe-calibration-row,
 .probe-temporal-row,
 .probe-class-mix-row,
-.probe-class-gap-row {
+.probe-class-gap-row,
+.probe-null-control-row {
   align-items: center;
   display: grid;
   gap: 7px;
@@ -1630,8 +1660,51 @@
 }
 
 .probe-class-mix-row,
-.probe-class-gap-row {
+.probe-class-gap-row,
+.probe-null-control-row {
   grid-template-columns: minmax(118px, 1.1fr) minmax(100px, 1.4fr) 50px;
+}
+
+.probe-confusion-matrix {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.probe-confusion-matrix span {
+  align-items: center;
+  color: #334155;
+  display: flex;
+  font-size: 9px;
+  font-weight: 700;
+  justify-content: center;
+  line-height: 1.15;
+  min-height: 28px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  padding: 3px;
+  text-align: center;
+}
+
+.probe-confusion-matrix .corner,
+.probe-confusion-matrix .column-label,
+.probe-confusion-matrix .row-label {
+  background: #f8fafc;
+  color: #475569;
+}
+
+.probe-confusion-matrix .corner,
+.probe-confusion-matrix .row-label {
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.probe-confusion-matrix .matrix-cell {
+  border: 1px solid #e2e8f0;
+  color: #0f172a;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+  font-weight: 900;
 }
 
 .probe-class-confusion-row {
@@ -1668,7 +1741,8 @@
 .probe-class-mix-row span,
 .probe-class-gap-row span,
 .probe-class-confusion-row span,
-.probe-class-failure-row span {
+.probe-class-failure-row span,
+.probe-null-control-row span {
   color: #334155;
   font-size: 11px;
   font-weight: 700;
@@ -1686,7 +1760,8 @@
 .probe-temporal-row strong,
 .probe-class-mix-row strong,
 .probe-class-gap-row strong,
-.probe-class-confusion-row strong {
+.probe-class-confusion-row strong,
+.probe-null-control-row strong {
   color: #0f172a;
   font-size: 11px;
   font-variant-numeric: tabular-nums;
@@ -1706,7 +1781,8 @@
 .probe-calibration-row i,
 .probe-temporal-row i,
 .probe-class-mix-row i,
-.probe-class-gap-row i {
+.probe-class-gap-row i,
+.probe-null-control-row i {
   background: #edf2f7;
   display: flex;
   height: 10px;
@@ -1715,13 +1791,18 @@
   width: 100%;
 }
 
+.probe-null-control-row i {
+  position: relative;
+}
+
 .probe-analysis-bar-row b,
 .probe-slice-row b,
 .probe-confusion-list b,
 .probe-calibration-row b,
 .probe-temporal-row b,
 .probe-class-mix-row b,
-.probe-class-gap-row b {
+.probe-class-gap-row b,
+.probe-null-control-row b {
   display: block;
   height: 100%;
 }
@@ -1803,6 +1884,19 @@
 
 .probe-class-gap-row b {
   background: #d08326;
+}
+
+.probe-null-control-row .null {
+  background: #cbd5e1;
+}
+
+.probe-null-control-row .real {
+  background: #2f6f7f;
+  height: 16px;
+  position: absolute;
+  top: -3px;
+  transform: translateX(-50%);
+  width: 3px;
 }
 
 .probe-slice-list p {

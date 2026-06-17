@@ -1,4 +1,4 @@
-import { useDeferredValue, useMemo, useState } from "react";
+import { Fragment, useDeferredValue, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowRight, Search } from "lucide-react";
 import { InlineInfoText } from "../../components/ui/InfoHover";
@@ -2081,6 +2081,60 @@ type ProbeClassFailureRow = {
   tone: "wrong" | "warning" | "muted";
 };
 
+type ProbeLayerSplitCell = {
+  accuracy: number | null;
+  balancedAccuracy: number | null;
+  classCount: number | null;
+  isSelected: boolean;
+  layer: string;
+  macroF1: number | null;
+  rowCount: number;
+  split: string;
+  top3Accuracy: number | null;
+  trainGap: number | null;
+};
+
+type ProbeLayerSplitRow = {
+  cells: ProbeLayerSplitCell[];
+  label: string;
+  split: string;
+};
+
+type ProbeNullControlRow = {
+  label: string;
+  nullMean: number | null;
+  nullStd: number | null;
+  pValue: number | null;
+  realScore: number | null;
+  runs: number | null;
+  split: string;
+};
+
+type ProbeClassRecallPoint = {
+  f1: number | null;
+  label: string;
+  precision: number | null;
+  recall: number;
+  support: number;
+  tone: "correct" | "warning" | "wrong" | "unknown";
+  x: number;
+  y: number;
+};
+
+type ProbeClassConfusionMatrixCell = {
+  actual: string;
+  count: number;
+  isCorrect: boolean;
+  predicted: string;
+};
+
+type ProbeClassConfusionMatrix = {
+  cells: ProbeClassConfusionMatrixCell[];
+  labels: string[];
+  maxCount: number;
+  total: number;
+};
+
 type WeightedMetric = {
   total: number;
   weight: number;
@@ -2089,14 +2143,18 @@ type WeightedMetric = {
 type ProbeDatasetAnalysisModel = {
   calibrationRows: ProbeCalibrationBucket[];
   classConfusionRows: ProbeClassConfusionRow[];
+  classConfusionMatrix?: ProbeClassConfusionMatrix;
   classFailureRows: ProbeClassFailureRow[];
   classGapRows: ProbeClassGapRow[];
   classMixRows: ProbeClassMixRow[];
   classPerformanceRows: ProbeClassPerformanceRow[];
+  classRecallPoints: ProbeClassRecallPoint[];
   confidenceBuckets: ProbeConfidenceBucket[];
   cohortGroups: ProbeCohortGroup[];
   confusionRows: ProbeConfusionRow[];
+  layerSplitRows: ProbeLayerSplitRow[];
   lengthScorePoints: ProbeScatterPoint[];
+  nullControlRows: ProbeNullControlRow[];
   outcomeRows: ProbeAnalysisCountRow[];
   rollingAccuracy: ProbeRollingPoint[];
   taskRows: ProbeAnalysisCountRow[];
@@ -2219,7 +2277,11 @@ function ProbeDatasetAnalysisPanel({ model }: { model: ProbeDatasetAnalysisModel
         </section>
       ) : null}
 
+      {model.layerSplitRows.length ? <ProbeLayerSplitCard rows={model.layerSplitRows} /> : null}
+      {model.nullControlRows.length ? <ProbeNullControlCard rows={model.nullControlRows} /> : null}
       {model.classMixRows.length ? <ProbeClassMixCard rows={model.classMixRows} /> : null}
+      {model.classRecallPoints.length ? <ProbeClassRecallCard points={model.classRecallPoints} /> : null}
+      {model.classConfusionMatrix ? <ProbeClassConfusionMatrixCard matrix={model.classConfusionMatrix} /> : null}
       {model.classPerformanceRows.length ? <ProbeClassPerformanceCard rows={model.classPerformanceRows} /> : null}
       {model.classGapRows.length ? <ProbeClassGapCard rows={model.classGapRows} /> : null}
       {model.classConfusionRows.length ? <ProbeClassConfusionCard rows={model.classConfusionRows} /> : null}
@@ -2349,6 +2411,100 @@ function scatterPointLabel(point: ProbeScatterPoint): string {
   ].filter(Boolean).join(" · ");
 }
 
+function classRecallPointLabel(point: ProbeClassRecallPoint): string {
+  return [
+    point.label,
+    `${formatReadoutInteger(point.support)} rows`,
+    `recall ${formatReadoutMetric(point.recall)}`,
+    `precision ${formatReadoutMetric(point.precision)}`,
+    `F1 ${formatReadoutMetric(point.f1)}`,
+  ].filter(Boolean).join(" · ");
+}
+
+function metricHeatBackground(value: number | null): string {
+  if (value === null || !Number.isFinite(value)) {
+    return "#f8fafc";
+  }
+  const alpha = 0.1 + Math.max(0, Math.min(1, value)) * 0.48;
+  return `rgba(95, 143, 120, ${alpha.toFixed(3)})`;
+}
+
+function confusionCellBackground(count: number, maxCount: number, correct: boolean): string {
+  if (!count || !maxCount) {
+    return "#f8fafc";
+  }
+  const alpha = 0.12 + Math.max(0, Math.min(1, count / maxCount)) * 0.62;
+  return correct ? `rgba(95, 143, 120, ${alpha.toFixed(3)})` : `rgba(196, 58, 50, ${alpha.toFixed(3)})`;
+}
+
+function ProbeLayerSplitCard({ rows }: { rows: ProbeLayerSplitRow[] }) {
+  const layers = rows[0]?.cells.map((cell) => cell.layer) ?? [];
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <ProbeAnalysisTitle
+          title="Layer x split"
+          description="Balanced accuracy across trained layers and data groups. This is the quickest check for layer choice and train/heldout generalization."
+        />
+        <small>balanced accuracy</small>
+      </header>
+      <table className="probe-analysis-table probe-layer-split-table">
+        <thead>
+          <tr>
+            <th>Split</th>
+            {layers.map((layer) => <th key={layer}>{layer}</th>)}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.split}>
+              <th>{row.label}</th>
+              {row.cells.map((cell) => (
+                <td
+                  className={cell.isSelected ? "selected" : ""}
+                  key={`${row.split}-${cell.layer}`}
+                  style={{ background: metricHeatBackground(cell.balancedAccuracy) }}
+                >
+                  <InlineInfoText
+                    card={layerSplitCellTooltip(cell)}
+                    label={formatReadoutMetric(cell.balancedAccuracy)}
+                  />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function ProbeNullControlCard({ rows }: { rows: ProbeNullControlRow[] }) {
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <ProbeAnalysisTitle
+          title="Null controls"
+          description="Compares the real trained probe score with shuffled-label null controls when the artifact exported them."
+        />
+        <small>real vs null</small>
+      </header>
+      <div className="probe-null-control-list">
+        {rows.map((row, index) => (
+          <div className="probe-null-control-row" key={`${row.label}-${row.split}-${index}`}>
+            <InlineInfoText card={nullControlRowTooltip(row)} label={row.label} />
+            <i>
+              <b className="null" style={{ width: `${percentOf(row.nullMean ?? 0, 1)}%` }} />
+              <b className="real" style={{ left: `${percentOf(row.realScore ?? 0, 1)}%` }} />
+            </i>
+            <strong>{formatReadoutMetric(row.realScore)}</strong>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ProbeClassMixCard({ rows }: { rows: ProbeClassMixRow[] }) {
   return (
     <section className="probe-analysis-card">
@@ -2376,6 +2532,84 @@ function ProbeClassMixCard({ rows }: { rows: ProbeClassMixRow[] }) {
             </i>
             <strong>{formatReadoutInteger(row.total)}</strong>
           </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function ProbeClassRecallCard({ points }: { points: ProbeClassRecallPoint[] }) {
+  const maxSupport = Math.max(...points.map((point) => point.support), 0);
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <ProbeAnalysisTitle
+          title="Support vs recall"
+          description="Each dot is a target label for the selected probe. This separates rare-label brittleness from broad class failure."
+        />
+        <small>selected probe</small>
+      </header>
+      <div className="probe-scatter-shell">
+        <span className="probe-scatter-axis-label y">Recall</span>
+        <div className="probe-scatter-plot probe-class-recall-plot" aria-label="Class support by recall">
+          <span className="probe-scatter-tick y top">1.0</span>
+          <span className="probe-scatter-tick y mid">.5</span>
+          <span className="probe-scatter-tick y bottom">0</span>
+          {points.map((point) => (
+            <i
+              aria-label={classRecallPointLabel(point)}
+              className={point.tone}
+              key={point.label}
+              style={{
+                left: `${paddedPlotPercent(point.x)}%`,
+                bottom: `${paddedPlotPercent(point.y)}%`,
+              }}
+              title={classRecallPointLabel(point)}
+            />
+          ))}
+        </div>
+        <div className="probe-scatter-x-axis">
+          <span>0 rows</span>
+          <strong>Class rows</strong>
+          <span>{formatReadoutInteger(maxSupport)} rows</span>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function ProbeClassConfusionMatrixCard({ matrix }: { matrix: ProbeClassConfusionMatrix }) {
+  const templateColumns = `minmax(92px, 1.4fr) repeat(${matrix.labels.length}, minmax(34px, 1fr))`;
+  return (
+    <section className="probe-analysis-card">
+      <header>
+        <ProbeAnalysisTitle
+          title="Confusion matrix"
+          description="Rows are true labels and columns are probe predictions for the selected trained probe. Darker cells have more policy-call rows."
+        />
+        <small>selected probe</small>
+      </header>
+      <div className="probe-confusion-matrix" style={{ gridTemplateColumns: templateColumns }}>
+        <span className="corner">Actual \\ predicted</span>
+        {matrix.labels.map((label) => <span className="column-label" key={`column-${label}`}>{label}</span>)}
+        {matrix.labels.map((actual) => (
+          <Fragment key={`row-${actual}`}>
+            <span className="row-label">{actual}</span>
+            {matrix.labels.map((predicted) => {
+              const cell = matrix.cells.find((item) => item.actual === actual && item.predicted === predicted);
+              const count = cell?.count ?? 0;
+              return (
+                <span
+                  className={`matrix-cell ${actual === predicted ? "correct" : "wrong"}`}
+                  key={`${actual}-${predicted}`}
+                  style={{ background: confusionCellBackground(count, matrix.maxCount, actual === predicted) }}
+                  title={`${actual} -> ${predicted}: ${formatReadoutInteger(count)} rows`}
+                >
+                  {count ? formatReadoutInteger(count) : ""}
+                </span>
+              );
+            })}
+          </Fragment>
         ))}
       </div>
     </section>
@@ -2566,6 +2800,47 @@ function confidenceBucketTooltip(bucket: ProbeConfidenceBucket): ProbeMetadataCa
   };
 }
 
+function layerSplitCellTooltip(cell: ProbeLayerSplitCell): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Layer", value: cell.layer },
+          { label: "Split", value: cell.split },
+          { label: "Balanced acc.", value: formatReadoutMetric(cell.balancedAccuracy) },
+          { label: "Accuracy", value: formatReadoutMetric(cell.accuracy) },
+          { label: "Macro F1", value: formatReadoutMetric(cell.macroF1) },
+          { label: "Top-3 accuracy", value: formatReadoutMetric(cell.top3Accuracy) },
+          { label: "Train gap", value: formatReadoutMetric(cell.trainGap) },
+          { label: "Rows", value: formatReadoutInteger(cell.rowCount) },
+          { label: "Classes", value: formatReadoutInteger(cell.classCount) },
+        ],
+        title: "Readout",
+      },
+    ],
+    title: `${cell.layer} · ${cell.split}`,
+  };
+}
+
+function nullControlRowTooltip(row: ProbeNullControlRow): ProbeMetadataCard {
+  return {
+    groups: [
+      {
+        lines: [
+          { label: "Split", value: row.split },
+          { label: "Real score", value: formatReadoutMetric(row.realScore) },
+          { label: "Null mean", value: formatReadoutMetric(row.nullMean) },
+          { label: "Null std.", value: formatReadoutMetric(row.nullStd) },
+          { label: "p-value", value: formatReadoutMetric(row.pValue) },
+          { label: "Runs", value: formatReadoutInteger(row.runs) },
+        ],
+        title: "Null comparison",
+      },
+    ],
+    title: row.label,
+  };
+}
+
 function classMixRowTooltip(row: ProbeClassMixRow): ProbeMetadataCard {
   return {
     groups: [
@@ -2742,14 +3017,18 @@ function probeDatasetAnalysisModel(
   return {
     calibrationRows: probeCalibrationRows(records),
     classConfusionRows: classDiagnostics.classConfusionRows,
+    classConfusionMatrix: classDiagnostics.classConfusionMatrix,
     classFailureRows: classDiagnostics.classFailureRows,
     classGapRows: classDiagnostics.classGapRows,
     classMixRows: classDiagnostics.classMixRows,
     classPerformanceRows: classDiagnostics.classPerformanceRows,
+    classRecallPoints: classDiagnostics.classRecallPoints,
     confidenceBuckets: confidenceBucketRows(records),
     cohortGroups: reviewCohortGroups(probe, episodes),
     confusionRows: probeConfusionRows(records),
+    layerSplitRows: probeLayerSplitRows(study, readout),
     lengthScorePoints: scoreLengthPoints(probe, episodes),
+    nullControlRows: probeNullControlRows(study),
     outcomeRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.outcome || "Outcome missing"),
     rollingAccuracy: rollingAccuracyRows(records),
     taskRows: sliceRowsForEpisodes(probe, episodes, (episode) => episode.task_id ? `Task ${episode.task_id}` : "Task missing"),
@@ -2768,23 +3047,34 @@ function probeClassDiagnostics(
   readout?: ProbeStudyReadout,
 ): Pick<
   ProbeDatasetAnalysisModel,
-  "classConfusionRows" | "classFailureRows" | "classGapRows" | "classMixRows" | "classPerformanceRows"
+  | "classConfusionMatrix"
+  | "classConfusionRows"
+  | "classFailureRows"
+  | "classGapRows"
+  | "classMixRows"
+  | "classPerformanceRows"
+  | "classRecallPoints"
 > {
   if (!study) {
     return {
+      classConfusionMatrix: undefined,
       classConfusionRows: [],
       classFailureRows: [],
       classGapRows: [],
       classMixRows: [],
       classPerformanceRows: [],
+      classRecallPoints: [],
     };
   }
+  const classPerformanceRows = probeClassPerformanceAllRows(study, readout);
   return {
+    classConfusionMatrix: probeClassConfusionMatrix(study, readout),
     classConfusionRows: probeClassConfusionRows(study, readout),
     classFailureRows: probeClassFailureRows(study, readout),
     classGapRows: probeClassGapRows(study, readout),
     classMixRows: probeClassMixRows(study, readout),
-    classPerformanceRows: probeClassPerformanceRows(study, readout),
+    classPerformanceRows: classPerformanceRows.slice(0, 10),
+    classRecallPoints: probeClassRecallPoints(classPerformanceRows),
   };
 }
 
@@ -2817,7 +3107,77 @@ function probeClassMixRows(study: ProbeStudy, readout?: ProbeStudyReadout): Prob
     .slice(0, 12);
 }
 
-function probeClassPerformanceRows(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassPerformanceRow[] {
+function probeLayerSplitRows(study?: ProbeStudy, readout?: ProbeStudyReadout): ProbeLayerSplitRow[] {
+  if (!study?.readouts.length) {
+    return [];
+  }
+  const target = readout?.target || study.target || study.readouts[0]?.target || "";
+  const readouts = study.readouts.filter((item) => !target || item.target === target);
+  if (!readouts.length) {
+    return [];
+  }
+  const layers = uniqueProbeLayers(readouts);
+  const bySplitLayer = new Map(readouts.map((item) => [
+    `${canonicalProbeSplitCategory(item.split_category || item.split)}\u0000${probeReadoutLayerKey(item.layer)}`,
+    item,
+  ]));
+  return (["train", "validation", "test"] as const)
+    .map((split) => ({
+      cells: layers.map((layer) => {
+        const item = bySplitLayer.get(`${split}\u0000${layer}`);
+        return {
+          accuracy: item?.accuracy ?? null,
+          balancedAccuracy: item?.balanced_accuracy ?? null,
+          classCount: item?.class_count ?? null,
+          isSelected: Boolean(
+            readout
+            && item
+            && item.target === readout.target
+            && probeReadoutLayerKey(item.layer) === probeReadoutLayerKey(readout.layer)
+            && item.split === readout.split,
+          ),
+          layer: probeReadoutLayerLabel(layer),
+          macroF1: item?.macro_f1 ?? null,
+          rowCount: item?.policy_call_count ?? item?.row_count ?? 0,
+          split: PROBE_SPLIT_FILTER_LABELS[split] ?? split,
+          top3Accuracy: item?.top3_accuracy ?? null,
+          trainGap: item?.train_gap_balanced_accuracy ?? null,
+        };
+      }),
+      label: PROBE_SPLIT_FILTER_LABELS[split] ?? split,
+      split,
+    }))
+    .filter((row) => row.cells.some((cell) => cell.balancedAccuracy !== null || cell.rowCount > 0));
+}
+
+function uniqueProbeLayers(readouts: ProbeStudyReadout[]): string[] {
+  return Array.from(new Set(readouts.map((readout) => probeReadoutLayerKey(readout.layer))))
+    .sort((left, right) => {
+      const leftNumber = Number(left);
+      const rightNumber = Number(right);
+      if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber)) {
+        return leftNumber - rightNumber;
+      }
+      return left.localeCompare(right, undefined, { numeric: true });
+    });
+}
+
+function probeNullControlRows(study?: ProbeStudy): ProbeNullControlRow[] {
+  return (study?.controls ?? [])
+    .map((control) => ({
+      label: control.label || control.kind || "Null control",
+      nullMean: control.null_score_mean ?? null,
+      nullStd: control.null_score_std ?? null,
+      pValue: control.p_value ?? null,
+      realScore: control.real_score ?? null,
+      runs: control.runs ?? null,
+      split: control.split ? probeSplitLabel(canonicalProbeSplitCategory(control.split), control.split) : "split missing",
+    }))
+    .filter((row) => row.realScore !== null || row.nullMean !== null)
+    .slice(0, 4);
+}
+
+function probeClassPerformanceAllRows(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassPerformanceRow[] {
   const rows = probeDiagnosticRecords(study.per_class, readout, { layer: true, split: true });
   const byLabel = new Map<string, {
     balancedAccuracy: WeightedMetric;
@@ -2871,8 +3231,32 @@ function probeClassPerformanceRows(study: ProbeStudy, readout?: ProbeStudyReadou
       classPerformanceRank(left) - classPerformanceRank(right)
       || right.support - left.support
       || left.label.localeCompare(right.label),
-    )
-    .slice(0, 10);
+    );
+}
+
+function probeClassRecallPoints(rows: ProbeClassPerformanceRow[]): ProbeClassRecallPoint[] {
+  const recallRows = rows
+    .filter((row) => row.recall !== null && row.support > 0)
+    .sort((left, right) => right.support - left.support || left.label.localeCompare(right.label))
+    .slice(0, 36);
+  const maxSupport = Math.max(...recallRows.map((row) => row.support), 1);
+  return recallRows.map((row) => {
+    const recall = row.recall ?? 0;
+    return {
+      f1: row.f1,
+      label: row.label,
+      precision: row.precision,
+      recall,
+      support: row.support,
+      tone: recall >= 0.75
+        ? "correct"
+        : recall >= 0.4
+          ? "warning"
+          : "wrong",
+      x: percentOf(row.support, maxSupport),
+      y: percentOf(recall, 1),
+    };
+  });
 }
 
 function probeClassGapRows(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassGapRow[] {
@@ -2949,6 +3333,38 @@ function probeClassConfusionRows(study: ProbeStudy, readout?: ProbeStudyReadout)
   return [...byPair.values()]
     .sort((left, right) => right.count - left.count || left.label.localeCompare(right.label))
     .slice(0, 10);
+}
+
+function probeClassConfusionMatrix(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassConfusionMatrix | undefined {
+  const rows = probeDiagnosticRecords(study.confusion, readout, { layer: true, split: true });
+  const byPair = new Map<string, ProbeClassConfusionMatrixCell>();
+  const labelTotals = new Map<string, number>();
+  for (const record of rows) {
+    const actual = recordText(record, ["actual", "actual_label", "true", "true_label", "class"]);
+    const predicted = recordText(record, ["predicted", "predicted_label", "prediction", "probe_prediction"]);
+    const count = recordNumberValue(record, ["policy_call_count", "row_count", "count", "rows", "n"]) ?? 0;
+    if (!actual || !predicted || count <= 0) {
+      continue;
+    }
+    const key = `${actual}\u0000${predicted}`;
+    const cell = byPair.get(key) ?? { actual, count: 0, isCorrect: actual === predicted, predicted };
+    cell.count += count;
+    byPair.set(key, cell);
+    labelTotals.set(actual, (labelTotals.get(actual) ?? 0) + count);
+    labelTotals.set(predicted, (labelTotals.get(predicted) ?? 0) + count);
+  }
+  const labels = [...labelTotals.entries()]
+    .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+    .slice(0, 7)
+    .map(([label]) => label);
+  if (labels.length < 2) {
+    return undefined;
+  }
+  const labelSet = new Set(labels);
+  const cells = [...byPair.values()].filter((cell) => labelSet.has(cell.actual) && labelSet.has(cell.predicted));
+  const maxCount = Math.max(...cells.map((cell) => cell.count), 0);
+  const total = cells.reduce((sum, cell) => sum + cell.count, 0);
+  return total > 0 ? { cells, labels, maxCount, total } : undefined;
 }
 
 function probeClassFailureRows(study: ProbeStudy, readout?: ProbeStudyReadout): ProbeClassFailureRow[] {

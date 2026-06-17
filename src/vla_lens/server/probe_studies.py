@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 import pandas as pd
 
@@ -276,6 +276,7 @@ def _study_payload(
     controls = _control_payloads(
         summary,
         tables["selection_null"],
+        readouts,
         target=target,
         primary_target=primary_target,
     )
@@ -767,9 +768,15 @@ def _readouts_from_diagnostics(
         battery["status"] = "ok"
         battery["reason"] = None
 
-    selected_layer = _optional_text(summary.get("selected_layer"))
     selection_split = _optional_text(summary.get("selection_split"))
     test_split = _optional_text(summary.get("test_split"))
+    selected_layer = _selected_layer_for_target(
+        battery,
+        target_filter=target_filter,
+        primary_target=primary_target,
+        selection_split=selection_split,
+        summary=summary,
+    )
     readouts: list[dict[str, Any]] = []
     skipped: list[dict[str, Any]] = []
     for row in battery.to_dict("records"):
@@ -802,6 +809,39 @@ def _readouts_from_diagnostics(
         else:
             skipped.append(item)
     return readouts, skipped
+
+
+def _selected_layer_for_target(
+    battery: pd.DataFrame,
+    *,
+    target_filter: str,
+    primary_target: str,
+    selection_split: str,
+    summary: Mapping[str, Any],
+) -> str:
+    fallback = _optional_text(summary.get("selected_layer"))
+    if not target_filter or target_filter == primary_target:
+        return fallback
+    if battery.empty or not selection_split:
+        return fallback
+    rows = battery.copy()
+    if "target" in rows:
+        target = target_filter or primary_target
+        if target:
+            rows = rows.loc[rows["target"].astype(str) == target]
+    elif target_filter and primary_target and target_filter != primary_target:
+        return ""
+    if rows.empty or "split" not in rows or "layer" not in rows or "balanced_accuracy" not in rows:
+        return fallback
+    rows = rows.loc[rows["split"].astype(str) == selection_split].copy()
+    if "status" in rows:
+        rows = rows.loc[rows["status"].fillna("ok").astype(str) == "ok"]
+    rows["__score"] = pd.to_numeric(rows["balanced_accuracy"], errors="coerce")
+    rows = rows.dropna(subset=["__score"])
+    if rows.empty:
+        return fallback
+    best = rows.sort_values(["__score", "layer"], ascending=[False, True]).iloc[0]
+    return _optional_text(best.get("layer")) or fallback
 
 
 def _readouts_from_artifact(
@@ -937,6 +977,7 @@ def _error_examples(
 def _control_payloads(
     summary: Mapping[str, Any],
     null_rows: pd.DataFrame,
+    readouts: Sequence[Mapping[str, Any]],
     *,
     target: str = "",
     primary_target: str = "",
@@ -954,36 +995,170 @@ def _control_payloads(
     if not null_rows.empty and "selected_layer" in null_rows:
         counts = null_rows["selected_layer"].dropna().astype(str).value_counts().sort_index()
         selected_layer_counts = {str(key): int(value) for key, value in counts.items()}
-    runs = _clean_int(null_summary.get("runs"))
+    runs = None
+    if not null_rows.empty and "run" in null_rows:
+        runs = int(null_rows["run"].nunique())
+    if runs is None:
+        runs = _clean_int(null_summary.get("runs"))
+    selection_split = _optional_text(summary.get("selection_split"))
+    test_split = _optional_text(summary.get("test_split"))
+    selected_layer = _selected_readout_layer(readouts, selection_split) or _optional_text(
+        summary.get("selected_layer")
+    )
+    selection_readout = _readout_for_layer_split(readouts, selected_layer, selection_split)
+    test_readout = _readout_for_layer_split(readouts, selected_layer, test_split)
+    selection_stats = _null_score_stats(
+        null_rows,
+        selection_split,
+        _clean_float(selection_readout.get("balanced_accuracy")),
+    )
+    test_stats = _null_score_stats(
+        null_rows,
+        test_split,
+        _clean_float(test_readout.get("balanced_accuracy")),
+    )
     if runs is None and not null_rows.empty and "run" in null_rows:
         runs = int(null_rows["run"].nunique())
-    selected_layer = _clean_scalar(summary.get("selected_layer"))
-    return [
+    use_summary_scores = not target or target == primary_target
+    selection_real = (
+        _clean_float(summary.get("selected_layer_selection_balanced_accuracy"))
+        if use_summary_scores
+        else None
+    )
+    test_real = (
+        _clean_float(summary.get("selected_layer_test_balanced_accuracy"))
+        if use_summary_scores
+        else None
+    )
+    selection_null_mean = (
+        _clean_float(null_summary.get("selection_score_mean")) if use_summary_scores else None
+    )
+    selection_null_std = (
+        _clean_float(null_summary.get("selection_score_std")) if use_summary_scores else None
+    )
+    selection_p_value = (
+        _clean_float(null_summary.get("selection_p_value")) if use_summary_scores else None
+    )
+    test_null_mean = (
+        _clean_float(null_summary.get("test_score_mean")) if use_summary_scores else None
+    )
+    test_null_std = _clean_float(null_summary.get("test_score_std")) if use_summary_scores else None
+    test_p_value = _clean_float(null_summary.get("test_p_value")) if use_summary_scores else None
+    controls = [
         {
             "kind": "selection_aware_null",
             "label": "Validation selection",
-            "split": _clean_scalar(summary.get("selection_split")),
+            "split": _clean_scalar(selection_split),
             "runs": runs,
             "selected_layer": selected_layer,
-            "real_score": _clean_float(summary.get("selected_layer_selection_balanced_accuracy")),
-            "null_score_mean": _clean_float(null_summary.get("selection_score_mean")),
-            "null_score_std": _clean_float(null_summary.get("selection_score_std")),
-            "p_value": _clean_float(null_summary.get("selection_p_value")),
+            "real_score": selection_real
+            if selection_real is not None
+            else _clean_float(selection_readout.get("balanced_accuracy")),
+            "null_score_mean": selection_null_mean
+            if selection_null_mean is not None
+            else selection_stats["mean"],
+            "null_score_std": selection_null_std
+            if selection_null_std is not None
+            else selection_stats["std"],
+            "p_value": selection_p_value
+            if selection_p_value is not None
+            else selection_stats["p_value"],
             "selected_layer_counts": selected_layer_counts,
         },
         {
             "kind": "selection_aware_null",
             "label": "Heldout test",
-            "split": _clean_scalar(summary.get("test_split")),
+            "split": _clean_scalar(test_split),
             "runs": runs,
             "selected_layer": selected_layer,
-            "real_score": _clean_float(summary.get("selected_layer_test_balanced_accuracy")),
-            "null_score_mean": _clean_float(null_summary.get("test_score_mean")),
-            "null_score_std": _clean_float(null_summary.get("test_score_std")),
-            "p_value": _clean_float(null_summary.get("test_p_value")),
+            "real_score": test_real
+            if test_real is not None
+            else _clean_float(test_readout.get("balanced_accuracy")),
+            "null_score_mean": test_null_mean
+            if test_null_mean is not None
+            else test_stats["mean"],
+            "null_score_std": test_null_std
+            if test_null_std is not None
+            else test_stats["std"],
+            "p_value": test_p_value
+            if test_p_value is not None
+            else test_stats["p_value"],
             "selected_layer_counts": selected_layer_counts,
         },
     ]
+    return [
+        control
+        for control in controls
+        if control["real_score"] is not None or control["null_score_mean"] is not None
+    ]
+
+
+def _selected_readout_layer(readouts: Sequence[Mapping[str, Any]], selection_split: str) -> str:
+    selected = [
+        readout
+        for readout in readouts
+        if readout.get("is_selected_layer")
+        and (not selection_split or readout.get("split") == selection_split)
+    ]
+    if selected:
+        return _optional_text(selected[0].get("layer"))
+    selection_readouts = [
+        readout
+        for readout in readouts
+        if not selection_split or readout.get("split") == selection_split
+    ]
+    scored = [
+        readout
+        for readout in selection_readouts
+        if _clean_float(readout.get("balanced_accuracy")) is not None
+    ]
+    if not scored:
+        return ""
+    best = sorted(
+        scored,
+        key=lambda readout: (
+            _clean_float(readout.get("balanced_accuracy")) or float("-inf"),
+            str(readout.get("layer") or ""),
+        ),
+        reverse=True,
+    )[0]
+    return _optional_text(best.get("layer"))
+
+
+def _readout_for_layer_split(
+    readouts: Sequence[Mapping[str, Any]],
+    selected_layer: str,
+    split: str,
+) -> Mapping[str, Any]:
+    for readout in readouts:
+        if _optional_text(readout.get("layer")) == selected_layer and (
+            not split or readout.get("split") == split
+        ):
+            return readout
+    return {}
+
+
+def _null_score_stats(
+    null_rows: pd.DataFrame,
+    split: str,
+    real_score: float | None,
+) -> dict[str, float | None]:
+    if null_rows.empty or not split or "split" not in null_rows or "score" not in null_rows:
+        return {"mean": None, "p_value": None, "std": None}
+    scores = pd.to_numeric(
+        null_rows.loc[null_rows["split"].astype(str) == split, "score"],
+        errors="coerce",
+    ).dropna()
+    if scores.empty:
+        return {"mean": None, "p_value": None, "std": None}
+    p_value = None
+    if real_score is not None:
+        p_value = float((1 + int((scores >= real_score).sum())) / (len(scores) + 1))
+    return {
+        "mean": float(scores.mean()),
+        "p_value": p_value,
+        "std": float(scores.std(ddof=0)),
+    }
 
 
 def _counts(
