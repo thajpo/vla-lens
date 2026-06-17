@@ -32,7 +32,8 @@ def _attach_episode_metadata(rows: pd.DataFrame, dataset: TraceDataset) -> pd.Da
     episode_index = episode_index.drop(columns=duplicate_columns)
     merged = rows.merge(episode_index, on="trace_id", how="left")
     merged = _merge_object_flow_timestep_labels(merged, dataset)
-    return _merge_policy_call_labels(merged, dataset)
+    merged = _merge_policy_call_labels(merged, dataset)
+    return _add_temporal_target_event_columns(merged)
 
 
 def _merge_probe_split_sidecar(
@@ -159,6 +160,25 @@ def _add_derived_interaction_label_columns(
                 .reset_index()
             )
             labels = labels.merge(flags, on="trace_id", how="left")
+            onset_columns = {
+                "movement_onset_timestep": "target_first_motion_timestep",
+                "lift_onset_timestep": "target_first_lift_timestep",
+                "contact_onset_timestep": "target_first_contact_timestep",
+            }
+            available_onsets = [
+                column for column in onset_columns if column in target_rows.columns
+            ]
+            if available_onsets:
+                onset_frame = target_rows[["trace_id", *available_onsets]].copy()
+                for column in available_onsets:
+                    onset_frame[column] = pd.to_numeric(onset_frame[column], errors="coerce")
+                onsets = (
+                    onset_frame.groupby("trace_id", dropna=False)[available_onsets]
+                    .min()
+                    .rename(columns=onset_columns)
+                    .reset_index()
+                )
+                labels = labels.merge(onsets, on="trace_id", how="left")
     for column in [
         "target_moved",
         "target_lifted",
@@ -168,6 +188,62 @@ def _add_derived_interaction_label_columns(
         if column in labels:
             labels[column] = labels[column].where(labels[column].notna(), False).astype(bool)
     return labels
+
+
+def _add_temporal_target_event_columns(rows: pd.DataFrame) -> pd.DataFrame:
+    """Add policy-call-local target event labels from per-episode target onsets."""
+    event_columns = {
+        "contact": "target_first_contact_timestep",
+        "motion": "target_first_motion_timestep",
+        "lift": "target_first_lift_timestep",
+    }
+    if not any(column in rows for column in event_columns.values()):
+        return rows
+
+    rows = rows.copy()
+    base = _first_numeric_column(
+        rows,
+        [
+            "policy_call_label_timestep",
+            "observation_timestep",
+            "timestep",
+            "env_timestep_start",
+        ],
+    )
+    span = _policy_call_span(rows)
+    for event_name, column in event_columns.items():
+        if column not in rows:
+            continue
+        event_time = pd.to_numeric(rows[column], errors="coerce")
+        future = event_time.notna() & base.notna() & (event_time > base)
+        rows[f"target_{event_name}_in_future"] = future
+        for horizon in [1, 2]:
+            rows[f"target_{event_name}_within_{horizon}_policy_calls"] = (
+                future & (event_time <= base + (span * horizon))
+            )
+    return rows
+
+
+def _first_numeric_column(rows: pd.DataFrame, columns: Sequence[str]) -> pd.Series:
+    out = pd.Series(np.nan, index=rows.index, dtype="float64")
+    for column in columns:
+        if column not in rows:
+            continue
+        values = pd.to_numeric(rows[column], errors="coerce")
+        missing = out.isna()
+        out.loc[missing] = values.loc[missing]
+    return out
+
+
+def _policy_call_span(rows: pd.DataFrame) -> pd.Series:
+    span = pd.Series(1.0, index=rows.index, dtype="float64")
+    if {"env_timestep_start", "env_timestep_end"}.issubset(rows.columns):
+        start = pd.to_numeric(rows["env_timestep_start"], errors="coerce")
+        end = pd.to_numeric(rows["env_timestep_end"], errors="coerce")
+        derived = end - start + 1
+        valid = derived.notna() & (derived > 0)
+        span.loc[valid] = derived.loc[valid]
+    return span
 
 
 def _latest_interaction_object_metrics(dataset: TraceDataset) -> pd.DataFrame:

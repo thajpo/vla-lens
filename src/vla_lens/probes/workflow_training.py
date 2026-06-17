@@ -18,6 +18,7 @@ from vla_lens.probes.workflow_artifacts import (
     _artifact_dir,
     _best_model_arrays,
     _best_result_details,
+    _best_result_index,
     _json_scalar,
     _metric_definitions,
     _null_metrics,
@@ -128,9 +129,16 @@ def train_probe_artifact(
         )
 
     artifact_id = make_artifact_id(name, "probe_suite")
-    prediction_records = _prediction_frame(results)
-    scored_prediction_records = _prediction_frame(
+    selected_result_index = _best_result_index(
         results,
+        selection_value=selection_value or test_value,
+        prefer_model="linear",
+    )
+    selected_results = results.loc[[selected_result_index]]
+    selected_eval_results = _selected_eval_results(results, selected_result_index)
+    prediction_records = _prediction_frame(selected_eval_results)
+    scored_prediction_records = _prediction_frame(
+        selected_results,
         record_column="all_prediction_records",
     )
     if scored_prediction_records.empty:
@@ -336,6 +344,18 @@ def train_probe_artifact(
     )
     build_dataset_index(dataset.root, overwrite=True)
     return SavedProbeSuite(artifact=saved, results=results, rows=rows)
+
+
+def _selected_eval_results(results: pd.DataFrame, selected_result_index: int) -> pd.DataFrame:
+    selected = results.loc[selected_result_index]
+    mask = pd.Series(True, index=results.index)
+    for column in ["feature", "target", "probe_type", "model", "primary_metric"]:
+        if column in results:
+            mask &= results[column].astype(str) == str(selected.get(column))
+    matched = results.loc[mask]
+    if matched.empty:
+        return results.loc[[selected_result_index]]
+    return matched
 
 
 def train_probe_artifact_from_spec(

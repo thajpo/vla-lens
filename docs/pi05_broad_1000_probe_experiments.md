@@ -182,6 +182,68 @@ Recommended next probe work:
   but treat them as object-choice probes requiring the same policy-call and
   target-object baselines.
 
+## June 17, 2026 Temporal Target-Event Round
+
+Purpose: test the recommended local-horizon variant after broad episode-level
+target interaction probes failed stronger metadata baselines. The new row labels
+ask whether any instructed target object will contact or first move within the
+next two policy calls. Rows are restricted to pre-event policy calls, and
+`policy_call_index` remains a metadata baseline.
+
+Implementation notes:
+
+- Added derived row labels:
+  `target_contact_within_2_policy_calls`,
+  `target_motion_within_2_policy_calls`, plus future-event filters.
+- Initial layer x policy-call specs were trained but rejected as scientifically
+  weak: the validation-selected cells had only 7-8 rows, and some test cells
+  had a single target class. Preflight now warns on low-support sweep groups.
+- Final specs pool policy calls and sweep only layer. This keeps the timing
+  baseline visible while avoiding tiny per-call selection cells.
+- Diagnostic prediction retention was fixed so saved predictions match the
+  validation-selected readout and include both validation and final test splits.
+
+Final pooled campaign:
+
+- Campaign artifact:
+  `probe_campaign-pi0.5-broad-1000-temporal-target-event-probe-campaign-9e7cdd598f`
+- Claim split: held-out task. Layer selected on `val_heldout_task`; test split
+  is reported only after that selection.
+
+| Probe | Artifact | Selected layer | Val BA | Val baseline | Val delta | Test BA | Test rows | Main readout |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| target contact within 2 calls | `probe_suite-pi0.5-broad-1000-target-contact-within-2-calls---expert-action-hidden-0f1aaf7868` | layer 8 | 0.752 | 0.631 | +0.121 | 0.477 | 168 | Fails final held-out task despite strong validation. |
+| target motion within 2 calls | `probe_suite-pi0.5-broad-1000-target-motion-within-2-calls---expert-action-hidden-7105cc57cf` | layer 12 | 0.647 | 0.644 | +0.003 | 0.564 | 349 | Essentially metadata-level on validation. |
+
+Interpretation:
+
+- Do not promote either temporal target-event probe to intervention yet.
+- Contact-within-two-calls is the more interesting negative/mixed result: it
+  beats metadata on validation but reverses on held-out tasks. The selected
+  model overpredicts positive contact on test (`131` predicted positives vs
+  `91` actual positives), giving balanced accuracy below chance-like baseline.
+- Motion-within-two-calls is not compelling. Its validation delta over metadata
+  is only `+0.003`; the test split is also heavily positive-skewed
+  (`309` positives, `40` negatives), so raw accuracy is not meaningful.
+- The useful scientific lesson is about experimental design: local-horizon
+  labels are directionally better than broad episode labels, but sweeping by
+  policy call after pre-event filtering can create tiny validation cells. Use
+  pooled policy calls first, then only inspect per-call behavior as a secondary
+  analysis with explicit support thresholds.
+
+Recommended next probe work:
+
+- Try a target-vs-distractor formulation rather than a binary "event soon"
+  label. For example: among visible candidate objects before contact, is the
+  eventual target object distinguishable from distractors in representation
+  space?
+- If retaining local horizon labels, consider task-family-stratified runs or
+  locked confirmation splits, because the pooled contact signal did not
+  generalize across held-out tasks.
+- Add any future per-policy-call sweep only with a minimum support gate per
+  selected cell; do not select a layer/call from cells below the support
+  threshold.
+
 ### Target Moved - Expert Action Hidden
 
 - Artifact: `probe_suite-pi0.5-broad-1000-target-moved---expert-action-hidden-ca5380446b`
@@ -259,22 +321,25 @@ Recommended next probe work:
 
 ## Active Next Run
 
-The first stronger-baseline interaction/outcome round has been run. Do not
-rerun the broad episode-level outcome, target-moved, target-lifted, or
-target-contacted probes as-is unless the UI/artifact loader needs a regression
-check.
+The stronger-baseline interaction/outcome round and the pooled temporal
+target-event round have both been run. Do not rerun the broad episode-level
+outcome, target-moved, target-lifted, or target-contacted probes as-is unless
+the UI/artifact loader needs a regression check.
 
 Recommended next work after UI review:
-- Design a temporally local target-contact or target-motion probe rather than
-  predicting episode-level "ever contacted/moved/lifted" labels.
-- Use target-vs-distractor or next-1-to-2-policy-call labels to reduce task and
-  object priors.
+- Prefer target-vs-distractor candidate-object probes over another binary
+  "event soon" rerun. The pooled contact horizon signal did not survive final
+  held-out-task evaluation.
 - Run filtered first-moved/first-lifted probes only if the preflight support
   remains clean and the metadata baselines include `policy_call_index`.
+- Do not sweep policy call as a selection axis after pre-event filtering unless
+  every candidate cell clears the support threshold.
 
 Current interpretation: broad episode-level target interaction and outcome
-labels are not good enough for the next intervention candidate. They are mostly
-explained by metadata baselines once timing is included.
+labels are not good enough for the next intervention candidate. The local
+contact horizon is more interesting but still failed final held-out-task
+generalization. The next cleanest scientific question is object choice among
+candidate objects before contact.
 
 ## Feature Contracts
 

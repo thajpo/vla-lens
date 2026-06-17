@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pandas as pd
 
 from vla_lens import create_synthetic_trace_dataset
@@ -74,6 +76,17 @@ def test_probe_training_persists_research_framing_from_spec(tmp_path):
         "question": "Can outcome be decoded from synthetic action hidden states?",
     }
     assert saved.artifact.display["research"] == saved.artifact.method["research"]
+    artifact_path = Path(str(saved.artifact.path))
+    if not artifact_path.is_absolute():
+        candidates = [
+            dataset.root / artifact_path,
+            dataset._dataset_artifact_root() / artifact_path,
+        ]
+        artifact_path = next((path for path in candidates if path.exists()), candidates[0])
+    predictions_path = artifact_path.parent / "predictions.parquet"
+    predictions = pd.read_parquet(predictions_path)
+    assert set(predictions["feature"].astype(str)) == {saved.artifact.metrics["best_feature"]}
+    assert set(predictions["split"].astype(str)) == {"test_heldout_task", "val_heldout_task"}
 
 
 def _write_probe_splits(root, splits: list[str]) -> None:

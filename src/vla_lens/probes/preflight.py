@@ -422,6 +422,17 @@ def _preflight_warnings(
                 "Eval split lacks some target classes seen overall: "
                 + ", ".join(missing_classes[:12])
             )
+        warnings.extend(
+            _sweep_group_support_warnings(
+                rows=rows,
+                target_name=target_name,
+                split_column=split_column,
+                train_value=train_value,
+                eval_values=eval_values,
+                sweep_info=sweep_info,
+                min_class_support=min_class_support,
+            )
+        )
     else:
         by_split = dict(target_summary.get("by_split") or {})
         zero_var = [
@@ -436,6 +447,69 @@ def _preflight_warnings(
     if target_name == "task_phase":
         warnings.append("`task_phase` is behavior-derived; treat high scores as sanity checks.")
     return warnings
+
+
+def _sweep_group_support_warnings(
+    *,
+    rows: pd.DataFrame,
+    target_name: str,
+    split_column: str,
+    train_value: str,
+    eval_values: Sequence[str],
+    sweep_info: Mapping[str, Any],
+    min_class_support: int,
+) -> list[str]:
+    columns = [str(column) for column in sweep_info.get("columns") or []]
+    if not columns or any(column not in rows for column in columns):
+        return []
+    needed = [split_column, target_name, *columns]
+    if any(column not in rows for column in needed):
+        return []
+
+    group_key: str | list[str] = columns[0] if len(columns) == 1 else columns
+    warnings: list[str] = []
+    low_eval: list[str] = []
+    single_class_eval: list[str] = []
+    untrainable: list[str] = []
+    eval_set = {str(value) for value in eval_values}
+    for group_value, group in rows.groupby(group_key, dropna=False, sort=True):
+        label = _sweep_group_label(columns, group_value)
+        train_group = group.loc[group[split_column].astype(str) == str(train_value)]
+        if train_group[target_name].astype(str).nunique(dropna=False) < 2:
+            untrainable.append(label)
+        for split_value, split_group in group.groupby(split_column, dropna=False, sort=True):
+            split_name = str(split_value)
+            if split_name not in eval_set:
+                continue
+            row_count = int(len(split_group))
+            if row_count < min_class_support:
+                low_eval.append(f"{label}/{split_name}={row_count}")
+            if split_group[target_name].astype(str).nunique(dropna=False) < 2:
+                single_class_eval.append(f"{label}/{split_name}")
+    if low_eval:
+        warnings.append(
+            "Low sweep-group eval support below "
+            f"{min_class_support}: " + ", ".join(low_eval[:12])
+        )
+    if single_class_eval:
+        warnings.append(
+            "Sweep-group eval split has only one target class: "
+            + ", ".join(single_class_eval[:12])
+        )
+    if untrainable:
+        warnings.append(
+            "Sweep-group train split has fewer than two target classes; those readouts "
+            "will be skipped: "
+            + ", ".join(untrainable[:12])
+        )
+    return warnings
+
+
+def _sweep_group_label(columns: Sequence[str], value: Any) -> str:
+    if len(columns) == 1:
+        return f"{columns[0]}={value}"
+    values = value if isinstance(value, tuple) else (value,)
+    return ",".join(f"{column}={item}" for column, item in zip(columns, values, strict=False))
 
 
 def _normalize_sweep_columns(value: Any) -> list[str]:

@@ -240,6 +240,7 @@ def test_pi05_policy_call_labels_align_object_flow_to_policy_calls(tmp_path):
 
 def test_probe_metadata_attaches_policy_call_labels(tmp_path):
     dataset = _object_flow_dataset(tmp_path / "policy-call-probe-rows")
+    save_pi05_interaction_metrics_artifact(dataset)
     save_pi05_object_flow_artifact(dataset, rebuild_index=False)
     save_pi05_policy_call_labels_artifact(dataset, rebuild_index=False)
     rows = pd.DataFrame(
@@ -258,6 +259,14 @@ def test_probe_metadata_attaches_policy_call_labels(tmp_path):
     assert bool(merged.loc[0, "is_pre_motion"])
     assert not bool(merged.loc[1, "is_pre_contact"])
     assert not bool(merged.loc[1, "is_pre_motion"])
+    assert "target_contact_within_1_policy_calls" in merged
+    assert "target_motion_within_1_policy_calls" in merged
+    assert bool(merged.loc[0, "target_contact_in_future"])
+    assert bool(merged.loc[0, "target_contact_within_1_policy_calls"])
+    assert bool(merged.loc[0, "target_motion_within_1_policy_calls"])
+    assert not bool(merged.loc[1, "target_contact_in_future"])
+    assert not bool(merged.loc[1, "target_contact_within_1_policy_calls"])
+    assert not bool(merged.loc[1, "target_motion_within_1_policy_calls"])
 
 
 def test_probe_workflow_resolves_trace_context_targets(tmp_path):
