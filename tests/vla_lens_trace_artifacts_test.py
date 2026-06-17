@@ -255,10 +255,12 @@ def test_probe_metadata_attaches_policy_call_labels(tmp_path):
 
     assert "is_pre_contact" in merged
     assert "is_pre_motion" in merged
+    assert "next_manipulated_present" in merged
     assert "next_manipulated_is_target" in merged
     assert "next_manipulated_is_primary_target" in merged
     assert bool(merged.loc[0, "is_pre_contact"])
     assert bool(merged.loc[0, "is_pre_motion"])
+    assert bool(merged.loc[0, "next_manipulated_present"])
     assert bool(merged.loc[0, "next_manipulated_is_target"])
     assert bool(merged.loc[0, "next_manipulated_is_primary_target"])
     assert not bool(merged.loc[1, "is_pre_contact"])

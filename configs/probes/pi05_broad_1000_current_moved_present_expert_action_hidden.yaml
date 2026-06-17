@@ -1,0 +1,41 @@
+# Probe training uses saved activations in the normal repo environment, not capture wrappers.
+name: PI0.5 broad 1000 current moved present - expert action hidden
+question: Is any object currently moving?
+hypothesis_family: physical interaction state
+intended_claim: current motion state is linearly decodable from expert action hidden states above task, object, phase, and timing baselines
+target:
+  name: current_moved_present
+  kind: classification
+  source: row
+  column: current_moved_present
+  missing_policy: drop
+features:
+  module: pi05.expert.layers.*
+  tensor_type: hidden_tokens
+  token_kind: action
+  layers: [0, 4, 8, 12, 17]
+  timesteps: all
+  policy_calls: [0, 1, 2, 3, 4, 5, 6]
+  generation_step: final
+  reduction: mean
+  dtype: float32
+split:
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+  eval_values: [val_heldout_task, test_heldout_task]
+baseline:
+  - majority_class
+  - benchmark
+  - task_id
+  - prompt
+  - task_phase
+  - primary_target_object
+  - candidate_objects
+  - visible_candidate_count
+  - policy_call_index
+probe:
+  models: [linear]
+sweep: layer

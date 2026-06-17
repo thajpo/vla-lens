@@ -240,6 +240,8 @@ def _add_target_role_columns(rows: pd.DataFrame) -> pd.DataFrame:
         return rows
     rows = rows.copy()
     for column in available:
+        present_column = f"{column.removesuffix('_object')}_present"
+        rows[present_column] = rows[column].map(_object_present)
         role_column = f"{column.removesuffix('_object')}_is_target"
         rows[role_column] = [
             _object_in_targets(obj, targets)
@@ -522,6 +524,10 @@ def _object_matches(left: Any, right: Any) -> bool:
     left_base = _base_object_name(left)
     right_base = _base_object_name(right)
     return bool(left_base) and left_base == right_base
+
+
+def _object_present(value: Any) -> bool:
+    return bool(_base_object_name(value))
 
 
 def _json_load_list(value: Any) -> list[Any]:

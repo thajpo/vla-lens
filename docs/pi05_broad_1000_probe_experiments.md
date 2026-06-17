@@ -306,6 +306,64 @@ Recommended next probe work:
   answer an operational within-family question rather than a broad held-out-task
   mechanistic claim.
 
+## June 17, 2026 Physical-State Round
+
+Purpose: pivot away from tuning target-choice probes and ask a genuinely new
+question: do expert action hidden states encode the current physical interaction
+state of the robot/object system? This targets contact, motion, and lift state,
+not target identity.
+
+Rejected preflight:
+
+- Active receptacle/destination decoding was considered first. It is a useful
+  scientific question, but the current held-out-task split makes it a poor
+  multiclass probe: several destination/receptacle labels appear in validation
+  or test but not train, and minority classes are thin per selected layer.
+- This should be revisited only with a different label design, such as
+  destination type/category or a task-family-specific split.
+
+Final physical-state campaign:
+
+- Campaign artifact:
+  `probe_campaign-pi0.5-broad-1000-physical-state-probe-campaign-3be4322597`
+- Feature: expert action hidden states, policy calls pooled, layer sweep only.
+- Baselines: benchmark, task ID, prompt, task phase, primary target object,
+  candidate object set, visible candidate count, and policy-call index.
+- Claim split: held-out task. Layer selected on `val_heldout_task`; test split
+  reported after selection.
+
+| Probe | Artifact | Selected layer | Val BA | Val baseline | Val delta | Test BA | Test baseline | Test delta | Main readout |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| current contact present | `probe_suite-pi0.5-broad-1000-current-contact-present---expert-action-hidden-4174b1ff7a` | layer 17 | 0.898 | 0.846 | +0.051 | 0.805 | 0.896 | -0.091 | Interesting validation signal, but does not beat final held-out-task metadata. |
+| current moved present | `probe_suite-pi0.5-broad-1000-current-moved-present---expert-action-hidden-2cb35b3bfb` | layer 4 | 0.894 | 1.000 | -0.106 | 0.784 | 1.000 | -0.216 | `task_phase` perfectly predicts this label. |
+| current lifted present | `probe_suite-pi0.5-broad-1000-current-lifted-present---expert-action-hidden-a06b2dfd5b` | layer 12 | 0.902 | 1.000 | -0.098 | 0.801 | 1.000 | -0.199 | `task_phase` perfectly predicts this label. |
+
+Interpretation:
+
+- Do not promote these probes to intervention work.
+- Contact-present is the only one with a validation activation-over-metadata
+  margin, but that margin reverses on final held-out tasks. The selected contact
+  readout overpredicts contact on test (`223` predicted positives vs `86`
+  actual positives), yielding good raw accuracy only because non-contact rows
+  dominate.
+- Moved-present and lifted-present are useful controls: action hidden states do
+  encode behavior phase strongly, but the behavior-derived `task_phase` baseline
+  is perfect. These results are not evidence for a mechanistic representation
+  beyond the existing phase label.
+- Weak cohorts for contact include `study_scene3` and `study_scene4`, suggesting
+  the contact readout is not stable across scene families.
+
+Recommended next probe work:
+
+- For physical state, move from broad binary state to a cleaner residual
+  question: can activations predict contact/lift within a task phase after
+  stratifying or conditioning on phase?
+- For destination/receptacle, avoid exact object-class decoding under
+  held-out-task splits. Prefer destination category/type, relation class, or
+  within-task-family confirmation.
+- Do not spend more compute on pooled action-token binary target-choice probes
+  unless the feature contract changes.
+
 ### Target Moved - Expert Action Hidden
 
 - Artifact: `probe_suite-pi0.5-broad-1000-target-moved---expert-action-hidden-ca5380446b`
@@ -389,9 +447,10 @@ outcome, target-moved, target-lifted, or target-contacted probes as-is unless
 the UI/artifact loader needs a regression check.
 
 Recommended next work after UI review:
-- Prefer object-local or candidate-contrast features over another pooled
-  action-token object-choice readout. The pooled primary-target readout is
-  dominated by metadata and does not generalize on held-out tasks.
+- Prefer residual/stratified probes over another pooled action-token binary
+  readout. The pooled primary-target readout is dominated by metadata, and the
+  physical-state probes are mostly explained by task phase or fail final
+  metadata comparison.
 - Run filtered first-moved/first-lifted probes only if the preflight support
   remains clean and the metadata baselines include `policy_call_index`.
 - Do not sweep policy call as a selection axis after pre-event filtering unless
@@ -400,9 +459,10 @@ Recommended next work after UI review:
 Current interpretation: broad episode-level target interaction and outcome
 labels are not good enough for the next intervention candidate. The local
 contact horizon is more interesting but still failed final held-out-task
-generalization. The pooled object-choice probe also failed. The next cleanest
-scientific question requires a more object-local representation or explicit
-candidate contrast before contact.
+generalization. The pooled object-choice probe also failed. Physical-state
+probes show strong decodability but not beyond phase/task metadata. The next
+cleanest scientific question should condition on a known metadata/phase factor
+or use a more object-local representation.
 
 ## Feature Contracts
 

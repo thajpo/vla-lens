@@ -482,6 +482,7 @@ def _sweep_group_support_warnings(
     group_key: str | list[str] = columns[0] if len(columns) == 1 else columns
     warnings: list[str] = []
     low_eval: list[str] = []
+    low_class_eval: list[str] = []
     single_class_eval: list[str] = []
     untrainable: list[str] = []
     eval_set = {str(value) for value in eval_values}
@@ -497,6 +498,14 @@ def _sweep_group_support_warnings(
             row_count = int(len(split_group))
             if row_count < min_class_support:
                 low_eval.append(f"{label}/{split_name}={row_count}")
+            for target_value, count in split_group[target_name].value_counts(
+                dropna=False,
+                sort=True,
+            ).items():
+                if int(count) < min_class_support:
+                    low_class_eval.append(
+                        f"{label}/{split_name}/{target_value}={int(count)}"
+                    )
             if split_group[target_name].astype(str).nunique(dropna=False) < 2:
                 single_class_eval.append(f"{label}/{split_name}")
     if low_eval:
@@ -508,6 +517,11 @@ def _sweep_group_support_warnings(
         warnings.append(
             "Sweep-group eval split has only one target class: "
             + ", ".join(single_class_eval[:12])
+        )
+    if low_class_eval:
+        warnings.append(
+            "Low sweep-group eval class support below "
+            f"{min_class_support}: " + ", ".join(low_class_eval[:12])
         )
     if untrainable:
         warnings.append(
