@@ -1,0 +1,4 @@
+# Probe training uses saved activations in the normal repo environment, not capture wrappers.
+name: PI0.5 broad 1000 object-choice probe campaign
+specs:
+  - configs/probes/pi05_broad_1000_next_manipulated_is_target_pre_contact_expert_action_hidden.yaml

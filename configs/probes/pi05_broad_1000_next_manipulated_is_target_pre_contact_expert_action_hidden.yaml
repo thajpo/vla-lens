@@ -1,0 +1,49 @@
+# Probe training uses saved activations in the normal repo environment, not capture wrappers.
+name: PI0.5 broad 1000 next manipulated is primary target pre-contact - expert action hidden
+question: Before contact, is the next manipulated object the primary instructed target rather than a distractor, receptacle, or support object?
+hypothesis_family: target-vs-distractor object choice before contact
+intended_claim: target-vs-distractor choice is linearly decodable before contact above task, candidate-set, target-object, and timing baselines
+target:
+  name: next_manipulated_is_primary_target
+  kind: classification
+  source: row
+  column: next_manipulated_is_primary_target
+  missing_policy: drop
+features:
+  module: pi05.expert.layers.*
+  tensor_type: hidden_tokens
+  token_kind: action
+  layers: [0, 4, 8, 12, 17]
+  timesteps: all
+  policy_calls: [0, 1, 2, 3, 4, 5, 6]
+  generation_step: final
+  reduction: mean
+  dtype: float32
+split:
+  # Held-out task split is the claim-bearing split; validation selects layer.
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+  eval_values: [val_heldout_task, test_heldout_task]
+row_filter:
+  all:
+    - column: next_manipulated_object
+      op: present
+    - column: is_pre_contact
+      op: truthy
+baseline:
+  - majority_class
+  - benchmark
+  - task_id
+  - prompt
+  - task_phase
+  - primary_target_object
+  - candidate_objects
+  - visible_candidate_objects
+  - visible_candidate_count
+  - policy_call_index
+probe:
+  models: [linear]
+sweep: layer

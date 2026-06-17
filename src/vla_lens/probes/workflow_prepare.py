@@ -33,6 +33,7 @@ def _attach_episode_metadata(rows: pd.DataFrame, dataset: TraceDataset) -> pd.Da
     merged = rows.merge(episode_index, on="trace_id", how="left")
     merged = _merge_object_flow_timestep_labels(merged, dataset)
     merged = _merge_policy_call_labels(merged, dataset)
+    merged = _add_target_role_columns(merged)
     return _add_temporal_target_event_columns(merged)
 
 
@@ -221,6 +222,39 @@ def _add_temporal_target_event_columns(rows: pd.DataFrame) -> pd.DataFrame:
             rows[f"target_{event_name}_within_{horizon}_policy_calls"] = (
                 future & (event_time <= base + (span * horizon))
             )
+    return rows
+
+
+def _add_target_role_columns(rows: pd.DataFrame) -> pd.DataFrame:
+    if "target_objects" not in rows:
+        return rows
+    object_columns = [
+        "next_manipulated_object",
+        "active_manipulated_object",
+        "current_contact_object",
+        "current_moved_object",
+        "current_lifted_object",
+    ]
+    available = [column for column in object_columns if column in rows]
+    if not available:
+        return rows
+    rows = rows.copy()
+    for column in available:
+        role_column = f"{column.removesuffix('_object')}_is_target"
+        rows[role_column] = [
+            _object_in_targets(obj, targets)
+            for obj, targets in zip(rows[column], rows["target_objects"], strict=False)
+        ]
+        if "primary_target_object" in rows:
+            primary_role_column = f"{column.removesuffix('_object')}_is_primary_target"
+            rows[primary_role_column] = [
+                _object_matches(obj, target)
+                for obj, target in zip(
+                    rows[column],
+                    rows["primary_target_object"],
+                    strict=False,
+                )
+            ]
     return rows
 
 
@@ -482,6 +516,12 @@ def _object_in_targets(obj: Any, target_objects: Any) -> bool:
     obj_base = _base_object_name(obj)
     targets = _json_load_list(target_objects)
     return bool(obj_base) and any(obj_base == _base_object_name(target) for target in targets)
+
+
+def _object_matches(left: Any, right: Any) -> bool:
+    left_base = _base_object_name(left)
+    right_base = _base_object_name(right)
+    return bool(left_base) and left_base == right_base
 
 
 def _json_load_list(value: Any) -> list[Any]:

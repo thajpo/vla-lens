@@ -244,6 +244,68 @@ Recommended next probe work:
   selected cell; do not select a layer/call from cells below the support
   threshold.
 
+## June 17, 2026 Object-Choice Round
+
+Purpose: follow the temporal probe failure with a cleaner object-choice
+question. Instead of predicting the exact next object class under held-out
+tasks, ask whether the next manipulated object before contact is the primary
+instructed target rather than a distractor, receptacle, or support object.
+
+Preflight decisions:
+
+- The legacy multiclass `next_manipulated_object` artifact looked strong on
+  validation, but it is not a clean held-out-task claim: some validation/test
+  object labels are absent from training, so exact object-class prediction is
+  partly an unseen-label problem.
+- A first binary version using `target_objects` was also rejected in preflight:
+  train and validation were all positive because `target_objects` is broad
+  enough to include non-primary mentioned objects.
+- The runnable target is therefore
+  `next_manipulated_is_primary_target`, derived by comparing
+  `next_manipulated_object` with `primary_target_object` after base-name
+  normalization.
+
+Final object-choice campaign:
+
+- Campaign artifact:
+  `probe_campaign-pi0.5-broad-1000-object-choice-probe-campaign-cbc2463339`
+- Probe artifact:
+  `probe_suite-pi0.5-broad-1000-next-manipulated-is-primary-target-pre-contact---expert-action-hidden-500da80fb0`
+- Question: before contact, is the next manipulated object the primary target?
+- Cohort: rows with a non-empty next manipulated object and `is_pre_contact`.
+- Feature: expert action hidden states, policy calls pooled, layer sweep only.
+- Baselines: benchmark, task ID, prompt, task phase, primary target object,
+  candidate object set, visible candidate set/count, and policy-call index.
+
+| Probe | Selected layer | Val BA | Val baseline | Val delta | Test BA | Test rows | Main readout |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | --- |
+| next manipulated is primary target | layer 8 | 0.732 | 0.932 | -0.200 | 0.507 | 136 | Strong metadata dominates; activation probe overpredicts target on test. |
+
+Interpretation:
+
+- This is a negative result for target-vs-distractor object choice in the
+  current feature contract.
+- The validation activation score is above null but far below the combined
+  metadata baseline. The strongest metadata signal is benchmark/task context,
+  not activation-specific evidence.
+- Final held-out-task behavior is poor: the selected readout predicts `True`
+  for `133/136` test rows, while the actual split is nearly balanced
+  (`67` true, `69` false). Balanced accuracy is only `0.507`.
+- Do not use this probe for intervention. It currently says that primary-target
+  routing before contact is heavily explainable by dataset/task priors and that
+  the selected activation readout does not generalize.
+
+Recommended next probe work:
+
+- If pursuing object choice, move away from global action-token pooling. The
+  next useful variant would need a more object-local feature or explicit
+  candidate-object contrast, not another pooled binary readout.
+- Treat object-presence, target identity, and candidate-set metadata as controls
+  rather than evidence of grounded target selection.
+- A task-family-stratified object-choice run may still be useful, but it would
+  answer an operational within-family question rather than a broad held-out-task
+  mechanistic claim.
+
 ### Target Moved - Expert Action Hidden
 
 - Artifact: `probe_suite-pi0.5-broad-1000-target-moved---expert-action-hidden-ca5380446b`
@@ -327,9 +389,9 @@ outcome, target-moved, target-lifted, or target-contacted probes as-is unless
 the UI/artifact loader needs a regression check.
 
 Recommended next work after UI review:
-- Prefer target-vs-distractor candidate-object probes over another binary
-  "event soon" rerun. The pooled contact horizon signal did not survive final
-  held-out-task evaluation.
+- Prefer object-local or candidate-contrast features over another pooled
+  action-token object-choice readout. The pooled primary-target readout is
+  dominated by metadata and does not generalize on held-out tasks.
 - Run filtered first-moved/first-lifted probes only if the preflight support
   remains clean and the metadata baselines include `policy_call_index`.
 - Do not sweep policy call as a selection axis after pre-event filtering unless
@@ -338,8 +400,9 @@ Recommended next work after UI review:
 Current interpretation: broad episode-level target interaction and outcome
 labels are not good enough for the next intervention candidate. The local
 contact horizon is more interesting but still failed final held-out-task
-generalization. The next cleanest scientific question is object choice among
-candidate objects before contact.
+generalization. The pooled object-choice probe also failed. The next cleanest
+scientific question requires a more object-local representation or explicit
+candidate contrast before contact.
 
 ## Feature Contracts
 

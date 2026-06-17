@@ -422,6 +422,19 @@ def _preflight_warnings(
                 "Eval split lacks some target classes seen overall: "
                 + ", ".join(missing_classes[:12])
             )
+        train_classes = set(dict(by_split.get(train_value) or {}))
+        unseen_eval_classes = [
+            f"{split}/{label}"
+            for split, counts in by_split.items()
+            for label in sorted(set(dict(counts)) - train_classes)
+            if split in set(eval_values)
+        ]
+        if unseen_eval_classes:
+            warnings.append(
+                "Eval split contains target classes absent from train; "
+                "classification readouts cannot predict unseen labels: "
+                + ", ".join(unseen_eval_classes[:12])
+            )
         warnings.extend(
             _sweep_group_support_warnings(
                 rows=rows,
