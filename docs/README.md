@@ -45,6 +45,9 @@ experiment notes when deciding what to run or implement.
 - [pi05_broad_1000_probe_experiments.md](pi05_broad_1000_probe_experiments.md):
   consolidated probe experiment registry, useful legacy ideas, null results,
   and replication priorities.
+- [probe_hypothesis_guidance.md](probe_hypothesis_guidance.md): pre-training
+  probe proposal protocol, automated preflight checks, baseline guidance, and
+  ready-to-review agent output expectations.
 - [vla-lens-architecture-workflows.md](vla-lens-architecture-workflows.md):
   architecture and workflow contracts.
 - [research_ui_principles.md](research_ui_principles.md): design principles for

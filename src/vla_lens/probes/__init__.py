@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from vla_lens.probes.preflight import (
+    format_probe_preflight_markdown,
+    probe_preflight_report,
+)
 from vla_lens.probes.score_cache import (
     ProbeScoreCacheResult,
     refresh_all_probe_score_caches,
@@ -26,8 +30,10 @@ __all__ = [
     "POLICY_CALL_LABELS_ARTIFACT_TYPE",
     "SavedProbeSuite",
     "dump_probe_spec",
+    "format_probe_preflight_markdown",
     "load_probe_spec",
     "normalize_probe_spec",
+    "probe_preflight_report",
     "refresh_all_probe_score_caches",
     "refresh_probe_score_cache",
     "run_probe_suite",
