@@ -364,6 +364,60 @@ Recommended next probe work:
 - Do not spend more compute on pooled action-token binary target-choice probes
   unless the feature contract changes.
 
+## June 17, 2026 Residual Contact-Within-Phase Round
+
+Purpose: test the residual physical-state question suggested by the previous
+round. Instead of asking whether contact is decodable while `task_phase` is
+available as a metadata baseline, condition on a fixed phase and ask whether
+contact state remains decodable inside that phase.
+
+Preflight decisions:
+
+- `approach`, `contact`, and `idle_or_post` were rejected before training
+  because contact state is constant inside those phases on this dataset.
+- `move_or_transport` and `lift_or_transport` both had contact/no-contact
+  variation in train, validation, and test, with adequate support.
+- `task_phase` was removed from baselines inside each fixed-phase cohort because
+  it is constant after filtering. Task/object/timing/candidate baselines remain.
+
+Final residual campaign:
+
+- Campaign artifact:
+  `probe_campaign-pi0.5-broad-1000-residual-contact-by-phase-probe-campaign-065a64c3e2`
+- Feature: expert action hidden states, policy calls pooled, layer sweep only.
+- Claim split: held-out task. Layer selected on `val_heldout_task`; test split
+  reported after selection.
+
+| Probe | Artifact | Selected layer | Val BA | Val baseline | Val delta | Test BA | Test baseline | Test delta | Main readout |
+| --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| contact within move/transport | `probe_suite-pi0.5-broad-1000-current-contact-within-move-phase---expert-action-hidden-11195046b1` | layer 8 | 0.920 | 0.709 | +0.211 | 0.589 | 0.874 | -0.285 | Strong validation signal collapses on held-out tasks. |
+| contact within lift/transport | `probe_suite-pi0.5-broad-1000-current-contact-within-lift-phase---expert-action-hidden-6852dd80b5` | layer 4 | 0.647 | 0.662 | -0.015 | 0.840 | 0.760 | +0.080 | Validation-selected readout does not clear metadata; positive test is post-selection only. |
+
+Interpretation:
+
+- Do not promote residual contact probes to intervention.
+- Move-phase contact is the most tempting number so far, but it does not survive
+  held-out-task evaluation. On test, it predicts too many contacts (`72`
+  predicted positives vs `20` actual positives), dropping balanced accuracy to
+  `0.589` while the benchmark metadata baseline reaches `0.874`.
+- Lift-phase contact is not selected by the protocol: validation delta is
+  negative against `primary_target_object`. Its positive test delta is an
+  after-the-fact observation, not evidence for a generalizable site.
+- The failure is useful: current action-token pooled features appear to encode
+  phase/contact-like information in-sample or within validation tasks, but the
+  signal is not stable across held-out task families.
+
+Recommended next probe work:
+
+- Stop spending broad held-out-task compute on pooled action-token binary probes
+  for now. They repeatedly fail metadata or final-task generalization.
+- A genuinely different next question should change the feature contract or the
+  unit of prediction, for example object-local visual/VLM features,
+  candidate-wise contrasts, or continuous geometry residuals.
+- If contact remains interesting, design a confirmation run inside a single
+  task family with a locked split and treat it as an operational within-family
+  probe, not a broad mechanistic claim.
+
 ### Target Moved - Expert Action Hidden
 
 - Artifact: `probe_suite-pi0.5-broad-1000-target-moved---expert-action-hidden-ca5380446b`
@@ -447,10 +501,9 @@ outcome, target-moved, target-lifted, or target-contacted probes as-is unless
 the UI/artifact loader needs a regression check.
 
 Recommended next work after UI review:
-- Prefer residual/stratified probes over another pooled action-token binary
-  readout. The pooled primary-target readout is dominated by metadata, and the
-  physical-state probes are mostly explained by task phase or fail final
-  metadata comparison.
+- Prefer a feature-contract change over another pooled action-token binary
+  readout. Pooled target-choice, physical-state, and residual contact probes all
+  fail metadata or final held-out-task generalization.
 - Run filtered first-moved/first-lifted probes only if the preflight support
   remains clean and the metadata baselines include `policy_call_index`.
 - Do not sweep policy call as a selection axis after pre-event filtering unless
@@ -459,10 +512,12 @@ Recommended next work after UI review:
 Current interpretation: broad episode-level target interaction and outcome
 labels are not good enough for the next intervention candidate. The local
 contact horizon is more interesting but still failed final held-out-task
-generalization. The pooled object-choice probe also failed. Physical-state
-probes show strong decodability but not beyond phase/task metadata. The next
-cleanest scientific question should condition on a known metadata/phase factor
-or use a more object-local representation.
+generalization. The pooled object-choice probe also failed. Physical-state and
+residual contact probes show strong validation decodability in places, but not
+stable held-out-task evidence beyond metadata. The next cleanest scientific
+question should use a more object-local representation, candidate-wise contrast,
+or continuous geometry residual rather than another pooled action-token binary
+readout.
 
 ## Feature Contracts
 

@@ -1,0 +1,5 @@
+# Probe training uses saved activations in the normal repo environment, not capture wrappers.
+name: PI0.5 broad 1000 residual contact-by-phase probe campaign
+specs:
+  - configs/probes/pi05_broad_1000_current_contact_within_move_phase_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_current_contact_within_lift_phase_expert_action_hidden.yaml
