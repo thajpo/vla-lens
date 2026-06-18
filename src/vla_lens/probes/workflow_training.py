@@ -43,6 +43,7 @@ from vla_lens.probes.workflow_artifacts import (
 )
 from vla_lens.probes.workflow_prepare import (
     _apply_missing_policy,
+    _apply_row_expansion,
     _apply_row_filters,
     _attach_episode_metadata,
     _ensure_split,
@@ -76,6 +77,7 @@ def train_probe_artifact(
     selection_value: str | None = None,
     probe_models: Sequence[str] = ("linear",),
     research: Mapping[str, Any] | None = None,
+    row_expand: Mapping[str, Any] | None = None,
 ) -> SavedProbeSuite:
     """Train simple probes from an activation selector and save a ``LensArtifact``."""
     feature_matrix = dataset.select_model_sites(selector).materialize(cache=True)
@@ -83,6 +85,7 @@ def train_probe_artifact(
     if rows.empty or X.shape[0] == 0:
         raise ValueError(f"Probe selector matched no activation rows: {selector.to_dict()}")
     rows = _attach_episode_metadata(rows, dataset)
+    X, rows, expansion_summary = _apply_row_expansion(X, rows, dataset, row_expand)
     target_spec = _normalize_target_spec(target)
     target_name = _target_name(target_spec)
     rows = _resolve_probe_target(dataset, rows, target_spec)
@@ -242,6 +245,7 @@ def train_probe_artifact(
             column for column in metadata_baseline_columns if column in rows.columns
         ],
         "sweep": sweep,
+        "row_expansion": expansion_summary,
         "row_filter": filter_summary,
         "missing_target": missing_summary,
     }
@@ -311,6 +315,7 @@ def train_probe_artifact(
                     column for column in metadata_baseline_columns if column in rows.columns
                 ],
             ),
+            "row_expansion": expansion_summary,
             "row_filter": filter_summary,
             "missing_target": missing_summary,
         },
@@ -391,6 +396,7 @@ def train_probe_artifact_from_spec(
         metadata_baseline_columns=baseline_columns(normalized.get("baseline", [])),
         sweep=normalized.get("sweep", "layer"),
         row_filter=normalized.get("row_filter"),
+        row_expand=normalized.get("row_expand"),
         eval_values=[
             str(value)
             for value in split.get("eval_values", [split.get("test_value", "test")])

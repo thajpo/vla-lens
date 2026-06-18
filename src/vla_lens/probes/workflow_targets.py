@@ -44,18 +44,35 @@ def _resolve_probe_target(
         raise KeyError(f"Probe target column '{column}' is not present in selected rows")
 
     resolved = rows.apply(
-        lambda row: _resolve_target_value(dataset, row, target_spec),
+        lambda row: _resolve_target_value_or_missing(dataset, row, target_spec),
         axis=1,
     )
     out = rows.copy()
     out[target_name] = _apply_target_transform(resolved, target_spec)
     missing = int(out[target_name].isna().sum())
     if missing:
+        policy = str(target_spec.get("missing_policy") or "error")
+        if policy in {"drop", "skip_probe"}:
+            return out
         raise ValueError(
             f"Target {target_name!r} could not be resolved for {missing} selected rows. "
             "Narrow the selector or choose a target with complete coverage."
         )
     return out
+
+
+def _resolve_target_value_or_missing(
+    dataset: TraceDataset,
+    row: pd.Series,
+    target_spec: Mapping[str, Any],
+) -> Any:
+    try:
+        return _resolve_target_value(dataset, row, target_spec)
+    except KeyError:
+        policy = str(target_spec.get("missing_policy") or "error")
+        if policy in {"drop", "skip_probe"}:
+            return None
+        raise
 
 
 def _apply_target_transform(values: pd.Series, target_spec: Mapping[str, Any]) -> pd.Series:
@@ -118,15 +135,28 @@ def _resolve_target_value(
         array_id = _robot_array_id(bundle, str(target_spec.get("field") or ""))
         return _array_target_value(bundle, array_id, timestep, target_spec, row)
     if source == "scene_state":
-        array_id, object_index = _scene_array_id_and_object(bundle, target_spec)
+        row_target_spec = {**dict(target_spec), "_row": row}
+        array_id, object_index = _scene_array_id_and_object(bundle, row_target_spec)
         selector = {**dict(target_spec.get("selector") or {}), "object": object_index}
-        return _array_target_value(
+        value = _array_target_value(
             bundle,
             array_id,
             timestep,
-            {**dict(target_spec), "selector": selector},
+            {**row_target_spec, "selector": selector},
             row,
         )
+        relative_to = target_spec.get("relative_to")
+        if relative_to is None:
+            return value
+        reference_spec = _relative_reference_spec(target_spec, relative_to)
+        reference = _array_target_value(
+            bundle,
+            str(reference_spec["array_id"]),
+            timestep,
+            reference_spec,
+            row,
+        )
+        return float(value) - float(reference)
     if source.startswith("array."):
         return _array_target_value(
             bundle,
@@ -352,10 +382,10 @@ def _scene_array_id_and_object(
     if table.empty:
         raise KeyError("scene_state table is empty")
     selector = dict(target_spec.get("selector") or {})
-    object_name = selector.get("object") or target_spec.get("object")
+    object_name = _scene_object_selector_value(target_spec, selector)
     rows = table
     if object_name is not None and not isinstance(object_name, int):
-        names = rows.get("name", pd.Series(dtype=object)).astype(str)
+        names = _scene_object_names(rows)
         object_ids = rows.get("object_id", pd.Series(dtype=object)).astype(str)
         rows = rows.loc[(names == str(object_name)) | (object_ids == str(object_name))]
     if rows.empty:
@@ -378,10 +408,69 @@ def _scene_array_id_and_object(
     return str(row[array_column]), object_index
 
 
+def _scene_object_selector_value(
+    target_spec: Mapping[str, Any],
+    selector: Mapping[str, Any],
+) -> Any:
+    object_name = selector.get("object") or target_spec.get("object")
+    object_column = selector.get("object_column") or target_spec.get("object_column")
+    if object_column is None:
+        return object_name
+    row = target_spec.get("_row")
+    if row is None:
+        return object_name
+    value = row.get(str(object_column)) if hasattr(row, "get") else None
+    if _is_missing_scalar(value):
+        if object_name is None:
+            raise KeyError(f"Scene object row column {object_column!r} is missing")
+        return object_name
+    return value
+
+
+def _scene_object_names(rows: pd.DataFrame) -> pd.Series:
+    out = pd.Series("", index=rows.index, dtype=object)
+    for column in ["object_name", "name", "object_id"]:
+        if column not in rows:
+            continue
+        values = rows[column]
+        missing = out.astype(str) == ""
+        out.loc[missing] = values.loc[missing]
+    return out.astype(str)
+
+
+def _relative_reference_spec(
+    target_spec: Mapping[str, Any],
+    relative_to: Any,
+) -> dict[str, Any]:
+    if isinstance(relative_to, Mapping):
+        reference = dict(relative_to)
+    else:
+        reference = {"array_id": str(relative_to)}
+    reference.setdefault("source", "array")
+    if "array_id" not in reference:
+        raise ValueError("relative_to target reference requires an array_id")
+    selector = dict(reference.get("selector") or {})
+    if "component" not in selector and "component" in target_spec:
+        selector["component"] = target_spec["component"]
+    if "component" not in selector:
+        target_selector = target_spec.get("selector")
+        if isinstance(target_selector, Mapping) and "component" in target_selector:
+            selector["component"] = target_selector["component"]
+    reference["selector"] = selector
+    return reference
+
+
 def _canonical_axis_name(axis_name: str, axes: list[str]) -> str:
     aliases = {
-        "component": ["component", "pose_component", "gripper_component", "joint", "action_dim"],
-        "dim": ["action_dim", "component", "pose_component"],
+        "component": [
+            "component",
+            "pose_component",
+            "gripper_component",
+            "joint",
+            "action_dim",
+            "xyz",
+        ],
+        "dim": ["action_dim", "component", "pose_component", "xyz"],
         "action_dim": ["action_dim"],
         "object": ["object"],
         "horizon": ["horizon", "action_horizon"],
@@ -414,7 +503,7 @@ def _axis_selector_index(
         "yaw": 5,
         "gripper": 6,
     }
-    if axis_name in {"component", "pose_component", "gripper_component", "action_dim"}:
+    if axis_name in {"component", "pose_component", "gripper_component", "action_dim", "xyz"}:
         metadata = _array_metadata(bundle, array_id)
         action_names = metadata.get("action_dim_names") or metadata.get("action_names")
         if isinstance(action_names, list) and text in action_names:

@@ -16,6 +16,7 @@ import pandas as pd
 from vla_lens.probes.workflow_artifacts import _probe_target, _value_counts
 from vla_lens.probes.workflow_prepare import (
     _apply_missing_policy,
+    _apply_row_expansion,
     _apply_row_filters,
     _attach_episode_metadata,
     _ensure_split,
@@ -51,6 +52,12 @@ def probe_preflight_report(
 
     selected_row_count = int(len(rows))
     rows = _attach_episode_metadata(rows, dataset)
+    X, rows, expansion_summary = _apply_row_expansion(
+        X,
+        rows,
+        dataset,
+        normalized.get("row_expand"),
+    )
     target_spec = _normalize_target_spec(normalized["target"])
     target_name = _target_name(target_spec)
     rows = _resolve_probe_target(dataset, rows, target_spec)
@@ -122,6 +129,7 @@ def probe_preflight_report(
                 "summary": split_summary,
             },
             "filters": filter_summary,
+            "row_expansion": expansion_summary,
             "missing_target": missing_summary,
             "baselines": baseline_info,
             "probe": {
@@ -159,6 +167,7 @@ def format_probe_preflight_markdown(report: Mapping[str, Any]) -> str:
     baselines = dict(report.get("baselines") or {})
     sweep = dict(report.get("sweep") or {})
     probe = dict(report.get("probe") or {})
+    row_expansion = dict(report.get("row_expansion") or {})
     lines.extend(
         [
             "## Training Surface",
@@ -168,6 +177,9 @@ def format_probe_preflight_markdown(report: Mapping[str, Any]) -> str:
             f"- Feature rows: {feature_matrix.get('rows_after_filters')} "
             f"after filters / {feature_matrix.get('selected_rows')} selected",
             f"- Feature dim: {feature_matrix.get('feature_dim')}",
+            f"- Row expansion: {row_expansion.get('kind', 'none')} "
+            f"({row_expansion.get('input_rows', feature_matrix.get('rows_after_filters'))} -> "
+            f"{row_expansion.get('output_rows', feature_matrix.get('rows_after_filters'))} rows)",
             f"- Split: `{split.get('column')}` train=`{split.get('train_value')}` "
             f"select=`{split.get('selection_value')}` test=`{split.get('test_value')}`",
             f"- Probe models: {', '.join(probe.get('models') or [])}",

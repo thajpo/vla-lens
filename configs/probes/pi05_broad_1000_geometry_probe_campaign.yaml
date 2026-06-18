@@ -1,0 +1,12 @@
+# Probe training uses saved activations in the normal repo environment, not capture wrappers.
+name: PI0.5 broad 1000 geometry probe campaign
+specs:
+  - configs/probes/pi05_broad_1000_active_object_position_x_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_active_object_position_y_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_active_object_position_z_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_all_object_position_x_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_all_object_position_y_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_all_object_position_z_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_active_object_relative_position_x_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_active_object_relative_position_y_expert_action_hidden.yaml
+  - configs/probes/pi05_broad_1000_active_object_relative_position_z_expert_action_hidden.yaml

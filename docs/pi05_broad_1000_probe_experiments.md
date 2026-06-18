@@ -124,6 +124,100 @@ Legacy entries that predate the mandatory `policy_call_index` metadata baseline
 are preserved for context, but they are superseded when the same question was
 rerun in the June 17 stronger-baseline round below.
 
+## June 18, 2026 Geometry Probe Plan
+
+Purpose: answer a new question rather than tune the earlier binary event
+probes: is 3D object location represented in PI0.5 expert action hidden states,
+and where? The key methodological shift is from event classification to scalar
+geometry regression. Primary probes use mean-pooled action hidden tokens,
+layer-wise ridge regression, held-out-task selection, and metadata regression
+baselines.
+
+Shared decision tree:
+
+1. Use expert action hidden states first because the question is whether the
+   action-producing representation carries scene geometry. VLM/image-token
+   geometry remains a separate follow-up if expert features fail or look
+   metadata-like.
+2. Use scalar x/y/z regressions rather than a vector probe because the current
+   artifact contract and UI support scalar targets cleanly. This also exposes
+   axis-specific shortcuts, such as z being mostly phase/contact.
+3. Use mean token pooling and linear/ridge probes as claim-bearing defaults
+   because the broad-1000 dataset has modest independent task/episode count
+   relative to 1024D hidden states. Concatenation, learned pooling, and MLP
+   probes are upper-bound diagnostics, not first claims.
+4. Sweep layer only. Policy calls are included as rows and as a metadata
+   baseline, not as an extra sweep axis, to avoid tiny layer x call regression
+   cells.
+5. Use validation held-out tasks for layer selection and test held-out tasks
+   only for final reporting.
+
+Option A - active manipulated object absolute position:
+
+- Question: can the representation decode the current world x/y/z position of
+  the object currently being manipulated?
+- Decision tree:
+  - If `active_manipulated_object` exists for a row, select that object's
+    `scene_object_pos` component.
+  - If no active object exists, drop the row; forcing a default object would
+    turn the probe into a scene-layout shortcut.
+  - Baseline against task, prompt, phase, active object identity, primary target,
+    candidate objects, and policy-call index.
+- Specs:
+  `pi05_broad_1000_active_object_position_{x,y,z}_expert_action_hidden.yaml`
+
+Option B - all scene-object absolute position:
+
+- Question: can the same action hidden state decode each scene object's current
+  position when each object is evaluated as a candidate row?
+- Decision tree:
+  - Expand each activation row by object-role rows from the object-flow artifact.
+  - Keep ordinary scene objects; fixtures are excluded for this first pass
+    because fixtures and movable objects have different priors and support.
+  - Decode `scene_object_pos` for `probe_object_name`.
+  - Baseline against object identity/base name, object role, task, prompt,
+    phase, and policy-call index.
+- Specs:
+  `pi05_broad_1000_all_object_position_{x,y,z}_expert_action_hidden.yaml`
+
+Option C - active manipulated object gripper-relative position:
+
+- Question: can the representation decode active-object position relative to
+  the end effector, a more control-relevant geometry than absolute world pose?
+- Decision tree:
+  - Reuse Option A's active-object row contract.
+  - Target is selected object position minus `eef_pos`, component-wise.
+  - Drop rows without an active object or resolvable object position.
+  - Use the same metadata baselines as Option A; if metadata solves this, the
+    result is not clean evidence of geometric state in activations.
+- Specs:
+  `pi05_broad_1000_active_object_relative_position_{x,y,z}_expert_action_hidden.yaml`
+
+Option D - target-vs-distractor geometry quality:
+
+- Question: is position decoding better for task-relevant/manipulated objects
+  than for distractors?
+- Decision tree:
+  - Do not train duplicate D-specific readouts if Option B already trains the
+    correct object-local regression over both manipulated and distractor rows.
+  - Use Option B predictions and inspect residuals by
+    `probe_object_role_manipulated`, `probe_object_role_distractor`, and
+    prompt-mentioned status.
+  - If target/manipulated residuals are lower than distractor residuals on the
+    validation-selected readout and held-out test, that suggests task relevance
+    changes geometric availability. If all roles are similar or metadata
+    baselines dominate, treat it as scene-layout/object-identity decoding rather
+    than target-aware representation.
+
+Planned campaign:
+
+- `configs/probes/pi05_broad_1000_geometry_probe_campaign.yaml`
+- Preflight all nine specs before training.
+- Train only if rows, feature dimension, and target coverage are acceptable.
+- Report MAE, R2, strongest metadata baseline, and held-out-test delta for each
+  coordinate. For Option D, additionally report residuals by object role from
+  the all-object prediction tables.
+
 ## June 17, 2026 Stronger-Baseline Round
 
 Purpose: rerun the most plausible interaction/outcome probes after applying

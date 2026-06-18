@@ -4,7 +4,9 @@ import json
 from tests._support.vla_lens_trace_mvp import *
 from vla_lens.pi05.object_flow import save_pi05_object_flow_artifact
 from vla_lens.pi05.policy_call_labels import save_pi05_policy_call_labels_artifact
-from vla_lens.probes.workflow_prepare import _attach_episode_metadata
+from vla_lens.probes import run_probe_suite
+from vla_lens.probes.workflow_prepare import _apply_row_expansion, _attach_episode_metadata
+from vla_lens.probes.workflow_targets import _normalize_target_spec, _resolve_probe_target
 
 
 def test_pi05_interaction_metrics_derives_object_labels(tmp_path):
@@ -326,6 +328,51 @@ def test_probe_workflow_resolves_trace_context_targets(tmp_path):
     assert object_probe.rows["target_cube_x"].notna().all()
     assert object_probe.artifact.method["target"]["selector"]["object"] == "target_cube"
 
+    rows = pd.DataFrame(
+        {
+            "trace_id": [dataset.bundles[0].manifest.trace_id],
+            "timestep": [0],
+            "active_manipulated_object": ["target_cube"],
+        }
+    )
+    dynamic_rows = _resolve_probe_target(
+        dataset,
+        rows,
+        _normalize_target_spec(
+            {
+                "name": "active_cube_x",
+                "kind": "regression",
+                "source": "scene_state",
+                "field": "pose",
+                "object_column": "active_manipulated_object",
+                "selector": {"component": "x"},
+            }
+        ),
+    )
+    expected_active_x = dataset.bundles[0].array("scene_object_poses", mmap=True)[0, 0, 0]
+    assert np.isclose(dynamic_rows.loc[0, "active_cube_x"], expected_active_x)
+
+    relative_rows = _resolve_probe_target(
+        dataset,
+        rows,
+        _normalize_target_spec(
+            {
+                "name": "active_cube_relative_x",
+                "kind": "regression",
+                "source": "scene_state",
+                "field": "pose",
+                "object_column": "active_manipulated_object",
+                "selector": {"component": "x"},
+                "relative_to": {"array_id": "robot_eef_pose"},
+            }
+        ),
+    )
+    expected_eef_x = dataset.bundles[0].array("robot_eef_pose", mmap=True)[0, 0]
+    assert np.isclose(
+        relative_rows.loc[0, "active_cube_relative_x"],
+        expected_active_x - expected_eef_x,
+    )
+
     threshold_probe = train_probe_artifact_from_spec(
         dataset,
         {
@@ -437,7 +484,7 @@ def test_probe_workflow_resolves_trace_context_targets(tmp_path):
                     "source": "test",
                 }
             ]
-        )
+            )
         final_success.to_parquet(
             bundle.overlay_bundle.path / "tables" / "evaluation.parquet",
             index=False,
@@ -460,6 +507,50 @@ def test_probe_workflow_resolves_trace_context_targets(tmp_path):
                 "sweep": "layer",
             },
         )
+
+
+def test_object_role_row_expansion_and_regression_metadata_baselines(tmp_path):
+    dataset = _object_flow_dataset(tmp_path / "object-row-expansion")
+    save_pi05_object_flow_artifact(dataset, rebuild_index=False)
+    rows = pd.DataFrame({"trace_id": ["flow_trace", "flow_trace"], "timestep": [1, 4]})
+    X = np.arange(6, dtype=np.float32).reshape(2, 3)
+
+    expanded_X, expanded_rows, summary = _apply_row_expansion(
+        X,
+        rows,
+        dataset,
+        {"kind": "object_roles", "prefix": "probe_object"},
+    )
+
+    assert summary["input_rows"] == 2
+    assert summary["output_rows"] == 4
+    assert expanded_X.shape == (4, 3)
+    assert set(expanded_rows["probe_object_name"]) == {"red_cube_1", "blue_bowl_1"}
+    assert "probe_object_role_manipulated" in expanded_rows
+
+    probe_rows = pd.DataFrame(
+        {
+            "split": ["train", "train", "test", "test"],
+            "object": ["a", "b", "a", "b"],
+            "target": [0.0, 10.0, 0.0, 10.0],
+        }
+    )
+    features = {"uninformative": np.zeros((4, 2), dtype=np.float32)}
+    results = run_probe_suite(
+        probe_rows,
+        features,
+        ["target"],
+        metadata_baseline_columns=["object"],
+        target_kinds={"target": "regression"},
+    )
+
+    row = results.iloc[0]
+    assert row["metadata_baseline"] == "object"
+    assert row["baseline_score"] > row["score"]
+    assert any(
+        baseline["baseline"] == "object"
+        for baseline in row["details"]["metadata_baselines"]
+    )
 
 
 def test_artifact_api_payloads_include_probe_and_attention(tmp_path):

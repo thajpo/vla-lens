@@ -1,0 +1,47 @@
+# Probe training uses saved activations in the normal repo environment, not capture wrappers.
+name: PI0.5 broad 1000 all object position x - expert action hidden
+question: Is the current world x-position of each scene object linearly decodable from PI0.5 expert action hidden states when each object is evaluated as a candidate row?
+hypothesis_family: object-local geometry
+intended_claim: candidate object x-position is linearly available at selected expert action hidden layers beyond task, object identity, role, phase, and timing baselines
+target:
+  name: probe_object_position_x
+  kind: regression
+  source: scene_state
+  field: pos
+  object_column: probe_object_name
+  selector: {component: x}
+  missing_policy: drop
+row_expand:
+  kind: object_roles
+  prefix: probe_object
+  object_kind: object
+features:
+  module: pi05.expert.layers.*
+  tensor_type: hidden_tokens
+  token_kind: action
+  layers: [0, 4, 8, 12, 17]
+  timesteps: all
+  policy_calls: [0, 1, 2, 3, 4, 5, 6]
+  generation_step: final
+  reduction: mean
+  dtype: float32
+split:
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+  eval_values: [val_heldout_task, test_heldout_task]
+baseline:
+  - benchmark
+  - task_id
+  - prompt
+  - task_phase
+  - probe_object_name
+  - probe_object_base_name
+  - probe_object_role_manipulated
+  - probe_object_role_distractor
+  - policy_call_index
+probe:
+  models: [linear]
+sweep: layer

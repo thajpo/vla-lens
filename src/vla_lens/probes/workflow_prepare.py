@@ -378,6 +378,35 @@ def _latest_object_flow_timestep_labels(dataset: TraceDataset) -> pd.DataFrame:
     return pd.DataFrame()
 
 
+def _latest_object_roles(dataset: TraceDataset) -> pd.DataFrame:
+    artifact = _latest_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
+    if artifact is None:
+        return pd.DataFrame()
+    outputs = dict(artifact.method.get("outputs") or {})
+    path = outputs.get("object_roles")
+    if not path:
+        return pd.DataFrame()
+    table_path = _artifact_output_path(dataset, str(path))
+    if table_path.exists():
+        return pd.read_parquet(table_path)
+    return pd.DataFrame()
+
+
+def _filter_role_rows(rows: pd.DataFrame, role_filter: Mapping[str, Any]) -> pd.DataFrame:
+    mask = pd.Series(True, index=rows.index)
+    for column, expected in role_filter.items():
+        if column not in rows:
+            mask &= False
+            continue
+        if isinstance(expected, bool):
+            mask &= rows[column].fillna(False).astype(bool) == expected
+        elif isinstance(expected, Sequence) and not isinstance(expected, (str, bytes)):
+            mask &= rows[column].astype(str).isin([str(value) for value in expected])
+        else:
+            mask &= rows[column].astype(str) == str(expected)
+    return rows.loc[mask]
+
+
 def _merge_policy_call_labels(
     rows: pd.DataFrame,
     dataset: TraceDataset,
@@ -696,6 +725,90 @@ def _apply_missing_policy(
         f"Target {target_name!r} has {missing_count} missing rows; "
         "set target.missing_policy to 'drop' or 'skip_probe' for sparse targets."
     )
+
+
+def _apply_row_expansion(
+    X: np.ndarray,
+    rows: pd.DataFrame,
+    dataset: TraceDataset,
+    row_expand: Mapping[str, Any] | None,
+) -> tuple[np.ndarray, pd.DataFrame, dict[str, Any]]:
+    if not row_expand:
+        return (
+            X,
+            rows,
+            {"kind": "none", "input_rows": int(len(rows)), "output_rows": int(len(rows))},
+        )
+    kind = str(row_expand.get("kind") or row_expand.get("source") or "")
+    if kind not in {"object_roles", "scene_objects"}:
+        raise ValueError(f"Unknown row expansion kind: {kind!r}")
+    roles = _latest_object_roles(dataset)
+    if roles.empty:
+        raise ValueError("Object-role row expansion requested, but no object_roles table exists.")
+    if "trace_id" not in roles or "trace_id" not in rows:
+        raise ValueError("Object-role row expansion requires trace_id in rows and object_roles.")
+
+    role_rows = roles.copy()
+    object_kind = row_expand.get("object_kind", "object")
+    if object_kind is not None and "object_kind" in role_rows:
+        role_rows = role_rows.loc[role_rows["object_kind"].astype(str) == str(object_kind)]
+    role_filter = row_expand.get("role_filter")
+    if isinstance(role_filter, Mapping):
+        role_rows = _filter_role_rows(role_rows, role_filter)
+
+    role_columns = [
+        column
+        for column in [
+            "trace_id",
+            "object_index",
+            "object_name",
+            "object_base_name",
+            "object_kind",
+            "prompt_mentioned",
+            "role_manipulated",
+            "role_receptacle",
+            "role_fixture",
+            "role_distractor",
+            "observed_contacted",
+            "observed_moved",
+            "observed_lifted",
+            "max_displacement",
+            "max_xy_displacement",
+            "max_z_delta",
+        ]
+        if column in role_rows
+    ]
+    role_rows = role_rows[role_columns].drop_duplicates(
+        subset=[column for column in ["trace_id", "object_name"] if column in role_columns],
+        keep="last",
+    )
+    prefix = str(row_expand.get("prefix") or "probe_object")
+    renamed = {
+        column: f"{prefix}_{column.removeprefix('object_')}"
+        for column in role_rows.columns
+        if column != "trace_id"
+    }
+    role_rows = role_rows.rename(columns=renamed)
+    merged = rows.reset_index(names="__source_row_index").merge(
+        role_rows,
+        on="trace_id",
+        how="inner",
+    )
+    if merged.empty:
+        raise ValueError("Object-role row expansion produced no rows after joining by trace_id.")
+
+    source_indices = merged.pop("__source_row_index").to_numpy(dtype=np.int64)
+    expanded_X = X[source_indices]
+    summary = {
+        "kind": kind,
+        "input_rows": int(len(rows)),
+        "output_rows": int(len(merged)),
+        "objects": int(len(role_rows)),
+        "object_kind": object_kind,
+        "role_filter": dict(role_filter) if isinstance(role_filter, Mapping) else None,
+        "prefix": prefix,
+    }
+    return expanded_X, merged.reset_index(drop=True), summary
 
 
 def _test_traces(rows: pd.DataFrame, traces: list[str], split_kind: str) -> set[str]:

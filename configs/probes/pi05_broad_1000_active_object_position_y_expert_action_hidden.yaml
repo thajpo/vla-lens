@@ -1,0 +1,46 @@
+# Probe training uses saved activations in the normal repo environment, not capture wrappers.
+name: PI0.5 broad 1000 active object position y - expert action hidden
+question: Is the current world y-position of the actively manipulated object linearly decodable from PI0.5 expert action hidden states?
+hypothesis_family: active-object geometry
+intended_claim: active manipulated object y-position is linearly available at selected expert action hidden layers beyond task, object, phase, and timing baselines
+target:
+  name: active_object_position_y
+  kind: regression
+  source: scene_state
+  field: pos
+  object_column: active_manipulated_object
+  selector: {component: y}
+  missing_policy: drop
+features:
+  module: pi05.expert.layers.*
+  tensor_type: hidden_tokens
+  token_kind: action
+  layers: [0, 4, 8, 12, 17]
+  timesteps: all
+  policy_calls: [0, 1, 2, 3, 4, 5, 6]
+  generation_step: final
+  reduction: mean
+  dtype: float32
+split:
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+  eval_values: [val_heldout_task, test_heldout_task]
+row_filter:
+  all:
+    - column: active_manipulated_object
+      op: present
+baseline:
+  - benchmark
+  - task_id
+  - prompt
+  - task_phase
+  - active_manipulated_object
+  - primary_target_object
+  - candidate_objects
+  - policy_call_index
+probe:
+  models: [linear]
+sweep: layer

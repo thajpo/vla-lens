@@ -116,6 +116,7 @@ def run_probe_suite(
                             eval_mask,
                             feature_name,
                             target,
+                            metadata_baseline_columns,
                             split_column=split_column,
                             eval_value=eval_value,
                             model_name=model_name,
@@ -239,6 +240,7 @@ def _regression_result(
     eval_mask: np.ndarray,
     feature_name: str,
     target: str,
+    metadata_columns: list[str],
     split_column: str,
     eval_value: str,
     model_name: str,
@@ -258,6 +260,24 @@ def _regression_result(
     baseline_mae = float(mean_absolute_error(y_eval, baseline))
     score = -mae
     baseline_score = -baseline_mae
+    baseline_name = "train_mean"
+    baseline_details = [
+        {
+            "baseline": baseline_name,
+            "score": baseline_score,
+            "mae": baseline_mae,
+            "r2": baseline_r2 if np.isfinite(baseline_r2) else None,
+        }
+    ]
+    if metadata_columns:
+        for columns in [[column] for column in metadata_columns] + [metadata_columns]:
+            metadata_score = _metadata_regressor_score(rows, y, train_mask, eval_mask, columns)
+            if metadata_score is None:
+                continue
+            baseline_details.append(metadata_score)
+            if float(metadata_score["score"]) > baseline_score:
+                baseline_score = float(metadata_score["score"])
+                baseline_name = str(metadata_score["baseline"])
     prediction_records = _regression_prediction_records(
         rows.loc[eval_mask].reset_index(drop=True),
         y_eval,
@@ -282,7 +302,7 @@ def _regression_result(
         baseline_score=baseline_score,
         n_train=int(train_mask.sum()),
         n_test=int(eval_mask.sum()),
-        metadata_baseline="train_mean",
+        metadata_baseline=baseline_name,
         model=model_name,
         split_value=eval_value,
         primary_metric="negative_mae",
@@ -294,6 +314,7 @@ def _regression_result(
             "mae": mae,
             "baseline_r2": baseline_r2 if np.isfinite(baseline_r2) else None,
             "baseline_mae": baseline_mae,
+            "metadata_baselines": baseline_details,
             "test_predictions": prediction_records[:50],
         },
         prediction_records=prediction_records,
@@ -371,6 +392,38 @@ def _metadata_classifier_score(
     )
     model.fit(train_meta, y_train)
     return float(balanced_accuracy_score(y_test, model.predict(eval_meta)))
+
+
+def _metadata_regressor_score(
+    rows: pd.DataFrame,
+    y: np.ndarray,
+    train_mask: np.ndarray,
+    test_mask: np.ndarray,
+    columns: list[str],
+) -> dict[str, Any] | None:
+    train_meta = rows.loc[train_mask, columns].astype(str)
+    eval_meta = rows.loc[test_mask, columns].astype(str)
+    y_train = y[train_mask]
+    y_test = y[test_mask]
+    if len(y_test) == 0 or len(y_train) == 0:
+        return None
+    model = make_pipeline(
+        ColumnTransformer(
+            [("categorical", OneHotEncoder(handle_unknown="ignore"), columns)],
+            remainder="drop",
+        ),
+        Ridge(alpha=1.0),
+    )
+    model.fit(train_meta, y_train)
+    pred = np.asarray(model.predict(eval_meta), dtype=np.float32)
+    mae = float(mean_absolute_error(y_test, pred))
+    r2 = float(r2_score(y_test, pred))
+    return {
+        "baseline": "+".join(columns),
+        "score": -mae,
+        "mae": mae,
+        "r2": r2 if np.isfinite(r2) else None,
+    }
 
 
 def _prediction_confidence(probe: Any, X: np.ndarray) -> np.ndarray:
@@ -575,6 +628,7 @@ def _prediction_join_keys(
         "example_id": example_id,
         "split": record_split,
         "task_id": _optional_str(row.get("task_id")),
+        "task_phase": _optional_str(row.get("task_phase")),
         "target_name": target,
         "target_timestep": timestep,
         "policy_call_index": policy_call,
@@ -583,6 +637,13 @@ def _prediction_join_keys(
         "token_space_id": token_space_id,
         "token_index": token_index,
         "input_row_index": _optional_int(row.get("input_row_index")),
+        "active_manipulated_object": _optional_str(row.get("active_manipulated_object")),
+        "probe_object_name": _optional_str(row.get("probe_object_name")),
+        "probe_object_base_name": _optional_str(row.get("probe_object_base_name")),
+        "probe_object_role_manipulated": _optional_bool(row.get("probe_object_role_manipulated")),
+        "probe_object_role_receptacle": _optional_bool(row.get("probe_object_role_receptacle")),
+        "probe_object_role_distractor": _optional_bool(row.get("probe_object_role_distractor")),
+        "probe_object_prompt_mentioned": _optional_bool(row.get("probe_object_prompt_mentioned")),
     }
 
 
@@ -616,6 +677,12 @@ def _optional_int(value: Any) -> int | None:
     if value is None or pd.isna(value):
         return None
     return int(value)
+
+
+def _optional_bool(value: Any) -> bool | None:
+    if value is None or pd.isna(value):
+        return None
+    return bool(value)
 
 
 def _optional_axis_value(value: Any) -> int | str | None:
