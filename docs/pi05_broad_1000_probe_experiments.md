@@ -218,6 +218,94 @@ Planned campaign:
   coordinate. For Option D, additionally report residuals by object role from
   the all-object prediction tables.
 
+Final campaign:
+
+- Campaign artifact:
+  `probe_campaign-pi0.5-broad-1000-geometry-probe-campaign-684e2b6168`
+- All nine specs completed.
+- Preflight summary: all nine specs had 1024D mean-pooled features and zero
+  automatic warnings.
+  - Active-object rows after filters: 23,555 total, with 12,490 train,
+    5,180 validation, and 5,885 final-test rows before layer grouping.
+  - All-object rows after expansion: 103,990 total, with 59,850 train,
+    27,470 validation, and 16,670 final-test rows before layer grouping.
+- Training caveat: all-object ridge fits emitted repeated ill-conditioned-matrix
+  warnings. Results are usable as first-pass ridge readouts, but PCA or stronger
+  ridge regularization should be treated as the next numerical robustness check
+  before building on small deltas.
+
+Selected readouts:
+
+| Option | Target | Selected layer | Val MAE | Val baseline MAE | Val delta | Test MAE | Test baseline MAE | Test delta | Interpretation |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |
+| A | active object world x | 0 | 0.086 | 0.098 | +0.012 | 0.097 | 0.086 | -0.011 | Does not beat held-out metadata baseline. |
+| A | active object world y | 0 | 0.116 | 0.110 | -0.006 | 0.103 | 0.131 | +0.028 | Test-positive but not validation-positive; not claim-bearing. |
+| A | active object world z | 8 | 0.112 | 0.160 | +0.049 | 0.111 | 0.084 | -0.027 | Validation-positive, final-test baseline wins. |
+| B | all-object world x | 12 | 0.098 | 0.073 | -0.025 | 0.097 | 0.104 | +0.007 | Weak and inconsistent; metadata/object prior dominates validation. |
+| B | all-object world y | 0 | 0.149 | 0.120 | -0.029 | 0.136 | 0.136 | -0.000 | Negative. |
+| B | all-object world z | 8 | 0.108 | 0.233 | +0.124 | 0.089 | 0.084 | -0.004 | Strong validation signal, but final-test metadata baseline slightly wins. |
+| C | active object gripper-relative x | 0 | 0.088 | 0.091 | +0.003 | 0.079 | 0.068 | -0.011 | Tiny validation edge, not held-out robust. |
+| C | active object gripper-relative y | 0 | 0.119 | 0.121 | +0.003 | 0.108 | 0.068 | -0.040 | Tiny validation edge, final-test baseline much better. |
+| C | active object gripper-relative z | 0 | 0.051 | 0.054 | +0.004 | 0.063 | 0.055 | -0.007 | Tiny validation edge, not held-out robust. |
+
+Option-specific conclusions:
+
+- **A: active-object absolute position.** Decision tree was: use the active
+  manipulated object when present, drop rows without one, decode x/y/z
+  separately, and compare against task/object/phase/timing metadata. Result:
+  no coordinate gives validation-positive and final-test-positive evidence
+  over the strongest metadata baseline. Active-object geometry is not cleanly
+  established by this first-pass mean-pooled action-hidden probe.
+- **B: all-object absolute position.** Decision tree was: expand rows by
+  scene-object role rows, exclude fixtures, decode each object candidate's
+  x/y/z, and baseline against object identity/base name/role plus task and
+  timing. Result: y is negative, x is weak/inconsistent, and z has a strong
+  validation signal but loses narrowly to metadata on final test. This looks
+  more like scene/object/phase priors plus a possible z-state signal than a
+  robust object-local position representation.
+- **C: active-object gripper-relative position.** Decision tree was: subtract
+  `eef_pos` from the selected active object's position to test control-relevant
+  geometry. Result: all validation deltas are tiny and all final-test deltas
+  are negative. This first pass does not support a useful gripper-relative
+  geometry probe from mean-pooled expert action hidden states.
+- **D: target/manipulated-vs-distractor quality.** Decision tree was: do not
+  train duplicate D readouts; use B predictions and inspect residuals by object
+  role. Result: role effects are inconsistent by axis. On final test, x error
+  is lower for manipulated/prompt-mentioned objects, y error is lower for
+  distractors, and z is nearly role-neutral. There is no stable evidence that
+  target/manipulated objects have better position decoding than distractors.
+
+D final-test residuals from selected B readouts:
+
+| Axis | Group | Count | Mean abs error | Median abs error |
+| --- | --- | ---: | ---: | ---: |
+| x | manipulated=false | 1,530 | 0.101 | 0.095 |
+| x | manipulated=true | 1,804 | 0.093 | 0.071 |
+| x | distractor=false | 2,024 | 0.093 | 0.071 |
+| x | distractor=true | 1,310 | 0.103 | 0.100 |
+| y | manipulated=false | 1,530 | 0.111 | 0.102 |
+| y | manipulated=true | 1,804 | 0.157 | 0.153 |
+| y | distractor=false | 2,024 | 0.156 | 0.150 |
+| y | distractor=true | 1,310 | 0.106 | 0.098 |
+| z | manipulated=false | 1,530 | 0.087 | 0.072 |
+| z | manipulated=true | 1,804 | 0.090 | 0.072 |
+| z | distractor=false | 2,024 | 0.092 | 0.074 |
+| z | distractor=true | 1,310 | 0.083 | 0.070 |
+
+Overall readout:
+
+- Treat this as a mostly negative/diagnostic geometry round. The result does
+  not justify a causal or intervention claim.
+- The most interesting follow-up is not more layer fishing. If geometry remains
+  important, improve the method first: campaign-level feature caching,
+  precomputed geometry target tables, stronger ridge/PCA controls, and
+  possibly a probe-specific capture profile with more independent tasks or
+  environments.
+- If choosing one follow-up target, object-local z is the only coordinate with
+  a strong validation gain, but its final-test baseline loss and numerical
+  conditioning warning mean it should be rerun with PCA/regularization and a
+  locked confirmation plan before interpretation.
+
 ## June 17, 2026 Stronger-Baseline Round
 
 Purpose: rerun the most plausible interaction/outcome probes after applying
