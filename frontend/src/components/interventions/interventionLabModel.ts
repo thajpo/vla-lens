@@ -1,8 +1,49 @@
 import type {
   InterventionLabDraft,
+  InterventionLabSeed,
   InterventionPreflightResult,
   InterventionRunRecord,
 } from "../../types/interventions";
+
+export function buildBackendTargetInterventionSeed({
+  artifactId,
+  artifactType,
+  basis,
+  modelFamily,
+  modelSite,
+  operator,
+  policyCallIndex,
+  target,
+  title,
+  tokenSpace,
+  traceId,
+}: {
+  artifactId: string;
+  artifactType: string;
+  basis?: string[];
+  modelFamily?: string;
+  modelSite: string;
+  operator?: string;
+  policyCallIndex: number;
+  target?: Record<string, unknown>;
+  title?: string;
+  tokenSpace?: string;
+  traceId: string;
+}): InterventionLabSeed {
+  return {
+    artifactId,
+    artifactType,
+    basis,
+    modelFamily,
+    modelSite,
+    operator,
+    policyCallIndex,
+    target,
+    title,
+    tokenSpace,
+    traceId,
+  };
+}
 
 export function buildInterventionRequest(draft: InterventionLabDraft): Record<string, unknown> {
   const target = draft.target
@@ -22,6 +63,7 @@ export function buildInterventionRequest(draft: InterventionLabDraft): Record<st
         token_space: draft.tokenSpace,
         metadata: {
           intended_basis: draft.basis.includes("gripper") ? "gripper" : "raw",
+          target_source: "local_fallback",
         },
       };
   return {
