@@ -40,6 +40,7 @@ export function InterventionRunDetail({ run }: InterventionRunDetailProps) {
       <div className="intervention-detail-grid">
         <SummaryBlock label="Claim" value={summary.claimLabels.join(", ") || "unlabeled"} />
         <SummaryBlock label="Target" value={summary.target} />
+        <SummaryBlock label="Source" value={summary.sourceLabel || "manual"} />
         <SummaryBlock label="Intervention" value={summary.operator || "operator pending"} />
         <SummaryBlock label="Outcome" value={summary.outcomeKind || "outcome pending"} />
         <SummaryBlock label="Trials" value={String(trials.length)} />

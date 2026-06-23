@@ -157,9 +157,28 @@ export function useEpisodeLensView({
         artifactId: action.seed.artifact_id,
         artifactType: action.seed.family,
         basis: ["episode_lens_view", "probe_contributors"],
+        feature: action.seed.feature ?? null,
+        layer: action.seed.layer ?? null,
         modelSite: action.seed.model_site_id,
         operator: action.seed.suggested_operator ?? "ablate",
         policyCallIndex: action.seed.policy_call_index,
+        rankingMode: lensRankingMode,
+        selectionSource: lensRankingMode === "raw_activation" ? "raw_activation" : "probe_contributor",
+        sourceObjectRef: {
+          artifactId: action.seed.artifact_id,
+          artifactType: action.seed.family,
+          feature: action.seed.feature ?? null,
+          kind: action.seed.family,
+          label: activeEpisodeLensView?.lens.display_name,
+          layer: action.seed.layer ?? null,
+          lensId: activeEpisodeLensView?.lens.artifact_id,
+          modelSite: action.seed.model_site_id,
+          policyCallIndex: action.seed.policy_call_index,
+          probeId: action.seed.probe_id ?? action.seed.artifact_id,
+          rankingMode: lensRankingMode,
+          timestep: action.seed.timestep ?? null,
+          traceId: action.seed.trace_id,
+        },
         target: {
           artifact_id: action.seed.artifact_id,
           family: action.seed.family,
@@ -174,11 +193,12 @@ export function useEpisodeLensView({
           ? `Intervene with ${activeEpisodeLensView.lens.display_name}`
           : undefined,
         traceId: action.seed.trace_id,
+        timestep: action.seed.timestep ?? null,
       });
       return;
     }
     sendProbeToIntervention();
-  }, [activeEpisodeLensView, onSendToIntervention, sendProbeToIntervention]);
+  }, [activeEpisodeLensView, lensRankingMode, onSendToIntervention, sendProbeToIntervention]);
 
   return {
     activeEpisodeLensView,
