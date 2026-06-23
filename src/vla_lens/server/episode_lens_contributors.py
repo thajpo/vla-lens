@@ -54,12 +54,20 @@ def _probe_site_readout(
     actual_layer = _optional_int(row.get("layer"))
     actual_policy_call = _optional_int(row.get("policy_call_index"))
     actual_timestep = _optional_int(row.get("timestep"))
+    actual_token_space = _first_present(
+        row.get("token_space_id"),
+        row.get("token_space"),
+        resolved_selection.get("token_space"),
+        resolved_selection.get("token_space_id"),
+    )
     actual_selection = {
         **dict(resolved_selection),
         "trace_id": trace_id,
         "timestep": actual_timestep,
         "policy_call_index": actual_policy_call,
         "model_site_id": actual_site,
+        "token_space": actual_token_space,
+        "token_space_id": actual_token_space,
         "layer": actual_layer,
         "mode": "features",
     }
@@ -69,6 +77,7 @@ def _probe_site_readout(
         "available": True,
         "unavailable_reason": None,
         "model_site_id": actual_site,
+        "token_space_id": actual_token_space,
         "layer": actual_layer,
         "policy_call_index": actual_policy_call,
         "timestep": actual_timestep,
@@ -109,6 +118,9 @@ def _empty_probe_site_readout(
         "available": False,
         "unavailable_reason": None,
         "model_site_id": selection.get("model_site_id"),
+        "token_space_id": _first_present(
+            selection.get("token_space_id"), selection.get("token_space")
+        ),
         "layer": selection.get("layer"),
         "policy_call_index": selection.get("policy_call_index"),
         "timestep": selection.get("timestep"),

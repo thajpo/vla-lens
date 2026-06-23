@@ -90,6 +90,7 @@ def test_probe_episode_lens_view_resolves_selection_and_contributors(tmp_path):
     assert intervention["enabled"] is True
     assert intervention["seed"]["trace_id"] == trace_ids[-1]
     assert intervention["seed"]["model_site_id"] == view["resolved_selection"]["model_site_id"]
+    assert intervention["seed"]["token_space"] == site_readout["token_space_id"]
 
     artifact = reopened.load_artifact(saved.artifact.artifact_id)
     method = dict(artifact.method)

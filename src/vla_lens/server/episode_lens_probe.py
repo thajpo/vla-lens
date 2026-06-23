@@ -638,6 +638,12 @@ def _probe_lens_actions(
     seed_enabled = policy_call is not None and bool(model_site)
     seed = None
     if seed_enabled:
+        token_space = _first_present(
+            site_readout.get("token_space_id"),
+            site_readout.get("token_space"),
+            resolved_selection.get("token_space"),
+            resolved_selection.get("token_space_id"),
+        )
         seed = {
             "trace_id": trace_id,
             "artifact_id": str(artifact.get("artifact_id") or ""),
@@ -646,6 +652,7 @@ def _probe_lens_actions(
             "policy_call_index": policy_call,
             "timestep": _optional_int(resolved_selection.get("timestep")),
             "model_site_id": model_site,
+            "token_space": token_space,
             "layer": _optional_int(resolved_selection.get("layer")),
             "feature": _optional_int(feature),
             "suggested_operator": "ablate",
