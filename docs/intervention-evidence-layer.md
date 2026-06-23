@@ -2,7 +2,7 @@
 
 Status: active design artifact.
 
-Last updated: June 6, 2026.
+Last updated: June 23, 2026.
 
 See [glossary.md](glossary.md) for the canonical definitions of donor,
 recipient, site, target, runtime hook, operator, schedule, outcome, control,
@@ -40,6 +40,14 @@ state, and provenance.
 For v0, a separate `InterventionPlan` object is not required. The saved run
 must contain the full recipe that was executed, so future code can inspect,
 rerun, aggregate, or promote the result without guessing what happened.
+
+Intervention Lab entry points should seed that recipe from the backend
+`TargetSpec` contract when possible. Probe and Episode Lens "Send to
+Intervention" actions pass artifact id, trace id, policy call, model site, and
+token space to `/api/discovery-artifacts/{artifact_id}/target`; the returned
+target is the preferred draft target. If the target cannot be fetched, the UI
+may build a local inspectable fallback target, but it must mark
+`target.metadata.target_source` as `local_fallback`.
 
 ## Product Loop
 
@@ -257,6 +265,11 @@ The runtime hook does not need to be a first-class research object in v0. The
 model adapter can resolve a target to a hook internally. But the saved run
 should record enough information to see which target was intended and which
 runtime hook was actually used.
+
+The target spec used for an intervention draft should come from the backend
+discovery-artifact target adapter when available. This keeps probe and Episode
+Lens entry points aligned on the same artifact-family normalization instead of
+reconstructing target shape separately in each UI surface.
 
 ## InterventionSpec
 

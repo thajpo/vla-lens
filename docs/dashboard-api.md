@@ -2,7 +2,7 @@
 
 Status: active API contract.
 
-Last updated: June 6, 2026.
+Last updated: June 23, 2026.
 
 ## Position
 
@@ -79,7 +79,7 @@ has a dataset/media version and wants immutable media caching.
 | Selection and views | `/api/selections/resolve`, `/api/projection`, `/api/graph`, `/api/tables/query`, `/api/lens-arrays/{array_id}/slice` | Linked-selection resolution and bounded data previews. |
 | Episode evidence | `/api/policy-calls`, `/api/action-norm`, `/api/generation-commitment`, `/api/episode-metrics`, `/api/episode-interactions`, `/api/episode-probes` | Time-aligned behavior, action-generation, interaction, and probe evidence. |
 | Model internals | `/api/activation-sites`, `/api/activation-slice`, `/api/image-token-map`, `/api/object-camera-overlay`, `/api/attention-map`, `/api/patch-features`, `/api/prompt-attention`, `/api/prompt-feature-map`, `/api/expert-token-activations`, `/api/expert-token-details` | Activation, attention, token, camera, and object overlays. |
-| Artifacts | `/api/artifacts`, `/api/artifacts/{artifact_id}`, `/api/artifacts/create/*` | Saved artifacts and built-in artifact creation helpers. |
+| Artifacts | `/api/artifacts`, `/api/artifacts/{artifact_id}`, `/api/artifacts/create/*`, `/api/discovery-artifacts/{artifact_id}/*` | Saved artifacts, built-in artifact creation helpers, and discovery-artifact readouts/targets. |
 | Diagnostics | `/api/dataset-diagnostics`, `/api/dataset-diagnostics/run`, `/api/probe-index`, `/api/counterfactual-pairs`, `/api/observational-comparisons` | Trust, probe, pairing, and observational comparison summaries. |
 
 ## Query Conventions
@@ -112,6 +112,24 @@ camera     camera name, or all where supported
 timestep   environment frame index
 source     auto, trace, sparse, or replay for /api/frame
 ```
+
+Discovery-artifact target conversion uses:
+
+```text
+/api/discovery-artifacts/{artifact_id}/target
+
+trace_id                 optional episode trace ID for TargetSpec metadata
+policy_call or
+policy_call_index        selected policy-call index for TargetSpec metadata
+model_site or site       selected model-site name
+token_space              selected token-space id, when known
+```
+
+The route returns a backend-normalized `TargetSpec` candidate in `target`.
+Probe and Episode Lens intervention entry points should prefer this target when
+seeding the Intervention Lab. If the target route is unavailable, the frontend
+may keep the workflow inspectable with a local fallback target; fallback targets
+must mark `target.metadata.target_source` as `local_fallback`.
 
 ## Mutation Conventions
 

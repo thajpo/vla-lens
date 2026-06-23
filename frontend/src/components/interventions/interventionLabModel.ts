@@ -5,6 +5,10 @@ import type {
   InterventionRunRecord,
 } from "../../types/interventions";
 
+/**
+ * Carries a backend-normalized TargetSpec into the lab draft without reshaping
+ * it in the UI.
+ */
 export function buildBackendTargetInterventionSeed({
   artifactId,
   artifactType,
@@ -45,6 +49,11 @@ export function buildBackendTargetInterventionSeed({
   };
 }
 
+/**
+ * Builds the saved/preflight request. When no backend-normalized TargetSpec is
+ * available, the draft remains inspectable and the target is marked as a local
+ * fallback.
+ */
 export function buildInterventionRequest(draft: InterventionLabDraft): Record<string, unknown> {
   const target = draft.target
     ? {

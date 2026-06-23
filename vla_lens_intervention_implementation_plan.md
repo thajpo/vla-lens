@@ -1223,6 +1223,12 @@ Use simple researcher-facing labels:
 ## Initial UI constraints
 
 - v0 can only support one policy call.
+- Probe and Episode Lens entry points should seed the lab with the
+  backend-normalized `TargetSpec` from
+  `/api/discovery-artifacts/{artifact_id}/target` when available, passing trace,
+  policy call, model site, and token space.
+- If the target fetch fails, the UI may use an inspectable local fallback target
+  only when it marks `target.metadata.target_source` as `local_fallback`.
 - v0 can show unavailable controls as disabled with reasons from preflight.
 - v0 should allow saving an inspected-only record even if runtime unavailable.
 - v0 should not require full rollout video generation.

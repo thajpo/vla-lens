@@ -10,6 +10,10 @@ import type { ProbeLayerRef } from "./shared";
 
 type TargetFetcher = typeof fetchDiscoveryArtifactTarget;
 
+/**
+ * Seeds the Intervention Lab from a probe selection, preferring the backend
+ * TargetSpec so probe and Episode Lens paths share target normalization.
+ */
 export async function buildProbeInterventionSeed({
   activeSelectedProbeArtifactId,
   activeSelectedSiteName,
@@ -52,6 +56,10 @@ export async function buildProbeInterventionSeed({
   });
 }
 
+/**
+ * Seeds the Intervention Lab from an Episode Lens action after validating and
+ * normalizing the resolved trace/site/call/token address through the backend.
+ */
 export async function buildEpisodeLensInterventionSeed({
   displayName,
   fetchTarget = fetchDiscoveryArtifactTarget,
