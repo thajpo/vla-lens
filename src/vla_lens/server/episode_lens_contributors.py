@@ -109,6 +109,7 @@ def _probe_site_readout(
             actual_selection["feature"] = readout["default_feature"]
     return readout, actual_selection, callouts
 
+
 def _empty_probe_site_readout(
     selection: Mapping[str, Any],
     ranking_mode: str,
@@ -143,6 +144,7 @@ def _empty_probe_site_readout(
         "logit_reconstruction": None,
     }
 
+
 def _selected_probe_feature_rows(
     dataset: TraceDataset,
     artifact: LensArtifact,
@@ -155,6 +157,7 @@ def _selected_probe_feature_rows(
     if not rows.empty and best_state:
         X, rows = _filter_best_sweep_rows(X, rows, artifact, best_state)
     return np.asarray(X, dtype=np.float32), rows.reset_index(drop=True)
+
 
 def _choose_feature_row(
     rows: pd.DataFrame,
@@ -184,6 +187,7 @@ def _choose_feature_row(
             candidates = matching
     row = candidates.iloc[0].to_dict()
     return int(row.pop("_position")), row
+
 
 def _linear_probe_contributors(
     dataset: TraceDataset,
@@ -339,6 +343,7 @@ def _linear_probe_contributors(
         },
     }, None
 
+
 def _optional_feature_order(dataset: TraceDataset, artifact: LensArtifact) -> np.ndarray | None:
     if "feature_order" not in artifact.arrays:
         return None
@@ -346,6 +351,7 @@ def _optional_feature_order(dataset: TraceDataset, artifact: LensArtifact) -> np
         return np.asarray(dataset.load_artifact_array(artifact, "feature_order")).reshape(-1)
     except Exception:
         return None
+
 
 def _raw_activation_rows(vector: np.ndarray, top_k: int) -> list[dict[str, Any]]:
     order = np.argsort(-np.abs(vector))[:top_k]
@@ -359,6 +365,7 @@ def _raw_activation_rows(vector: np.ndarray, top_k: int) -> list[dict[str, Any]]
         }
         for rank, index in enumerate(order, start=1)
     ]
+
 
 def _rank_in_order(index: int, order: np.ndarray) -> int | None:
     matches = np.where(order == index)[0]
