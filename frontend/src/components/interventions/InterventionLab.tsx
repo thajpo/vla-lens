@@ -6,14 +6,12 @@ import {
   preflightIntervention,
   saveInterventionRun,
 } from "../../api/interventions";
-import { fetchWorkbench } from "../../api/workbench";
 import type { ArtifactRecord, DatasetEpisode } from "../../types/dataset";
 import type {
   InterventionLabDraft,
   InterventionLabSeed,
   InterventionPreflightResult,
 } from "../../types/interventions";
-import type { ModelSiteSpec } from "../../types/workbench";
 import {
   buildInspectedInterventionRecord,
   buildInterventionRequest,
@@ -26,10 +24,17 @@ type InterventionLabProps = {
   onSavedRun: (runId: string) => void;
 };
 
+type LabModelSite = {
+  family?: string | null;
+  layer?: number | null;
+  site_id: string;
+  token_kind?: string | null;
+  token_space_id?: string | null;
+};
+
 export function InterventionLab({ initialDraft, onSavedRun }: InterventionLabProps) {
   const queryClient = useQueryClient();
   const dataset = useQuery({ queryKey: ["dataset"], queryFn: fetchDataset, staleTime: 15_000 });
-  const workbench = useQuery({ queryKey: ["workbench"], queryFn: fetchWorkbench, staleTime: 15_000 });
   const artifacts = useQuery({ queryKey: ["artifacts"], queryFn: fetchArtifacts, staleTime: 15_000 });
   const episodes = useQuery({
     queryKey: ["episodes", "intervention-lab"],
@@ -40,22 +45,22 @@ export function InterventionLab({ initialDraft, onSavedRun }: InterventionLabPro
     () => (artifacts.data?.artifacts ?? []).filter((artifact) => artifact.artifact_type === "probe_suite"),
     [artifacts.data],
   );
-  const modelSites = useMemo(
-    () => preferredModelSites(workbench.data?.model_sites ?? []),
-    [workbench.data],
-  );
   const [artifactId, setArtifactId] = useState(initialDraft?.artifactId ?? "");
   const [traceId, setTraceId] = useState(initialDraft?.traceId ?? "");
   const [policyCallIndex, setPolicyCallIndex] = useState(initialDraft?.policyCallIndex ?? 0);
   const [modelSite, setModelSite] = useState(initialDraft?.modelSite ?? "");
-  const [operator, setOperator] = useState("add_direction");
-  const [strength, setStrength] = useState(1);
-  const [basis, setBasis] = useState(["raw", "gripper"]);
+  const [operator, setOperator] = useState(initialDraft?.operator ?? "add_direction");
+  const [strength, setStrength] = useState(initialDraft?.strength ?? 1);
+  const [basis, setBasis] = useState(initialDraft?.basis ?? ["raw", "gripper"]);
   const [includeRandomControl, setIncludeRandomControl] = useState(true);
   const [message, setMessage] = useState("");
   const [seedTarget, setSeedTarget] = useState<Record<string, unknown> | undefined>(initialDraft?.target);
+  const modelSites = useMemo(
+    () => interventionModelSites(initialDraft, seedTarget),
+    [initialDraft, seedTarget],
+  );
 
-  const activeArtifactId = artifactId || String(probeArtifacts[0]?.artifact_id ?? "");
+  const activeArtifactId = artifactId;
   const selectedArtifact = probeArtifacts.find(
     (artifact) => artifact.artifact_id === activeArtifactId,
   );
@@ -65,19 +70,28 @@ export function InterventionLab({ initialDraft, onSavedRun }: InterventionLabPro
     traceId || firstSourceTrace(selectedArtifact) || episodes.data?.episodes[0]?.trace_id || "";
   const draft = buildDraft({
     artifact: selectedArtifact,
+    artifactId: activeArtifactId,
+    artifactType: initialDraft?.artifactType,
     basis,
     controls: includeRandomControl ? ["random_direction"] : [],
     datasetFingerprint: dataset.data?.index?.dataset_fingerprint ?? "unknown",
-    datasetId: workbench.data?.dataset_id ?? dataset.data?.root ?? "dataset",
+    datasetId: dataset.data?.root ?? "dataset",
+    feature: initialDraft?.feature,
+    layer: initialDraft?.layer,
     modelSite: activeModelSite,
     operator,
     policyCallIndex,
+    rankingMode: initialDraft?.rankingMode,
+    selectionSource: initialDraft?.selectionSource,
     site: selectedModelSite,
+    sourceObjectRef: initialDraft?.sourceObjectRef,
     strength,
     target: seedTarget,
+    title: initialDraft?.title,
+    timestep: initialDraft?.timestep,
     traceId: activeTraceId,
   });
-  const canPreflight = Boolean(draft.traceId && draft.modelSite && draft.artifactId);
+  const canPreflight = Boolean(draft.traceId && draft.modelSite);
   const preflight = useMutation({
     mutationFn: (payload: Record<string, unknown>) => preflightIntervention(payload),
     onSuccess: () => setMessage(""),
@@ -144,10 +158,13 @@ export function InterventionLab({ initialDraft, onSavedRun }: InterventionLabPro
             setArtifactId(value);
             setSeedTarget(undefined);
           }}
-          options={probeArtifacts.map((artifact) => ({
-            label: artifact.name ?? artifact.artifact_id ?? "probe",
-            value: String(artifact.artifact_id ?? ""),
-          }))}
+          options={[
+            { label: "Manual model target", value: "" },
+            ...probeArtifacts.map((artifact) => ({
+              label: artifact.name ?? artifact.artifact_id ?? "probe",
+              value: String(artifact.artifact_id ?? ""),
+            })),
+          ]}
           value={activeArtifactId}
         />
         <LabeledSelect
@@ -189,6 +206,7 @@ export function InterventionLab({ initialDraft, onSavedRun }: InterventionLabPro
           options={[
             { label: "Add direction", value: "add_direction" },
             { label: "Project out", value: "project_out_direction" },
+            { label: "Ablate", value: "ablate" },
           ]}
           value={operator}
         />
@@ -273,12 +291,15 @@ function LabeledSelect({
   options: { label: string; value: string }[];
   value: string;
 }) {
+  const resolvedOptions = options.some((option) => option.value === value) || !value
+    ? options
+    : [{ label: value, value }, ...options];
   return (
     <label className="lab-field">
       <span>{label}</span>
       <select onChange={(event) => onChange(event.target.value)} value={value}>
-        {!options.length ? <option value="">None</option> : null}
-        {options.map((option) => (
+        {!resolvedOptions.length ? <option value="">None</option> : null}
+        {resolvedOptions.map((option) => (
           <option key={option.value} value={option.value}>
             {option.label}
           </option>
@@ -290,55 +311,102 @@ function LabeledSelect({
 
 function buildDraft({
   artifact,
+  artifactId,
+  artifactType,
   basis,
   controls,
   datasetFingerprint,
   datasetId,
+  feature,
+  layer,
   modelSite,
   operator,
   policyCallIndex,
+  rankingMode,
+  selectionSource,
   site,
+  sourceObjectRef,
   strength,
   target,
+  title,
+  timestep,
   traceId,
 }: {
   artifact?: ArtifactRecord;
+  artifactId: string;
+  artifactType?: string;
   basis: string[];
   controls: string[];
   datasetFingerprint: string;
   datasetId: string;
+  feature?: number | null;
+  layer?: number | null;
   modelSite: string;
   operator: string;
   policyCallIndex: number;
-  site?: ModelSiteSpec;
+  rankingMode?: string;
+  selectionSource?: string;
+  site?: LabModelSite;
+  sourceObjectRef?: InterventionLabDraft["sourceObjectRef"];
   strength: number;
   target?: Record<string, unknown>;
+  title?: string;
+  timestep?: number | null;
   traceId: string;
 }): InterventionLabDraft {
   return {
-    artifactId: String(artifact?.artifact_id ?? ""),
-    artifactType: String(artifact?.artifact_type ?? ""),
+    artifactId: artifactId || String(artifact?.artifact_id ?? ""),
+    artifactType: artifactType ?? String(artifact?.artifact_type ?? ""),
     basis,
     controls,
     datasetFingerprint,
     datasetId,
+    feature,
+    layer: layer ?? site?.layer ?? null,
     modelFamily: String(site?.family ?? "pi05"),
     modelSite,
     operator,
     policyCallIndex,
+    rankingMode,
+    selectionSource,
+    sourceObjectRef,
     strength,
     target,
-    title: artifact?.name ? `Intervene with ${artifact.name}` : undefined,
-    tokenSpace: String(site?.token_space_id ?? "synthetic.action_suffix"),
+    title: title ?? (artifact?.name ? `Intervene with ${artifact.name}` : undefined),
+    tokenSpace: String(site?.token_space_id ?? "pi05.action_suffix"),
     traceId,
+    timestep,
   };
 }
 
-function preferredModelSites(sites: ModelSiteSpec[]): ModelSiteSpec[] {
-  return [...sites].sort((left, right) => siteRank(left) - siteRank(right));
+function interventionModelSites(
+  draft?: InterventionLabSeed,
+  target?: Record<string, unknown>,
+): LabModelSite[] {
+  const sites: LabModelSite[] = [];
+  const targetSite = textValue(target?.model_site) || textValue(target?.site_id);
+  const draftSite = draft?.modelSite ?? "";
+  addSite(sites, targetSite || draftSite, {
+    family: textValue(target?.model_family) || draft?.modelFamily,
+    layer: numericValue(target?.layer) ?? draft?.layer ?? null,
+    token_space_id: textValue(target?.token_space) || draft?.tokenSpace || "pi05.action_suffix",
+  });
+  addSite(sites, draft?.sourceObjectRef?.modelSite ?? "", {
+    family: draft?.modelFamily,
+    layer: draft?.sourceObjectRef?.layer ?? draft?.layer ?? null,
+    token_space_id: draft?.tokenSpace || "pi05.action_suffix",
+  });
+  return sites.sort((left, right) => siteRank(left) - siteRank(right));
 }
 
-function siteRank(site: ModelSiteSpec): number {
+function addSite(sites: LabModelSite[], siteId: string, site: Omit<LabModelSite, "site_id">) {
+  if (!siteId || sites.some((item) => item.site_id === siteId)) {
+    return;
+  }
+  sites.push({ ...site, site_id: siteId });
+}
+
+function siteRank(site: LabModelSite): number {
   const id = site.site_id.toLowerCase();
   if (id.includes("action_head") || site.token_kind === "action") {
     return 0;
@@ -347,6 +415,21 @@ function siteRank(site: ModelSiteSpec): number {
     return 1;
   }
   return 2;
+}
+
+function textValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
+function numericValue(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }
 
 function episodeOptions(episodes: DatasetEpisode[], artifact?: ArtifactRecord) {

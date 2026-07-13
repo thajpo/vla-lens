@@ -156,13 +156,15 @@ export function useEpisodeLensView({
     if (action?.kind === "send_to_intervention" && "seed" in action && action.seed) {
       const seed = await buildEpisodeLensInterventionSeed({
         displayName: activeEpisodeLensView?.lens.display_name,
+        lensId: activeEpisodeLensView?.lens.artifact_id,
+        rankingMode: lensRankingMode,
         seed: action.seed,
       });
       onSendToIntervention(seed);
       return;
     }
     sendProbeToIntervention();
-  }, [activeEpisodeLensView, onSendToIntervention, sendProbeToIntervention]);
+  }, [activeEpisodeLensView, lensRankingMode, onSendToIntervention, sendProbeToIntervention]);
 
   return {
     activeEpisodeLensView,

@@ -1,9 +1,11 @@
 import { useState } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ActivationSliceResponse, EpisodeLensView } from "../../types/dataset";
 import { researchCopy } from "../../copy/researchCopy";
 import type { ProbeEvidenceBundle, ResearchSelectionState } from "../../types/probeEvidence";
 import { saveEvidencePin } from "../../api/dataset";
+import { fetchInterventionRuns } from "../../api/interventions";
+import { interventionsForSource, summarizeInterventionRun } from "../../components/interventions/interventionDisplay";
 import { FeatureTable } from "./InspectorTables";
 import { TOP_CHANNEL_COUNT_OPTIONS } from "./shared";
 import { formatMaybeNumber, labelFromSnake } from "./formatters";
@@ -291,6 +293,7 @@ export function LensCompactReadout({
             <div className="lens-readout-note">Some probe details are unavailable for this selection.</div>
           </div>
         ) : null}
+        <ProbeInterventionBacklinks artifactId={probeEvidenceBundle.artifact.lens_id} />
       </section>
     );
   }
@@ -393,7 +396,40 @@ export function LensCompactReadout({
           <div className="lens-readout-note">Some probe details are unavailable for this selection.</div>
         </div>
       ) : null}
+      <ProbeInterventionBacklinks artifactId={view.lens.artifact_id} />
     </section>
+  );
+}
+
+function ProbeInterventionBacklinks({ artifactId }: { artifactId: string }) {
+  const runs = useQuery({
+    queryKey: ["intervention-runs"],
+    queryFn: fetchInterventionRuns,
+    enabled: Boolean(artifactId),
+    staleTime: 15_000,
+  });
+  const linked = interventionsForSource(runs.data?.intervention_runs ?? [], artifactId).slice(0, 4);
+  if (!artifactId || (!linked.length && !runs.isFetching)) {
+    return null;
+  }
+  return (
+    <div className="probe-linked-interventions">
+      <strong>Interventions from this probe</strong>
+      {runs.isFetching && !linked.length ? <span>Loading intervention records.</span> : null}
+      {linked.map((run) => {
+        const summary = summarizeInterventionRun(run);
+        return (
+          <button
+            key={run.run_id}
+            type="button"
+            onClick={() => { window.location.hash = `#interventions/${encodeURIComponent(run.run_id)}`; }}
+          >
+            <span>{summary.title}</span>
+            <small>{summary.status} · {summary.target}</small>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 

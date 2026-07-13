@@ -46,9 +46,22 @@ export async function buildProbeInterventionSeed({
   return buildBackendTargetInterventionSeed({
     artifactId: activeSelectedProbeArtifactId,
     artifactType: "probe_suite",
+    layer: selectedProbeSite?.layer ?? selectedProbeRef?.layer ?? null,
     modelFamily: selectedProbeSite?.family ?? "pi05",
     modelSite: modelSiteName,
     policyCallIndex,
+    selectionSource: "probe_model_locus",
+    sourceObjectRef: {
+      artifactId: activeSelectedProbeArtifactId,
+      artifactType: "probe_suite",
+      kind: "probe_suite",
+      label: selectedProbe?.name,
+      layer: selectedProbeSite?.layer ?? selectedProbeRef?.layer ?? null,
+      modelSite: modelSiteName,
+      policyCallIndex,
+      probeId: activeSelectedProbeArtifactId,
+      traceId: activeTraceId,
+    },
     target,
     title: selectedProbe?.name ? `Intervene with ${selectedProbe.name}` : undefined,
     tokenSpace,
@@ -63,10 +76,14 @@ export async function buildProbeInterventionSeed({
 export async function buildEpisodeLensInterventionSeed({
   displayName,
   fetchTarget = fetchDiscoveryArtifactTarget,
+  lensId,
+  rankingMode,
   seed,
 }: {
   displayName?: string | null;
   fetchTarget?: TargetFetcher;
+  lensId?: string;
+  rankingMode?: string;
   seed: InterventionSeedActionPayload;
 }): Promise<InterventionLabSeed> {
   const target = await fetchBackendTarget({
@@ -81,13 +98,33 @@ export async function buildEpisodeLensInterventionSeed({
     artifactId: seed.artifact_id,
     artifactType: seed.family,
     basis: ["episode_lens_view", "probe_contributors"],
+    feature: seed.feature ?? null,
+    layer: seed.layer ?? null,
     modelSite: seed.model_site_id,
     operator: seed.suggested_operator ?? "ablate",
     policyCallIndex: seed.policy_call_index,
+    rankingMode,
+    selectionSource: rankingMode === "raw_activation" ? "raw_activation" : "probe_contributor",
+    sourceObjectRef: {
+      artifactId: seed.artifact_id,
+      artifactType: seed.family,
+      feature: seed.feature ?? null,
+      kind: seed.family,
+      label: displayName ?? undefined,
+      layer: seed.layer ?? null,
+      lensId,
+      modelSite: seed.model_site_id,
+      policyCallIndex: seed.policy_call_index,
+      probeId: seed.probe_id ?? seed.artifact_id,
+      rankingMode,
+      timestep: seed.timestep ?? null,
+      traceId: seed.trace_id,
+    },
     target,
     title: displayName ? `Intervene with ${displayName}` : undefined,
     tokenSpace: seed.token_space ?? undefined,
     traceId: seed.trace_id,
+    timestep: seed.timestep ?? null,
   });
 }
 
