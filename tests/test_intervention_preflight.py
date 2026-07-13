@@ -4,9 +4,14 @@ import subprocess
 import sys
 from typing import Any
 
+import numpy as np
 from fastapi.testclient import TestClient
 
-from vla_lens.interventions.preflight import PREFLIGHT_CHECK_NAMES, intervention_preflight
+from vla_lens.interventions.preflight import (
+    PREFLIGHT_CHECK_NAMES,
+    _jsonable_record,
+    intervention_preflight,
+)
 from vla_lens.server.fastapi_app import create_dashboard_app
 from vla_lens.synthetic import create_synthetic_trace_dataset
 from vla_lens.traces import TraceDataset
@@ -122,6 +127,21 @@ def test_intervention_preflight_route_returns_runtime_free_result(tmp_path):
     assert set(checks) == set(PREFLIGHT_CHECK_NAMES)
     assert checks["model_runtime_available"]["status"] == "unavailable"
     assert payload["preflight"]["runtime_environment"]["mode"] == "metadata_preflight"
+
+
+def test_intervention_preflight_serializes_array_valued_table_cells():
+    record = _jsonable_record(
+        {
+            "site_id": "action_head.layers.0.resid",
+            "shape": np.array([1, 8, 16]),
+            "scalar": np.array(3),
+            "metadata": '{"layers": [0, 4], "ok": true}',
+        }
+    )
+
+    assert record["shape"] == [1, 8, 16]
+    assert record["scalar"] == 3
+    assert record["metadata"] == {"layers": [0, 4], "ok": True}
 
 
 def test_intervention_preflight_import_does_not_load_heavy_runtime_dependencies():

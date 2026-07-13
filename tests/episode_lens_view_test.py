@@ -50,9 +50,7 @@ def test_probe_episode_lens_view_resolves_selection_and_contributors(tmp_path):
     assert view["inspector"]["default_ranking_id"] == "probe_contributors"
     assert view["inspector"]["pipeline_marks"]
     assert view["inspector"]["timeline_marks"]
-    assert len(view["inspector"]["timeline_marks"]) == len(
-        view["view"]["temporal_readout"]["rows"]
-    )
+    assert len(view["inspector"]["timeline_marks"]) == len(view["view"]["temporal_readout"]["rows"])
     assert any(mark.get("selected") for mark in view["inspector"]["timeline_marks"])
     assert {ranking["id"] for ranking in view["inspector"]["rankings"]} == {
         "probe_contributors",
@@ -75,9 +73,7 @@ def test_probe_episode_lens_view_resolves_selection_and_contributors(tmp_path):
     assert site_readout["top_k"] == 5
     assert len(site_readout["feature_contributors"]) <= 5
     first = site_readout["feature_contributors"][0]
-    assert first["contribution"] == pytest.approx(
-        first["normalized_activation"] * first["weight"]
-    )
+    assert first["contribution"] == pytest.approx(first["normalized_activation"] * first["weight"])
     assert first["abs_contribution"] == pytest.approx(abs(first["contribution"]))
     assert first["feature_ref"]["model_site_id"] == view["resolved_selection"]["model_site_id"]
     assert site_readout["logit_reconstruction"]["reconstructed_logit"] == pytest.approx(
@@ -90,6 +86,7 @@ def test_probe_episode_lens_view_resolves_selection_and_contributors(tmp_path):
     assert intervention["enabled"] is True
     assert intervention["seed"]["trace_id"] == trace_ids[-1]
     assert intervention["seed"]["model_site_id"] == view["resolved_selection"]["model_site_id"]
+    assert intervention["seed"]["token_space"] == site_readout["token_space_id"]
 
     artifact = reopened.load_artifact(saved.artifact.artifact_id)
     method = dict(artifact.method)
@@ -108,6 +105,7 @@ def test_probe_episode_lens_view_resolves_selection_and_contributors(tmp_path):
     )
     assert payload["view"]["view"]["probe"]["trained_policy_call_scope"] == "selected"
     assert payload["view"]["view"]["probe"]["training_spec"]["policy_calls"] == [0, 1]
+
 
 def test_probe_episode_lens_view_marks_nonlinear_contributors_unavailable(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
@@ -152,6 +150,7 @@ def test_probe_episode_lens_view_marks_nonlinear_contributors_unavailable(tmp_pa
     assert site_readout["raw_activation_ranking_available"] is True
     assert site_readout["probe_contribution_ranking_available"] is False
     assert "nonlinear" in site_readout["feature_contributors_unavailable_reason"]
+
 
 def test_unsupported_episode_lens_view_family_returns_unavailable_payload(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=4)

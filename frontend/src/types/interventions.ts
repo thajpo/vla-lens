@@ -59,19 +59,41 @@ export type InterventionLabDraft = {
   controls: string[];
   datasetFingerprint: string;
   datasetId: string;
+  feature?: number | null;
+  layer?: number | null;
   modelFamily: string;
   modelSite: string;
   operator: string;
   policyCallIndex: number;
+  rankingMode?: string;
   runId?: string;
+  selectionSource?: string;
+  sourceObjectRef?: InterventionSourceObjectRef;
   strength: number;
   target?: Record<string, unknown>;
   title?: string;
   tokenSpace: string;
   traceId: string;
+  timestep?: number | null;
 };
 
 export type InterventionLabSeed = Partial<InterventionLabDraft>;
+
+export type InterventionSourceObjectRef = {
+  kind: string;
+  artifactId?: string;
+  artifactType?: string;
+  feature?: number | null;
+  label?: string;
+  layer?: number | null;
+  lensId?: string;
+  modelSite?: string;
+  policyCallIndex?: number | null;
+  probeId?: string;
+  rankingMode?: string;
+  timestep?: number | null;
+  traceId?: string;
+};
 
 export type InterventionSummary = {
   claimLabels: string[];
@@ -80,6 +102,7 @@ export type InterventionSummary = {
   operator: string;
   outcomeKind: string;
   policyCall: string;
+  sourceLabel: string;
   status: InterventionStatus;
   target: string;
   title: string;

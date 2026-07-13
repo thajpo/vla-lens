@@ -795,13 +795,30 @@ def _json_parse(value: Any) -> Any:
 def _jsonable_record(record: Mapping[str, Any]) -> dict[str, Any]:
     out: dict[str, Any] = {}
     for key, value in record.items():
-        if _missing(value):
-            out[str(key)] = None
-        elif hasattr(value, "item"):
-            out[str(key)] = value.item()
-        else:
-            out[str(key)] = _json_parse(value)
+        out[str(key)] = _jsonable_value(value)
     return out
+
+
+def _jsonable_value(value: Any) -> Any:
+    if _missing(value):
+        return None
+    parsed = _json_parse(value)
+    if parsed is not value:
+        return _jsonable_value(parsed)
+    if isinstance(value, Mapping):
+        return {str(key): _jsonable_value(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_jsonable_value(item) for item in value]
+    if hasattr(value, "tolist"):
+        listed = value.tolist()
+        if listed is not value:
+            return _jsonable_value(listed)
+    if hasattr(value, "item"):
+        try:
+            return _jsonable_value(value.item())
+        except (TypeError, ValueError):
+            return str(value)
+    return value
 
 
 def _dedupe(values: tuple[str, ...]) -> tuple[str, ...]:

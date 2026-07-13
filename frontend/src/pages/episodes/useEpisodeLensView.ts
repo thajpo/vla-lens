@@ -7,6 +7,7 @@ import {
   shouldApplyLensDefault,
   type LensRankingMode,
 } from "./episodeLensModel";
+import { buildEpisodeLensInterventionSeed } from "./interventionSeed";
 import type { InspectionMode } from "./shared";
 
 type UseEpisodeLensViewArgs = {
@@ -145,7 +146,7 @@ export function useEpisodeLensView({
   const jumpToLensDefault = useCallback(() => {
     applyLensSelection(activeEpisodeLensView?.recommended_selection);
   }, [activeEpisodeLensView?.recommended_selection, applyLensSelection]);
-  const sendLensToIntervention = useCallback(() => {
+  const sendLensToIntervention = useCallback(async () => {
     if (!onSendToIntervention) {
       return;
     }
@@ -153,32 +154,17 @@ export function useEpisodeLensView({
       (item) => item.kind === "send_to_intervention",
     );
     if (action?.kind === "send_to_intervention" && "seed" in action && action.seed) {
-      onSendToIntervention({
-        artifactId: action.seed.artifact_id,
-        artifactType: action.seed.family,
-        basis: ["episode_lens_view", "probe_contributors"],
-        modelSite: action.seed.model_site_id,
-        operator: action.seed.suggested_operator ?? "ablate",
-        policyCallIndex: action.seed.policy_call_index,
-        target: {
-          artifact_id: action.seed.artifact_id,
-          family: action.seed.family,
-          feature: action.seed.feature ?? null,
-          layer: action.seed.layer ?? null,
-          model_site_id: action.seed.model_site_id,
-          policy_call_index: action.seed.policy_call_index,
-          probe_id: action.seed.probe_id ?? null,
-          timestep: action.seed.timestep ?? null,
-        },
-        title: activeEpisodeLensView?.lens.display_name
-          ? `Intervene with ${activeEpisodeLensView.lens.display_name}`
-          : undefined,
-        traceId: action.seed.trace_id,
+      const seed = await buildEpisodeLensInterventionSeed({
+        displayName: activeEpisodeLensView?.lens.display_name,
+        lensId: activeEpisodeLensView?.lens.artifact_id,
+        rankingMode: lensRankingMode,
+        seed: action.seed,
       });
+      onSendToIntervention(seed);
       return;
     }
     sendProbeToIntervention();
-  }, [activeEpisodeLensView, onSendToIntervention, sendProbeToIntervention]);
+  }, [activeEpisodeLensView, lensRankingMode, onSendToIntervention, sendProbeToIntervention]);
 
   return {
     activeEpisodeLensView,

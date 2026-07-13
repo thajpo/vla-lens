@@ -1321,6 +1321,18 @@ Purpose:
 Run or inspect counterfactuals.
 ```
 
+Seed contract:
+
+```text
+Probe and Episode Lens entry points should request a backend-normalized
+TargetSpec from /api/discovery-artifacts/{artifact_id}/target using artifact
+id, trace id, policy call, model site, and token space when known.
+
+If that request is unavailable, the UI may continue with an inspectable local
+fallback target, but the fallback must mark metadata.target_source as
+local_fallback.
+```
+
 UI wizard labels:
 
 ```text

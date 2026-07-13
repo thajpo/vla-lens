@@ -28,6 +28,9 @@ export function InterventionCard({ run, selected = false, onOpen }: Intervention
       <span className="intervention-card-meta">
         {summary.operator || "operator pending"} · {summary.outcomeKind || "outcome pending"}
       </span>
+      {summary.sourceLabel ? (
+        <span className="intervention-card-meta">Source {summary.sourceLabel}</span>
+      ) : null}
       <span className="intervention-label-row">
         {summary.claimLabels.length ? (
           summary.claimLabels.map((label) => (
