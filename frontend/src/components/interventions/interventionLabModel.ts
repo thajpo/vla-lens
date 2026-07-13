@@ -1,9 +1,59 @@
 import type {
   InterventionLabDraft,
+  InterventionLabSeed,
   InterventionPreflightResult,
   InterventionRunRecord,
 } from "../../types/interventions";
 
+/**
+ * Carries a backend-normalized TargetSpec into the lab draft without reshaping
+ * it in the UI.
+ */
+export function buildBackendTargetInterventionSeed({
+  artifactId,
+  artifactType,
+  basis,
+  modelFamily,
+  modelSite,
+  operator,
+  policyCallIndex,
+  target,
+  title,
+  tokenSpace,
+  traceId,
+}: {
+  artifactId: string;
+  artifactType: string;
+  basis?: string[];
+  modelFamily?: string;
+  modelSite: string;
+  operator?: string;
+  policyCallIndex: number;
+  target?: Record<string, unknown>;
+  title?: string;
+  tokenSpace?: string;
+  traceId: string;
+}): InterventionLabSeed {
+  return {
+    artifactId,
+    artifactType,
+    basis,
+    modelFamily,
+    modelSite,
+    operator,
+    policyCallIndex,
+    target,
+    title,
+    tokenSpace,
+    traceId,
+  };
+}
+
+/**
+ * Builds the saved/preflight request. When no backend-normalized TargetSpec is
+ * available, the draft remains inspectable and the target is marked as a local
+ * fallback.
+ */
 export function buildInterventionRequest(draft: InterventionLabDraft): Record<string, unknown> {
   const target = draft.target
     ? {
@@ -22,6 +72,7 @@ export function buildInterventionRequest(draft: InterventionLabDraft): Record<st
         token_space: draft.tokenSpace,
         metadata: {
           intended_basis: draft.basis.includes("gripper") ? "gripper" : "raw",
+          target_source: "local_fallback",
         },
       };
   return {

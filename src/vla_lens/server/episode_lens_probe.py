@@ -83,6 +83,7 @@ def _unavailable_episode_lens_view(
         ],
     }
 
+
 def _probe_suite_episode_lens_view(
     dataset: TraceDataset,
     artifact: Mapping[str, Any],
@@ -204,6 +205,7 @@ def _probe_suite_episode_lens_view(
         }
     )
 
+
 def _probe_lens_readout(
     probe: Mapping[str, Any],
     summary: Mapping[str, Any],
@@ -229,6 +231,7 @@ def _probe_lens_readout(
         ),
     }
 
+
 def _probe_verdict(
     available: bool,
     predicted: Any,
@@ -247,6 +250,7 @@ def _probe_verdict(
     if predicted not in {None, ""} and actual not in {None, ""}:
         return "ambiguous"
     return "unknown"
+
 
 def _probe_source_scope(
     dataset: TraceDataset,
@@ -303,6 +307,7 @@ def _probe_source_scope(
         "sites": sites,
     }
 
+
 def _probe_source_site_records(
     dataset: TraceDataset,
     artifact: LensArtifact,
@@ -341,16 +346,14 @@ def _probe_source_site_records(
         records.append(record)
     return records
 
+
 def _probe_recommended_selection(
     trace_id: str,
     source_scope: Mapping[str, Any],
     best_row: Mapping[str, Any],
     best_state: Mapping[str, Any],
 ) -> dict[str, Any] | None:
-    sites = [
-        site for site in source_scope.get("sites", [])
-        if isinstance(site, Mapping)
-    ]
+    sites = [site for site in source_scope.get("sites", []) if isinstance(site, Mapping)]
     best_state_site = _site_for_best_state(sites, best_state)
     model_site_id = _first_present(
         best_state_site,
@@ -376,6 +379,7 @@ def _probe_recommended_selection(
         "mode": "features",
     }
 
+
 def _resolve_probe_lens_selection(
     current_selection: Mapping[str, Any],
     recommended_selection: Mapping[str, Any] | None,
@@ -400,8 +404,7 @@ def _resolve_probe_lens_selection(
                 {
                     "severity": "warning",
                     "text": (
-                        "Requested site is outside this probe input; using the probe "
-                        "default site."
+                        "Requested site is outside this probe input; using the probe default site."
                     ),
                 }
             )
@@ -410,6 +413,7 @@ def _resolve_probe_lens_selection(
     resolved.setdefault("trace_id", current_selection.get("trace_id"))
     resolved.setdefault("mode", "features")
     return resolved, callouts
+
 
 def _mark_source_scope_selection(
     source_scope: Mapping[str, Any],
@@ -432,6 +436,7 @@ def _mark_source_scope_selection(
             }
         )
     return {**dict(source_scope), "sites": sites}
+
 
 def _probe_temporal_readout(probe: Mapping[str, Any]) -> dict[str, Any]:
     rows = probe.get("rows") if isinstance(probe.get("rows"), list) else []
@@ -464,6 +469,7 @@ def _probe_temporal_readout(probe: Mapping[str, Any]) -> dict[str, Any]:
         "unavailable_reason": None if out else "No temporal probe rows are available.",
         "rows": out,
     }
+
 
 def _probe_lens_annotations(
     source_scope: Mapping[str, Any],
@@ -498,6 +504,7 @@ def _probe_lens_annotations(
         "overlays": [],
         "callouts": callouts,
     }
+
 
 def _probe_timeline_annotations(
     temporal_readout: Mapping[str, Any],
@@ -567,6 +574,7 @@ def _probe_timeline_annotations(
         ]
     return []
 
+
 def _probe_lens_inspector(
     annotations: Mapping[str, Any],
     site_readout: Mapping[str, Any],
@@ -625,6 +633,7 @@ def _probe_lens_inspector(
         ],
     }
 
+
 def _probe_lens_actions(
     artifact: Mapping[str, Any],
     trace_id: str,
@@ -638,6 +647,12 @@ def _probe_lens_actions(
     seed_enabled = policy_call is not None and bool(model_site)
     seed = None
     if seed_enabled:
+        token_space = _first_present(
+            site_readout.get("token_space_id"),
+            site_readout.get("token_space"),
+            resolved_selection.get("token_space"),
+            resolved_selection.get("token_space_id"),
+        )
         seed = {
             "trace_id": trace_id,
             "artifact_id": str(artifact.get("artifact_id") or ""),
@@ -646,6 +661,7 @@ def _probe_lens_actions(
             "policy_call_index": policy_call,
             "timestep": _optional_int(resolved_selection.get("timestep")),
             "model_site_id": model_site,
+            "token_space": token_space,
             "layer": _optional_int(resolved_selection.get("layer")),
             "feature": _optional_int(feature),
             "suggested_operator": "ablate",

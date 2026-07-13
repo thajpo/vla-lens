@@ -326,6 +326,8 @@ export type InterventionSeedActionPayload = {
   policy_call_index: number;
   timestep?: number | null;
   model_site_id: string;
+  /** Token-space id used when asking the backend for the normalized TargetSpec. */
+  token_space?: string | null;
   layer?: number | null;
   feature?: number | null;
   suggested_operator?: "ablate" | "steer" | "replace" | "patch" | string;
