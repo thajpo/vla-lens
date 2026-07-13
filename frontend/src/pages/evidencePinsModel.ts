@@ -4,7 +4,7 @@ export function evidencePinHash(pin: EvidencePin): string {
   const selection = pin.selection ?? {};
   const episodeId = selection.episode_id ?? "";
   if (!episodeId) {
-    return "#evidence";
+    return "#interventions";
   }
   const params = new URLSearchParams();
   if (selection.lens_id) params.set("probe_id", selection.lens_id);

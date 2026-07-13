@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Database, FileText, LayoutDashboard, Microscope } from "lucide-react";
 
-export type AppPage = "dataset" | "episode" | "evidence" | "probes";
+export type AppPage = "dataset" | "episode" | "interventions" | "probes";
 
 type AppShellProps = {
   activePage: AppPage;
@@ -37,12 +37,12 @@ export function AppShell({ activePage, onPageChange, children }: AppShellProps) 
             Probes
           </button>
           <button
-            className={activePage === "evidence" ? "active" : ""}
+            className={activePage === "interventions" ? "active" : ""}
             type="button"
-            onClick={() => onPageChange("evidence")}
+            onClick={() => onPageChange("interventions")}
           >
             <FileText size={16} />
-            Evidence
+            Interventions
           </button>
         </nav>
       </header>

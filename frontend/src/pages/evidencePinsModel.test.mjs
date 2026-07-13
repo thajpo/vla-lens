@@ -32,7 +32,7 @@ test("evidence pin hash reopens saved research state", () => {
   assert.equal(evidencePinSummary(pin), "top · call 3 · timestep 7 · score 0.880");
 });
 
-test("evidence pin hash falls back to evidence page when episode state is missing", () => {
+test("evidence pin hash falls back to interventions page when episode state is missing", () => {
   assert.equal(
     evidencePinHash({
       pin_id: "pin-2",
@@ -41,7 +41,7 @@ test("evidence pin hash falls back to evidence page when episode state is missin
       selection: {},
       evidence: {},
     }),
-    "#evidence",
+    "#interventions",
   );
 });
 

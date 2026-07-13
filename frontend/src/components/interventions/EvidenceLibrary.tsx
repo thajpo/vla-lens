@@ -16,14 +16,14 @@ export function EvidenceLibrary({ runs, selectedRunId, onOpenRun }: EvidenceLibr
   return (
     <aside className="evidence-library">
       <header>
-        <h2>Evidence</h2>
+        <h2>Interventions</h2>
         <span>{runs.length}</span>
       </header>
       <label className="evidence-search">
         <Search size={15} />
         <input
-          aria-label="Search evidence records"
-          placeholder="Search records"
+          aria-label="Search intervention records"
+          placeholder="Search interventions"
           value={query}
           onChange={(event) => setQuery(event.target.value)}
         />
@@ -62,6 +62,7 @@ function filterRuns(runs: InterventionRunRecord[], query: string): InterventionR
       summary.target,
       summary.operator,
       summary.outcomeKind,
+      summary.sourceLabel,
       ...summary.claimLabels,
     ]
       .join(" ")

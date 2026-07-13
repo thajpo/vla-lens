@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { AppShell, type AppPage } from "../components/layout/AppShell";
 import { ProbeSuitePreset } from "../components/workflows/ProbeSuitePreset";
-import { EvidencePage } from "./EvidencePage";
+import { InterventionsPage } from "./EvidencePage";
 import { EpisodesPage } from "./EpisodesPage";
 import { DatasetBrowser } from "./workbench/DatasetBrowser";
 import { useWorkbenchStore } from "../store/workbenchStore";
@@ -11,15 +11,18 @@ import {
   buildEpisodeHash,
   emptyEpisodeRouteState,
   episodeRouteKey,
-  parseEpisodeRoute,
   parseInspectionMode,
   type EpisodeRouteState,
 } from "./workbench/episodeRouteModel";
+import {
+  buildInterventionsHash,
+  parseWorkbenchHash,
+} from "./workbench/workbenchRouteModel";
 
 export function WorkbenchPage() {
   const initialRoute = initialPage();
   const [activePage, setActivePage] = useState<AppPage>(initialRoute.page);
-  const [evidenceRunId, setEvidenceRunId] = useState(initialRoute.evidenceRunId);
+  const [interventionRunId, setInterventionRunId] = useState(initialRoute.interventionRunId);
   const [interventionSeed, setInterventionSeed] = useState<InterventionLabSeed | undefined>(undefined);
   const [episodeTraceId, setEpisodeTraceId] = useState(initialRoute.traceId);
   const [episodeRouteState, setEpisodeRouteState] = useState<EpisodeRouteState>(initialRoute.episodeState);
@@ -32,7 +35,7 @@ export function WorkbenchPage() {
     function syncRoute() {
       const route = initialPage();
       setActivePage(route.page);
-      setEvidenceRunId(route.evidenceRunId);
+      setInterventionRunId(route.interventionRunId);
       setEpisodeTraceId(route.traceId);
       setEpisodeRouteState(route.episodeState);
     }
@@ -41,9 +44,9 @@ export function WorkbenchPage() {
   }, []);
 
   const handleEvidenceRunChange = useCallback((runId: string) => {
-    setActivePage("evidence");
-    setEvidenceRunId(runId);
-    window.history.replaceState(null, "", buildEvidenceHash(runId));
+    setActivePage("interventions");
+    setInterventionRunId(runId);
+    window.history.replaceState(null, "", buildInterventionsHash(runId));
   }, []);
 
   return (
@@ -78,10 +81,10 @@ export function WorkbenchPage() {
           onRunChange={setActiveRunId}
         />
       ) : null}
-      {activePage === "evidence" ? (
-        <EvidencePage
+      {activePage === "interventions" ? (
+        <InterventionsPage
           interventionSeed={interventionSeed}
-          selectedRunId={evidenceRunId}
+          selectedRunId={interventionRunId}
           onRunChange={handleEvidenceRunChange}
         />
       ) : null}
@@ -94,11 +97,11 @@ export function WorkbenchPage() {
       setEpisodeTraceId("");
       setEpisodeRouteState(emptyEpisodeRouteState());
     }
-    if (page === "evidence") {
-      setEvidenceRunId("");
+    if (page === "interventions") {
+      setInterventionRunId("");
       setInterventionSeed(undefined);
     }
-    window.history.replaceState(null, "", `#${page}`);
+    window.history.replaceState(null, "", page === "interventions" ? buildInterventionsHash() : `#${page}`);
   }
 
   function handleOpenDatasetEpisode(traceId: string, context: EpisodeOpenContext = {}) {
@@ -148,61 +151,19 @@ export function WorkbenchPage() {
   }
 
   function handleSendToIntervention(seed: InterventionLabSeed) {
-    setActivePage("evidence");
-    setEvidenceRunId("");
+    setActivePage("interventions");
+    setInterventionRunId("");
     setInterventionSeed(seed);
-    window.history.replaceState(null, "", "#evidence");
+    window.history.replaceState(null, "", buildInterventionsHash());
   }
 
 }
 
 function initialPage(): {
   episodeState: EpisodeRouteState;
-  evidenceRunId: string;
+  interventionRunId: string;
   page: AppPage;
   traceId: string;
 } {
-  const page = window.location.hash.replace("#", "");
-  if (page.startsWith("episode/")) {
-    const episodeState = parseEpisodeRoute(page.slice("episode/".length));
-    return {
-      episodeState,
-      evidenceRunId: "",
-      page: "episode",
-      traceId: episodeState.traceId,
-    };
-  }
-  if (page.startsWith("dataset/")) {
-    const episodeState = parseEpisodeRoute(page.slice("dataset/".length));
-    return {
-      episodeState,
-      evidenceRunId: "",
-      page: "episode",
-      traceId: episodeState.traceId,
-    };
-  }
-  if (page.startsWith("evidence/")) {
-    return {
-      episodeState: emptyEpisodeRouteState(),
-      evidenceRunId: decodeURIComponent(page.slice("evidence/".length)),
-      page: "evidence",
-      traceId: "",
-    };
-  }
-  if (page === "dataset" || page === "evidence" || page === "probes") {
-    return { episodeState: emptyEpisodeRouteState(), evidenceRunId: "", page, traceId: "" };
-  }
-  if (page === "episode" || page === "episodes") {
-    return {
-      episodeState: emptyEpisodeRouteState(),
-      evidenceRunId: "",
-      page: "episode",
-      traceId: "",
-    };
-  }
-  return { episodeState: emptyEpisodeRouteState(), evidenceRunId: "", page: "dataset", traceId: "" };
-}
-
-function buildEvidenceHash(runId: string): string {
-  return runId ? `#evidence/${encodeURIComponent(runId)}` : "#evidence";
+  return parseWorkbenchHash(window.location.hash);
 }
