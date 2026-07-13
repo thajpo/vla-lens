@@ -1,6 +1,6 @@
-import { type CSSProperties, useCallback, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { fetchActivationSites, fetchDataset, fetchEpisode, fetchEpisodeAnnotation, fetchEpisodeNeighbors, fetchEpisodeInteractions, fetchEpisodeMetrics, fetchEpisodeProbes, fetchEpisodesPage, fetchPolicyCalls, saveEpisodeAnnotation } from "../api/dataset";
+import { fetchActivationSites, fetchDataset, fetchEpisode, fetchEpisodeAnnotation, fetchEpisodeInteractions, fetchEpisodeMetrics, fetchEpisodeProbes, fetchEpisodesPage, fetchPolicyCalls, saveEpisodeAnnotation } from "../api/dataset";
 import type { SelectedPatch } from "../types/dataset";
 import { episodeCapabilityGates, episodeQueryGates } from "./capabilityGating";
 import { EpisodeColumnResizer } from "./episodes/EpisodeColumnResizer";
@@ -13,6 +13,7 @@ import { type EpisodePlotTab, type InspectionMode } from "./episodes/shared";
 import { useEpisodeInspectorModel } from "./episodes/useEpisodeInspectorModel";
 import { useEpisodeHashSync } from "./episodes/useEpisodeHashSync";
 import { useEpisodeLensView } from "./episodes/useEpisodeLensView";
+import { useEpisodeNavigation } from "./episodes/useEpisodeNavigation";
 import { useAdjacentEpisodePrefetch, useEpisodePlayback, useOverlayPrefetch } from "./episodes/useEpisodePrefetch";
 import { useEpisodeRouteContext } from "./episodes/useEpisodeRouteContext";
 import { useProbeEvidenceDefaultSiteAction } from "./episodes/useProbeEvidenceInspectorActions";
@@ -102,18 +103,7 @@ export function EpisodesPage({
       return patch;
     });
   }, [setSelectedPatch]);
-  const episodeNeighbors = useQuery({
-    queryKey: ["episode-neighbors", activeTraceId],
-    queryFn: () => fetchEpisodeNeighbors(activeTraceId),
-    enabled: Boolean(activeTraceId),
-    staleTime: 30_000,
-  });
-  const previousTraceId = episodeNeighbors.data?.previous_trace_id ?? undefined;
-  const nextTraceId = episodeNeighbors.data?.next_trace_id ?? undefined;
-  const navigateEpisode = useCallback((traceId: string | undefined) => {
-    if (!traceId) {
-      return;
-    }
+  const handleEpisodeNavigate = useCallback((traceId: string) => {
     setIsPlayingFrames(false);
     setTimestep(0);
     setSelectedPatch(null);
@@ -122,32 +112,26 @@ export function EpisodesPage({
     onTraceChange?.(traceId);
   }, [
     onTraceChange,
-    setIsPlayingFrames,
-    setSelectedExpertToken,
-    setSelectedPatch,
-    setSelectedPromptTokenIndex,
-    setTimestep,
+    setIsPlayingFrames, setSelectedExpertToken, setSelectedPatch,
+    setSelectedPromptTokenIndex, setTimestep,
   ]);
+  const {
+    activeCounterfactualPair,
+    navigateEpisode,
+    navigateNextEpisode,
+    navigatePreviousEpisode,
+    nextTraceId,
+    previousTraceId,
+  } = useEpisodeNavigation({
+    activeTraceId,
+    counterfactualPairs: dataset.data?.counterfactual_pairs ?? [],
+    onNavigate: handleEpisodeNavigate,
+  });
   const handlePromptTokenSelect = useCallback((tokenIndex: number | null) => {
     setSelectedPromptTokenIndex((current) => (
       tokenIndex === null || current === tokenIndex ? null : tokenIndex
     ));
   }, [setSelectedPromptTokenIndex]);
-  const navigatePreviousEpisode = useCallback(
-    () => navigateEpisode(previousTraceId),
-    [navigateEpisode, previousTraceId],
-  );
-  const navigateNextEpisode = useCallback(
-    () => navigateEpisode(nextTraceId),
-    [navigateEpisode, nextTraceId],
-  );
-  const activeCounterfactualPair = useMemo(
-    () =>
-      (dataset.data?.counterfactual_pairs ?? []).find((pair) =>
-        pair.members.some((member) => member.trace_id === activeTraceId),
-      ),
-    [activeTraceId, dataset.data?.counterfactual_pairs],
-  );
   const episodeDetail = useQuery({
     queryKey: ["episode", activeTraceId],
     queryFn: () => fetchEpisode(activeTraceId),

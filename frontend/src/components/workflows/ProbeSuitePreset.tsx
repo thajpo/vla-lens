@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { fetchProbeStudies } from "../../api/dataset";
 import { InlineInfoText } from "../ui/InfoHover";
 import { infoTextCard } from "../ui/infoHoverModel";
-import type { ProbeStudy, ProbeStudyControl, ProbeStudyReadout } from "../../types/dataset";
+import type { ProbeStudy, ProbeStudyControl, ProbeStudyReadout } from "../../types/probeStudies";
 
 type ProbeSuitePresetProps = {
   activeRunId: string;
