@@ -1,7 +1,7 @@
 # Repository Consolidation Implementation Plan
 
-Status: implemented through product integration; operational docs and final
-worktree cleanup remain.
+Status: implemented through operational documentation; published branch
+reference deletion awaits explicit owner confirmation.
 
 Plan date: July 13, 2026.
 
@@ -33,6 +33,21 @@ manual validation matrix used as fallback. GitHub's required checks were not
 bypassed. The repository's one-review rule was bypassed with the repository
 owner's administrator authority after the user explicitly requested merging;
 automatic merge is not enabled for this repository.
+
+The final worktree audit repaired the five stale Treehouse `.git` pointers and
+then used Git itself to verify every registered checkout was clean. Seven
+detached worktrees at `882eeb8` and four completed branch worktrees were removed
+only after that verification. The primary checkout was returned to a clean,
+fast-forwarded `master`; the temporary operational-doc worktree remains only
+until its PR merges. The single unreachable commit, `71b585b` from May 25, was
+an earlier version of reachable commit `d4b0a7c` with the same parent; the
+reachable version preserves its dataset/API change while restoring unrelated
+files removed by the earlier snapshot.
+
+Merged remote branches are intentionally still present. Deleting those recovery
+references, and any corresponding squash-merged local branches that require
+Git's force-delete form, is deferred until the repository owner gives the
+explicit confirmation required by Phase 6.
 
 "Merge all branches" means preserve and integrate every unique line of work. It
 does not mean merging detached worktrees, generated directories, or redundant
