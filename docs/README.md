@@ -2,7 +2,7 @@
 
 Status: active documentation entrypoint.
 
-Last updated: May 27, 2026.
+Last updated: July 13, 2026.
 
 This is the current documentation entrypoint. Prefer these files over older
 experiment notes when deciding what to run or implement.
@@ -52,6 +52,9 @@ experiment notes when deciding what to run or implement.
   architecture and workflow contracts.
 - [research_ui_principles.md](research_ui_principles.md): design principles for
   research-facing UI and causal-evidence displays.
+- [audits/vla-lens-system-review/README.md](audits/vla-lens-system-review/README.md):
+  July 2026 static system map, architecture gaps, consolidation record, and
+  owner decisions for selecting the next vertical slice.
 - [library/pi05-lens.md](library/pi05-lens.md): PI0.5 library notes and
   reusable analysis primitives.
 

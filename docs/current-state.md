@@ -2,7 +2,7 @@
 
 Status: active operational summary.
 
-Last updated: June 6, 2026.
+Last updated: July 13, 2026.
 
 ## Direction
 
@@ -29,6 +29,21 @@ intervene on activations/features
 measure action and rollout changes
 visualize the result in episode context
 ```
+
+## Current Product State
+
+The observational path is implemented end to end: dataset indexing, discovery
+artifacts, probe training and diagnostics, episode-level LensView inspection,
+evidence bundles, pins, cohorts, and source-aware navigation all resolve back to
+trace, policy-call, timestep, model-site, layer, feature, and token-space
+context where the source data provides it.
+
+Interventions are now a first-class workbench surface. Probe and Episode Lens
+selections can seed a target picker; the frontend prefers a backend-normalized
+`TargetSpec`, labels local fallback targets explicitly, preserves source-object
+provenance, runs preflight, and saves inspected intervention records. This is
+an inspectable planning/evidence workflow, not yet a claim that arbitrary live
+PI0.5 interventions execute from the dashboard.
 
 ## Environment Contract
 
@@ -197,6 +212,19 @@ Do not collect audit_windowed broadly without a concrete circuit/transcoder ques
 - K/V conditioning edges pair equal-index VLM and Expert layers.
 - Expert attention query space is `pi05.action_suffix`.
 - Expert attention key space is `pi05.expert_context`.
+- Required normal-lane checks are green after the July repository
+  consolidation; source-size and research-UI import boundaries remain enforced.
+- The canonical workbench route is `#interventions`; legacy Evidence links are
+  retained as compatibility aliases where intended.
+
+## Current Research Conclusions
+
+- Stronger metadata-only baselines invalidated the pooled binary probe
+  candidates as intervention targets. Those probes should remain diagnostic
+  results unless a future design demonstrates signal beyond metadata controls.
+- The geometry campaign was mostly negative or diagnostic. Object-local `z`
+  is worth methodological confirmation, but the current evidence does not
+  justify promoting it to an intervention target.
 
 ## Current Commands
 
@@ -277,26 +305,24 @@ balance, and saved artifact freshness before treating the root as probe-grade.
 
 Do not start by collecting more audit data.
 
-The next useful implementation focus is the
-[Intervention Evidence Layer](intervention-evidence-layer.md): the layer that
-turns existing episodes plus discovery artifacts into intervention targets,
-action/rollout outcome records, and saved evidence.
+The saved intervention-evidence path now exists. The next causal milestone is
+one narrow live PI0.5 intervention vertical slice executed through a dedicated
+capture/runtime wrapper, not inside the normal FastAPI process. Choose one
+concrete target/operator/outcome question and use the cheapest existing capture
+profile that supports it.
 
-The first slice should stay narrow:
+Important architecture work remains backlog, not shipped capability:
 
-```text
-TargetSpec
-InterventionSpec
-OutcomeSpec
-typed InterventionRun payload
-LensArtifact(type="intervention_run")
-saved-record tests before live model execution
-```
+1. Persist a dataset-level policy-call index with stable cross-table identity.
+2. Add a method-independent exact example manifest.
+3. Define a reusable experiment recipe across probes and future methods.
+4. Unify selection state across routes, saved workspaces, evidence, and targets.
+5. Add typed artifact/evidence lineage and status conventions.
+6. Execute and validate the first live intervention with controls and recorded
+   action or rollout outcomes.
 
-After the saved evidence path exists, choose one concrete PI0.5 runtime question
-for the first live direction intervention. Use the cheapest existing capture
-profile that already supports that question; do not add a new profile unless
-preflight proves a specific missing field.
+See the [system review](audits/vla-lens-system-review/README.md) for the evidence
+behind this sequencing and for product decisions that still require an owner.
 
 ## Documentation Hygiene
 
