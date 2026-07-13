@@ -1,6 +1,7 @@
 # Repository Consolidation Implementation Plan
 
-Status: approved staging plan.
+Status: implemented through product integration; operational docs and final
+worktree cleanup remain.
 
 Plan date: July 13, 2026.
 
@@ -8,6 +9,30 @@ Plan date: July 13, 2026.
 
 Return VLA Lens to one understandable, green, origin-backed line of development
 before starting new feature work.
+
+## Execution Record
+
+The consolidation was executed on July 13, 2026 without force-pushing or
+rewriting either published intervention branch:
+
+| Phase | Result |
+| --- | --- |
+| System audit | Preserved on `codex/system-review-audit` in PR #8. |
+| Shared baseline | PR #9 merged as `9e716cc`; 342 Python tests and all four required GitHub checks passed. |
+| Backend target contract | PR #7 refreshed by merging the repaired baseline, then merged as `e5815f2`; all four required checks passed. |
+| Rich intervention workflow | Successor PR #10 merged as `644c4bd`; backend-normalized targets, explicit local fallback metadata, and source-object provenance were reconciled together. The final branch passed 343 Python tests, 64 frontend tests, both linters, the production build, and all four required GitHub checks. |
+
+The successor branch used a merge of the preserved source branch rather than a
+single cherry-pick. This retained the original branch ancestry and made the
+three semantic conflict resolutions explicit in merge commit `a801cdd` before
+GitHub squash-merged the PR.
+
+The configured no-mistakes Claude reviewer began returning HTTP 401 invalid
+credentials during this work. Each affected PR records the run ID and the full
+manual validation matrix used as fallback. GitHub's required checks were not
+bypassed. The repository's one-review rule was bypassed with the repository
+owner's administrator authority after the user explicitly requested merging;
+automatic merge is not enabled for this repository.
 
 "Merge all branches" means preserve and integrate every unique line of work. It
 does not mean merging detached worktrees, generated directories, or redundant

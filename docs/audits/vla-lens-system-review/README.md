@@ -7,10 +7,10 @@ The audit inspected commit `882eeb83be8c8a69a80fc8f6ec8829c311ca4630`
 research and software gaps, and separates verified code facts from proposed
 architecture.
 
-The audit predates two June 23 intervention branches. Use
+The audit predates two June 23 intervention branches. Their preservation and
+integration were completed through PRs #7, #9, and #10. Use
 [`08-repository-consolidation-plan.md`](08-repository-consolidation-plan.md)
-for the explicit preservation and merge sequence before starting new feature
-work.
+for the original merge sequence, execution record, and remaining cleanup work.
 
 ## Reading Order
 
