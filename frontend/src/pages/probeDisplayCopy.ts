@@ -1,4 +1,3 @@
-import type { EpisodeLensView } from "../types/dataset";
 import { researchCopy } from "../copy/researchCopy.ts";
 import type { EvidenceClaimLevel, ModelLocusRef, ProbeEvidenceBundle } from "../types/probeEvidence";
 import { primitivesByKind } from "../types/probeEvidence.ts";
@@ -14,6 +13,13 @@ export type ProbeDisplaySpec = {
   objective: ProbeDisplayField;
   output: ProbeDisplayField;
   prediction: ProbeDisplayField;
+};
+
+type ProbeLensViewDisplaySource = {
+  lens: {
+    display_name: string;
+    spec?: Record<string, string | number | boolean | null | undefined>;
+  };
 };
 
 export function probeEvidenceDisplaySpec(bundle: ProbeEvidenceBundle): ProbeDisplaySpec {
@@ -41,7 +47,7 @@ export function probeEvidenceDisplaySpec(bundle: ProbeEvidenceBundle): ProbeDisp
   };
 }
 
-export function probeLensViewDisplaySpec(view: EpisodeLensView): ProbeDisplaySpec {
+export function probeLensViewDisplaySpec(view: ProbeLensViewDisplaySource): ProbeDisplaySpec {
   const spec = view.lens.spec ?? {};
   return {
     input: {
