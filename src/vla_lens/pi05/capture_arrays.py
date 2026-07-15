@@ -58,6 +58,17 @@ def _episode_arrays(buffer: EpisodeBuffer, length: int) -> dict[str, ArraySpec]:
             _stack_call_arrays(buffer.calls, "denoising_actions"),
             ["policy_call", "generation_step", "horizon", "action_dim"],
         )
+        initial_noise = _stack_optional_calls(buffer.calls, "initial_noise")
+        if initial_noise is not None:
+            arrays["flow_initial_noise"] = ArraySpec(
+                initial_noise.astype(np.float32),
+                ["policy_call", "horizon", "action_dim"],
+                metadata={
+                    "generator": "pi05_flow_matching",
+                    "purpose": "deterministic_policy_call_replay",
+                    "exactness": "exact_float32_capture",
+                },
+            )
         velocities = _stack_optional_calls(buffer.calls, "denoise_velocities")
         if velocities is not None:
             arrays["generation_velocities"] = ArraySpec(

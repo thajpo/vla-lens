@@ -10,7 +10,7 @@ from __future__ import annotations
 import threading
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import imageio.v2 as imageio
 import numpy as np
@@ -24,12 +24,54 @@ DEFAULT_CAMERAS = "agentview_image,robot0_eye_in_hand_image"
 class ReplayConfig:
     benchmark: str
     task_id: int
-    layout_id: int
+    layout_id: int | None
     seed: int
     horizon: int
     obs_size: int = 256
     camera_name: str = DEFAULT_CAMERAS
     control_mode: str = "relative"
+
+
+@dataclass(frozen=True, slots=True)
+class PolicyCallReplayInputs:
+    """Runtime-free inputs required to reproduce one captured PI0.5 policy call."""
+
+    config: ReplayConfig
+    trace_id: str
+    policy_call_index: int
+    observation_timestep: int
+    policy_call: Mapping[str, Any]
+    stored_action_chunk: np.ndarray
+    initial_noise: np.ndarray
+    initial_noise_ref: str
+    initial_noise_exactness: str
+
+    def summary(self) -> dict[str, Any]:
+        """Return JSON-safe provenance without embedding the replay tensors."""
+        return {
+            "trace_id": self.trace_id,
+            "policy_call_index": self.policy_call_index,
+            "observation_timestep": self.observation_timestep,
+            "environment": {
+                "benchmark": self.config.benchmark,
+                "task_id": self.config.task_id,
+                "layout_id": self.config.layout_id,
+                "seed": self.config.seed,
+                "obs_size": self.config.obs_size,
+                "camera_name": self.config.camera_name,
+                "control_mode": self.config.control_mode,
+            },
+            "stored_action_chunk": {
+                "shape": list(self.stored_action_chunk.shape),
+                "dtype": str(self.stored_action_chunk.dtype),
+            },
+            "initial_noise": {
+                "ref": self.initial_noise_ref,
+                "exactness": self.initial_noise_exactness,
+                "shape": list(self.initial_noise.shape),
+                "dtype": str(self.initial_noise.dtype),
+            },
+        }
 
 
 class PI05LiberoReplayRenderer:
@@ -77,8 +119,9 @@ class PI05LiberoReplayRenderer:
         if self._vec_env is not None:
             self._vec_env.close()
         self._vec_env, self._base_env = _make_base_env(self.config)
-        self._base_env.episode_index = self.config.layout_id
-        self._base_env.init_state_id = self.config.layout_id
+        if self.config.layout_id is not None:
+            self._base_env.episode_index = self.config.layout_id
+            self._base_env.init_state_id = self.config.layout_id
         self._raw_obs, _ = self._base_env.reset(seed=self.config.seed)
         self._last_rendered_timestep = -1
         self._done = False
@@ -92,13 +135,41 @@ class PI05LiberoReplayRenderer:
 
 def replay_config_from_bundle(bundle: TraceBundle) -> ReplayConfig:
     metadata = bundle.manifest.metadata
-    benchmark = str(metadata.get("benchmark") or bundle.manifest.env_id)
+    environment = _mapping(metadata.get("environment"))
+    benchmark = str(
+        _first_present(
+            environment.get("benchmark"),
+            metadata.get("benchmark"),
+            bundle.manifest.env_id,
+        )
+        or ""
+    )
     if not benchmark:
         raise ValueError(f"Trace {bundle.manifest.trace_id} is missing LIBERO benchmark metadata")
     task_id = _task_id(bundle)
-    layout_id = int(metadata.get("layout_episode_index") or 0)
-    seed = int(metadata.get("env_seed") or metadata.get("policy_seed") or 0)
-    obs_size = int(metadata.get("obs_size") or _infer_obs_size(bundle) or 256)
+    layout_value = _first_present(
+        environment.get("layout_id"),
+        metadata.get("layout_episode_index"),
+        metadata.get("layout_id"),
+    )
+    layout_id = int(layout_value) if layout_value is not None else None
+    seed = int(
+        _first_present(
+            environment.get("seed"),
+            metadata.get("env_seed"),
+            metadata.get("seed"),
+            metadata.get("policy_seed"),
+            0,
+        )
+    )
+    obs_size = int(
+        _first_present(
+            environment.get("obs_size"),
+            metadata.get("obs_size"),
+            _infer_obs_size(bundle),
+            256,
+        )
+    )
     return ReplayConfig(
         benchmark=benchmark,
         task_id=task_id,
@@ -106,6 +177,40 @@ def replay_config_from_bundle(bundle: TraceBundle) -> ReplayConfig:
         seed=seed,
         horizon=int(bundle.manifest.length),
         obs_size=obs_size,
+    )
+
+
+def policy_call_replay_inputs(
+    bundle: TraceBundle,
+    policy_call_index: int,
+) -> PolicyCallReplayInputs:
+    """Resolve stored action and initial flow noise without loading PI0.5 dependencies."""
+
+    call_index = int(policy_call_index)
+    policy_call = _policy_call_record(bundle, call_index)
+    observation_timestep = _required_int(
+        _first_present(
+            policy_call.get("observation_timestep"),
+            policy_call.get("env_timestep_start"),
+        ),
+        field=f"policy call {call_index} observation timestep",
+    )
+    stored_actions = bundle.action_chunks(mmap=True)
+    if call_index >= len(stored_actions):
+        raise IndexError(
+            f"Trace {bundle.manifest.trace_id} policy call {call_index} has no stored action chunk"
+        )
+    initial_noise, initial_noise_ref, exactness = _initial_noise(bundle, call_index)
+    return PolicyCallReplayInputs(
+        config=replay_config_from_bundle(bundle),
+        trace_id=bundle.manifest.trace_id,
+        policy_call_index=call_index,
+        observation_timestep=observation_timestep,
+        policy_call=policy_call,
+        stored_action_chunk=np.asarray(stored_actions[call_index]),
+        initial_noise=initial_noise,
+        initial_noise_ref=initial_noise_ref,
+        initial_noise_exactness=exactness,
     )
 
 
@@ -148,10 +253,75 @@ def _make_base_env(config: ReplayConfig) -> tuple[Any, Any]:
 
 def _task_id(bundle: TraceBundle) -> int:
     metadata = bundle.manifest.metadata
-    task_id = metadata.get("task_id")
-    if task_id is not None:
+    environment = _mapping(metadata.get("environment"))
+    task_id = _first_present(
+        environment.get("task_id"),
+        bundle.manifest.task_id,
+        metadata.get("task_id"),
+    )
+    if task_id is not None and str(task_id).strip():
         return int(task_id)
     raise ValueError(f"Trace {bundle.manifest.trace_id} is missing task_id metadata")
+
+
+def _policy_call_record(bundle: TraceBundle, policy_call_index: int) -> dict[str, Any]:
+    if bundle.policy_calls.empty:
+        raise KeyError(f"Trace {bundle.manifest.trace_id} has no policy calls")
+    for record in bundle.policy_calls.to_dict("records"):
+        value = record.get("policy_call_index")
+        if value is not None and int(value) == policy_call_index:
+            return dict(record)
+    raise KeyError(f"Trace {bundle.manifest.trace_id} has no policy call {policy_call_index}")
+
+
+def _initial_noise(bundle: TraceBundle, policy_call_index: int) -> tuple[np.ndarray, str, str]:
+    try:
+        exact_noise = bundle.array("flow_initial_noise", mmap=True)
+    except KeyError:
+        exact_noise = None
+    if exact_noise is not None:
+        if policy_call_index >= len(exact_noise):
+            raise IndexError(
+                f"Trace {bundle.manifest.trace_id} policy call {policy_call_index} "
+                "has no exact flow initial noise"
+            )
+        return (
+            np.asarray(exact_noise[policy_call_index]),
+            f"flow_initial_noise[{policy_call_index}]",
+            "exact",
+        )
+
+    generation_actions = bundle.generation_actions(mmap=True)
+    if policy_call_index >= len(generation_actions) or generation_actions.shape[1] == 0:
+        raise IndexError(
+            f"Trace {bundle.manifest.trace_id} policy call {policy_call_index} "
+            "has no generation-step-zero initial noise fallback"
+        )
+    initial_noise = np.asarray(generation_actions[policy_call_index, 0])
+    exactness = (
+        "quantized"
+        if initial_noise.dtype.itemsize < np.dtype(np.float32).itemsize
+        else "exact"
+    )
+    return (
+        initial_noise,
+        f"generation_actions[{policy_call_index},0]",
+        exactness,
+    )
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _first_present(*values: Any) -> Any:
+    return next((value for value in values if value is not None and value != ""), None)
+
+
+def _required_int(value: Any, *, field: str) -> int:
+    if value is None or str(value).strip() == "":
+        raise ValueError(f"Missing {field}")
+    return int(value)
 
 
 def _infer_obs_size(bundle: TraceBundle) -> int | None:
@@ -167,7 +337,9 @@ def _infer_obs_size(bundle: TraceBundle) -> int | None:
 
 __all__ = [
     "PI05LiberoReplayRenderer",
+    "PolicyCallReplayInputs",
     "ReplayConfig",
+    "policy_call_replay_inputs",
     "read_sparse_image",
     "replay_config_from_bundle",
     "sparse_image_path",

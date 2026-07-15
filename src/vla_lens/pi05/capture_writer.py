@@ -254,6 +254,9 @@ def _capture_report(
                 "action",
                 "action_chunks",
                 "generation_actions",
+                "flow_initial_noise"
+                if any(call.initial_noise is not None for call in buffer.calls)
+                else None,
                 "observation.images.main" if buffer.frames else None,
                 "observation.images.wrist" if buffer.wrist_frames else None,
                 "tokens",
