@@ -161,7 +161,7 @@ def test_pi05_runtime_contract_writes_saved_intervention_run_and_artifact(tmp_pa
     }
     assert saved_action_refs <= set(saved_runs[0].outputs)
     assert artifact.artifact_type == "intervention_run"
-    assert set(artifact.arrays) >= {"stored_original", "noop", "intervened"}
+    assert set(artifact.arrays) == set(result.arrays)
     assert intervened.shape == stored.shape
 
 

@@ -68,7 +68,7 @@ def intervention_run_to_lens_artifact(run: InterventionRun) -> LensArtifact:
         selector=selector,
         method=method,
         metrics=_compact_metrics(run),
-        arrays=_output_refs(run),
+        arrays={},
         display=display,
         tags=_tags(run, operator, outcome),
         source_trace_ids=_source_trace_ids(run),
@@ -196,15 +196,6 @@ def _control_summary(run: InterventionRun) -> list[dict[str, Any]]:
             }
         )
     return controls
-
-
-def _output_refs(run: InterventionRun) -> dict[str, str]:
-    refs: dict[str, str] = {}
-    for index, output in enumerate(run.outputs):
-        text = str(output)
-        if "://" not in text:
-            refs[f"output_{index}"] = text
-    return refs
 
 
 def _tags(
