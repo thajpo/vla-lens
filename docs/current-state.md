@@ -132,6 +132,16 @@ vla_lens/episodes/episode_000000/...
 Do not run PI0.5 capture through plain `uv run vla-pi05-capture` or `uv run
 vla-pi05-batch-capture`.
 
+The same isolation rule applies to live replay/intervention work: use
+`scripts/pi05_intervene.sh --backend ...`, not plain `uv run
+vla-pi05-intervene`. The one-shot runner is implemented and normal-lane tested:
+it reconstructs the raw LIBERO observation at a selected policy call, reuses
+captured initial flow noise, measures repeated no-op action drift, and blocks
+its explicitly non-claiming synthetic action-head hook smoke until user-supplied
+L2 and maximum-absolute tolerances pass. A post-change hardware replay smoke is
+still pending. See
+[hardware-run-paths.md](hardware-run-paths.md#replay-gated-intervention-smoke).
+
 Use [hardware-run-paths.md](hardware-run-paths.md) for the current ROCm, CUDA,
 and Apple Silicon setup/capture surface. Use [docker.md](docker.md) for the
 dashboard container and Linux CUDA/ROCm capture-container paths.
@@ -214,6 +224,13 @@ Do not collect audit_windowed broadly without a concrete circuit/transcoder ques
 - Expert attention key space is `pi05.expert_context`.
 - Required normal-lane checks are green after the July repository
   consolidation; source-size and research-UI import boundaries remain enforced.
+- Capture-writer tests verify that new PI0.5 captures persist float32
+  `flow_initial_noise` for deterministic policy-call replay. Older captures
+  fall back to generation step zero and mark float16 noise as quantized. A real
+  post-change capture has not yet verified this path on hardware.
+- Runtime-free tests verify replay input resolution across canonical environment
+  metadata, `PolicyCallRef`, stored action chunks, and the best available initial
+  noise without importing Torch, LeRobot, LIBERO, or robosuite.
 - The canonical workbench route is `#interventions`; legacy Evidence links are
   retained as compatibility aliases where intended.
 
