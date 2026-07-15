@@ -47,6 +47,7 @@ def _predict_action_chunk(
         "action_head_input": [],
         "action_head_output": [],
     }
+    initial_noise: np.ndarray | None = None
     current_denoise_step: dict[str, int | None] = {"index": None}
     vlm_hidden_by_layer: dict[int, np.ndarray] = {}
     vlm_attention_by_layer: dict[int, np.ndarray] = {}
@@ -312,11 +313,14 @@ def _predict_action_chunk(
         return out
 
     def denoise_wrapper(*args: Any, **kwargs: Any) -> Any:
+        nonlocal initial_noise
         x_t = kwargs.get("x_t") if "x_t" in kwargs else args[2]
         prefix_pad_masks = (
             kwargs.get("prefix_pad_masks") if "prefix_pad_masks" in kwargs else args[0]
         )
         denoise_index = len(capture["x_t"])
+        if denoise_index == 0:
+            initial_noise = _to_numpy(x_t, dtype=np.float32).squeeze(0)
         current_denoise_step["index"] = denoise_index
         capture["x_t"].append(_to_numpy(x_t, dtype=plan.np_dtype).squeeze(0))
         if full_recorder is not None:
@@ -407,6 +411,7 @@ def _predict_action_chunk(
         final_action_chunk=final_chunk.astype(plan.np_dtype),
         denoising_actions=denoising,
         suffix_hidden=velocities,
+        initial_noise=initial_noise,
         prefix_image_hidden=prefix_image_hidden,
         prefix_patches_per_image=prefix_patches_per_image,
         prefix_image_slots=prefix_image_slots,

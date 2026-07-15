@@ -2,7 +2,7 @@
 
 Status: active architecture contract.
 
-Last updated: May 27, 2026.
+Last updated: July 13, 2026.
 
 ## Canonical Layout
 
@@ -55,9 +55,15 @@ observation.state
 observation.images.<camera>
 ```
 
-`action_chunks`, `generation_actions`, token streams, attention tensors, hidden
-states, and probe artifacts are not robot dataset fields. They belong in the
-VLA Lens overlay.
+`action_chunks`, `generation_actions`, `flow_initial_noise`, token streams,
+attention tensors, hidden states, and probe artifacts are not robot dataset
+fields. They belong in the VLA Lens overlay.
+
+PI0.5 captures store `flow_initial_noise` as float32 with axes
+`policy_call x horizon x action_dim`. This is the exact flow-matching noise
+needed to reproduce a policy call. Older captures can use generation step zero
+from `generation_actions` as a replay fallback, but float16 captures must label
+that fallback as quantized rather than exact.
 
 ## Cutoff Policy
 

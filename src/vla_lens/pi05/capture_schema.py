@@ -331,6 +331,7 @@ class CaptureCall:
     final_action_chunk: np.ndarray
     denoising_actions: np.ndarray
     suffix_hidden: np.ndarray
+    initial_noise: np.ndarray | None = None
     prefix_image_hidden: np.ndarray | None = None
     prefix_patches_per_image: int | None = None
     prefix_image_slots: int | None = None

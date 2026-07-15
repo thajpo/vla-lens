@@ -11,6 +11,7 @@ from vla_lens.pi05.capture import (
     EpisodeBuffer,
     _capture_design_metadata,
     _declared_pi05_sites,
+    _episode_arrays,
     _episode_success,
     _model_arrays,
     _trace_id_for_seed,
@@ -18,6 +19,36 @@ from vla_lens.pi05.capture import (
     parse_args,
     profile_dimensions,
 )
+
+
+def test_episode_arrays_preserve_float32_initial_flow_noise_for_replay() -> None:
+    initial_noise = np.linspace(-1.0, 1.0, 14, dtype=np.float32).reshape(2, 7)
+    buffer = EpisodeBuffer(
+        trace_id="trace",
+        task_id=0,
+        task_name="task",
+        prompt="task",
+        seed=17,
+        calls=[
+            CaptureCall(
+                call_index=0,
+                env_timestep=0,
+                final_action_chunk=np.zeros((2, 7), dtype=np.float16),
+                denoising_actions=np.zeros((3, 2, 7), dtype=np.float16),
+                suffix_hidden=np.zeros((3, 2, 7), dtype=np.float16),
+                initial_noise=initial_noise,
+            )
+        ],
+    )
+
+    arrays = _episode_arrays(buffer, length=2)
+
+    assert arrays["flow_initial_noise"].axes == ["policy_call", "horizon", "action_dim"]
+    assert arrays["flow_initial_noise"].array.dtype == np.float32
+    np.testing.assert_array_equal(arrays["flow_initial_noise"].array[0], initial_noise)
+    assert arrays["flow_initial_noise"].metadata["purpose"] == (
+        "deterministic_policy_call_replay"
+    )
 
 
 def test_episode_success_uses_any_late_success_info() -> None:
