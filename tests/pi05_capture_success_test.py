@@ -19,6 +19,20 @@ from vla_lens.pi05.capture import (
     parse_args,
     profile_dimensions,
 )
+from vla_lens.pi05.capture_predict import _behavior_action_chunk
+
+
+def test_behavior_action_chunk_stays_exact_float32_when_storage_is_float16() -> None:
+    model_action = np.array(
+        [[[0.1234567, -0.7654321], [1.0003, -1.0003]]],
+        dtype=np.float32,
+    )
+
+    captured = _behavior_action_chunk(model_action)
+
+    assert captured.dtype == np.float32
+    np.testing.assert_array_equal(captured, model_action[0])
+    assert not np.array_equal(captured, model_action[0].astype(np.float16).astype(np.float32))
 
 
 def test_episode_arrays_preserve_float32_initial_flow_noise_for_replay() -> None:

@@ -26,6 +26,11 @@ from vla_lens.pi05.full_capture import (
 )
 
 
+def _behavior_action_chunk(chunk: Any) -> np.ndarray:
+    """Preserve the exact float32 action used for rollout and deterministic replay."""
+    return _to_numpy(chunk, dtype=np.float32).squeeze(0)
+
+
 def _predict_action_chunk(
     policy: Any,
     obs: dict[str, Any],
@@ -365,7 +370,7 @@ def _predict_action_chunk(
         for mlp, original_forward in patched_mlps:
             mlp.forward = original_forward
 
-    final_chunk = _to_numpy(chunk, dtype=plan.np_dtype).squeeze(0)
+    final_chunk = _behavior_action_chunk(chunk)
     denoising = np.stack(capture["x_t"], axis=0).astype(plan.np_dtype)
     velocities = np.stack(capture["denoise_velocities"], axis=0).astype(plan.np_dtype)
     generation_input_embeddings = (
@@ -408,7 +413,7 @@ def _predict_action_chunk(
     return CaptureCall(
         call_index=call_index,
         env_timestep=step,
-        final_action_chunk=final_chunk.astype(plan.np_dtype),
+        final_action_chunk=final_chunk,
         denoising_actions=denoising,
         suffix_hidden=velocities,
         initial_noise=initial_noise,
