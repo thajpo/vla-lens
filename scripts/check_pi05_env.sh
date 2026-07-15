@@ -73,7 +73,10 @@ PI05_BACKEND="$BACKEND" "$PY" - <<'PY'
 import importlib.metadata as md
 import os
 import platform
+from pathlib import Path
+
 from packaging.version import Version
+import yaml
 
 backend = os.environ["PI05_BACKEND"]
 strict_device = os.environ.get("PI05_STRICT_DEVICE_CHECK", "1") != "0"
@@ -147,6 +150,29 @@ try:
     from libero.libero.envs import OffScreenRenderEnv  # noqa: F401
 except Exception as exc:
     fail(f"LIBERO import failed: {exc}")
+
+libero_config_file = Path(
+    os.environ.get("LIBERO_CONFIG_PATH", str(Path.home() / ".libero"))
+).expanduser() / "config.yaml"
+if not libero_config_file.is_file():
+    fail(
+        f"LIBERO config is missing: {libero_config_file}. Run "
+        f"scripts/setup_pi05_env.sh --backend {backend}"
+    )
+try:
+    libero_config = yaml.safe_load(libero_config_file.read_text())
+except Exception as exc:
+    fail(f"LIBERO config could not be read: {libero_config_file}: {exc}")
+if not isinstance(libero_config, dict):
+    fail(f"LIBERO config must contain a path mapping: {libero_config_file}")
+for key in ("benchmark_root", "bddl_files", "init_states"):
+    configured_path = libero_config.get(key)
+    if not configured_path or not Path(str(configured_path)).expanduser().exists():
+        fail(
+            f"LIBERO config has a missing {key} path: {configured_path!r}. "
+            f"Repair it with PI05_FORCE_LIBERO_CONFIG=1 "
+            f"scripts/setup_pi05_env.sh --backend {backend}"
+        )
 
 try:
     import robosuite
