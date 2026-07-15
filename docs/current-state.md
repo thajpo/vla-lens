@@ -138,8 +138,10 @@ vla-pi05-intervene`. The one-shot runner is implemented and normal-lane tested:
 it reconstructs the raw LIBERO observation at a selected policy call, reuses
 captured initial flow noise, measures repeated no-op action drift, and blocks
 its explicitly non-claiming synthetic action-head hook smoke until user-supplied
-L2 and maximum-absolute tolerances pass. A post-change hardware replay smoke is
-still pending. See
+L2 and maximum-absolute tolerances pass. A July 2026 ROCm smoke captured two
+policy calls, reproduced the selected stored action exactly across three no-op
+replays, passed a zero-tolerance gate, and recorded the synthetic intervention
+plus random-direction control. CUDA and MPS replay remain unverified. See
 [hardware-run-paths.md](hardware-run-paths.md#replay-gated-intervention-smoke).
 
 Use [hardware-run-paths.md](hardware-run-paths.md) for the current ROCm, CUDA,
@@ -224,10 +226,11 @@ Do not collect audit_windowed broadly without a concrete circuit/transcoder ques
 - Expert attention key space is `pi05.expert_context`.
 - Required normal-lane checks are green after the July repository
   consolidation; source-size and research-UI import boundaries remain enforced.
-- Capture-writer tests verify that new PI0.5 captures persist float32
-  `flow_initial_noise` for deterministic policy-call replay. Older captures
-  fall back to generation step zero and mark float16 noise as quantized. A real
-  post-change capture has not yet verified this path on hardware.
+- New PI0.5 captures persist exact float32 `flow_initial_noise` and final action
+  chunks for deterministic policy-call replay, even when internal capture
+  tensors use float16 storage. Older captures fall back to generation step zero
+  and mark float16 noise as quantized. A July 2026 ROCm smoke reproduced a
+  selected stored action exactly across three no-op replays.
 - Runtime-free tests verify replay input resolution across canonical environment
   metadata, `PolicyCallRef`, stored action chunks, and the best available initial
   noise without importing Torch, LeRobot, LIBERO, or robosuite.
@@ -322,11 +325,11 @@ balance, and saved artifact freshness before treating the root as probe-grade.
 
 Do not start by collecting more audit data.
 
-The saved intervention-evidence path now exists. The next causal milestone is
-one narrow live PI0.5 intervention vertical slice executed through a dedicated
-capture/runtime wrapper, not inside the normal FastAPI process. Choose one
-concrete target/operator/outcome question and use the cheapest existing capture
-profile that supports it.
+The replay-gated, non-claiming synthetic hook vertical slice now works through a
+dedicated capture/runtime wrapper rather than the normal FastAPI process. The
+next causal milestone is a claim-eligible PI0.5 experiment: choose one concrete
+target/operator/outcome question, specify controls and acceptance criteria, and
+use the cheapest existing capture profile that supports it.
 
 Important architecture work remains backlog, not shipped capability:
 
@@ -335,8 +338,8 @@ Important architecture work remains backlog, not shipped capability:
 3. Define a reusable experiment recipe across probes and future methods.
 4. Unify selection state across routes, saved workspaces, evidence, and targets.
 5. Add typed artifact/evidence lineage and status conventions.
-6. Execute and validate the first live intervention with controls and recorded
-   action or rollout outcomes.
+6. Design and validate the first claim-eligible live intervention with controls
+   and recorded action or rollout outcomes.
 
 See the [system review](audits/vla-lens-system-review/README.md) for the evidence
 behind this sequencing and for product decisions that still require an owner.
