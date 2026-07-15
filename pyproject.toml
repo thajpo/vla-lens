@@ -24,6 +24,7 @@ dependencies = [
 [project.scripts]
 vla-pi05-capture = "vla_lens.pi05.capture:main"
 vla-pi05-batch-capture = "vla_lens.pi05.batch_capture:main"
+vla-pi05-intervene = "vla_lens.pi05.intervention_runner:main"
 
 [project.optional-dependencies]
 dev = [
