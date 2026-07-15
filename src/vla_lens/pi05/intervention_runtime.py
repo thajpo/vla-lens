@@ -75,7 +75,7 @@ def run_pi05_intervention(
     intervention = executor.run_intervention(payload)
     noop_action = _trial_action(noop)
     intervened_action = _trial_action(intervention)
-    controls, control_arrays = _run_controls(executor, payload, request)
+    controls, control_arrays, control_action_refs = _run_controls(executor, payload, request)
 
     basis_result = resolve_action_basis(
         bundle,
@@ -103,19 +103,26 @@ def run_pi05_intervention(
             outputs={"action_ref": "stored_original"},
             status="ok",
         ),
-        _trial_from_output(noop, default_trial_id="trial_noop", default_kind="noop_rerun"),
+        _trial_from_output(
+            noop,
+            default_trial_id="trial_noop",
+            default_kind="noop_rerun",
+            action_ref="noop",
+        ),
         _trial_from_output(
             intervention,
             default_trial_id="trial_intervention",
             default_kind="intervention",
+            action_ref="intervened",
         ),
         *(
             _trial_from_output(
                 control,
                 default_trial_id=control.trial_id,
                 default_kind=control.trial_kind,
+                action_ref=action_ref,
             )
-            for control in controls
+            for control, action_ref in zip(controls, control_action_refs, strict=True)
         ),
     )
     status = _run_status(preflight.status, basis_result.status, trials)
@@ -143,7 +150,7 @@ def run_pi05_intervention(
             "summary": "PI0.5 runtime produced no-op and intervened action chunks.",
             "action_basis": basis_result.to_dict(),
         },
-        claim={"claim_strength": ["causal_local", "action_level"] if status == "ok" else []},
+        claim={"claim_strength": _claim_strength(status, trials)},
         provenance={
             "schema_kind": "vla_lens.intervention_run",
             "runtime_adapter": "pi05",
@@ -163,14 +170,17 @@ def _run_controls(
     executor: ActionInterventionExecutor,
     payload: Mapping[str, Any],
     request: Mapping[str, Any],
-) -> tuple[tuple[RuntimeTrialOutput, ...], dict[str, np.ndarray]]:
+) -> tuple[tuple[RuntimeTrialOutput, ...], dict[str, np.ndarray], tuple[str, ...]]:
     controls: list[RuntimeTrialOutput] = []
     arrays: dict[str, np.ndarray] = {}
+    action_refs: list[str] = []
     for control_kind in _control_kinds(request):
         output = executor.run_control(payload, control_kind=control_kind)
         controls.append(output)
-        arrays[f"control_{control_kind}"] = _trial_action(output)
-    return tuple(controls), arrays
+        action_ref = f"control_{control_kind}"
+        arrays[action_ref] = _trial_action(output)
+        action_refs.append(action_ref)
+    return tuple(controls), arrays, tuple(action_refs)
 
 
 def _trial_from_output(
@@ -178,12 +188,13 @@ def _trial_from_output(
     *,
     default_trial_id: str,
     default_kind: str,
+    action_ref: str,
 ) -> InterventionTrial:
     return InterventionTrial(
         trial_id=output.trial_id or default_trial_id,
         trial_kind=output.trial_kind or default_kind,
         control_kind=output.control_kind,
-        outputs={"action_ref": output.trial_id or default_trial_id},
+        outputs={"action_ref": action_ref},
         metrics=output.metrics,
         runtime=output.runtime,
         status=output.status,
@@ -298,6 +309,15 @@ def _run_status(
     if preflight_status == "partial" or basis_status == "partial":
         return "partial"
     return "ok"
+
+
+def _claim_strength(status: str, trials: tuple[InterventionTrial, ...]) -> list[str]:
+    """Prevent engineering-only hook smokes from being promoted to causal evidence."""
+    if status != "ok":
+        return []
+    if any(trial.runtime.get("claim_eligible") is False for trial in trials):
+        return []
+    return ["causal_local", "action_level"]
 
 
 def _trial_action(output: RuntimeTrialOutput) -> np.ndarray:

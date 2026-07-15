@@ -15,8 +15,9 @@ from vla_lens.workbench import list_intervention_runs
 
 
 class FakePI05Executor:
-    def __init__(self, base_action: np.ndarray):
+    def __init__(self, base_action: np.ndarray, *, claim_eligible: bool = True):
         self.base_action = np.asarray(base_action, dtype=np.float32)
+        self.claim_eligible = claim_eligible
 
     def run_noop(self, request: Mapping[str, Any]) -> RuntimeTrialOutput:
         del request
@@ -24,7 +25,7 @@ class FakePI05Executor:
             trial_id="trial_noop",
             trial_kind="noop_rerun",
             action_chunk=self.base_action.copy(),
-            runtime={"executor": "fake_pi05"},
+            runtime={"executor": "fake_pi05", "claim_eligible": self.claim_eligible},
         )
 
     def run_intervention(self, request: Mapping[str, Any]) -> RuntimeTrialOutput:
@@ -142,10 +143,41 @@ def test_pi05_runtime_contract_writes_saved_intervention_run_and_artifact(tmp_pa
     assert result.run.outcomes
     assert result.run.outcomes[0]["metrics"]["side_effect_score"] > 0.0
     assert result.run.controls[0]["control_kind"] == "random_direction"
+    trials = {trial.trial_kind: trial for trial in result.run.trials}
+    assert trials["stored_original"].outputs["action_ref"] == "stored_original"
+    assert trials["noop_rerun"].outputs["action_ref"] == "noop"
+    assert trials["intervention"].outputs["action_ref"] == "intervened"
+    assert trials["random_direction_control"].outputs["action_ref"] == (
+        "control_random_direction_control"
+    )
+    assert all(
+        trial.outputs["action_ref"] in result.arrays
+        for trial in result.run.trials
+    )
     assert [run.run_id for run in saved_runs] == ["pi05-runtime-contract"]
+    saved_action_refs = {
+        trial["outputs"]["action_ref"]
+        for trial in saved_runs[0].readouts["trials"]
+    }
+    assert saved_action_refs <= set(saved_runs[0].outputs)
     assert artifact.artifact_type == "intervention_run"
     assert set(artifact.arrays) >= {"stored_original", "noop", "intervened"}
     assert intervened.shape == stored.shape
+
+
+def test_pi05_runtime_does_not_assign_causal_claim_to_engineering_hook_smoke(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=8)
+    stored = np.asarray(dataset.bundles[0].action_chunks(mmap=True)[0], dtype=np.float32)
+
+    result = run_pi05_intervention(
+        dataset,
+        _request(dataset),
+        executor=FakePI05Executor(stored, claim_eligible=False),
+        save=False,
+    )
+
+    assert result.run.status == "ok"
+    assert result.run.claim == {"claim_strength": []}
 
 
 def test_pi05_intervention_runtime_import_does_not_load_heavy_dependencies():
