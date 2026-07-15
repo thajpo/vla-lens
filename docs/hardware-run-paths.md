@@ -140,16 +140,22 @@ hook wiring; it is saved with `claim_eligible: false` and is not scientific
 evidence.
 
 Validation status: the CLI, wrapper, replay gate, hook restoration, and evidence
-recording pass the normal runtime-free test suite. A real ROCm/CUDA/MPS replay
-using a newly captured exact-noise trace has not yet been completed. Treat this
-section as an experimental validation procedure, not a known-good hardware
-workflow.
+recording pass the normal runtime-free test suite. A July 2026 AMD ROCm smoke
+also completed against a newly captured `mechanistic_sampled` trace: the
+selected action matched the stored baseline exactly across three no-op replays,
+the zero-tolerance gate passed, and the synthetic intervention plus seeded
+random-direction control were recorded. CUDA and MPS replay have not yet been
+verified. This remains an experimental hook-validation workflow, not scientific
+intervention evidence.
 
 Every PI0.5 profile now stores exact float32 `flow_initial_noise` as replay
-provenance. The current hook smoke additionally needs a capture that declares
-`pi05.action_head.input`; `mechanistic_sampled` is the normal profile for that
-purpose. With the current PI0.5 internal shape of `50 x 32`, exact noise adds
-6,400 bytes (6.25 KiB) per policy call before Zarr metadata and compression.
+provenance and preserves the final behavioral action chunk in float32 even when
+large internal tensors use float16 storage. The current hook smoke additionally
+needs a capture that declares `pi05.action_head.input`; `mechanistic_sampled` is
+the normal profile for that purpose. With the current PI0.5 internal shape of
+`50 x 32`, exact noise adds 6,400 bytes (6.25 KiB) per policy call before Zarr
+metadata and compression. Preserving the action does not increase the current
+trace allocation because `action_chunks` was already written as float32.
 
 Use a request shaped like this, replacing the trace and call with a real
 mechanistic PI0.5 capture that declares `pi05.action_head.input`:
@@ -210,15 +216,16 @@ scripts/pi05_intervene.sh --backend rocm /path/to/dataset \
   --request /path/to/request.json \
   --noop-repeats 3 \
   --run-intervention \
-  --max-noop-l2 0.001 \
-  --max-noop-max-abs 0.0001
+  --max-noop-l2 0 \
+  --max-noop-max-abs 0
 ```
 
 The command exits with status 3 and does not invoke the hook when preflight,
 exact-noise availability, or either replay tolerance fails. Choose tolerances
-from the replay-only report; the example numbers above are illustrative, not
-validated PI0.5 thresholds. Do not select wider tolerances merely to make the
-gate pass; investigate replay drift first.
+from the replay-only report. Zero is appropriate only when the replay report is
+an exact match, as in the validated ROCm smoke; it is not a universal threshold
+for other machines or runtimes. Do not select wider tolerances merely to make
+the gate pass; investigate replay drift first.
 
 Linux CUDA/ROCm Docker capture is also available:
 
