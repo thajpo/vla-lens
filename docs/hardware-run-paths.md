@@ -2,7 +2,7 @@
 
 Status: active operational guidance.
 
-Last updated: May 25, 2026.
+Last updated: July 14, 2026.
 
 ## Mental Model
 
@@ -129,6 +129,96 @@ The generic form is:
 scripts/pi05_batch_capture.sh --backend cuda --config configs/pi05_light_5_test.yaml --run
 scripts/pi05_capture.sh --backend cuda --episodes 1 ...
 ```
+
+## Replay-Gated Intervention Smoke
+
+Interventions use the same capture-specific runtime split. The first supported
+path is intentionally narrow: reconstruct one saved policy-call observation,
+inject its captured initial flow noise, measure repeated no-op drift, and only
+then allow a synthetic action-head hook smoke. The synthetic direction checks
+hook wiring; it is saved with `claim_eligible: false` and is not scientific
+evidence.
+
+Validation status: the CLI, wrapper, replay gate, hook restoration, and evidence
+recording pass the normal runtime-free test suite. A real ROCm/CUDA/MPS replay
+using a newly captured exact-noise trace has not yet been completed. Treat this
+section as an experimental validation procedure, not a known-good hardware
+workflow.
+
+Every PI0.5 profile now stores exact float32 `flow_initial_noise` as replay
+provenance. The current hook smoke additionally needs a capture that declares
+`pi05.action_head.input`; `mechanistic_sampled` is the normal profile for that
+purpose. With the current PI0.5 internal shape of `50 x 32`, exact noise adds
+6,400 bytes (6.25 KiB) per policy call before Zarr metadata and compression.
+
+Use a request shaped like this, replacing the trace and call with a real
+mechanistic PI0.5 capture that declares `pi05.action_head.input`:
+
+```json
+{
+  "runtime_adapter": "pi05",
+  "target": {
+    "kind": "manual",
+    "model_family": "pi05",
+    "model_site": "pi05.action_head.input",
+    "token_space": "pi05.action_suffix"
+  },
+  "baseline": {
+    "context": {"trace_id": "TRACE_ID", "policy_call_index": 0}
+  },
+  "intervention": {
+    "request": {
+      "operator": {
+        "operator": "add_direction",
+        "strength": 0.01,
+        "parameters": {
+          "mode": "synthetic_hook_smoke",
+          "dimension": 0,
+          "control_seed": 0
+        }
+      },
+      "schedule": {
+        "policy_calls": [0],
+        "generation_steps": "all",
+        "tokens": "action"
+      },
+      "outcome": {"kind": "action", "basis": ["raw"]},
+      "controls": [{"kind": "random_direction"}]
+    }
+  }
+}
+```
+
+Inspect metadata without loading the model, then measure replay without an
+intervention:
+
+```bash
+scripts/pi05_intervene.sh --backend rocm /path/to/dataset \
+  --request /path/to/request.json --dry-run
+
+scripts/pi05_intervene.sh --backend rocm /path/to/dataset \
+  --request /path/to/request.json --noop-repeats 3
+```
+
+Both commands persist a JSON report under
+`DATASET_ROOT/vla_lens/intervention_reports/` unless `--output` is supplied.
+After reading the measured drift, explicitly set tolerances and opt into the
+non-claiming hook smoke:
+
+```bash
+scripts/pi05_intervene.sh --backend rocm /path/to/dataset \
+  --request /path/to/request.json \
+  --noop-repeats 3 \
+  --run-intervention \
+  --max-noop-l2 0.001 \
+  --max-noop-max-abs 0.0001
+```
+
+The command exits with status 3 and does not invoke the hook when preflight,
+exact-noise availability, or either replay tolerance fails. Choose tolerances
+from the replay-only report; the example numbers above are illustrative, not
+validated PI0.5 thresholds. Do not select wider tolerances merely to make the
+gate pass; investigate replay drift first.
 
 Linux CUDA/ROCm Docker capture is also available:
 
