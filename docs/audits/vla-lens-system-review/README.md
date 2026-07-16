@@ -1,6 +1,6 @@
 # VLA Lens System Review
 
-Status: tracked static audit and consolidation backlog.
+Status: tracked static audit of a fixed repository revision.
 
 The audit inspected commit `882eeb83be8c8a69a80fc8f6ec8829c311ca4630`
 (`master` on June 18, 2026). It describes the implemented system, identifies
@@ -8,9 +8,10 @@ research and software gaps, and separates verified code facts from proposed
 architecture.
 
 The audit predates two June 23 intervention branches. Their preservation and
-integration were completed through PRs #7, #9, and #10. Use
-[`08-repository-consolidation-plan.md`](08-repository-consolidation-plan.md)
-for the original merge sequence, execution record, and remaining cleanup work.
+integration were completed through PRs #7, #9, and #10. The later replay-gated
+intervention slice was merged through PR #12. The completed repository
+consolidation instructions were removed; the execution and safety record is
+retained in document 08.
 
 ## Reading Order
 
@@ -24,18 +25,16 @@ for the original merge sequence, execution record, and remaining cleanup work.
 | [`05-backend-frontend-state-and-ui.md`](05-backend-frontend-state-and-ui.md) | Selection state, backend/frontend contracts, drilldowns, and information architecture. |
 | [`06-evidence-interventions-and-method-extensions.md`](06-evidence-interventions-and-method-extensions.md) | Evidence semantics, intervention readiness, and future analysis-method seams. |
 | [`07-tests-observability-and-software-quality.md`](07-tests-observability-and-software-quality.md) | Test map, missing scientific invariants, observability, and a proposed normal-lane fixture. |
-| [`08-repository-consolidation-plan.md`](08-repository-consolidation-plan.md) | Git preservation, baseline repair, branch reconciliation, documentation, and cleanup plan. |
+| [`08-repository-consolidation-plan.md`](08-repository-consolidation-plan.md) | Historical execution record, starting state, safety contract, and rollback rules for the completed consolidation. |
 | [`09-questions-for-owner.md`](09-questions-for-owner.md) | Product and architecture decisions that materially change implementation direction. |
 
 ## How To Use This Audit
 
-1. Complete the repository consolidation plan and return `master` to a green,
-   documented state.
-2. Use the executive map to select the next architecture or product vertical.
-3. Recheck any file/line references against the then-current commit before
+1. Use the executive map to select the next architecture or product vertical.
+2. Recheck any file/line references against the then-current commit before
    implementation; the audit is evidence from a fixed revision, not live API
    documentation.
-4. Treat recommendations as candidate work. Product or architecture choices in
+3. Treat recommendations as candidate work. Product or architecture choices in
    `09-questions-for-owner.md` still require owner decisions.
 
 The audit was static: it did not run PI0.5, LeRobot, LIBERO, model downloads,

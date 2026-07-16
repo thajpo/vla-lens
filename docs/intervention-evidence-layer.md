@@ -109,9 +109,10 @@ Evidence Layer v0:
   Torch, LeRobot, LIBERO, GPU dependencies, or model checkpoints.
 
 Runtime v0:
-  live PI0.5 direction intervention execution.
-  This comes later, behind preflight and the dedicated PI0.5 runtime
-  environment.
+  a replay-gated PI0.5 engineering smoke exists behind preflight and the
+  dedicated PI0.5 runtime environment. It proves deterministic rerun and hook
+  plumbing, but it is non-claiming and does not yet apply an artifact-derived
+  probe direction.
 ```
 
 ## Conceptual Layers
@@ -697,23 +698,9 @@ auditable.
 
 ## Implementation Order
 
-Use the repository-root
-`vla_lens_intervention_implementation_plan.md` as the Goal Mode runbook. Each
-implementation phase has explicit scope, acceptance criteria, and verification
-commands so the user can run:
+The remaining implementation sequence is:
 
-```text
-/goal implement Phase X
-```
-
-1. Add typed docs and glossary for the layer. This file is that artifact.
-2. Add core dataclasses for `TargetSpec`, `InterventionSpec`, `OutcomeSpec`,
-   and typed `InterventionRun` payloads.
-3. Add serialization tests that save/load an `intervention_run` LensArtifact
-   without model execution.
-4. Add dashboard/API support for viewing saved intervention runs.
-5. Add PI0.5 runtime preflight that reports why a selected policy call can or
-   cannot be rerun.
-6. Add one PI0.5 direction intervention runtime path.
-7. Add action-basis adapters and no-op/control trials.
-8. Add sweeps, cohort scaling, and stronger guardrails.
+1. Extend the replay-gated PI0.5 executor from its synthetic one-hot hook smoke
+   to artifact-derived probe directions, including `project_out_direction`.
+2. Connect live execution to the Intervention Lab, then scale execution and UI
+   support across sweeps and cohorts with stronger guardrails.

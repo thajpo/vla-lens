@@ -30,9 +30,10 @@ claim labels, and provenance.
   PI0.5, Torch, LeRobot, LIBERO, GPU dependencies, or model checkpoints.
 
 `Runtime v0`:
-  Live PI0.5 direction intervention execution. This is later than saved
-  evidence and must be gated by preflight plus the dedicated PI0.5 runtime
-  environment.
+  Replay-gated PI0.5 execution behind preflight and the dedicated PI0.5 runtime
+  environment. The current engineering smoke verifies deterministic rerun and
+  hook plumbing but remains non-claiming until it can apply an
+  artifact-derived direction under a controlled experiment.
 
 ## Context Terms
 

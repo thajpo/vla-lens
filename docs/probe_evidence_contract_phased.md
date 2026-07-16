@@ -1,6 +1,6 @@
-# Probe Evidence Contract - Phased Implementation Plan
+# Probe Evidence Contract
 
-Status: draft for GPT Pro audit before implementation.
+Status: implemented v1 contract; deferred extensions and residual questions are tracked below.
 
 Source intent: preserve the architecture discussion and GPT Pro audit in an implementation-ready plan.
 
@@ -1272,7 +1272,8 @@ During each implementation phase, use the tool on one real probe workflow and re
 - Wished-for comparison.
 - Whether the contract changed.
 
-Implementation is not complete until at least one real probe workflow has been exercised.
+The code and fixture workflow has been exercised. A human browser pass on a
+current dataset remains part of the feedback loop.
 
 This keeps the architecture grounded in real research pain instead of hypothetical users.
 
@@ -1326,215 +1327,7 @@ Preserved for v2:
 - Generalization views across task, object, scene, and split metadata.
 - Nearest-neighbor or clustering browsers.
 
-## Phased Implementation Plan
-
-### Phase 0: Inventory Existing Sources
-
-Goal:
-
-```text
-Identify current repo objects before adding new contracts.
-```
-
-Tasks:
-
-- Identify existing TraceManifest, workbench, model-site, index, and dataset metadata fields that already cover `CaptureAvailabilityView`.
-- Identify current probe artifact fields that map to `LensArtifact`.
-- Identify current probe result/run fields that map to `LensRun`.
-- Identify current episode open state and selected probe state that map to `ResearchSelectionState`.
-- Identify components that directly consume raw episode/probe payloads.
-- Identify existing right-inspector/model-internals components that should become probe-aware.
-- Identify existing below-episode probe panels that should be removed or demoted later.
-- Do not refactor UI yet.
-
-Exit criteria:
-
-- Existing sources are mapped to the planned contracts.
-- Duplicative schema risks are known.
-- First real probe fixture is chosen as the canonical golden example.
-
-### Phase 1: Define V1 Probe Evidence Types and Fixtures
-
-Goal:
-
-```text
-Create the narrow waist without changing visible behavior.
-```
-
-Tasks:
-
-- Add typed contracts for `LensGeometry`, `LensCapability`, `LensRun`, `ProbeEvidenceBundle`, `EvidencePrimitive`, `UnavailableReason`, `ResearchSelectionState`, and `PanelSpec`.
-- Add probe-specific contract types.
-- Add `EvidenceClaimLevel` and require it on contribution evidence.
-- Add golden fixtures for scalar timestep, pooled layer, raw layer contribution, SAE feature contribution, and attention-head grouped probes.
-- Keep large arrays referenced through refs rather than embedded in page payloads where possible.
-- Do not add SAE, transcoder, crosscoder, attribution, or intervention implementations.
-
-Exit criteria:
-
-- Types exist.
-- Fixtures exist.
-- No research-facing UI depends on the new contract yet.
-- The contract can represent current probe artifacts without pretending to support unavailable analyses.
-
-### Phase 2: Build Backend or Shared Evidence Adapter
-
-Goal:
-
-```text
-Translate existing probe artifact and trace/workbench metadata into ProbeEvidenceBundle.
-```
-
-Tasks:
-
-- Build adapter from existing probe artifact plus trace/workbench/model-site metadata to `ProbeEvidenceBundle`.
-- Validate bundle shape.
-- Compute or expose `ScoreSeriesEvidence`.
-- Compute top, bottom, and uncertain `RankedMomentsEvidence`.
-- Expose `PredictionEvidence` where predictions/labels exist.
-- For linear probes, compute weighted contributors when activation and weights exist.
-- Emit explicit `UnavailableReason` entries for unsupported or missing capabilities.
-
-Exit criteria:
-
-- Existing probe data can produce a `ProbeEvidenceBundle`.
-- Missing data produces explicit unavailable reasons.
-- No fake panels are required to explain missing analyses.
-
-### Phase 3: Build Selectors, Panel Specs, and Adapter Seams
-
-Goal:
-
-```text
-Stop pages from deciding panel availability by vibes.
-```
-
-Tasks:
-
-- Implement `selectAvailablePanels(...)`.
-- Implement `selectTopMoments(...)`.
-- Implement `selectCurrentMomentEvidence(...)`.
-- Implement `selectContributionRows(...)`.
-- Implement `selectContributionClaimLevel(...)`.
-- Implement `selectUnavailableReasons(...)`.
-- Define `PanelSpec` registry for provenance, score series, ranked moments, prediction, contribution, model locus, and unavailable panels.
-- Define v1 `EpisodeLensAdapter` for probe bundles.
-
-Exit criteria:
-
-- Panels declare requirements.
-- The workbench can tell the user why a panel is hidden or unavailable.
-- Scalar timestep probes expose only panels they can honestly support.
-- Episode microscope has a concrete adapter seam for active probe evidence.
-
-### Phase 4: Dataset Page / Data Lens Integration
-
-Goal:
-
-```text
-Make the dataset page lens-over-dataset-first.
-```
-
-Tasks:
-
-- Preserve dataset selection.
-- Preserve lens/probe selection.
-- Resolve selected probe to a `LensRun` for the current dataset.
-- Render probe summary from `ProbeEvidenceBundle`.
-- Render ranked evidence under the selected probe.
-- Add compact rows with score badges, prediction/split where available, timeline sparkline, top timestep/policy call marker, and quick provenance badges.
-- Add expanded row mode if practical: video strip, probe timeline, contribution summary if available, model source/locus summary, and "open in episode viewer" action.
-- Ensure row clicks update `ResearchSelectionState`.
-
-Exit criteria:
-
-- User can pick a dataset and probe.
-- User can see top, bottom, and uncertain moments.
-- User can click a moment and preserve lens context.
-- The dataset tab behaves as a lens-conditioned episode browser.
-
-### Phase 5: Episode Microscope / Right Inspector Integration
-
-Goal:
-
-```text
-When a probe is selected, the episode microscope answers how the probe interprets the episode.
-```
-
-Tasks:
-
-- Make episode open state carry `activeLensArtifactId` and `lensRunId`.
-- Make episode viewer consume active `ResearchSelectionState`.
-- Make the existing right-side model inspector lens-aware through `EpisodeLensAdapter`.
-- Highlight/default probe source sites in the model pipeline/map.
-- Show compact probe readout: `Prediction`, `Actual`, `Confidence`, `Correct`, `Input`, `Policy call`, and `Model site`.
-- Add or adapt probe score timeline.
-- Add selected timestep or policy call detail.
-- Add top moments within the episode.
-- Add contribution breakdown if available.
-- Support `Lens-weighted contributors` and `Raw activations` views.
-- Show precise unavailable reasons when contribution, model locus, labels, or source geometry are missing.
-- Remove or demote detached below-episode probe panels once the right inspector owns the job.
-
-Exit criteria:
-
-- Opening from the workbench preserves dataset, lens, lens run, episode, and timestep/policy call context.
-- The selected timestep updates all relevant panels.
-- The page does not imply semantic feature claims unless `claim_level` supports them.
-- The active probe constrains and annotates the existing model inspector instead of competing with it.
-
-### Phase 6: Pins / Evidence Refs
-
-Goal:
-
-```text
-Let the researcher preserve moments that support or challenge a probe claim.
-```
-
-Tasks:
-
-- Define a pin payload based on `ResearchSelectionState`.
-- Let the user pin selected moments.
-- Include lens artifact id, lens run id, dataset id, episode id, timestep/policy call, model site, selected contributor if any, evidence primitive kind, score/prediction if available, claim level if available, and optional short note.
-- Keep pins evidence-oriented, not page-layout-oriented.
-- Do not build full notes, tagging, markdown editing, notebook pages, export, or artifact gallery in v1.
-
-Exit criteria:
-
-- A pinned item can reopen the same research state.
-- Pins can represent top, bottom, uncertain, false positive, false negative, or manually interesting evidence when those concepts are available.
-- Pin payload can evolve into an artifact/lab-notebook record later.
-
-### Phase 7: Contract Tests and Regression Guardrails
-
-Goal:
-
-```text
-Catch semantic drift before UI regressions become invisible.
-```
-
-Tasks:
-
-- Test `selectAvailablePanels(...)` against all golden fixtures.
-- Test `selectTopMoments(...)`.
-- Test `selectCurrentMomentEvidence(...)`.
-- Test `selectContributionRows(...)`.
-- Test `selectContributionClaimLevel(...)`.
-- Test `selectUnavailableReasons(...)`.
-- Add capability-gated panel tests.
-- Add an import-boundary rule or review checklist preventing research-facing UI from consuming raw capture directly except debug panels.
-- Add a regression checklist for interaction contracts: select probe, select moment, select model site, select contributor, pin evidence.
-
-Exit criteria:
-
-- Scalar timestep probes expose score series, top moments, low moments, and provenance.
-- Pooled layer probes do not expose token/head attribution without supporting evidence.
-- Raw layer vector contribution panels use numeric-only or appropriate claim level.
-- SAE feature probes can show feature-level contribution when feature metadata exists.
-- Missing labels disable failure panels with a precise reason.
-- Research-facing UI import boundaries are enforced by test, lint, or review policy.
-
-### Phase 8: Deferred Extensions
+## Remaining Extensions
 
 Goal:
 
@@ -1551,7 +1344,6 @@ Deferred candidates:
 - Intervention and counterfactual evidence.
 - Cohort comparison.
 - Lens comparison.
-- Failure cases from labels or proxy targets.
 - Generalization views across task, object, scene, and split metadata.
 - Nearest-neighbor or clustering browsers.
 
@@ -1588,39 +1380,17 @@ Given scalar-per-timestep probe evidence:
     visual heatmap
 ```
 
-Create small golden fixtures:
-
-- `probe_scalar_timestep`
-- `probe_pooled_layer_no_contributions`
-- `probe_raw_layer_vector_with_contributions`
-- `probe_sae_feature_with_contributions`
-- `probe_attention_head_grouped`
-- `episode_success_small`
-- `episode_failure_small`
-
-Prioritize selector tests:
-
-- `selectAvailablePanels(...)`
-- `selectTopMoments(...)`
-- `selectCurrentMomentEvidence(...)`
-- `selectContributionRows(...)`
-- `selectContributionClaimLevel(...)`
-- `selectUnavailableReasons(...)`
-
-Selector tests are higher leverage than React rendering tests because the primary failure mode is semantic transformation drift, not DOM failure.
+The probe fixtures and selector tests above are implemented. Two small
+episode-level fixtures remain useful backlog: `episode_success_small` and
+`episode_failure_small`. Selector tests remain higher leverage than React
+rendering tests because the primary failure mode is semantic transformation
+drift, not DOM failure.
 
 ## Open Audit Questions
 
-Questions for GPT Pro and user audit:
+Residual architecture questions:
 
-- Does `CaptureAvailabilityView` duplicate an existing manifest/schema concept in the repo?
-- Do existing probe artifacts already encode enough source geometry to fill `LensGeometry`?
 - Are `LensCapability` values too broad, too narrow, or named incorrectly for current code?
-- Should `PredictionEvidence`, `LensProvenanceEvidence`, `ModelLocusEvidence`, `CohortSummaryEvidence`, and `FailureCaseEvidence` be specified now or deferred until first use?
-- Should `ProbeEvidenceBundle` be built server-side, client-side, or as a shared typed selector layer?
-- What is the first real probe fixture that should become the canonical golden example?
-- Does the current dataset tab already have the right host structure for Phase 4, or should the workbench be separated after all?
-- Which existing below-episode probe panels should be deleted or demoted once the right inspector owns probe evidence?
 - What existing UI buckets should be deleted once the evidence primitives exist?
 - Is `policy_call` the right first-class time coordinate for current PI0.5/probe workflows, or should it remain an alias over timestep/frame?
 

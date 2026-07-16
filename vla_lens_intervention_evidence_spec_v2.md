@@ -1,7 +1,8 @@
 # VLA Lens Intervention Evidence Layer — Implementation Spec v0.2
 
-Status: active design artifact  
-Last updated: 2026-06-06  
+Status: implemented evidence contract with remaining runtime milestones.
+
+Last updated: 2026-07-15.
 Primary goal: make the VLA Lens workflow executable, auditable, and UI-addressable.
 
 This spec consolidates the current intervention/evidence design direction into an implementation-oriented contract. It is intentionally narrower than a full interpretability taxonomy. The first useful layer should let a researcher take an existing episode and an existing discovery artifact, convert the artifact into an intervention target, run or record a counterfactual, measure action/rollout change, and save a lossless evidence record.
@@ -523,7 +524,8 @@ provenance:
   source artifact ids, evidence_level, warnings/errors
 ```
 
-Eventually, typed dataclasses can wrap these mappings, but the first implementation can serialize typed nested dicts inside the existing shell.
+Typed dataclasses now wrap these mappings and serialize through the existing
+workbench shell.
 
 ### 4.4 Current PI0.5 intervention specs are useful but too PI0.5-shaped
 
@@ -550,7 +552,7 @@ src/vla_lens/pi05/interventions.py        # PI0.5 low-level compatibility or ada
 
 Existing `/api/intervention-runs` is a saved workbench-state route. Do not silently turn it into a live model execution route.
 
-Recommended route split:
+Implemented and remaining route split:
 
 ```text
 GET  /api/intervention-runs
@@ -558,16 +560,18 @@ POST /api/intervention-runs
   Persist or list saved intervention readout records.
 
 POST /api/interventions/preflight
-  Check whether a request can run.
+  Implemented: check whether a request can run without loading heavy runtime
+  dependencies in the normal environment.
 
 POST /api/interventions/run
-  Live execution when model runtime is available.
+  Remaining: live execution through an explicit runtime-capable boundary.
 
 POST /api/interventions/save
   Optional explicit save route if live execution returns an unsaved draft.
 ```
 
-If route churn is undesirable, keep only `/api/intervention-runs` for saved records in v0 and add live-run endpoints later behind capability flags.
+The saved-record and preflight routes must remain runtime-free. A live-run route
+must stay behind explicit capability and environment boundaries.
 
 ---
 
@@ -1482,199 +1486,40 @@ Intervention Card display metadata
 
 ### 10.6 Acceptance Criteria
 
-1. A probe artifact page can produce a `TargetSpec`.
-2. An episode/policy call can be selected as recipient context.
-3. Preflight says executable or gives actionable non-executable reasons.
-4. A saved `InterventionRun` can be created without live model execution.
-5. Saved `InterventionRun` roundtrips through JSON serialization.
-6. The dashboard can list and open saved intervention runs.
-7. A PI0.5 runtime path can execute at least one direction-add intervention on one policy call.
-8. The result shows stored original, no-op, and intervened action chunks when runtime rerun is available.
-9. The Intervention Card distinguishes action-level evidence from rollout-level evidence.
-10. Missing action basis metadata causes partial output, not a crash.
+1. A saved probe direction, rather than a synthetic one-hot direction, can be
+   resolved and applied to a reconstructable PI0.5 policy call.
+2. Both add-direction and project-out are supported with a matched random
+   control and at least one specificity control.
+3. The Intervention Lab can invoke the live execution boundary and compare
+   stored-original, no-op, intervened, and control action chunks.
+4. Claim eligibility remains false unless the saved experiment records the
+   controls and outcomes required by its claim contract.
 
 ---
 
-## 11. Implementation Order
+## 11. Remaining Implementation Order
 
-### Phase 1 — Documentation and schema shell
+### 11.1 Claim-Eligible PI0.5 Probe-Direction Runtime
 
-Files:
+The current CLI-first runner proves deterministic replay and hook plumbing with
+a non-claiming synthetic one-hot direction. Extend it to resolve a saved probe
+direction, support add and project-out, and record matched random plus
+specificity controls.
 
-```text
-docs/glossary.md
-docs/intervention-evidence-layer.md
-src/vla_lens/interventions/specs.py
-src/vla_lens/interventions/results.py
-```
+### 11.2 Live Intervention Lab Comparison
 
-Tasks:
+The Lab already supports target seeding, preflight, inspected-only saves, and
+saved evidence display. Connect it to the live execution boundary and add
+stored-original/no-op/intervened/control action comparison charts.
 
-```text
-add glossary
-add typed dataclasses or TypedDict/Pydantic-like helpers
-add to_dict/from_dict
-add schema_version fields
-add serialization tests
-```
+### 11.3 Sweep And Cohort Execution
 
-### Phase 2 — Saved-record compatibility
-
-Files:
-
-```text
-src/vla_lens/workbench/schema.py
-src/vla_lens/workbench/api.py
-src/vla_lens/server/workbench_payloads.py
-frontend/src/types/interventions.ts
-```
-
-Tasks:
-
-```text
-map new typed payload into current InterventionRunSpec shell
-create sample saved run fixture
-ensure /api/intervention-runs lists and saves it
-add dashboard card view for saved runs
-```
-
-### Phase 3 — LensArtifact indexing
-
-Files:
-
-```text
-src/vla_lens/artifacts.py
-src/vla_lens/interventions/artifacts.py
-```
-
-Tasks:
-
-```text
-create LensArtifact(type="intervention_run") from InterventionRun
-store compact display and metrics
-store array refs
-link source_trace_ids
-avoid duplicate/conflicting truth
-```
-
-### Phase 4 — Preflight
-
-Files:
-
-```text
-src/vla_lens/interventions/preflight.py
-src/vla_lens/pi05/intervention_preflight.py
-src/vla_lens/server/interventions.py
-```
-
-Tasks:
-
-```text
-check policy call existence
-check stored action availability
-check runtime availability without importing heavy deps in normal path
-check target resolvability
-check action decoder/basis availability
-return ok/warnings/errors
-```
-
-### Phase 5 — PI0.5 runtime path
-
-Files:
-
-```text
-src/vla_lens/interventions/runtime.py
-src/vla_lens/pi05/intervention_runtime.py
-src/vla_lens/pi05/interventions.py
-```
-
-Tasks:
-
-```text
-load/reconstruct selected policy call
-register hook for direction_add / direction_project_out
-run no-op
-run intervention
-run random direction control
-write action arrays/deltas
-return InterventionRun
-```
-
-### Phase 6 — UI Intervention Lab
-
-Files:
-
-```text
-frontend/src/components/interventions/*
-frontend/src/pages/InterventionsPage.tsx
-frontend/src/api/interventions.ts
-```
-
-Tasks:
-
-```text
-button on probe/artifact pages: Intervene with this signal
-button on episode/policy call: Send to Intervention
-preflight panel
-strength sweep control
-action comparison charts
-Intervention Card display
-```
-
-### Phase 7 — Sweeps and cohort scaling
-
-Tasks:
-
-```text
-strength sweep aggregation
-layer/time sweep aggregation
-cohort runner
-heldout controls
-MechanismCard drafts
-```
+Sweep/study types, promotion, aggregation, indexing, and claim gating exist.
+Add the runner and UI that materialize controlled runs over explicit axes and
+cohorts.
 
 ---
-
-## 12. Tests
-
-Minimum tests:
-
-```text
-test_target_spec_roundtrip.py
-test_intervention_request_roundtrip.py
-test_intervention_run_roundtrip.py
-test_current_intervention_run_spec_compat.py
-test_lens_artifact_intervention_index.py
-test_preflight_missing_runtime.py
-test_preflight_missing_action_basis_partial.py
-test_saved_intervention_route.py
-test_dashboard_intervention_card_fixture.tsx
-```
-
-Fixture hierarchy:
-
-```text
-tests/fixtures/interventions/probe_direction_request.json
-tests/fixtures/interventions/probe_direction_run_saved_only.json
-tests/fixtures/interventions/probe_direction_run_with_noop.json
-tests/fixtures/interventions/probe_direction_run_partial_controls.json
-```
-
-Contract invariants:
-
-```text
-saved run includes exact request payload
-saved run includes preflight result
-saved run includes status
-saved run includes context, target, intervention, outcome, provenance
-trials are explicit
-array payloads are referenced, not stuffed into JSON
-claim strength never upgrades automatically without fields supporting it
-```
-
----
-
-## 13. Failure Modes To Make Visible
+## 12. Failure Modes To Make Visible
 
 Interventions will often fail or be messy. Save those failures.
 
@@ -1693,7 +1538,7 @@ UI should make these visible through warnings and limitations, not hide them.
 
 ---
 
-## 14. Non-Goals For V0
+## 13. Non-Goals For V0
 
 Do not make v0 depend on:
 
@@ -1714,9 +1559,9 @@ Existing captures should remain valid. Runtime support should be capability-gate
 
 ---
 
-## 15. Future Extensions
+## 14. Future Extensions
 
-### 15.1 SAEs
+### 14.1 SAEs
 
 SAE feature pages should become discovery pages whose primary causal affordance is:
 
@@ -1739,7 +1584,7 @@ feature_ablate
 add decoder direction
 ```
 
-### 15.2 Transcoders and Crosscoders
+### 14.2 Transcoders and Crosscoders
 
 Use them later for pathway/mechanism hypotheses:
 
@@ -1759,7 +1604,7 @@ project out pathway direction
 
 Do not prioritize before the intervention spine works.
 
-### 15.3 Closed-loop rollout outcomes
+### 14.3 Closed-loop rollout outcomes
 
 Add when model/env runtime can reset/replay reliably:
 
@@ -1771,7 +1616,7 @@ side-by-side video
 success/failure/contact/collision/final distance
 ```
 
-### 15.4 Mechanism Cards
+### 14.4 Mechanism Cards
 
 A `MechanismCard` should aggregate:
 
@@ -1789,9 +1634,9 @@ This is not v0.
 
 ---
 
-## 16. What To Tell The Agent
+## 15. Implementation Spine
 
-Build toward this spine:
+Preserve this implemented spine:
 
 ```text
 DiscoveryArtifact
@@ -1803,7 +1648,7 @@ DiscoveryArtifact
   → InterventionCard / LensArtifact
 ```
 
-Do not build a giant intervention taxonomy first. Implement the minimum that lets a researcher do this:
+Remaining runtimes should preserve this minimum researcher loop:
 
 ```text
 Open probe
@@ -1815,4 +1660,6 @@ Open probe
   → save InterventionRun
 ```
 
-The first useful artifact is not an SAE page or a beautiful dashboard. It is a saved, lossless, inspectable, action-level counterfactual that tells the researcher what changed when they modified a candidate internal signal.
+The next useful result is not an SAE page or more dashboard surface. It is a
+saved, lossless, inspectable, controlled counterfactual that records what
+changed when the runtime applied an artifact-derived candidate signal.

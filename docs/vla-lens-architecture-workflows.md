@@ -187,31 +187,32 @@ flowchart TB
     Artifact --> Dashboard["Dashboard\ncompare flow formation to executed behavior"]
 ```
 
-## Workflow 6: Offline Patching And Intervention Results
+## Workflow 6: Replay-Gated Intervention Evidence
 
 See [intervention-evidence-layer.md](intervention-evidence-layer.md) for the
-focused implementation artifact that turns episodes plus discovery artifacts
-into intervention targets, outcome records, and saved evidence without requiring
-new capture profiles for v0.
+focused contract that turns episodes plus discovery artifacts into intervention
+targets, outcome records, and saved evidence. The current live path is a
+CLI-first, non-claiming PI0.5 engineering smoke; artifact-derived probe
+directions and dashboard-triggered execution remain future work.
 
 ```mermaid
 sequenceDiagram
-    participant R as Researcher
-    participant D as TraceDataset
-    participant S as Selector
-    participant P as Patcher
-    participant M as ModelAdapter
+    participant H as Researcher
+    participant D as Saved dataset
+    participant S as TargetSpec / preflight
+    participant R as PI0.5 runner
+    participant M as PI0.5 runtime
     participant A as Artifact
     participant UI as Dashboard
 
-    R->>D: choose target failure trace and source success trace
-    R->>S: define SiteSpec(module, layer, timestep, token/generation step)
-    S-->>R: verify activation availability and shapes
-    R->>P: run_offline_patch(target, source, site, metrics)
-    P->>M: replay same observation through model with activation hook
-    M-->>P: original and patched action outputs
-    P->>P: compute action delta, flow delta, probe delta, optional attribution delta
-    P->>A: save PatchResult LensArtifact
+    H->>D: choose episode and policy call
+    H->>S: define target, operator, schedule, outcome, controls
+    S-->>H: report reconstructability and runtime capability
+    H->>R: run dedicated PI0.5 CLI wrapper
+    R->>M: replay exact stored inputs and apply supported hook
+    M-->>R: no-op, intervened, and control action outputs
+    R->>R: verify replay gate and compute action deltas
+    R->>A: save InterventionRun and LensArtifact index
     A->>D: register artifact in trace/dataset index
-    D->>UI: display original vs patched action chunk and metrics
+    D->>UI: display saved trials, provenance, and metrics
 ```

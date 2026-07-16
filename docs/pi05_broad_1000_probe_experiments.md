@@ -2,7 +2,7 @@
 
 Status: active experiment registry.
 
-Last updated: June 17, 2026.
+Last updated: July 15, 2026.
 
 This document is the review surface for the PI0.5 broad 1000 probe campaign.
 The probes are not new capture. They train on the existing mech-light activation
@@ -675,7 +675,7 @@ Recommended next probe work:
   confounded by task/benchmark difficulty, so this is not a priority scientific
   replication unless the UI needs a known probe artifact.
 
-## Active Next Run
+## Post-Campaign Next Work
 
 The stronger-baseline interaction/outcome round and the pooled temporal
 target-event round have both been run. Do not rerun the broad episode-level
@@ -804,7 +804,8 @@ Run decisions:
 ### 2. Target Lifted - Expert Action Hidden
 
 - Spec: `configs/probes/pi05_broad_1000_target_lifted_expert_action_hidden.yaml`
-- Status: planned / run after target-moved if class support is adequate
+- Status: completed / negative against stronger metadata baselines
+- Artifact: `probe_suite-pi0.5-broad-1000-target-lifted---expert-action-hidden-6f9a08c7cd`
 - Target: `target_lifted`
 - Feature: expert action hidden
 - Sweep: layer x policy call
@@ -876,7 +877,7 @@ Run decisions:
 ### 7. Target Parse Status - VLM Prefix Hidden
 
 - Spec: `configs/probes/pi05_broad_1000_target_parse_status_vlm_prefix_hidden.yaml`
-- Status: planned control
+- Status: blocked / selector matched no rows in the current dataset
 - Target: `target_parse_status`
 - Feature: VLM prefix hidden
 - Sweep: layer
@@ -902,7 +903,7 @@ Why this was trained first:
 Result: completed as
 `probe_suite-pi0.5-broad-1000-outcome-robust---action-head-input-7f7ec8ae54`.
 It should now serve as a regression/UI artifact. The target-moved and
-target-contacted probes have both been run; use `Active Next Run` for the
+target-contacted probes have both been run; use `Post-Campaign Next Work` for the
 current follow-up recommendation.
 
 ## Superseded YAML Specs
@@ -1438,14 +1439,15 @@ interpretation.
 
 ## Replication Priority
 
-1. **Current robust probes:** target moved/contacted/lifted and filtered
-   first-event target-relative probes over expert action hidden features.
-2. **Required gates:** metadata leakage audit, split/gate summaries, interaction
-   label quality, and failure taxonomy.
-3. **Controls:** object-presence VLM probes, task identity probes, geometry
-   shortcut controls.
-4. **Causal candidates:** scene4 interface trace / attribution patching only
-   after replay and tensor preflight artifacts are represented.
-5. **Archive-only unless needed:** raw object multiclass probes, old broad
+1. **Research validation:** run a locked PCA/regularization confirmation for
+   object-local z only if that weak geometry lead still justifies the effort.
+2. **Workflow validation:** complete a human browser pass on a current dataset
+   and preserve exact links from aggregate evidence to source moments.
+3. **Support-gated probes:** retain filtered first-event probes only when every
+   candidate cell clears the support threshold and metadata controls remain
+   competitive.
+4. **Causal work:** promote a candidate only through a claim-eligible
+   intervention with replay, no-op, matched controls, and recorded outcomes.
+5. **Archive-only unless needed:** target-parse on the current dataset, raw object multiclass probes, old broad
    best-non-target flow margins, coarse attention localization, and unfiltered
    action-head first-event probe.

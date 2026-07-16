@@ -187,14 +187,17 @@ The generic adapter protocols show a longer-term model/dataset/sim agnostic dire
 3. The exact model/preprocessor/postprocessor config and normalization statistics are not fingerprinted as first-class artifacts. `preprocess_id` and `postprocess_id` are stored as `lerobot.default` at `src/vla_lens/pi05/capture_writer.py:189`, which is too coarse.
 4. RNG and denoising state are not fully persisted. The episode seed is stored, but policy/model RNG states, sampler state, deterministic flags, and any model-side random sources are not recorded.
 5. The exact observation tensor payload after all preprocessors is not persisted as a named artifact. Raw-ish observations/context are captured, but not necessarily the final model input dictionary after `runtime.preprocessor`.
-6. `src/vla_lens/pi05/replay.py:93` `replay_config_from_bundle` looks for `env_seed` or `policy_seed`, while `_write_episode` stores `seed` in metadata at `src/vla_lens/pi05/capture_writer.py:99` and environment metadata at `src/vla_lens/pi05/capture_writer.py:136`. Replay can therefore default to seed `0` for PI0.5 traces even when the trace recorded a seed.
+6. At the inspected revision, `src/vla_lens/pi05/replay.py:93`
+   `replay_config_from_bundle` could miss the recorded PI0.5 seed. This was
+   fixed after the audit: replay now resolves the nested environment metadata,
+   and exact replay inputs and seed behavior have regression coverage.
 
 ### Reconstruction Classification
 
 | Reconstruction target | Classification | Reason |
 | --- | --- | --- |
 | Inspect saved trace without PI0.5 runtime | Strong | Overlay and LeRobot data are portable; `TraceBundle` and `TraceDataset` read persisted tables/arrays. |
-| Replay executed action sequence in simulator | Partial | Executed actions and task metadata exist, and `src/vla_lens/pi05/replay.py:35` can drive LIBERO replay, but seed lookup and runtime version provenance are incomplete. |
+| Replay executed action sequence in simulator | Validated on ROCm; other backends unverified | Executed actions, task metadata, and replay seed resolution now support deterministic LIBERO replay. The recorded hardware smoke is ROCm-only; CUDA and MPS remain unverified. |
 | Recompute exact original policy action chunk | Weak | Model id, prompt, seed, and some preprocessing metadata exist, but checkpoint sha, full runtime versions, processor config fingerprints, RNG state, and final model input payload are missing. |
 | Reconstruct exact hidden/attention tensors from source | Weak to impossible | Captured tensors are persisted for the selected profile, but exact re-execution depends on missing checkpoint/runtime/RNG/proprocessor details. |
 | Validate trace integrity after capture | Moderate | Trace fingerprints cover trajectory, context, schema, and arrays in `src/vla_lens/traces/fingerprints.py:37`, but do not prove replayability. |
@@ -205,7 +208,6 @@ The generic adapter protocols show a longer-term model/dataset/sim agnostic dire
 2. Add a `runtime_versions` table or manifest block during `_write_episode` that embeds the successful `check_pi05_env` facts and the VLA Lens git commit.
 3. Persist the final preprocessed model input payload schema and optionally arrays for small non-image fields. For large tensors, persist hashes, shapes, dtypes, and references.
 4. Record policy-call wall-clock timings: observation captured, preprocessing start/end, model call start/end, postprocess end, env step start/end.
-5. Fix `replay_config_from_bundle` to read `metadata["seed"]` and nested environment seed, or write `env_seed` explicitly from `_write_episode`.
 
 ## Environment Boundary
 
@@ -238,9 +240,8 @@ The generic adapter protocols show a longer-term model/dataset/sim agnostic dire
 2. Store per-trace runtime provenance and checkpoint/config hashes. This is the biggest reconstructability improvement.
 3. Enforce the capture environment boundary at Python entrypoints, not only shell wrappers and docs.
 4. Add PI0.5 site catalog versioning plus per-site requested-to-resolved hook records.
-5. Fix replay seed resolution so PI0.5 traces replay with the recorded seed.
-6. Make `pi05.selectors` lazy-import Torch or isolate it as runtime-only.
-7. Add normal-lane import boundary tests and temporal alignment tests for truncated/partial chunks.
+5. Make `pi05.selectors` lazy-import Torch or isolate it as runtime-only.
+6. Add normal-lane import boundary tests and temporal alignment tests for truncated/partial chunks.
 
 ## Commands Used
 

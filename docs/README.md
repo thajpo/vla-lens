@@ -2,10 +2,16 @@
 
 Status: active documentation entrypoint.
 
-Last updated: July 13, 2026.
+Last updated: July 15, 2026.
 
 This is the current documentation entrypoint. Prefer these files over older
 experiment notes when deciding what to run or implement.
+
+## Current Review
+
+- [documentation-review-2026-07-15.md](documentation-review-2026-07-15.md):
+  dated audit of completed-plan cleanup, preserved evidence, and the remaining
+  product/architecture delivery order.
 
 ## Read First
 
@@ -32,8 +38,14 @@ experiment notes when deciding what to run or implement.
   target architecture for supporting multiple VLA models, robot datasets, and
   simulators through adapters and dataset capabilities.
 - [intervention-evidence-layer.md](intervention-evidence-layer.md): focused
-  implementation artifact for turning episodes plus discovery artifacts into
-  intervention targets, action/rollout outcomes, and saved evidence.
+  contract and remaining sequence for turning discovery artifacts into
+  controlled intervention outcomes and saved evidence.
+- [../vla_lens_intervention_evidence_spec_v2.md](../vla_lens_intervention_evidence_spec_v2.md):
+  detailed intervention ontology, persistence/API contract, and remaining
+  runtime milestones.
+- [../vla_lens_intervention_implementation_plan.md](../vla_lens_intervention_implementation_plan.md):
+  compact remaining-work roadmap for claim-eligible runtime, live comparison,
+  and sweep/cohort execution.
 - [glossary.md](glossary.md): term definitions for evidence context, targets,
   runtime hooks, outcomes, controls, evidence labels, and action-basis
   provenance.
@@ -48,6 +60,12 @@ experiment notes when deciding what to run or implement.
 - [probe_hypothesis_guidance.md](probe_hypothesis_guidance.md): pre-training
   probe proposal protocol, automated preflight checks, baseline guidance, and
   ready-to-review agent output expectations.
+- [probe_evidence_contract_phased.md](probe_evidence_contract_phased.md):
+  implemented v1 probe-evidence contract and deferred extension seams.
+- [probe_evidence_source_inventory.md](probe_evidence_source_inventory.md):
+  source-to-contract mapping and remaining bridge risks.
+- [probe_evidence_workflow_feedback.md](probe_evidence_workflow_feedback.md):
+  historical workflow validation and the outstanding human-browser pass.
 - [vla-lens-architecture-workflows.md](vla-lens-architecture-workflows.md):
   architecture and workflow contracts.
 - [research_ui_principles.md](research_ui_principles.md): design principles for

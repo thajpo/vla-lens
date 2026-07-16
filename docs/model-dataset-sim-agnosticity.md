@@ -182,63 +182,11 @@ LeRobot + rich model overlay:
   plus tokens, attention, action-generation, architecture, interventions
 ```
 
-## Phases
+## Remaining Phases
 
-### Phase 1: Contract And Documentation
-
-Define the agnostic target clearly.
-
-Acceptance criteria:
-
-- This document exists and is linked from the docs index.
-- The existing adapter protocols are treated as the direction of travel.
-- PI0.5 is documented as the first implementation, not the core assumption.
-- New work can point to this document when deciding whether code belongs in
-  core, PI0.5, frontend generic UI, or a future adapter.
-- Local dataset trust checks exist outside PI0.5 capture and can validate a
-  saved root before probe or claim work.
-
-### Phase 2: Adapter Compliance Tests
-
-Prove the core can run without PI0.5.
-
-Initial support exists: `vla_lens.capture.fake_adapters` provides tiny
-dataset, environment, and model adapters that emit normal capture records. The
-contract test writes them through the LeRobot v3 writer and opens the result
-through `TraceDataset` without PI0.5, Torch, LeRobot runtime imports, LIBERO, or
-GPU access.
-
-Acceptance criteria:
-
-- Add tiny fake dataset, environment, and model adapters. Initial support exists.
-- Add tests that write a minimal LeRobot v3 + `vla_lens/` overlay through the
-  generic path. Initial support exists.
-- Add tests that the dashboard/server can summarize the fake model's sites
-  without `pi05.*` names. Initial support exists.
-- Keep PI0.5 capture tests separate from normal `uv run pytest`.
-
-### Phase 3: Capability Manifest
-
-Make available views explicit.
-
-Initial backend support exists: `/api/dataset` now includes a `capabilities`
-manifest with available capability names, boolean flags, camera names,
-model-family names, and model-site prefixes. The first contract test uses the
-synthetic non-PI0.5 dataset to verify that the server can summarize generic
-`backbone.*` and `action_head.*` sites without PI0.5 names.
-
-Acceptance criteria:
-
-- The backend exposes a capability manifest for each opened dataset. Initial
-  support exists in `/api/dataset`.
-- Capabilities are derived from LeRobot metadata, overlay tables, arrays, and
-  model-site metadata. Initial support derives from opened bundles, arrays,
-  policy-call tables, token-space tables, model-site tables, and artifact
-  counts.
-- Frontend panels key off capabilities instead of PI0.5 name prefixes wherever
-  possible. Initial support gates model-site, policy-call, probe, token-space,
-  attention, image-token-map, and action-generation queries/panels from
-  `/api/dataset` capability flags.
+Keep PI0.5 capture tests separate from normal `uv run pytest`; model or
+simulator integrations must not pull their runtime dependencies into the normal
+dashboard/test environment.
 
 ### Phase 4: Frontend Generalization
 

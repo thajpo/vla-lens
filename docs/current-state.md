@@ -325,9 +325,7 @@ balance, and saved artifact freshness before treating the root as probe-grade.
 
 Do not start by collecting more audit data.
 
-The replay-gated, non-claiming synthetic hook vertical slice now works through a
-dedicated capture/runtime wrapper rather than the normal FastAPI process. The
-next causal milestone is a claim-eligible PI0.5 experiment: choose one concrete
+The next causal milestone is a claim-eligible PI0.5 experiment: choose one concrete
 target/operator/outcome question, specify controls and acceptance criteria, and
 use the cheapest existing capture profile that supports it.
 

@@ -9,7 +9,7 @@ Then review [`vla-lens-architecture-workflows.md`](vla-lens-architecture-workflo
   - Environment: `.venv`
   - Commands: `scripts/check_vla_lens.sh`, `uv run pytest`.
 
-- **PI0.5 capture workflow (hardware + CUDA/ROCm/LIBERO):** real robot capture.
+- **PI0.5 capture workflow (hardware + CUDA/ROCm/LIBERO):** model and simulator capture on a hardware-specific runtime.
   - Environment: `.venv-pi05-rocm` / `.venv-pi05-cuda` / `.venv-pi05-mps`
   - Commands: `scripts/check_pi05_env.sh`, `scripts/pi05_capture.sh`, `scripts/pi05_batch_capture.sh`.
 
@@ -32,7 +32,9 @@ scripts/run_vla_lens_demo.sh
 Open the local dashboard at:
 
 - `http://127.0.0.1:5173/` (local dev)
-- `http://127.0.0.1:8080/` (Docker dashboard path)
+
+The separate Docker dashboard path serves at `http://127.0.0.1:8080/`; see
+[`docker.md`](docker.md).
 
 This validates package bootstrap, API contracts, and workbench rendering.
 

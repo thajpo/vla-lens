@@ -1,6 +1,6 @@
 # Probe Evidence Source Inventory
 
-This is the Phase 0 inventory for `docs/probe_evidence_contract_phased.md`.
+This is the implemented-source inventory for `docs/probe_evidence_contract_phased.md`.
 It records which existing repo objects feed the v1 probe evidence contract and
 which older UI buckets remain as bridges.
 
