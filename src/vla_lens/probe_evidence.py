@@ -1,6 +1,7 @@
 """Probe evidence contracts for capability-gated research UI surfaces.
 
-This module is the v1 narrow waist from ``docs/probe_evidence_contract_phased.md``.
+This module is the narrow evidence boundary described in
+``docs/probe-evidence.md``.
 It deliberately models probe evidence only. Generic lens families are extension
 seams, not implemented branches.
 """

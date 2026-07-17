@@ -1,119 +1,88 @@
-# VLA Lens Documentation Index
+# Documentation
 
-Status: active documentation entrypoint.
+You do not need to read every file.
 
-Last updated: July 15, 2026.
+## Start Here
 
-This is the current documentation entrypoint. Prefer these files over older
-experiment notes when deciding what to run or implement.
+Read these in order:
 
-## Current Review
+1. [Quickstart](quickstart.md) to run the project.
+2. [Current state](current-state.md) to understand what works and what does not.
+3. [Dataset format](dataset-format.md) when you need the storage model.
 
-- [documentation-review-2026-07-15.md](documentation-review-2026-07-15.md):
-  dated audit of completed-plan cleanup, preserved evidence, and the remaining
-  product/architecture delivery order.
+The active feature backlog lives in GitHub issues, not planning documents.
 
-## Read First
+## Run Something
 
-- [quickstart.md](quickstart.md): 10-minute onboarding for choosing workflow,
-  running first successful checks, and locating the package boundaries.
-- [current-state.md](current-state.md): current repo direction, known-good
-  commands, environment split, measured capture costs, and next action items.
-- [dataset-format.md](dataset-format.md): canonical dataset contract:
-  LeRobot v3 robot data plus the `vla_lens/` interpretability overlay.
-- [hardware-run-paths.md](hardware-run-paths.md): one-command portable demo and
-  backend-specific PI0.5 setup/capture paths for ROCm, CUDA, and Apple Silicon.
-- [docker.md](docker.md): dashboard container usage and the split between
-  dashboard and Linux CUDA/ROCm capture containers.
-- [cloud-capture.md](cloud-capture.md): high-volume capture storage model,
-  output-root commands, cache/secrets handling, and dashboard handoff.
-- [remote-gpu-local-analysis.md](remote-gpu-local-analysis.md): rented-GPU
-  capture, local hard-drive analysis, and current options for online activation
-  hosting or archival.
-- [dashboard-api.md](dashboard-api.md): local FastAPI dashboard route groups,
-  query/body conventions, caching, and serving paths.
-- [workbench-frontend.md](workbench-frontend.md): React workbench module split,
-  capability gating, API data flow, and frontend development commands.
-- [model-dataset-sim-agnosticity.md](model-dataset-sim-agnosticity.md):
-  target architecture for supporting multiple VLA models, robot datasets, and
-  simulators through adapters and dataset capabilities.
-- [intervention-evidence-layer.md](intervention-evidence-layer.md): focused
-  contract and remaining sequence for turning discovery artifacts into
-  controlled intervention outcomes and saved evidence.
-- [../vla_lens_intervention_evidence_spec_v2.md](../vla_lens_intervention_evidence_spec_v2.md):
-  detailed intervention ontology, persistence/API contract, and remaining
-  runtime milestones.
-- [../vla_lens_intervention_implementation_plan.md](../vla_lens_intervention_implementation_plan.md):
-  compact remaining-work roadmap for claim-eligible runtime, live comparison,
-  and sweep/cohort execution.
-- [glossary.md](glossary.md): term definitions for evidence context, targets,
-  runtime hooks, outcomes, controls, evidence labels, and action-basis
-  provenance.
-- [pi05-capture-profiles.md](pi05-capture-profiles.md): what each PI0.5 capture
-  profile is for in interpretability terms.
-- [pi05-rocm-capture-env.md](pi05-rocm-capture-env.md): how the dedicated ROCm
-  PI0.5/LeRobot/LIBERO environment works and why normal `uv run` capture is
-  unsafe.
-- [pi05_broad_1000_probe_experiments.md](pi05_broad_1000_probe_experiments.md):
-  consolidated probe experiment registry, useful legacy ideas, null results,
-  and replication priorities.
-- [probe_hypothesis_guidance.md](probe_hypothesis_guidance.md): pre-training
-  probe proposal protocol, automated preflight checks, baseline guidance, and
-  ready-to-review agent output expectations.
-- [probe_evidence_contract_phased.md](probe_evidence_contract_phased.md):
-  implemented v1 probe-evidence contract and deferred extension seams.
-- [probe_evidence_source_inventory.md](probe_evidence_source_inventory.md):
-  source-to-contract mapping and remaining bridge risks.
-- [probe_evidence_workflow_feedback.md](probe_evidence_workflow_feedback.md):
-  historical workflow validation and the outstanding human-browser pass.
-- [vla-lens-architecture-workflows.md](vla-lens-architecture-workflows.md):
-  architecture and workflow contracts.
-- [research_ui_principles.md](research_ui_principles.md): design principles for
-  research-facing UI and causal-evidence displays.
-- [audits/vla-lens-system-review/README.md](audits/vla-lens-system-review/README.md):
-  July 2026 static system map, architecture gaps, consolidation record, and
-  owner decisions for selecting the next vertical slice.
-- [library/pi05-lens.md](library/pi05-lens.md): PI0.5 library notes and
-  reusable analysis primitives.
+Open these only for the task you are performing:
 
-## Status Labels
+- [Hardware run paths](hardware-run-paths.md): demo, capture, replay, and normal
+  checks.
+- [PI0.5 capture profiles](pi05-capture-profiles.md): choose what model internals
+  to save and understand the storage cost.
+- [PI0.5 ROCm environment](pi05-rocm-capture-env.md): understand the dedicated
+  capture environment.
+- [Docker](docker.md): dashboard and Linux capture containers.
+- [Cloud capture](cloud-capture.md): place large capture outputs on mounted
+  storage.
+- [Remote GPU to local analysis](remote-gpu-local-analysis.md): capture remotely,
+  copy home, and analyze locally.
+- [Dashboard API](dashboard-api.md): backend routes and payload conventions.
+- [Workbench frontend](workbench-frontend.md): frontend modules and development
+  commands.
 
-Use these labels when adding or editing docs:
+## Understand The System
 
-```text
-active:
-  operational guidance or current roadmap truth.
+These are short durable explanations, not implementation plans:
 
-living:
-  updated as work validates or invalidates assumptions.
+- [Architecture workflows](vla-lens-architecture-workflows.md): how capture,
+  storage, analysis, and UI fit together.
+- [Probe evidence](probe-evidence.md): what probe results mean and how the UI
+  preserves source evidence.
+- [Interventions](interventions.md): saved intervention evidence, replay gating,
+  controls, and the current scientific limitation.
+- [Model, dataset, and simulator agnosticism](model-dataset-sim-agnosticity.md):
+  what belongs in the generic core versus an adapter.
+- [Research UI principles](research_ui_principles.md): the UI design contract.
+- [Glossary](glossary.md): precise terms used by evidence and intervention code.
+- [PI0.5 Lens library](library/pi05-lens.md): reusable PI0.5 analysis helpers.
 
-historical:
-  useful result or planning context, but not current run guidance.
+## Research Record
 
-superseded:
-  preserved only because it explains how we got here. Do not follow commands
-  without checking current-state.md first.
+These files preserve scientific evidence. They are not required onboarding:
 
-archive:
-  old project direction kept for memory, not active VLA Lens work.
-```
+- [PI0.5 broad-1000 probe experiments](pi05_broad_1000_probe_experiments.md):
+  campaign results, including negative findings and replication guidance.
+- [Probe workflow feedback](probe_evidence_workflow_feedback.md): what worked and
+  what remained awkward during the probe evidence UI validation.
+- [Probe hypothesis guidance](probe_hypothesis_guidance.md): how to propose and
+  preflight a probe before spending compute.
 
-## Important Rule
+## Archive
 
-PI0.5 capture must use the hardware wrapper scripts:
+The [July 2026 system review](audits/vla-lens-system-review/README.md) is a
+fixed-revision audit. It is useful when investigating why an architecture issue
+exists, but it is not current run guidance.
+
+## Documentation Rule
+
+- Put unfinished feature work in a GitHub issue.
+- Use the issue as the implementation plan by default.
+- If a temporary plan file is genuinely needed, delete it before merge after
+  its useful content is captured in the PR description.
+- Keep Markdown only for current behavior, runbooks, durable architecture, and
+  research evidence.
+- Prefer short prose and bullets over tables or exhaustive AI-generated plans.
+
+## Critical Environment Rule
+
+PI0.5 capture and replay use the hardware wrappers:
 
 ```bash
 scripts/pi05_capture.sh --backend rocm ...
 scripts/pi05_batch_capture.sh --backend cuda ...
-scripts/pi05_batch_capture_mps.sh ...
+scripts/pi05_intervene.sh --backend rocm ...
 ```
 
-Do not run PI0.5/LeRobot/LIBERO capture through plain `uv run
-vla-pi05-capture` or `uv run vla-pi05-batch-capture` in the normal repo
+Do not run PI0.5, LeRobot, or LIBERO execution through the normal repo `uv run`
 environment.
-
-## Historical Experiment Notes
-
-Old per-experiment markdown files and CogACT-era planning docs were removed
-after their useful probe-design ideas were consolidated into
-[pi05_broad_1000_probe_experiments.md](pi05_broad_1000_probe_experiments.md).

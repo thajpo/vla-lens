@@ -189,7 +189,7 @@ flowchart TB
 
 ## Workflow 6: Replay-Gated Intervention Evidence
 
-See [intervention-evidence-layer.md](intervention-evidence-layer.md) for the
+See [interventions.md](interventions.md) for the
 focused contract that turns episodes plus discovery artifacts into intervention
 targets, outcome records, and saved evidence. The current live path is a
 CLI-first, non-claiming PI0.5 engineering smoke; artifact-derived probe
