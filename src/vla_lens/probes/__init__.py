@@ -2,6 +2,13 @@
 
 from __future__ import annotations
 
+from vla_lens.probes.geometry_study import (
+    GEOMETRY_STUDY_SCHEMA_VERSION,
+    GeometryStudyResult,
+    GeometryTarget,
+    geometry_target_table,
+    run_geometry_probe_study,
+)
 from vla_lens.probes.preflight import (
     format_probe_preflight_markdown,
     probe_preflight_report,
@@ -24,6 +31,9 @@ from vla_lens.probes.workflow import (
 )
 
 __all__ = [
+    "GEOMETRY_STUDY_SCHEMA_VERSION",
+    "GeometryStudyResult",
+    "GeometryTarget",
     "ProbeScoreCacheResult",
     "ProbeResult",
     "OBJECT_FLOW_ARTIFACT_TYPE",
@@ -31,12 +41,14 @@ __all__ = [
     "SavedProbeSuite",
     "dump_probe_spec",
     "format_probe_preflight_markdown",
+    "geometry_target_table",
     "load_probe_spec",
     "normalize_probe_spec",
     "probe_preflight_report",
     "refresh_all_probe_score_caches",
     "refresh_probe_score_cache",
     "run_probe_suite",
+    "run_geometry_probe_study",
     "train_probe_artifact",
     "train_probe_artifact_from_spec",
 ]

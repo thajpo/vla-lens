@@ -130,16 +130,36 @@ class FeatureView:
             if token_indices is not None and len(token_indices) == 0:
                 continue
 
-            for sample_axis, sample_index in samples:
-                value, remaining_axes = _select_value(
-                    array=array,
-                    axes=axes,
-                    sample_axis=sample_axis,
-                    sample_index=sample_index,
-                    token_indices=token_indices,
-                    generation_step=self.selector.generation_step,
+            vectorized = _vectorized_mean_samples(
+                array=array,
+                axes=axes,
+                samples=samples,
+                token_indices=token_indices,
+                generation_step=self.selector.generation_step,
+                reduction=self.selector.reduce_tokens,
+            )
+            if vectorized is not None:
+                sample_vectors = zip(samples, vectorized, strict=True)
+            else:
+                sample_vectors = (
+                    (
+                        sample,
+                        _reduce_value(
+                            *_select_value(
+                                array=array,
+                                axes=axes,
+                                sample_axis=sample[0],
+                                sample_index=sample[1],
+                                token_indices=token_indices,
+                                generation_step=self.selector.generation_step,
+                            ),
+                            self.selector.reduce_tokens,
+                        ),
+                    )
+                    for sample in samples
                 )
-                vector = _reduce_value(value, remaining_axes, self.selector.reduce_tokens)
+
+            for (sample_axis, sample_index), vector in sample_vectors:
                 vector = vector.astype(self.selector.dtype, copy=False).reshape(-1)
                 if vector.size and not np.isfinite(vector).any():
                     continue
@@ -216,6 +236,59 @@ class FeatureView:
                 | index["generation_step"].map(_matches_value(self.selector.generation_step))
             ]
         return index.reset_index(drop=True)
+
+
+def _vectorized_mean_samples(
+    *,
+    array: Any,
+    axes: Sequence[str],
+    samples: Sequence[tuple[str | None, int | None]],
+    token_indices: np.ndarray | None,
+    generation_step: int | str | None,
+    reduction: TokenReduction,
+) -> list[np.ndarray] | None:
+    """Read a site's requested sample slices in one orthogonal Zarr selection."""
+
+    if reduction != "mean" or not samples or not hasattr(array, "oindex"):
+        return None
+    sample_axes = {axis for axis, _ in samples}
+    if len(sample_axes) != 1:
+        return None
+    sample_axis = next(iter(sample_axes))
+    if sample_axis is None or sample_axis not in axes:
+        return None
+    sample_indices = [index for _, index in samples]
+    if any(index is None for index in sample_indices):
+        return None
+
+    selection: list[Any] = [slice(None)] * len(axes)
+    selection[axes.index(sample_axis)] = np.asarray(sample_indices, dtype=np.int64)
+    if generation_step is not None and "generation_step" in axes:
+        axis = axes.index("generation_step")
+        selection[axis] = _generation_step_index(int(array.shape[axis]), generation_step)
+    if token_indices is not None and "token" in axes:
+        selection[axes.index("token")] = _compact_indices(token_indices)
+
+    selected = np.asarray(array.oindex[tuple(selection)])
+    remaining_axes = [
+        axis_name
+        for axis_name, indexer in zip(axes, selection, strict=True)
+        if not isinstance(indexer, (int, np.integer))
+    ]
+    if "token" in remaining_axes:
+        token_axis = remaining_axes.index("token")
+        selected = selected.mean(axis=token_axis)
+        remaining_axes.pop(token_axis)
+    sample_position = remaining_axes.index(sample_axis)
+    selected = np.moveaxis(selected, sample_position, 0)
+    return [np.asarray(value).reshape(-1) for value in selected]
+
+
+def _compact_indices(indices: np.ndarray) -> slice | np.ndarray:
+    values = np.asarray(indices, dtype=np.int64)
+    if values.size and np.array_equal(values, np.arange(values[0], values[-1] + 1)):
+        return slice(int(values[0]), int(values[-1]) + 1)
+    return values
 
 
 def _select_value(

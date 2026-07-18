@@ -2,7 +2,7 @@
 
 Status: active experiment registry.
 
-Last updated: June 17, 2026.
+Last updated: July 18, 2026.
 
 This document is the review surface for the PI0.5 broad 1000 probe campaign.
 The probes are not new capture. They train on the existing mech-light activation
@@ -41,9 +41,9 @@ features plus post-processed interaction labels.
   `uv run python scripts/validate_vla_lens_dataset_trust.py "/mnt/new-volume/vla-lens/pi05-broad-1000-mech-light-lerobot-v3"`.
   The gate is local and read-only; it checks schema/overlay validity, split
   sidecars, activation coverage, outcome balance, and artifact freshness.
-- Latest local gate: passed on 2026-06-17 with 1000 episodes, 34000 activation
+- Latest local gate: passed on 2026-07-18 with 1000 episodes, 34000 activation
   site rows, 1.0 activation coverage, train/val/test split counts of
-  600/200/200 episodes, and 11 checked artifacts.
+  600/200/200 episodes, and 42 checked artifacts at the start of this round.
 
 ## Artifact Contract
 
@@ -305,6 +305,86 @@ Overall readout:
   a strong validation gain, but its final-test baseline loss and numerical
   conditioning warning mean it should be rerun with PCA/regularization and a
   locked confirmation plan before interpretation.
+
+## July 18, 2026 Vector Geometry Robustness Round
+
+Purpose: replace the scalar, ill-conditioned first pass with a vector-aware
+test of whether PI0.5 globally pooled states linearly expose the instructed
+target object's pose, and especially whether they expose pose updates beyond
+temporal persistence.
+
+Method:
+
+- Use exactly one uniquely referable object per episode: the primary instructed
+  target. The earlier all-object row expansion duplicated one global activation
+  across several incompatible object labels and is not valid for this question.
+- Fit joint multi-output ridge readouts after train-only PCA. Select PCA
+  dimension from 64/128/256 and ridge alpha from 0.1/1/10/100 on validation,
+  then lock the readout for final test.
+- Measure position with episode-weighted Euclidean error in meters and rotation
+  with episode-weighted SO(3) geodesic error in degrees.
+- Test world, initial-relative, previous-call-relative, and end-effector-relative
+  position. Test quaternion, 6D rotation, rotation-vector, Euler sine/cosine,
+  initial-relative 6D, previous-call-relative 6D, and end-effector-relative 6D
+  orientation targets.
+- Compare every readout with train-mean/metadata controls and the matching
+  physical baseline. For previous-call-relative targets, zero translation and
+  identity rotation are the persistence baseline.
+- Run both held-out-task splits and a deterministic within-task episode split.
+  Episodes remain intact in every split.
+
+Completed artifacts:
+
+- Expert hidden, held-out task:
+  `geometry_probe_study-pi0.5-broad-1000-object-geometry-study-b40227ee15`
+- Expert hidden, within-task episode:
+  `geometry_probe_study-pi0.5-broad-1000-object-geometry-within-task-study-7667296721`
+- Action-head input, held-out task:
+  `geometry_probe_study-pi0.5-broad-1000-action-head-object-geometry-study-93398f6bdf`
+- Image tokens and VLM prefix endpoints, held-out task:
+  `geometry_probe_study-pi0.5-broad-1000-vlm-object-geometry-study-e156f65fdf`
+
+The previous-call-relative targets are the cleanest summary because they ask
+whether a state predicts the update missed by simply carrying the last pose
+forward:
+
+| Features / split | Position val | Baseline val | Position test | Baseline test | Rotation val | Baseline val | Rotation test | Baseline test |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Expert / held-out task | 0.0688 m | 0.0541 m | 0.0826 m | 0.0542 m | 5.11 deg | 3.74 deg | 11.23 deg | 9.25 deg |
+| Expert / within-task episode | 0.0581 m | 0.0485 m | 0.0571 m | 0.0464 m | 6.41 deg | 5.29 deg | 6.44 deg | 5.11 deg |
+| Action head / held-out task | 0.0727 m | 0.0541 m | 0.0778 m | 0.0542 m | 5.22 deg | 3.74 deg | 11.99 deg | 9.25 deg |
+| Image prefix / held-out task | 0.0727 m | 0.0541 m | 0.0788 m | 0.0542 m | 6.14 deg | 3.74 deg | 11.59 deg | 9.25 deg |
+| VLM endpoint / held-out task | 0.0741 m | 0.0541 m | 0.0742 m | 0.0542 m | 5.18 deg | 3.74 deg | 10.59 deg | 9.25 deg |
+
+Interpretation:
+
+- No selected globally mean-pooled linear readout beats its physical baseline
+  on validation or final test. The easier within-task split does not rescue the
+  result, and the conclusion is consistent across expert, action-head, image,
+  and VLM endpoint features.
+- This does not show that PI0.5 lacks object geometry. It shows that primary
+  target pose and pose updates are not linearly accessible from these global
+  reductions beyond strong temporal persistence controls.
+- Do not run an MLP capacity sweep or intervention from these readouts. The
+  predeclared stopping rule was to try nonlinear capacity only after a linear
+  readout approached or beat its controls.
+- The next scientifically distinct measurement is object-conditioned or
+  spatial/token-local decoding. It needs an object query, pixel/token region,
+  or contrastive object-local feature; more global layer fishing would repeat
+  the same failed measurement.
+
+Runtime and storage observations:
+
+- The first cold expert feature materialization took about 404 seconds. Cached
+  follow-up feature materialization took 8-23 seconds for expert/action-head
+  families; the two VLM families took 194 seconds total from reduced cached
+  data rather than rereading raw token tensors.
+- The study caches aligned target tables and reduced feature matrices under
+  `.vla_cache`; those are derived and evictable. Durable artifacts retain specs,
+  fingerprints, selected hyperparameters, metrics, and row-level predictions,
+  but do not duplicate feature tensors.
+- Managed cache budgets, pinning, pruning, and capture-time reusable feature
+  packs are tracked in GitHub issue #21.
 
 ## June 17, 2026 Stronger-Baseline Round
 
