@@ -560,6 +560,119 @@ Runtime and storage:
   These files are derived and evictable rather than permanent experiment data.
   Target tables already load in under a second after the first run.
 
+## July 19, 2026 Token-Preserving And Layer-Mixture Study
+
+Purpose: test whether the negative whole-scene result above was caused by
+averaging the action tokens or by choosing one expert layer at a time.
+
+- Primary artifact:
+  `token_scene_probe_study-pi0.5-broad-1000-token-preserving-scene-object-study-channel-64-42241c0dda`
+- Lower-capacity check:
+  `token_scene_probe_study-pi0.5-broad-1000-token-preserving-scene-object-study-6b02da1589`
+- The study uses 6,184 policy-call scenes: 3,711 rows from 600 training
+  episodes, 1,137 rows from 200 validation episodes, and 1,336 rows from 200
+  final-test episodes. The final-test set has 20 held-out tasks.
+- Every method sees the same rows, 39-object vocabulary, labels, and split.
+- The source is the 50-token action suffix at the final generation step from
+  expert layers 0, 4, 8, 12, and 17.
+- `pooled` averages the 50 raw token vectors, then applies a training-only PCA.
+- `tokenwise` applies a training-only 64-dimensional channel PCA inside each
+  token, keeps all 50 token positions separate, then applies a second
+  training-only PCA. Both paths give the final decoder 64 or 128 features, so
+  the tokenwise decoder does not receive a larger final feature vector merely
+  because it retains token positions.
+- `single_layer` chooses one layer on validation. `learned_layer_mix` learns
+  non-negative layer weights summing to one on validation and fits the shared
+  linear decoder on training scenes.
+
+The 64-channel projection retains 77.7% of sampled channel variance. The final
+128-dimensional tokenwise projection retains 69.6% of the resulting flattened
+token variance; the pooled projection retains 93.6% of pooled variance. A
+16-channel run retained only 51.5% at the first step and was therefore kept as
+a lower-capacity check rather than the primary result.
+
+Final-test results:
+
+| Representation | Layer treatment | Scene identity overlap | Identity average precision | XYZ error | XYZ error, moved over 10 cm |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Pooled | Best single layer | 0.392 | 0.703 | 0.215 m | 0.207 m |
+| Pooled | Learned layer mix | 0.392 | 0.699 | 0.218 m | 0.212 m |
+| Tokenwise | Best single layer | 0.202 | 0.458 | 0.227 m | 0.224 m |
+| Tokenwise | Learned layer mix | 0.163 | 0.457 | 0.227 m | 0.218 m |
+
+Paired uncertainty uses equal-weight final-test episodes and separately
+equal-weight final-test tasks. Positive values mean the candidate is better.
+
+- The tokenwise single layer loses 0.190 scene-overlap points to the pooled
+  single layer across episodes. Its 95% bootstrap interval is -0.211 to -0.170;
+  across tasks it is -0.242 to -0.151. The paired bootstrap p-value is below
+  0.001 in both summaries.
+- The tokenwise single layer adds 1.16 cm of XYZ error. Expressed as error
+  reduction, the episode-level interval is -1.45 to -0.89 cm and the task-level
+  interval is -1.33 to -0.37 cm; both paired p-values are below 0.001.
+- Mixing pooled layers changes scene overlap by less than 0.001, with an
+  episode-level interval of -0.006 to 0.006 and p=0.954. It makes XYZ error
+  0.32 cm worse, with an episode-level interval of 0.19 to 0.44 cm worse.
+- Mixing tokenwise layers does not reliably change XYZ error relative to the
+  best tokenwise layer: the interval for error reduction is -0.21 to 0.27 cm.
+  It lowers identity overlap by 0.038, with an interval of -0.048 to -0.028.
+
+The best pooled identity layer is 12 and the best pooled XYZ layer is 8. The
+learned mixtures use several layers, but that does not improve held-out
+performance. For pooled XYZ, the largest mixture weight is 0.55 on layer 4;
+for pooled identity, the largest weight is 0.47 on layer 0. This is a useful
+warning: non-zero learned layer weights do not by themselves show that combining
+depths produces a better representation.
+
+The tokenwise coefficient summaries concentrate on later action-horizon tokens,
+especially positions 43-49 for identity and roughly 32-46 for XYZ. These are
+correlated linear coefficient norms after PCA, not causal importance. Because
+the tokenwise models perform worse, this pattern should be used only to form a
+future intervention or ablation question, not as evidence that those tokens
+store the scene map.
+
+Interpretation:
+
+- This study does not support the idea that global token averaging was hiding
+  a more accurate linearly decodable whole-scene map in the expert action
+  suffix. Keeping token positions separate makes both tasks worse under the
+  matched 64/128-feature comparison.
+- The negative result is stable across held-out episodes and tasks, and it
+  persists when the per-token channel width increases from 16 to 64. Only 8 of
+  39 objects have lower XYZ error in the best tokenwise model.
+- This does not show that no token-local object representation exists anywhere
+  in PI0.5. The experiment tests expert action tokens, a linear decoder, and a
+  variance-based compression. It does not yet test visual patch tokens, an
+  explicit object query, or a nonlinear set decoder.
+- The simple state comparisons remain stronger. The previous policy-call
+  position has 1.6 cm error over all objects and 18.3 cm over objects moved more
+  than 10 cm, compared with 21.5 cm and 20.7 cm for the best pooled expert
+  decoder. Instruction and scene information also has much higher identity
+  average precision (0.934) than the pooled expert representation (0.703).
+- The next justified step is an explicit object-conditioned decoder on matched
+  scenes, followed by visual-token localization. A higher-capacity set decoder
+  should remain an exploratory upper bound because it can learn scene templates
+  without exposing a clean representation.
+
+Runtime and storage:
+
+- The first 64-channel run took 9.9 minutes. A rerun using the compact projected
+  cache took 2.4 minutes, including fitting, paired uncertainty, and artifact
+  writing.
+- The final artifact is 15 MB. It contains source rows/sites, the exact token
+  table, all projection transforms, selected decoder parameters, layer weights,
+  per-scene predictions, per-object results, token coefficients, examples, and
+  paired uncertainty.
+- The reusable 64-channel cache is 34 MB. Raw captured activations are never
+  copied. The 50-by-64 intermediate token tensor exists only in memory and can
+  be reconstructed from the capture and saved projection.
+
+One preliminary full run exposed a token-metadata bug: dynamic action-token rows
+were repeated once per policy call, which selected the same 50 tensor positions
+multiple times. That artifact was rejected, the loader now deduplicates exact
+token indices, and a regression test covers this case. The accepted artifacts
+contain exactly token positions 0 through 49.
+
 ## June 17, 2026 Stronger-Baseline Round
 
 Purpose: rerun the most plausible interaction/outcome probes after applying
