@@ -12,6 +12,10 @@ import sklearn
 
 from vla_lens.artifacts import LensArtifact, make_artifact_id
 from vla_lens.dataset import build_dataset_index
+from vla_lens.probes.representation_options import (
+    normalize_representation_spec,
+    require_generic_probe_representation,
+)
 from vla_lens.probes.suite import run_probe_suite
 from vla_lens.probes.workflow_artifacts import (
     _array_fingerprint,
@@ -172,10 +176,12 @@ def train_probe_artifact(
         else None,
     }
     research_framing = _probe_research_framing(research)
+    representation = normalize_representation_spec((research or {}).get("representation"))
     method = {
         "workflow": "train_probe_artifact",
         "probe_artifact_schema_version": PROBE_ARTIFACT_SCHEMA_VERSION,
         "research": research_framing,
+        "representation": representation,
         "lineage": _probe_lineage(random_seed=None),
         "source": _probe_source(dataset, rows),
         "input": _probe_input(selector, rows, X, feature_matrix.cache_key),
@@ -287,6 +293,7 @@ def train_probe_artifact(
         display={
             "kind": "probe_suite",
             "research": research_framing,
+            "representation": representation,
             "results": _records(results),
             "best_result_details": _best_result_details(
                 results,
@@ -369,6 +376,7 @@ def train_probe_artifact_from_spec(
 ) -> SavedProbeSuite:
     """Train a probe artifact from a YAML/JSON-compatible spec."""
     normalized = normalize_probe_spec(spec)
+    require_generic_probe_representation(normalized.get("representation"))
     features = normalized["features"]
     selector = ActivationQuery(
         episodes=dict(features.get("episodes") or {}),

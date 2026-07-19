@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
+from vla_lens.probes.representation_options import normalize_representation_spec
 from vla_lens.probes.workflow_types import DEFAULT_PROBE_SPEC
 
 
@@ -33,6 +34,7 @@ def normalize_probe_spec(spec: Mapping[str, Any] | None = None) -> dict[str, Any
         probe = merged["probe"]
         if isinstance(probe.get("models"), str):
             probe["models"] = [probe["models"]]
+    merged["representation"] = normalize_representation_spec(merged.get("representation"))
     merged.setdefault("baseline", [])
     return merged
 

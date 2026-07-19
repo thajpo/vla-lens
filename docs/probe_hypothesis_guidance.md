@@ -299,20 +299,47 @@ Specific risks for orientation probes:
 
 ## Ready-To-Review Agent Output
 
-When asked to "train some probes," an agent should first produce a short review
-packet:
+When asked to "train a probe" or "train some probes," do not silently assume
+global mean pooling. First show the relevant representation choices:
+
+| Choice | Question it answers | Default status |
+| --- | --- | --- |
+| Average tokens | Is the signal broadly available in this token group? | Supported by the generic trainer. |
+| Learn a layer mixture | Is the signal distributed across model depth? | Use when matching token positions exist across captured layers; specialized runner required. |
+| Keep tokens separate | Which tokens contain the information? | Use when the capture retains a token axis; specialized runner required. |
+| Ask about one object | Where and how is a specified object represented? | Use when token arrays and per-object labels exist; specialized runner required. |
+| Predict an object set | Can the representation produce all scene objects without fixed simulator slots? | High-capacity exploratory method; needs token arrays, complete object-set labels, matching loss, and a specialized runner. |
+
+`ready` means the normal probe trainer can execute the choice. `data_ready`
+means the tensors and labels exist but VLA Lens still needs the named specialized
+runner. `blocked` means the current capture is missing required data. Preflight
+reports these states from the selected dataset rather than presenting every
+choice as runnable.
+
+For object identity and location questions, prefer this order:
+
+1. Keep the existing one-layer mean-pooled probe as the low-capacity baseline.
+2. Test a learned layer mixture to see whether information is spread across
+   depth.
+3. Keep tokens separate to localize the signal.
+4. Add an explicit object query to test object-specific identity and geometry.
+5. Use a set decoder only as an exploratory upper bound after simpler methods,
+   because its extra capacity can learn scene and task regularities.
+
+The review packet should then include:
 
 1. Proposed question.
 2. Exact target construction.
-3. Feature sites and sweep axes.
-4. Row filters.
-5. Split policy.
-6. Baselines.
-7. Metrics.
-8. Effective rows, feature dimension, and pooling/capacity posture.
-9. Automatic preflight warnings.
-10. Why this is worth training.
-11. What result would make it worth inspecting or intervening on.
+3. Selected representation choice and runner status.
+4. Feature sites and sweep axes.
+5. Row filters.
+6. Split policy.
+7. Baselines.
+8. Metrics.
+9. Effective rows, feature dimension, and pooling/capacity posture.
+10. Automatic preflight warnings.
+11. Why this is worth training.
+12. What result would make it worth inspecting or intervening on.
 
 After approval, the agent can train the existing probe specs and rely on normal
 probe artifacts for ranking and UI inspection.
