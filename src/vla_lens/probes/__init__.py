@@ -9,6 +9,11 @@ from vla_lens.probes.geometry_study import (
     geometry_target_table,
     run_geometry_probe_study,
 )
+from vla_lens.probes.motion_study import (
+    MOTION_STUDY_SCHEMA_VERSION,
+    MotionStudyResult,
+    run_motion_probe_study,
+)
 from vla_lens.probes.preflight import (
     format_probe_preflight_markdown,
     probe_preflight_report,
@@ -34,6 +39,8 @@ __all__ = [
     "GEOMETRY_STUDY_SCHEMA_VERSION",
     "GeometryStudyResult",
     "GeometryTarget",
+    "MOTION_STUDY_SCHEMA_VERSION",
+    "MotionStudyResult",
     "ProbeScoreCacheResult",
     "ProbeResult",
     "OBJECT_FLOW_ARTIFACT_TYPE",
@@ -49,6 +56,7 @@ __all__ = [
     "refresh_probe_score_cache",
     "run_probe_suite",
     "run_geometry_probe_study",
+    "run_motion_probe_study",
     "train_probe_artifact",
     "train_probe_artifact_from_spec",
 ]

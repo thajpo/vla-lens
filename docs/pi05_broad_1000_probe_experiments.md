@@ -386,6 +386,83 @@ Runtime and storage observations:
 - Managed cache budgets, pinning, pruning, and capture-time reusable feature
   packs are tracked in GitHub issue #21.
 
+## July 18, 2026 Motion-Aware Geometry Follow-Up
+
+Purpose: resolve the incomplete part of the vector geometry round. The earlier
+average mixed many stationary calls with a smaller number of large movements
+and compared them mainly with a no-change guess. This follow-up asks whether
+activations add information beyond ordinary task context, the robot hand's
+movement, and the actions that were actually executed.
+
+- Artifact:
+  `pi0.5-broad-1000-object-motion-follow-up-study-geometry_motion_study-8fd6fa322e`
+- Fixed movement ranges: position over 1 cm and over 10 cm; rotation over 1
+  degree and over 15 degrees. These final held-out tasks had already been viewed
+  during exploration, so this is saved as exploratory evidence rather than a
+  new confirmation result.
+- The first policy call is excluded because it has no previous interval.
+- Comparisons include no movement, average train-set movement, task/scene/object/
+  phase/call information, robot hand plus executed-action information, and the
+  combination of task context and robot movement.
+- Saved tables include all candidates, selected models, row-level predictions
+  for every comparison, movement amount, direction and magnitude errors,
+  task-level paired uncertainty, best/worst source examples, all scene-object
+  movements, and matched target-versus-other-object scenes. A report can be
+  regenerated from these tables without making a separate report the source of
+  truth.
+
+Large position movement results:
+
+| Information used | Validation error | Final-test error | Final-test direction error |
+| --- | ---: | ---: | ---: |
+| Expert activation, selected layer 12 | 0.169 m | 0.185 m | 40.3 deg |
+| Image-token global average | 0.200 m | 0.201 m | 53.7 deg |
+| VLM endpoint, selected layer 17 | 0.190 m | 0.207 m | 46.7 deg |
+| Robot movement and executed actions | 0.078 m | 0.076 m | 20.1 deg |
+| Task context plus robot movement | 0.082 m | 0.068 m | 15.3 deg |
+| No movement | 0.325 m | 0.271 m | not defined |
+
+The activation probes do beat the no-movement and average-movement guesses on
+large translations. They do not beat robot movement. The task-level final-test
+gap between expert activations and the robot comparison is 10.1 cm against the
+activation probe, with a 95% interval from 7.2 to 13.4 cm.
+
+Movement detection tells the same story. For translations over 10 cm, expert
+features reach 0.798 balanced accuracy and globally averaged image tokens reach
+0.821 on final test. Task context reaches 0.791, while task context plus robot
+movement reaches 0.837. Activation features do not show a stable advantage over
+the ordinary comparisons across validation and final test.
+
+Large rotation results are also negative against stronger comparisons. Expert
+features have 36.8-degree final-test error, compared with 31.8 degrees from
+robot movement and 39.8 degrees from guessing no rotation. The expert advantage
+over no rotation is small and uncertain across tasks; it loses to robot
+movement.
+
+Matched-scene evidence:
+
+- There are 636 later policy steps across 411 episodes and 81 tasks where the
+  primary target moves more than 10 cm.
+- In 95.8% of those scenes, every other object remains within 1 cm.
+- Ordinary distractors almost never move after the initial interval: 0.05% of
+  distractor rows exceed 1 cm.
+- Other task-manipulated objects do move, which is expected in multi-object
+  instructions and is retained explicitly in the saved object table.
+
+Revised interpretation:
+
+- The earlier large-movement improvement was real relative to the weak
+  no-change guess, but it is not evidence that the model visually tracks the
+  moving object specially.
+- The current global activations largely reveal that the robot is in a movement
+  event. The robot's measured movement predicts the object's direction and
+  distance much more accurately.
+- Token-level localization is not run in this round. The declared stopping rule
+  required activations to add information beyond task and robot movement first.
+  Object-local visual analysis remains appropriate for the controlled
+  whole-scene experiment in GitHub issue #22, where object position can vary
+  independently of the robot action.
+
 ## June 17, 2026 Stronger-Baseline Round
 
 Purpose: rerun the most plausible interaction/outcome probes after applying

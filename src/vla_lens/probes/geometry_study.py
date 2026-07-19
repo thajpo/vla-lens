@@ -27,7 +27,7 @@ from vla_lens.probes.workflow_prepare import _attach_episode_metadata
 from vla_lens.selectors import ActivationQuery
 from vla_lens.traces import TraceDataset
 
-GEOMETRY_STUDY_SCHEMA_VERSION = 2
+GEOMETRY_STUDY_SCHEMA_VERSION = 3
 
 
 @dataclass(frozen=True, slots=True)
@@ -189,6 +189,7 @@ def geometry_target_table(
         quaternions = bundle.array("scene_object_quat", mmap=True)
         eef_positions = bundle.array("eef_pos", mmap=True)
         eef_quaternions = bundle.array("eef_quat", mmap=True)
+        actions = bundle.actions(mmap=True)
         available_timesteps = sorted(int(value) for value in trace_rows["timestep"].unique())
         previous_by_timestep = {
             timestep: available_timesteps[max(0, index - 1)]
@@ -209,10 +210,26 @@ def geometry_target_table(
                 positions[previous_timestep, object_index], dtype=np.float64
             )
             eef_position = np.asarray(eef_positions[timestep], dtype=np.float64)
+            previous_eef_position = np.asarray(
+                eef_positions[previous_timestep], dtype=np.float64
+            )
             quat = _canonical_quaternion(quaternions[timestep, object_index])
             initial_quat = _canonical_quaternion(quaternions[0, object_index])
             previous_quat = _canonical_quaternion(quaternions[previous_timestep, object_index])
             eef_quat = _canonical_quaternion(eef_quaternions[timestep])
+            previous_eef_quat = _canonical_quaternion(eef_quaternions[previous_timestep])
+            action_start = min(previous_timestep, timestep)
+            action_stop = max(previous_timestep, timestep)
+            action_segment = np.asarray(actions[action_start:action_stop], dtype=np.float64)
+            if action_segment.size:
+                action_mean = action_segment.mean(axis=0)
+                action_sum = action_segment.sum(axis=0)
+                action_std = action_segment.std(axis=0)
+            else:
+                action_width = int(actions.shape[-1])
+                action_mean = np.zeros(action_width, dtype=np.float64)
+                action_sum = np.zeros(action_width, dtype=np.float64)
+                action_std = np.zeros(action_width, dtype=np.float64)
             records.append(
                 {
                     "trace_id": str(trace_id),
@@ -226,6 +243,9 @@ def geometry_target_table(
                     "position_eef_relative": (position - eef_position).tolist(),
                     "position_eef_initial_baseline": (initial_position - eef_position).tolist(),
                     "position_eef_previous_baseline": (previous_position - eef_position).tolist(),
+                    "eef_position_previous_delta": (
+                        eef_position - previous_eef_position
+                    ).tolist(),
                     "orientation_world_quat": quat.tolist(),
                     "orientation_initial_quat": initial_quat.tolist(),
                     "orientation_previous_quat": previous_quat.tolist(),
@@ -244,6 +264,13 @@ def geometry_target_table(
                     "orientation_eef_previous_baseline_quat": _relative_quaternion(
                         eef_quat, previous_quat
                     ).tolist(),
+                    "eef_orientation_previous_relative_quat": _relative_quaternion(
+                        previous_eef_quat, eef_quat
+                    ).tolist(),
+                    "executed_action_mean": action_mean.tolist(),
+                    "executed_action_sum": action_sum.tolist(),
+                    "executed_action_std": action_std.tolist(),
+                    "is_first_policy_call": bool(timestep == previous_timestep),
                 }
             )
     frame = pd.DataFrame.from_records(records)

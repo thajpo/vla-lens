@@ -92,6 +92,9 @@ def test_geometry_target_table_aligns_pose_frames_and_reuses_cache(tmp_path):
     np.testing.assert_allclose(first.iloc[0]["position_initial_delta"], [0.0, 0.0, 0.0])
     np.testing.assert_allclose(first.iloc[1]["position_initial_delta"], [0.06, 0.0, 0.0])
     np.testing.assert_allclose(first.iloc[1]["position_previous_delta"], [0.06, 0.0, 0.0])
+    np.testing.assert_allclose(first.iloc[1]["eef_position_previous_delta"], [0.0, 0.0, 0.0])
+    assert first.iloc[1]["executed_action_mean"] == [0.0]
+    assert not bool(first.iloc[1]["is_first_policy_call"])
     np.testing.assert_allclose(
         first.iloc[1]["orientation_initial_relative_quat"], [0.0, 0.0, 0.0, 1.0]
     )
