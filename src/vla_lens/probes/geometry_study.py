@@ -67,7 +67,14 @@ def run_geometry_probe_study(
     all_candidates: list[dict[str, Any]] = []
     all_selections: list[dict[str, Any]] = []
     all_predictions: list[dict[str, Any]] = []
-    limited_episode_ids = _limited_episode_ids(dataset, normalized.get("limit_episodes"))
+    source_trace_ids: set[str] = set()
+    required_split_values = _required_split_values(normalized["split"])
+    _validate_episode_limit(normalized.get("limit_episodes"), required_split_values)
+    limited_episode_ids = _limited_episode_ids(
+        dataset,
+        normalized.get("limit_episodes"),
+        required_split_values=_source_required_split_values(normalized["split"]),
+    )
 
     for feature_spec in normalized["features"]:
         feature_started = time.perf_counter()
@@ -85,7 +92,13 @@ def run_geometry_probe_study(
         metadata_started = time.perf_counter()
         rows = _geometry_metadata_rows(dataset, matrix.rows, cache=True)
         rows = _apply_split_contract(rows, normalized["split"])
-        rows, X = _limit_rows_by_episode(rows, matrix.X, normalized.get("limit_episodes"))
+        rows, X = _limit_rows_by_episode(
+            rows,
+            matrix.X,
+            normalized.get("limit_episodes"),
+            split_column=str(normalized["split"]["column"]),
+            required_split_values=required_split_values,
+        )
         rows = rows.reset_index(drop=True)
         object_column = str(normalized["object_column"])
         rows, X = _align_labeled_geometry_rows(
@@ -100,6 +113,7 @@ def run_geometry_probe_study(
         rows = rows.loc[finite].reset_index(drop=True)
         X = X[finite]
         targets = _slice_targets(targets, finite)
+        source_trace_ids.update(rows["trace_id"].astype(str).unique())
         timings[f"feature:{feature_spec['id']}:targets_seconds"] = (
             time.perf_counter() - metadata_started
         )
@@ -136,6 +150,7 @@ def run_geometry_probe_study(
             selection_frame,
             prediction_frame,
             timings,
+            source_trace_ids,
         )
         if save
         else None
@@ -819,6 +834,7 @@ def _save_geometry_study(
     selections: pd.DataFrame,
     predictions: pd.DataFrame,
     timings: Mapping[str, float],
+    source_trace_ids: Sequence[str],
 ) -> LensArtifact:
     artifact_id = make_artifact_id(str(spec["name"]), "geometry_probe_study")
     relative_dir = Path("artifacts") / artifact_id
@@ -871,9 +887,7 @@ def _save_geometry_study(
             "selections": display_records,
         },
         tags=("probe", "geometry", "exploratory"),
-        source_trace_ids=tuple(
-            sorted(str(value) for value in predictions.get("trace_id", pd.Series()).unique())
-        ),
+        source_trace_ids=tuple(sorted(str(value) for value in source_trace_ids)),
     )
     saved = dataset.save_artifact(artifact)
     artifact_dir = dataset._dataset_artifact_root() / relative_dir
@@ -942,31 +956,32 @@ def _limit_rows_by_episode(
     rows: pd.DataFrame,
     X: np.ndarray,
     limit: Any,
+    *,
+    split_column: str = "split",
+    required_split_values: Sequence[str] | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray]:
     if limit in {None, 0, ""}:
         out = rows.reset_index(drop=True).reset_index(names="__feature_row_index")
         return out, X
     requested = int(limit)
-    episode_rows = rows[["trace_id", "split"]].drop_duplicates()
-    split_values = sorted(str(value) for value in episode_rows["split"].dropna().unique())
-    per_split = max(1, requested // max(1, len(split_values)))
-    episode_ids: list[str] = []
-    for split_value in split_values:
-        matches = episode_rows.loc[
-            episode_rows["split"].astype(str) == split_value, "trace_id"
-        ]
-        episode_ids.extend(sorted(str(value) for value in matches.unique())[:per_split])
-    if len(episode_ids) < requested:
-        remaining = sorted(
-            set(str(value) for value in rows["trace_id"].unique()) - set(episode_ids)
-        )
-        episode_ids.extend(remaining[: requested - len(episode_ids)])
+    episode_rows = rows[["trace_id", split_column]].drop_duplicates()
+    episode_ids = _balanced_episode_ids(
+        episode_rows,
+        requested,
+        split_column=split_column,
+        required_split_values=required_split_values,
+    )
     mask = rows["trace_id"].astype(str).isin(episode_ids).to_numpy()
     out = rows.loc[mask].reset_index(drop=True).reset_index(names="__feature_row_index")
     return out, X[mask]
 
 
-def _limited_episode_ids(dataset: TraceDataset, limit: Any) -> list[str] | None:
+def _limited_episode_ids(
+    dataset: TraceDataset,
+    limit: Any,
+    *,
+    required_split_values: Sequence[str] | None = None,
+) -> list[str] | None:
     if limit in {None, 0, ""}:
         return None
     requested = int(limit)
@@ -977,20 +992,78 @@ def _limited_episode_ids(dataset: TraceDataset, limit: Any) -> list[str] | None:
         episodes = episodes.merge(splits, on="trace_id", how="left")
     else:
         episodes["split"] = "all"
-    split_values = sorted(str(value) for value in episodes["split"].dropna().unique())
-    per_split = max(1, requested // max(1, len(split_values)))
+    return _balanced_episode_ids(
+        episodes,
+        requested,
+        split_column="split",
+        required_split_values=required_split_values,
+    )
+
+
+def _balanced_episode_ids(
+    episodes: pd.DataFrame,
+    requested: int,
+    *,
+    split_column: str,
+    required_split_values: Sequence[str] | None,
+) -> list[str]:
+    if required_split_values is not None and not required_split_values:
+        return sorted(str(value) for value in episodes["trace_id"].unique())[:requested]
+    available_values = sorted(
+        str(value) for value in episodes[split_column].dropna().unique()
+    )
+    split_values = list(dict.fromkeys(required_split_values or available_values))
+    _validate_episode_limit(requested, split_values)
+    missing = sorted(set(split_values) - set(available_values))
+    if missing:
+        raise ValueError(
+            "Episode limit cannot preserve missing required splits: " + ", ".join(missing)
+        )
+    queues = {
+        split_value: sorted(
+            str(value)
+            for value in episodes.loc[
+                episodes[split_column].astype(str) == split_value, "trace_id"
+            ].unique()
+        )
+        for split_value in split_values
+    }
     selected: list[str] = []
     for split_value in split_values:
-        matches = episodes.loc[
-            episodes["split"].astype(str) == split_value, "trace_id"
-        ]
-        selected.extend(sorted(str(value) for value in matches.unique())[:per_split])
-    if len(selected) < requested:
-        remaining = sorted(
-            set(str(value) for value in episodes["trace_id"].unique()) - set(selected)
+        if queues[split_value]:
+            selected.append(queues[split_value].pop(0))
+    while len(selected) < requested and any(queues.values()):
+        for split_value in split_values:
+            if len(selected) >= requested:
+                break
+            if queues[split_value]:
+                selected.append(queues[split_value].pop(0))
+    return selected
+
+
+def _required_split_values(split: Mapping[str, Any]) -> tuple[str, ...]:
+    return tuple(
+        dict.fromkeys(
+            str(split[key]) for key in ("train_value", "selection_value", "test_value")
         )
-        selected.extend(remaining[: requested - len(selected)])
-    return selected[:requested]
+    )
+
+
+def _source_required_split_values(split: Mapping[str, Any]) -> tuple[str, ...]:
+    if str(split.get("kind") or "existing") == "within_task_episode":
+        return ()
+    return _required_split_values(split)
+
+
+def _validate_episode_limit(limit: Any, required_split_values: Sequence[str]) -> None:
+    if limit in {None, 0, ""}:
+        return
+    requested = int(limit)
+    required_count = len(set(str(value) for value in required_split_values))
+    if requested < required_count:
+        raise ValueError(
+            f"limit_episodes={requested} cannot cover all {required_count} required splits"
+        )
 
 
 def _finite_target_mask(targets: Sequence[GeometryTarget]) -> np.ndarray:

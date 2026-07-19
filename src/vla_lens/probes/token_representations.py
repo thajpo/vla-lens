@@ -29,6 +29,9 @@ from vla_lens.probes.geometry_study import (
     _apply_split_contract,
     _geometry_metadata_rows,
     _limited_episode_ids,
+    _required_split_values,
+    _source_required_split_values,
+    _validate_episode_limit,
 )
 from vla_lens.selectors import (
     _compact_indices,
@@ -100,7 +103,13 @@ def build_layer_token_readouts(
     query = _activation_query({**dict(feature_spec), "reduction": "mean"})
     view = dataset.select_model_sites(query)
     sites = view._matching_model_sites()  # noqa: SLF001 - shared selector contract
-    limited_ids = _limited_episode_ids(dataset, limit_episodes)
+    required_split_values = _required_split_values(split)
+    _validate_episode_limit(limit_episodes, required_split_values)
+    limited_ids = _limited_episode_ids(
+        dataset,
+        limit_episodes,
+        required_split_values=_source_required_split_values(split),
+    )
     if limited_ids is not None:
         sites = sites.loc[sites["trace_id"].astype(str).isin(limited_ids)].copy()
     sites = _token_site_rows(sites)
@@ -113,6 +122,7 @@ def build_layer_token_readouts(
         )
     layers = _selected_layers(sites, feature_spec.get("layers"))
     rows, source_sites = _source_rows(dataset, sites, layers, query)
+    _require_complete_source_traces(sites, rows)
     rows = _geometry_metadata_rows(dataset, rows, cache=True)
     rows = _apply_split_contract(rows, split).reset_index(drop=True)
     rows["representation_row_index"] = np.arange(len(rows), dtype=np.int64)
@@ -306,6 +316,18 @@ def _source_rows(
                 }
             )
     return pd.DataFrame.from_records(row_records), pd.DataFrame.from_records(source_records)
+
+
+def _require_complete_source_traces(sites: pd.DataFrame, rows: pd.DataFrame) -> None:
+    selected = set(sites["trace_id"].astype(str).unique())
+    complete = set(rows.get("trace_id", pd.Series(dtype=object)).astype(str).unique())
+    missing = sorted(selected - complete)
+    if missing:
+        preview = ", ".join(repr(value) for value in missing[:5])
+        raise ValueError(
+            "Token-preserving studies require complete selected layers and samples for "
+            f"every trace; missing {preview}"
+        )
 
 
 def _selected_token_metadata(

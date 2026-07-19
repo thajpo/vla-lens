@@ -14,6 +14,7 @@ from vla_lens.artifacts import LensArtifact, make_artifact_id
 from vla_lens.dataset import build_dataset_index
 from vla_lens.probes.representation_options import (
     normalize_representation_spec,
+    representation_kind_for_token_reduction,
     require_generic_probe_representation,
 )
 from vla_lens.probes.suite import run_probe_suite
@@ -362,7 +363,7 @@ def _direct_probe_representation(
     selector: ActivationQuery,
     research: Mapping[str, Any] | None,
 ) -> dict[str, Any]:
-    reduction_kind = "mean_pool" if selector.reduce_tokens == "mean" else "tokenwise"
+    reduction_kind = representation_kind_for_token_reduction(selector.reduce_tokens)
     requested = (research or {}).get("representation")
     representation = require_generic_probe_representation(
         normalize_representation_spec(reduction_kind if requested is None else requested)

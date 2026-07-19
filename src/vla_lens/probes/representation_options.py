@@ -14,6 +14,7 @@ from typing import Any, Mapping
 
 import pandas as pd
 
+from vla_lens.selectors import ActivationQuery
 from vla_lens.traces import TraceDataset
 
 DEFAULT_REPRESENTATION_KIND = "mean_pool"
@@ -47,6 +48,10 @@ def normalize_representation_spec(value: Any) -> dict[str, Any]:
     return parsed
 
 
+def representation_kind_for_token_reduction(value: Any) -> str:
+    return "mean_pool" if str(value or "mean") == "mean" else "tokenwise"
+
+
 def require_generic_probe_representation(value: Any) -> dict[str, Any]:
     """Reject richer choices instead of silently training the pooled fallback."""
 
@@ -65,11 +70,13 @@ def probe_representation_options(
     dataset: TraceDataset,
     feature_rows: pd.DataFrame,
     selected: Any = None,
+    *,
+    selector: ActivationQuery | None = None,
 ) -> dict[str, Any]:
     """Describe meaningful representation choices for the selected capture rows."""
 
     selected_spec = normalize_representation_spec(selected)
-    capabilities = _representation_capabilities(dataset, feature_rows)
+    capabilities = _representation_capabilities(dataset, feature_rows, selector=selector)
     options = [
         {
             "kind": "mean_pool",
@@ -91,7 +98,7 @@ def probe_representation_options(
             loses="a simple one-layer localization claim",
             data_ready=capabilities["aligned_token_layers"],
             ready_reason=("Multiple captured layers share a token space and can be aligned."),
-            blocked_reason=("Select at least two token-bearing layers with the same token space."),
+            blocked_reason=capabilities["token_topology_reason"],
         ),
         _specialized_option(
             kind="tokenwise",
@@ -101,9 +108,9 @@ def probe_representation_options(
             runnable_scope="whole-scene object identity and XYZ targets",
             keeps="token identity and token position",
             loses="the simplicity of one vector per example",
-            data_ready=capabilities["token_axis"],
+            data_ready=capabilities["token_topology_ready"],
             ready_reason="The source activation arrays retain a token axis.",
-            blocked_reason="The selected source arrays do not retain a token axis.",
+            blocked_reason=capabilities["token_topology_reason"],
         ),
         _specialized_option(
             kind="object_conditioned",
@@ -190,6 +197,8 @@ def _specialized_option(
 def _representation_capabilities(
     dataset: TraceDataset,
     feature_rows: pd.DataFrame,
+    *,
+    selector: ActivationQuery | None,
 ) -> dict[str, Any]:
     axes = feature_rows.get("axes", pd.Series("", index=feature_rows.index)).map(_parse_axes)
     token_axis = bool(axes.map(lambda value: "token" in value).any())
@@ -221,17 +230,57 @@ def _representation_capabilities(
         and bool((bundle.array_index["name"].astype(str) == "scene_object_pos").any())
         for bundle in selected_bundles
     )
+    topology_ready, topology_reason = _token_topology_readiness(dataset, selector)
     return {
         "token_axis": token_axis,
         "captured_layer_count": int(layers.nunique()),
         "token_space_count": int(len(token_spaces)),
         "aligned_token_layers": bool(
-            token_axis and layers.nunique() >= 2 and len(token_spaces) == 1
+            token_axis
+            and layers.nunique() >= 2
+            and len(token_spaces) == 1
+            and topology_ready
         ),
+        "token_topology_ready": bool(token_axis and topology_ready),
+        "token_topology_reason": topology_reason,
         "object_labels": object_labels,
         "scene_positions": scene_positions,
         "scene_object_sets": bool(object_labels and scene_positions),
     }
+
+
+def _token_topology_readiness(
+    dataset: TraceDataset,
+    selector: ActivationQuery | None,
+) -> tuple[bool, str]:
+    if selector is None:
+        return True, "The selected source arrays do not retain a compatible token topology."
+    from vla_lens.probes.token_representations import (
+        _common_token_topology,
+        _require_complete_source_traces,
+        _selected_layers,
+        _source_rows,
+        _token_site_rows,
+    )
+
+    try:
+        sites = _token_site_rows(dataset.select_model_sites(selector)._matching_model_sites())
+        if selector.generation_step is None and sites["axes"].astype(str).str.contains(
+            '"generation_step"', regex=False
+        ).any():
+            raise ValueError(
+                "Token-preserving studies require an explicit generation_step when the "
+                "captured arrays retain that axis"
+            )
+        layers = _selected_layers(sites, selector.layers)
+        rows, source_sites = _source_rows(dataset, sites, layers, selector)
+        _require_complete_source_traces(sites, rows)
+        if rows.empty:
+            raise ValueError("Token selector produced no complete cross-layer scene rows")
+        _common_token_topology(dataset, rows, source_sites, selector.token_kind)
+    except (KeyError, TypeError, ValueError) as error:
+        return False, str(error)
+    return True, "Selected traces share the token topology required by the token scene runner."
 
 
 def _parse_axes(value: Any) -> list[str]:

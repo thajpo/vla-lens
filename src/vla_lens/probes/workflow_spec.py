@@ -7,13 +7,17 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
-from vla_lens.probes.representation_options import normalize_representation_spec
+from vla_lens.probes.representation_options import (
+    normalize_representation_spec,
+    representation_kind_for_token_reduction,
+)
 from vla_lens.probes.workflow_types import DEFAULT_PROBE_SPEC
 
 
 def normalize_probe_spec(spec: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Return a complete probe spec with conservative defaults."""
-    merged = _deep_merge(DEFAULT_PROBE_SPEC, dict(spec or {}))
+    provided = dict(spec or {})
+    merged = _deep_merge(DEFAULT_PROBE_SPEC, provided)
     target = merged.get("target")
     if isinstance(target, str):
         merged["target"] = {"kind": target}
@@ -34,7 +38,12 @@ def normalize_probe_spec(spec: Mapping[str, Any] | None = None) -> dict[str, Any
         probe = merged["probe"]
         if isinstance(probe.get("models"), str):
             probe["models"] = [probe["models"]]
-    merged["representation"] = normalize_representation_spec(merged.get("representation"))
+    requested_representation = provided.get("representation")
+    if "representation" not in provided:
+        requested_representation = representation_kind_for_token_reduction(
+            features.get("reduction")
+        )
+    merged["representation"] = normalize_representation_spec(requested_representation)
     merged.setdefault("baseline", [])
     return merged
 

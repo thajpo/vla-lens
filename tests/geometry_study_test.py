@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 from scipy.spatial.transform import Rotation
 
 from tests._support.object_flow_dataset import object_flow_dataset
@@ -11,6 +12,7 @@ from vla_lens.probes.geometry_study import (
     _apply_split_contract,
     _decode_orientation,
     _encode_orientation,
+    _limit_rows_by_episode,
     _target_metrics,
     geometry_target_table,
 )
@@ -151,3 +153,41 @@ def test_within_task_split_keeps_episodes_intact_and_represents_every_split():
             "val": 2,
             "test": 2,
         }
+
+
+def test_episode_limit_rejects_fewer_episodes_than_required_splits():
+    rows = pd.DataFrame(
+        {
+            "trace_id": ["train_0", "val_0", "test_0"],
+            "split": ["train", "val", "test"],
+        }
+    )
+    features = np.arange(3, dtype=np.float32)[:, None]
+
+    with pytest.raises(ValueError, match="cannot cover all 3 required splits"):
+        _limit_rows_by_episode(
+            rows,
+            features,
+            2,
+            required_split_values=("train", "val", "test"),
+        )
+
+
+def test_episode_limit_preserves_every_required_split():
+    rows = pd.DataFrame(
+        {
+            "trace_id": ["train_0", "train_1", "val_0", "test_0"],
+            "split": ["train", "train", "val", "test"],
+        }
+    )
+    features = np.arange(4, dtype=np.float32)[:, None]
+
+    limited_rows, limited_features = _limit_rows_by_episode(
+        rows,
+        features,
+        3,
+        required_split_values=("train", "val", "test"),
+    )
+
+    assert set(limited_rows["split"]) == {"train", "val", "test"}
+    np.testing.assert_array_equal(limited_features[:, 0], [0.0, 2.0, 3.0])

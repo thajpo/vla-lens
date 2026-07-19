@@ -33,6 +33,9 @@ from vla_lens.probes.geometry_study import (
     _limit_rows_by_episode,
     _limited_episode_ids,
     _normalize_spec,
+    _required_split_values,
+    _source_required_split_values,
+    _validate_episode_limit,
     _vectors,
     geometry_target_table,
 )
@@ -81,7 +84,14 @@ def run_motion_probe_study(
     candidates: list[dict[str, Any]] = []
     selected: dict[tuple[str, str, str, float], _SelectedModel] = {}
     base_rows: pd.DataFrame | None = None
-    limited_episode_ids = _limited_episode_ids(dataset, normalized.get("limit_episodes"))
+    source_trace_ids: set[str] = set()
+    required_split_values = _required_split_values(normalized["split"])
+    _validate_episode_limit(normalized.get("limit_episodes"), required_split_values)
+    limited_episode_ids = _limited_episode_ids(
+        dataset,
+        normalized.get("limit_episodes"),
+        required_split_values=_source_required_split_values(normalized["split"]),
+    )
 
     for feature_spec in normalized["features"]:
         feature_started = time.perf_counter()
@@ -105,6 +115,7 @@ def run_motion_probe_study(
         )
         if base_rows is None:
             base_rows = rows.copy()
+        source_trace_ids.update(rows["trace_id"].astype(str).unique())
         timings[f"feature:{feature_spec['id']}:prepare_seconds"] = (
             time.perf_counter() - prepare_started
         )
@@ -155,6 +166,7 @@ def run_motion_probe_study(
             object_motion,
             matched_scenes,
             timings,
+            source_trace_ids,
         )
         if save
         else None
@@ -180,7 +192,13 @@ def _prepare_feature_rows(
 ) -> tuple[pd.DataFrame, np.ndarray]:
     rows = _geometry_metadata_rows(dataset, feature_rows, cache=True)
     rows = _apply_split_contract(rows, spec["split"])
-    rows, X = _limit_rows_by_episode(rows, features, spec.get("limit_episodes"))
+    rows, X = _limit_rows_by_episode(
+        rows,
+        features,
+        spec.get("limit_episodes"),
+        split_column=str(spec["split"]["column"]),
+        required_split_values=_required_split_values(spec["split"]),
+    )
     object_column = str(spec["object_column"])
     rows, X = _align_labeled_geometry_rows(
         dataset,
@@ -1154,6 +1172,7 @@ def _save_motion_study(
     object_motion: pd.DataFrame,
     matched_scenes: pd.DataFrame,
     timings: Mapping[str, float],
+    source_trace_ids: Sequence[str],
 ) -> LensArtifact:
     artifact_id = make_artifact_id("geometry_motion_study", str(spec["name"]))
     relative_dir = Path("artifacts") / artifact_id
@@ -1215,7 +1234,7 @@ def _save_motion_study(
             "summary": _display_summary(models, comparisons),
         },
         tags=("probe", "geometry", "motion", "exploratory"),
-        source_trace_ids=tuple(sorted(predictions["trace_id"].astype(str).unique())),
+        source_trace_ids=tuple(sorted(str(value) for value in source_trace_ids)),
     )
     saved = dataset.save_artifact(artifact)
     artifact_dir = dataset._dataset_artifact_root() / relative_dir

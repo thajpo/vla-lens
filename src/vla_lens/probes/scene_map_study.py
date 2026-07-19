@@ -32,6 +32,9 @@ from vla_lens.probes.geometry_study import (
     _geometry_metadata_rows,
     _limit_rows_by_episode,
     _limited_episode_ids,
+    _required_split_values,
+    _source_required_split_values,
+    _validate_episode_limit,
 )
 from vla_lens.traces import TraceDataset
 
@@ -95,7 +98,14 @@ def run_scene_map_probe_study(
     prediction_frames: list[pd.DataFrame] = []
     comparison_records: list[dict[str, Any]] = []
     vocabulary_frame: pd.DataFrame | None = None
-    limited_ids = _limited_episode_ids(dataset, normalized.get("limit_episodes"))
+    source_trace_ids: set[str] = set()
+    required_split_values = _required_split_values(normalized["split"])
+    _validate_episode_limit(normalized.get("limit_episodes"), required_split_values)
+    limited_ids = _limited_episode_ids(
+        dataset,
+        normalized.get("limit_episodes"),
+        required_split_values=_source_required_split_values(normalized["split"]),
+    )
 
     for feature_spec in normalized["features"]:
         feature_id = str(feature_spec["id"])
@@ -112,10 +122,17 @@ def run_scene_map_probe_study(
         step_started = time.perf_counter()
         rows = _geometry_metadata_rows(dataset, matrix.rows, cache=True)
         rows = _apply_split_contract(rows, normalized["split"])
-        rows, X = _limit_rows_by_episode(rows, matrix.X, normalized.get("limit_episodes"))
+        rows, X = _limit_rows_by_episode(
+            rows,
+            matrix.X,
+            normalized.get("limit_episodes"),
+            split_column=str(normalized["split"]["column"]),
+            required_split_values=required_split_values,
+        )
         rows = rows.reset_index(drop=True)
         X = np.asarray(X, dtype=np.float32)
         targets, target_vocabulary = scene_map_target_table(dataset, rows, cache=True)
+        source_trace_ids.update(rows["trace_id"].astype(str).unique())
         if vocabulary_frame is None:
             vocabulary_frame = target_vocabulary
         elif tuple(vocabulary_frame["object_name"]) != targets.vocabulary:
@@ -169,6 +186,7 @@ def run_scene_map_probe_study(
             vocabulary_frame,
             examples,
             timings,
+            source_trace_ids,
         )
         if save
         else None
@@ -1289,6 +1307,7 @@ def _save_scene_map_study(
     vocabulary: pd.DataFrame,
     examples: pd.DataFrame,
     timings: Mapping[str, float],
+    source_trace_ids: Sequence[str],
 ) -> LensArtifact:
     artifact_id = make_artifact_id(str(spec["name"]), "scene_map_probe_study")
     relative_dir = Path("artifacts") / artifact_id
@@ -1354,9 +1373,7 @@ def _save_scene_map_study(
             "comparisons": _json_records(comparisons),
         },
         tags=("probe", "scene-map", "object-identity", "object-location", "exploratory"),
-        source_trace_ids=tuple(
-            sorted(str(value) for value in predictions.get("trace_id", pd.Series()).unique())
-        ),
+        source_trace_ids=tuple(sorted(str(value) for value in source_trace_ids)),
     )
     saved = dataset.save_artifact(artifact)
     artifact_dir = dataset._dataset_artifact_root() / relative_dir

@@ -156,6 +156,35 @@ def test_preflight_explains_when_selected_representation_needs_a_runner(tmp_path
     assert any("token_scene_probe" in warning for warning in report["warnings"])
 
 
+def test_preflight_derives_tokenwise_from_flat_feature_reduction(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=3, timesteps=4)
+    spec = _outcome_probe_spec()
+    spec["features"]["reduction"] = "flat"
+
+    report = probe_preflight_report(dataset, spec, min_class_support=1)
+
+    assert report["representation"]["selected"] == {"kind": "tokenwise"}
+
+
+def test_preflight_blocks_token_runner_for_mismatched_trace_topology(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=3, timesteps=4)
+    bundle = dataset.bundle("synthetic_001")
+    tokens = bundle.tokens.copy()
+    action = tokens["token_kind"].astype(str) == "action"
+    last_action_index = tokens.loc[action, "token_index"].astype(int).max()
+    tokens = tokens.loc[~(action & (tokens["token_index"].astype(int) == last_action_index))]
+    tokens.to_parquet(bundle.overlay_bundle.path / "tables/tokens.parquet", index=False)
+    bundle.__dict__.pop("tokens", None)
+    bundle.overlay_bundle.__dict__.pop("tokens", None)
+
+    report = probe_preflight_report(dataset, _outcome_probe_spec(), min_class_support=1)
+    options = {option["kind"]: option for option in report["representation"]["options"]}
+
+    assert options["tokenwise"]["status"] == "blocked"
+    assert options["learned_layer_mix"]["status"] == "blocked"
+    assert "identical token counts, indices, and metadata" in options["tokenwise"]["reason"]
+
+
 def _write_probe_splits(root, splits: list[str]) -> None:
     pd.DataFrame(
         {

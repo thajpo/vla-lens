@@ -16,6 +16,7 @@ import zarr
 from vla_lens.traces import TraceBundle, TraceDataset
 
 TokenReduction = Literal["mean", "flat", "none"]
+VECTORIZED_READ_TARGET_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -247,7 +248,7 @@ def _vectorized_mean_samples(
     generation_step: int | str | None,
     reduction: TokenReduction,
 ) -> list[np.ndarray] | None:
-    """Read a site's requested sample slices in one orthogonal Zarr selection."""
+    """Read a site's requested sample slices in bounded orthogonal selections."""
 
     if reduction != "mean" or not samples or not hasattr(array, "oindex"):
         return None
@@ -261,27 +262,61 @@ def _vectorized_mean_samples(
     if any(index is None for index in sample_indices):
         return None
 
+    sample_position = axes.index(sample_axis)
     selection: list[Any] = [slice(None)] * len(axes)
-    selection[axes.index(sample_axis)] = np.asarray(sample_indices, dtype=np.int64)
     if generation_step is not None and "generation_step" in axes:
         axis = axes.index("generation_step")
         selection[axis] = _generation_step_index(int(array.shape[axis]), generation_step)
     if token_indices is not None and "token" in axes:
         selection[axes.index("token")] = _compact_indices(token_indices)
 
-    selected = np.asarray(array.oindex[tuple(selection)])
     remaining_axes = [
         axis_name
         for axis_name, indexer in zip(axes, selection, strict=True)
         if not isinstance(indexer, (int, np.integer))
     ]
-    if "token" in remaining_axes:
-        token_axis = remaining_axes.index("token")
-        selected = selected.mean(axis=token_axis)
-        remaining_axes.pop(token_axis)
-    sample_position = remaining_axes.index(sample_axis)
-    selected = np.moveaxis(selected, sample_position, 0)
-    return [np.asarray(value).reshape(-1) for value in selected]
+    batch_size = _vectorized_sample_batch_size(
+        array,
+        axes,
+        selection,
+        sample_axis=sample_axis,
+    )
+    vectors: list[np.ndarray] = []
+    for start in range(0, len(sample_indices), batch_size):
+        batch_selection = list(selection)
+        batch_selection[sample_position] = np.asarray(
+            sample_indices[start : start + batch_size], dtype=np.int64
+        )
+        selected = np.asarray(array.oindex[tuple(batch_selection)])
+        batch_axes = list(remaining_axes)
+        if "token" in batch_axes:
+            token_axis = batch_axes.index("token")
+            selected = selected.mean(axis=token_axis)
+            batch_axes.pop(token_axis)
+        batch_sample_position = batch_axes.index(sample_axis)
+        selected = np.moveaxis(selected, batch_sample_position, 0)
+        vectors.extend(np.asarray(value).reshape(-1) for value in selected)
+    return vectors
+
+
+def _vectorized_sample_batch_size(
+    array: Any,
+    axes: Sequence[str],
+    selection: Sequence[Any],
+    *,
+    sample_axis: str,
+) -> int:
+    values_per_sample = 1
+    for axis_name, axis_size, indexer in zip(axes, array.shape, selection, strict=True):
+        if axis_name == sample_axis or isinstance(indexer, (int, np.integer)):
+            continue
+        if isinstance(indexer, slice):
+            selected_size = len(range(*indexer.indices(int(axis_size))))
+        else:
+            selected_size = len(indexer)
+        values_per_sample *= max(1, int(selected_size))
+    bytes_per_sample = values_per_sample * np.dtype(array.dtype).itemsize
+    return max(1, VECTORIZED_READ_TARGET_BYTES // max(1, bytes_per_sample))
 
 
 def _compact_indices(indices: np.ndarray) -> slice | np.ndarray:

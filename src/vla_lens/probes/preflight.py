@@ -56,6 +56,7 @@ def probe_preflight_report(
         dataset,
         rows,
         selected=normalized.get("representation"),
+        selector=selector,
     )
     rows = _attach_episode_metadata(rows, dataset)
     X, rows, expansion_summary = _apply_row_expansion(
