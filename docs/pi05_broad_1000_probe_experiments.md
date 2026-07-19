@@ -566,7 +566,7 @@ Purpose: test whether the negative whole-scene result above was caused by
 averaging the action tokens or by choosing one expert layer at a time.
 
 - Primary artifact:
-  `token_scene_probe_study-pi0.5-broad-1000-token-preserving-scene-object-study-channel-64-42241c0dda`
+  `token_scene_probe_study-pi0.5-broad-1000-token-preserving-scene-object-study-channel-64-fa4f5edb8d`
 - Lower-capacity check:
   `token_scene_probe_study-pi0.5-broad-1000-token-preserving-scene-object-study-6b02da1589`
 - The study uses 6,184 policy-call scenes: 3,711 rows from 600 training
@@ -655,10 +655,11 @@ Interpretation:
 
 Runtime and storage:
 
-- The first 64-channel run took 9.9 minutes. A rerun using the compact projected
-  cache took 2.4 minutes, including fitting, paired uncertainty, and artifact
-  writing.
-- The final artifact is 15 MB. It contains source rows/sites, the exact token
+- The corrected full run took 14.5 minutes after the stricter token-topology
+  check invalidated the earlier compact cache: 9.4 minutes to rebuild the
+  reduced features and 5.1 minutes to fit and save the probe grid. Later runs
+  can reuse the corrected reduced-feature cache, but still refit the probes.
+- The final artifact is 14 MB. It contains source rows/sites, the exact token
   table, all projection transforms, selected decoder parameters, layer weights,
   per-scene predictions, per-object results, token coefficients, examples, and
   paired uncertainty.
