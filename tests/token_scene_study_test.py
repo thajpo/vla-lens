@@ -13,7 +13,10 @@ from vla_lens.probes.token_representations import (
     _selected_token_metadata,
     build_layer_token_readouts,
 )
-from vla_lens.probes.token_scene_study import _paired_bootstrap_summary
+from vla_lens.probes.token_scene_study import (
+    _paired_bootstrap_summary,
+    _weighted_token_importance,
+)
 
 
 def test_token_readouts_keep_layer_and_token_structure_in_a_small_cache(tmp_path):
@@ -149,7 +152,56 @@ def test_paired_bootstrap_reports_effect_size_and_uncertainty():
     assert summary["mean_improvement"] == 0.25
     assert summary["ci95_low"] > 0.0
     assert summary["probability_improvement"] == 1.0
-    assert summary["paired_bootstrap_p_value"] == 0.0
+
+
+def test_token_importance_fractions_include_layer_weights():
+    weighted, fractions = _weighted_token_importance(
+        np.array([1.0, 3.0]),
+        np.array([0.0, 1.0]),
+    )
+
+    np.testing.assert_array_equal(weighted, [[0.0, 0.0], [1.0, 3.0]])
+    np.testing.assert_array_equal(fractions, [[0.0, 0.0], [0.25, 0.75]])
+    assert fractions.sum() == 1.0
+
+
+def test_token_readouts_reject_different_trace_token_topologies(tmp_path):
+    dataset = create_synthetic_trace_dataset(
+        tmp_path / "dataset", num_episodes=4, timesteps=4, layers=2
+    )
+    bundle = dataset.bundles[1]
+    bundle.__dict__["tokens"] = bundle.tokens.loc[
+        ~(
+            (bundle.tokens["token_kind"].astype(str) == "action")
+            & (bundle.tokens["token_index"].astype(int) == 7)
+        )
+    ].copy()
+
+    with np.testing.assert_raises_regex(ValueError, "identical token counts, indices"):
+        build_layer_token_readouts(
+            dataset,
+            {
+                "module": "action_head.layers.*.resid",
+                "tensor_type": "resid",
+                "token_kind": "action",
+                "layers": [0, 1],
+                "timesteps": "all",
+                "dtype": "float32",
+            },
+            {
+                "kind": "existing",
+                "column": "split",
+                "train_value": "train",
+                "selection_value": "test",
+                "test_value": "test",
+            },
+            readout_dim=2,
+            token_channel_dim=2,
+            channel_sample_count=32,
+            projection_fit_rows=16,
+            io_workers=1,
+            cache=False,
+        )
 
 
 def test_matched_study_selects_all_four_representation_variants():

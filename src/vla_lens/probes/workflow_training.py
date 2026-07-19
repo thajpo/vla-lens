@@ -84,6 +84,7 @@ def train_probe_artifact(
     row_expand: Mapping[str, Any] | None = None,
 ) -> SavedProbeSuite:
     """Train simple probes from an activation selector and save a ``LensArtifact``."""
+    representation = _direct_probe_representation(selector, research)
     feature_matrix = dataset.select_model_sites(selector).materialize(cache=True)
     X, rows = feature_matrix.X, feature_matrix.rows
     if rows.empty or X.shape[0] == 0:
@@ -176,7 +177,6 @@ def train_probe_artifact(
         else None,
     }
     research_framing = _probe_research_framing(research)
-    representation = normalize_representation_spec((research or {}).get("representation"))
     method = {
         "workflow": "train_probe_artifact",
         "probe_artifact_schema_version": PROBE_ARTIFACT_SCHEMA_VERSION,
@@ -356,6 +356,23 @@ def train_probe_artifact(
     )
     build_dataset_index(dataset.root, overwrite=True)
     return SavedProbeSuite(artifact=saved, results=results, rows=rows)
+
+
+def _direct_probe_representation(
+    selector: ActivationQuery,
+    research: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    reduction_kind = "mean_pool" if selector.reduce_tokens == "mean" else "tokenwise"
+    requested = (research or {}).get("representation")
+    representation = require_generic_probe_representation(
+        normalize_representation_spec(reduction_kind if requested is None else requested)
+    )
+    if representation["kind"] != reduction_kind:
+        raise ValueError(
+            f"Representation {representation['kind']!r} contradicts selector token "
+            f"reduction {selector.reduce_tokens!r}, which produces {reduction_kind!r}."
+        )
+    return representation
 
 
 def _selected_eval_results(results: pd.DataFrame, selected_result_index: int) -> pd.DataFrame:

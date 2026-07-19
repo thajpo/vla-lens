@@ -605,13 +605,12 @@ equal-weight final-test tasks. Positive values mean the candidate is better.
 
 - The tokenwise single layer loses 0.190 scene-overlap points to the pooled
   single layer across episodes. Its 95% bootstrap interval is -0.211 to -0.170;
-  across tasks it is -0.242 to -0.151. The paired bootstrap p-value is below
-  0.001 in both summaries.
+  across tasks it is -0.242 to -0.151.
 - The tokenwise single layer adds 1.16 cm of XYZ error. Expressed as error
   reduction, the episode-level interval is -1.45 to -0.89 cm and the task-level
-  interval is -1.33 to -0.37 cm; both paired p-values are below 0.001.
+  interval is -1.33 to -0.37 cm.
 - Mixing pooled layers changes scene overlap by less than 0.001, with an
-  episode-level interval of -0.006 to 0.006 and p=0.954. It makes XYZ error
+  episode-level interval of -0.006 to 0.006. It makes XYZ error
   0.32 cm worse, with an episode-level interval of 0.19 to 0.44 cm worse.
 - Mixing tokenwise layers does not reliably change XYZ error relative to the
   best tokenwise layer: the interval for error reduction is -0.21 to 0.27 cm.

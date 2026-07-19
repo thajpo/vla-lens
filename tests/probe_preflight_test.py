@@ -5,10 +5,11 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from vla_lens import create_synthetic_trace_dataset
+from vla_lens import ActivationQuery, create_synthetic_trace_dataset
 from vla_lens.probes import (
     format_probe_preflight_markdown,
     probe_preflight_report,
+    train_probe_artifact,
     train_probe_artifact_from_spec,
 )
 
@@ -109,6 +110,35 @@ def test_generic_probe_rejects_richer_representation_instead_of_pooling_it(tmp_p
 
     with pytest.raises(ValueError, match="not supported by the generic probe trainer"):
         train_probe_artifact_from_spec(dataset, spec)
+
+
+def test_direct_probe_rejects_requested_richer_representation(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2)
+
+    with pytest.raises(ValueError, match="not supported by the generic probe trainer"):
+        train_probe_artifact(
+            dataset,
+            name="unsupported direct probe",
+            selector=ActivationQuery(
+                module="action_head.layers.*.resid",
+                reduce_tokens="mean",
+            ),
+            research={"representation": {"kind": "tokenwise"}},
+        )
+
+
+def test_direct_probe_derives_tokenwise_from_unpooled_selector(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2)
+
+    with pytest.raises(ValueError, match="Representation 'tokenwise' is not supported"):
+        train_probe_artifact(
+            dataset,
+            name="unsupported unpooled direct probe",
+            selector=ActivationQuery(
+                module="action_head.layers.*.resid",
+                reduce_tokens="none",
+            ),
+        )
 
 
 def test_preflight_explains_when_selected_representation_needs_a_runner(tmp_path):

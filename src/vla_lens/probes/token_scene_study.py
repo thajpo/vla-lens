@@ -409,7 +409,6 @@ def _paired_bootstrap_summary(
             "ci95_low": float("nan"),
             "ci95_high": float("nan"),
             "probability_improvement": float("nan"),
-            "paired_bootstrap_p_value": float("nan"),
         }
     rng = np.random.default_rng(seed)
     draws = rng.choice(
@@ -424,9 +423,6 @@ def _paired_bootstrap_summary(
         "ci95_low": float(np.quantile(draws, 0.025)),
         "ci95_high": float(np.quantile(draws, 0.975)),
         "probability_improvement": probability,
-        "paired_bootstrap_p_value": float(
-            min(1.0, 2.0 * min(probability, 1.0 - probability))
-        ),
     }
 
 
@@ -463,10 +459,13 @@ def _token_importance_table(
             )
         for object_index, object_name in enumerate(vocabulary):
             values = np.nan_to_num(importance[object_index], nan=0.0)
-            total = float(values.sum())
+            weighted, fractions = _weighted_token_importance(
+                values,
+                fitted.layer_weights,
+            )
             for layer_index, layer in enumerate(readouts.layers):
                 layer_weight = float(fitted.layer_weights[layer_index])
-                for token_position, value in enumerate(values):
+                for token_position, value in enumerate(weighted[layer_index]):
                     metadata = (
                         dict(token_metadata.iloc[token_position])
                         if token_position < len(token_metadata)
@@ -491,13 +490,26 @@ def _token_importance_table(
                             ),
                             "patch_row": _optional_int(metadata.get("patch_row")),
                             "patch_col": _optional_int(metadata.get("patch_col")),
-                            "importance": float(value * abs(layer_weight)),
-                            "within_object_fraction": (
-                                float(value / total) if total > 0 else 0.0
+                            "importance": float(value),
+                            "within_object_fraction": float(
+                                fractions[layer_index, token_position]
                             ),
                         }
                     )
     return pd.DataFrame.from_records(records)
+
+
+def _weighted_token_importance(
+    values: np.ndarray,
+    layer_weights: np.ndarray,
+) -> tuple[np.ndarray, np.ndarray]:
+    weighted = np.abs(np.asarray(layer_weights, dtype=np.float64))[:, None] * np.asarray(
+        values,
+        dtype=np.float64,
+    )[None, :]
+    total = float(weighted.sum())
+    fractions = weighted / total if total > 0 else np.zeros_like(weighted)
+    return weighted, fractions
 
 
 def _example_table(

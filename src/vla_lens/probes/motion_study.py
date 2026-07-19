@@ -25,6 +25,7 @@ from vla_lens.artifacts import LensArtifact, make_artifact_id
 from vla_lens.probes.geometry_study import (
     GEOMETRY_STUDY_SCHEMA_VERSION,
     _activation_query,
+    _align_labeled_geometry_rows,
     _apply_split_contract,
     _canonical_quaternion_rows,
     _geometry_metadata_rows,
@@ -181,18 +182,12 @@ def _prepare_feature_rows(
     rows = _apply_split_contract(rows, spec["split"])
     rows, X = _limit_rows_by_episode(rows, features, spec.get("limit_episodes"))
     object_column = str(spec["object_column"])
-    present = rows[object_column].notna() & rows[object_column].astype(str).ne("")
-    rows = rows.loc[present].reset_index(drop=True)
-    X = np.asarray(X[present.to_numpy()], dtype=np.float32)
-    geometry = geometry_target_table(dataset, rows, object_column=object_column, cache=True)
-    rows = rows.merge(
-        geometry,
-        on=["trace_id", "timestep", object_column],
-        how="inner",
-        validate="many_to_one",
+    rows, X = _align_labeled_geometry_rows(
+        dataset,
+        rows,
+        X,
+        object_column=object_column,
     )
-    source_indices = rows.pop("__feature_row_index").to_numpy(dtype=np.int64)
-    X = X[source_indices]
     rows["object_name"] = rows[object_column].astype(str)
     rows["task_key"] = _task_keys(rows)
     rows["period"] = np.where(

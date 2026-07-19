@@ -88,19 +88,13 @@ def run_geometry_probe_study(
         rows, X = _limit_rows_by_episode(rows, matrix.X, normalized.get("limit_episodes"))
         rows = rows.reset_index(drop=True)
         object_column = str(normalized["object_column"])
-        present = rows[object_column].notna() & (rows[object_column].astype(str) != "")
-        rows = rows.loc[present].reset_index(drop=True)
-        X = np.asarray(X[present.to_numpy()], dtype=np.float32)
-        geometry = geometry_target_table(dataset, rows, object_column=object_column, cache=True)
-        rows = rows.merge(
-            geometry,
-            on=["trace_id", "timestep", object_column],
-            how="inner",
-            validate="many_to_one",
+        rows, X = _align_labeled_geometry_rows(
+            dataset,
+            rows,
+            X,
+            object_column=object_column,
         )
         rows["__geometry_object_name"] = rows[object_column]
-        source_indices = rows.pop("__feature_row_index").to_numpy(dtype=np.int64)
-        X = X[source_indices]
         targets = _geometry_targets(rows)
         finite = _finite_target_mask(targets)
         rows = rows.loc[finite].reset_index(drop=True)
@@ -153,6 +147,31 @@ def run_geometry_probe_study(
         predictions=prediction_frame,
         timings=timings,
     )
+
+
+def _align_labeled_geometry_rows(
+    dataset: TraceDataset,
+    rows: pd.DataFrame,
+    features: np.ndarray,
+    *,
+    object_column: str,
+) -> tuple[pd.DataFrame, np.ndarray]:
+    present = rows[object_column].notna() & rows[object_column].astype(str).ne("")
+    labeled_rows = rows.loc[present].reset_index(drop=True)
+    geometry = geometry_target_table(
+        dataset,
+        labeled_rows,
+        object_column=object_column,
+        cache=True,
+    )
+    labeled_rows = labeled_rows.merge(
+        geometry,
+        on=["trace_id", "timestep", object_column],
+        how="inner",
+        validate="many_to_one",
+    )
+    source_indices = labeled_rows.pop("__feature_row_index").to_numpy(dtype=np.int64)
+    return labeled_rows, np.asarray(features[source_indices], dtype=np.float32)
 
 
 def geometry_target_table(

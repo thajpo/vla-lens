@@ -7,6 +7,7 @@ from scipy.spatial.transform import Rotation
 from tests._support.object_flow_dataset import object_flow_dataset
 from vla_lens.probes.geometry_study import (
     GeometryTarget,
+    _align_labeled_geometry_rows,
     _apply_split_contract,
     _decode_orientation,
     _encode_orientation,
@@ -99,6 +100,29 @@ def test_geometry_target_table_aligns_pose_frames_and_reuses_cache(tmp_path):
         first.iloc[1]["orientation_initial_relative_quat"], [0.0, 0.0, 0.0, 1.0]
     )
     pd.testing.assert_frame_equal(first, second)
+
+
+def test_geometry_rows_keep_original_feature_indices_after_missing_label(tmp_path):
+    dataset = object_flow_dataset(tmp_path / "dataset")
+    rows = pd.DataFrame(
+        {
+            "trace_id": ["flow_trace"] * 3,
+            "timestep": [0, 1, 3],
+            "primary_target_object": ["red_cube_1", None, "red_cube_1"],
+            "__feature_row_index": [0, 1, 2],
+        }
+    )
+    features = np.array([[10.0], [20.0], [30.0]], dtype=np.float32)
+
+    aligned_rows, aligned_features = _align_labeled_geometry_rows(
+        dataset,
+        rows,
+        features,
+        object_column="primary_target_object",
+    )
+
+    assert aligned_rows["timestep"].tolist() == [0, 3]
+    np.testing.assert_array_equal(aligned_features[:, 0], [10.0, 30.0])
 
 
 def test_within_task_split_keeps_episodes_intact_and_represents_every_split():

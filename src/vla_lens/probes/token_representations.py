@@ -40,7 +40,7 @@ from vla_lens.selectors import (
 )
 from vla_lens.traces import TraceBundle, TraceDataset
 
-TOKEN_REPRESENTATION_CACHE_SCHEMA_VERSION = 4
+TOKEN_REPRESENTATION_CACHE_SCHEMA_VERSION = 5
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,6 +126,15 @@ def build_layer_token_readouts(
     if not train_mask.any():
         raise ValueError("Token representation has no training rows")
 
+    token_metadata, token_indices, topology_key = _common_token_topology(
+        dataset,
+        rows,
+        source_sites,
+        query.token_kind,
+    )
+    if len(token_indices) == 0:
+        raise ValueError(f"No tokens matched token kind {query.token_kind!r}")
+
     cache_key = _cache_key(
         view.cache_key(),
         rows,
@@ -135,28 +144,13 @@ def build_layer_token_readouts(
         channel_sample_count=channel_sample_count,
         projection_fit_rows=projection_fit_rows,
         io_workers=io_workers,
+        token_topology=topology_key,
     )
     cache_path = dataset.cache_dir() / "token_representations" / cache_key
     if cache:
         cached = _load_cache(cache_path, cache_key)
         if cached is not None:
             return cached
-
-    token_metadata = _selected_token_metadata(
-        dataset.bundle(str(rows.iloc[0]["trace_id"])), query.token_kind
-    )
-    token_indices = _token_indices(
-        dataset.bundle(str(rows.iloc[0]["trace_id"])), query.token_kind
-    )
-    if token_indices is None:
-        first_site = source_sites.iloc[0]
-        axes = _axes(first_site["axes"])
-        shape = _shape(first_site["shape"])
-        token_indices = np.arange(shape[axes.index("token")], dtype=np.int64)
-    else:
-        token_indices = np.unique(np.asarray(token_indices, dtype=np.int64))
-    if len(token_indices) == 0:
-        raise ValueError(f"No tokens matched token kind {query.token_kind!r}")
 
     channel_samples = _sample_channel_vectors(
         dataset,
@@ -314,8 +308,16 @@ def _source_rows(
     return pd.DataFrame.from_records(row_records), pd.DataFrame.from_records(source_records)
 
 
-def _selected_token_metadata(bundle: TraceBundle, token_kind: str | None) -> pd.DataFrame:
+def _selected_token_metadata(
+    bundle: TraceBundle,
+    token_kind: str | None,
+    token_space_id: str | None = None,
+) -> pd.DataFrame:
     metadata = bundle.tokens.copy()
+    if token_space_id is not None and "token_space_id" in metadata:
+        metadata = metadata.loc[
+            metadata["token_space_id"].astype(str) == token_space_id
+        ].copy()
     if token_kind is not None and "token_kind" in metadata:
         metadata = metadata.loc[metadata["token_kind"].astype(str) == token_kind].copy()
     if "token_index" in metadata:
@@ -325,6 +327,96 @@ def _selected_token_metadata(bundle: TraceBundle, token_kind: str | None) -> pd.
             .reset_index(drop=True)
         )
     return metadata
+
+
+def _common_token_topology(
+    dataset: TraceDataset,
+    rows: pd.DataFrame,
+    source_sites: pd.DataFrame,
+    token_kind: str | None,
+) -> tuple[pd.DataFrame, np.ndarray, str]:
+    reference_metadata: pd.DataFrame | None = None
+    reference_indices: np.ndarray | None = None
+    reference_token_count: int | None = None
+    reference_token_space: str | None = None
+    trace_ids = sorted(str(value) for value in rows["trace_id"].unique())
+    for trace_id in trace_ids:
+        bundle = dataset.bundle(trace_id)
+        trace_sites = source_sites.loc[source_sites["trace_id"].astype(str) == trace_id]
+        token_counts = {
+            _shape(site["shape"])[_axes(site["axes"]).index("token")]
+            for site in trace_sites.to_dict("records")
+        }
+        token_spaces = {
+            str(value)
+            for value in trace_sites["token_space_id"].dropna()
+            if str(value)
+        }
+        if len(token_counts) != 1:
+            raise ValueError(
+                "Token-preserving studies require one token count per trace; "
+                f"trace {trace_id!r} has {sorted(token_counts)}"
+            )
+        if len(token_spaces) > 1:
+            raise ValueError(
+                "Token-preserving studies require one token space per trace; "
+                f"trace {trace_id!r} has {sorted(token_spaces)}"
+            )
+        token_count = int(next(iter(token_counts)))
+        token_space = next(iter(token_spaces), None)
+        indices = _token_indices(bundle, token_kind)
+        if indices is None:
+            indices = np.arange(token_count, dtype=np.int64)
+        else:
+            indices = np.unique(np.asarray(indices, dtype=np.int64))
+        if len(indices) and (int(indices.min()) < 0 or int(indices.max()) >= token_count):
+            raise ValueError(
+                f"Token indices for trace {trace_id!r} exceed its token axis of "
+                f"length {token_count}"
+            )
+        metadata = _selected_token_metadata(bundle, token_kind, token_space)
+        if "token_index" in metadata:
+            metadata_indices = metadata["token_index"].astype(np.int64).to_numpy()
+            if not np.array_equal(metadata_indices, indices):
+                raise ValueError(
+                    f"Token metadata for trace {trace_id!r} does not describe the "
+                    "selected token indices"
+                )
+        if reference_indices is None:
+            reference_indices = indices
+            reference_metadata = metadata
+            reference_token_count = token_count
+            reference_token_space = token_space
+            continue
+        if (
+            token_count != reference_token_count
+            or token_space != reference_token_space
+            or not np.array_equal(indices, reference_indices)
+            or _token_metadata_records(metadata)
+            != _token_metadata_records(reference_metadata)
+        ):
+            raise ValueError(
+                "Token-preserving studies require identical token counts, indices, "
+                f"and metadata across traces; trace {trace_id!r} differs from "
+                f"trace {trace_ids[0]!r}"
+            )
+    if reference_indices is None or reference_metadata is None:
+        raise ValueError("Token-preserving studies found no trace token topology")
+    topology_payload = {
+        "token_count": reference_token_count,
+        "token_space_id": reference_token_space,
+        "indices": reference_indices.tolist(),
+        "metadata": _token_metadata_records(reference_metadata),
+    }
+    topology_key = hashlib.sha256(
+        json.dumps(topology_payload, sort_keys=True).encode()
+    ).hexdigest()[:20]
+    return reference_metadata, reference_indices, topology_key
+
+
+def _token_metadata_records(metadata: pd.DataFrame) -> list[dict[str, Any]]:
+    stable = metadata.drop(columns=["policy_call_index"], errors="ignore")
+    return json.loads(stable.to_json(orient="records", date_format="iso"))
 
 
 def _sample_channel_vectors(
