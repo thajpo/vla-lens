@@ -18,6 +18,13 @@ from vla_lens.probes.preflight import (
     format_probe_preflight_markdown,
     probe_preflight_report,
 )
+from vla_lens.probes.scene_map_study import (
+    SCENE_MAP_STUDY_SCHEMA_VERSION,
+    SceneMapStudyResult,
+    SceneMapTargets,
+    run_scene_map_probe_study,
+    scene_map_target_table,
+)
 from vla_lens.probes.score_cache import (
     ProbeScoreCacheResult,
     refresh_all_probe_score_caches,
@@ -41,6 +48,9 @@ __all__ = [
     "GeometryTarget",
     "MOTION_STUDY_SCHEMA_VERSION",
     "MotionStudyResult",
+    "SCENE_MAP_STUDY_SCHEMA_VERSION",
+    "SceneMapStudyResult",
+    "SceneMapTargets",
     "ProbeScoreCacheResult",
     "ProbeResult",
     "OBJECT_FLOW_ARTIFACT_TYPE",
@@ -57,6 +67,8 @@ __all__ = [
     "run_probe_suite",
     "run_geometry_probe_study",
     "run_motion_probe_study",
+    "run_scene_map_probe_study",
+    "scene_map_target_table",
     "train_probe_artifact",
     "train_probe_artifact_from_spec",
 ]

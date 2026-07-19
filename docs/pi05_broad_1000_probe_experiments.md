@@ -463,6 +463,103 @@ Revised interpretation:
   whole-scene experiment in GitHub issue #22, where object position can vary
   independently of the robot action.
 
+## July 18, 2026 Joint Whole-Scene Object Study
+
+Purpose: test the more direct whole-scene question from GitHub issue #22. Given
+one saved PI0.5 activation at one policy call, can a linear decoder return every
+object identity and every current XYZ position at once?
+
+- Final artifact:
+  `pi0.5-broad-1000-joint-object-identity-and-location-study-scene_map_probe_study-d2e23e2740`
+- The output has one fixed slot per exact object instance, including separate
+  slots such as `akita_black_bowl_1` and `akita_black_bowl_2`.
+- The 39-slot vocabulary includes all objects in the 1,000 episodes. Thirty-five
+  occur during training. Two `yellow_book` instances occur only in final-test
+  tasks and therefore remain explicit unseen-identity failures.
+- One decoder predicts the full scene roster and current visibility. One XYZ
+  head per object uses only episodes where that object exists, avoiding fake
+  zero-coordinate labels for missing objects.
+- Model choices use validation tasks. Final-test tasks remain separate.
+- Comparisons include instruction text plus ordinary scene information, the
+  episode's initial object positions, and the previous policy call's positions.
+- Globally averaged image tokens, VLM endpoints, expert layers, and action-head
+  input are all tested. No token or pixel region is selected in this round.
+
+Object identity results over identities seen during training:
+
+| Information used | Scene overlap | Average precision | Entire roster exactly right |
+| --- | ---: | ---: | ---: |
+| Expert layer 12 activation | 0.408 | 0.703 | 10.7% |
+| Instruction and scene information | 0.414 | 0.934 | 37.0% |
+| Expert activation plus instruction/scene | 0.537 | 0.894 | 34.6% |
+| Training frequency | 0.083 | 0.127 | 0.0% |
+
+The combined model retrieves more true objects at its validation-chosen cutoff,
+which raises scene overlap by 0.123 on average. The episode-level 95% range is
+0.092 to 0.155. This is not clean evidence that the activation contains extra
+visual identity information: the instruction/scene comparison ranks identities
+better and gets more complete rosters exactly right. The combined model mainly
+changes the precision-versus-recall tradeoff.
+
+The visibility target does not fix the problem. Across final-test policy calls,
+99.7% of present object rows are marked visible in at least one captured camera.
+It is therefore almost the same label as the fixed scene roster, not an
+independent test of recognizing what has entered or left view. A stronger
+identity experiment needs object sets to vary within the same instruction and
+scene family.
+
+XYZ location results:
+
+| Information used | All present objects | Objects moved over 10 cm |
+| --- | ---: | ---: |
+| Action-head activation | 0.223 m | 0.216 m |
+| Instruction and scene information | 0.214 m | 0.249 m |
+| Action-head activation plus instruction/scene | 0.208 m | 0.211 m |
+| Episode's initial position | 0.038 m | 0.330 m |
+| Previous policy-call position | 0.016 m | 0.183 m |
+
+Adding action-head activations improves on instruction/scene information by
+0.6 cm over all objects, with an episode-level 95% range of 0.3 to 0.9 cm. On
+objects moved more than 10 cm, the improvement is 3.8 cm, with a range of 2.9
+to 4.8 cm. That is real information about the current state, but it is not an
+accurate whole-scene map: carrying forward the previous position is still 19.1
+cm better overall and 2.8 cm better on the large-movement subset.
+
+The combined decoder's coordinate errors are 7.6 cm on x, 13.1 cm on y, and
+8.7 cm on z. Its gains are uneven across objects. It improves notably for the
+porcelain mug, white/yellow mug, moka pot, and black book, while worsening for
+cream cheese, orange juice, chocolate pudding, and several fixed scene objects.
+This looks more like selective task/movement information than a stable geometric
+record of every object.
+
+Interpretation:
+
+- This experiment does not support a globally averaged, linearly accessible
+  full scene graph in PI0.5.
+- It does support a narrower finding: later action-path activations add some
+  information about which familiar scene objects matter and where substantially
+  moved objects are now.
+- The identity part is limited by task confounding. In these episodes, the
+  instruction and scene family already determine most of the object roster.
+- The location part is limited by global averaging. A fixed object slot cannot
+  ask the representation where one particular object is, and averaging all
+  tokens can erase spatial structure even if individual tokens contain it.
+- The next experiment should use an explicit object query or a spatial/token
+  decoder, and it should vary object presence and placement within otherwise
+  matched scenes. That is a new measurement, not another global layer sweep.
+
+Runtime and storage:
+
+- The final artifact is 26 MB and contains 128,596 compact scene-level
+  prediction rows, full comparison metrics, vocabulary/support counts, and
+  source examples. The large source activation tensors remain in the capture
+  and are not copied.
+- The corrected full rerun took about eight minutes. Roughly half was repeated
+  feature reduction and probe fitting. The runner now caches the train-fitted
+  reduced feature projections under `.vla_cache`, so later reruns can skip PCA.
+  These files are derived and evictable rather than permanent experiment data.
+  Target tables already load in under a second after the first run.
+
 ## June 17, 2026 Stronger-Baseline Round
 
 Purpose: rerun the most plausible interaction/outcome probes after applying
