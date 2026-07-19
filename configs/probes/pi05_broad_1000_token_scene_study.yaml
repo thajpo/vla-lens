@@ -1,4 +1,4 @@
-name: PI0.5 broad 1000 token-preserving scene object study
+name: PI0.5 broad 1000 token-preserving scene object study channel 64
 question: Does preserving action-token positions or combining expert layers improve decoding of every scene object's identity and XYZ position?
 hypothesis_family: structured whole-scene object representation
 intended_claim: A matched comparison of whether object information is distributed across expert depth, localized to action-token positions, both, or neither.
@@ -21,7 +21,7 @@ split:
 probe:
   readout_dims: [64, 128]
   ridge_alphas: [1.0, 10.0]
-  token_channel_dim: 16
+  token_channel_dim: 64
   channel_sample_count: 50000
   projection_fit_rows: 10000
   io_workers: 8
