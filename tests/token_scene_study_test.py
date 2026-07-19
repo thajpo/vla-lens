@@ -13,6 +13,7 @@ from vla_lens.probes.token_representations import (
     _selected_token_metadata,
     build_layer_token_readouts,
 )
+from vla_lens.probes.token_scene_study import _paired_bootstrap_summary
 
 
 def test_token_readouts_keep_layer_and_token_structure_in_a_small_cache(tmp_path):
@@ -134,6 +135,21 @@ def test_learned_layer_mixture_favors_the_layer_with_position_signal():
     assert weights[2] > 0.9
     error = np.linalg.norm(prediction[masks["test"]] - position[masks["test"]], axis=2)
     assert float(np.nanmean(error)) < 0.02
+
+
+def test_paired_bootstrap_reports_effect_size_and_uncertainty():
+    summary = _paired_bootstrap_summary(
+        improvement=np.array([0.1, 0.2, 0.3, 0.4]),
+        groups=np.array(["a", "a", "b", "b"]),
+        bootstrap_samples=500,
+        seed=7,
+    )
+
+    assert summary["unit_count"] == 2
+    assert summary["mean_improvement"] == 0.25
+    assert summary["ci95_low"] > 0.0
+    assert summary["probability_improvement"] == 1.0
+    assert summary["paired_bootstrap_p_value"] == 0.0
 
 
 def test_matched_study_selects_all_four_representation_variants():

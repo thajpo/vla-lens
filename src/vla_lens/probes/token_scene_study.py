@@ -37,6 +37,7 @@ class TokenSceneStudyResult:
     selections: pd.DataFrame
     predictions: pd.DataFrame
     object_results: pd.DataFrame
+    paired_comparisons: pd.DataFrame
     layer_weights: pd.DataFrame
     token_importance: pd.DataFrame
     examples: pd.DataFrame
@@ -93,6 +94,13 @@ def run_token_scene_probe_study(
     object_results = _object_result_table(
         selected, readouts.rows, targets, normalized["split"]
     )
+    paired_comparisons = _paired_comparison_table(
+        selected,
+        readouts.rows,
+        targets,
+        normalized["split"],
+        bootstrap_samples=int(normalized["probe"]["bootstrap_samples"]),
+    )
     layer_weights = _layer_weight_table(selected, readouts.layers)
     token_importance = _token_importance_table(
         selected, readouts, targets.vocabulary
@@ -109,6 +117,7 @@ def run_token_scene_probe_study(
             selections,
             predictions,
             object_results,
+            paired_comparisons,
             layer_weights,
             token_importance,
             examples,
@@ -125,6 +134,7 @@ def run_token_scene_probe_study(
         selections=selections,
         predictions=predictions,
         object_results=object_results,
+        paired_comparisons=paired_comparisons,
         layer_weights=layer_weights,
         token_importance=token_importance,
         examples=examples,
@@ -281,6 +291,143 @@ def _layer_weight_table(
             for index, layer in enumerate(layers)
         ]
     )
+
+
+def _paired_comparison_table(
+    selected: Sequence[FittedSceneRepresentation],
+    rows: pd.DataFrame,
+    targets: SceneMapTargets,
+    split: Mapping[str, Any],
+    *,
+    bootstrap_samples: int,
+) -> pd.DataFrame:
+    """Compare matched variants with equal-weight episode and task resampling."""
+
+    by_key = {
+        (_variant(fitted), str(fitted.record["target"])): fitted
+        for fitted in selected
+    }
+    comparisons = [
+        ("tokenwise__single_layer", "pooled__single_layer"),
+        ("pooled__learned_layer_mix", "pooled__single_layer"),
+        ("tokenwise__learned_layer_mix", "tokenwise__single_layer"),
+        ("tokenwise__learned_layer_mix", "pooled__single_layer"),
+    ]
+    test_mask = rows[str(split["column"])].astype(str).to_numpy() == str(
+        split["test_value"]
+    )
+    records: list[dict[str, Any]] = []
+    for comparison_index, (candidate_name, reference_name) in enumerate(comparisons):
+        for target in ["scene_identity", "object_position"]:
+            candidate = by_key.get((candidate_name, target))
+            reference = by_key.get((reference_name, target))
+            if candidate is None or reference is None:
+                continue
+            candidate_score = _row_score(candidate, targets)
+            reference_score = _row_score(reference, targets)
+            improvement = (
+                candidate_score - reference_score
+                if target == "scene_identity"
+                else reference_score - candidate_score
+            )
+            for unit_index, (unit, groups) in enumerate(
+                [
+                    ("episode", rows["trace_id"].astype(str).to_numpy()),
+                    (
+                        "task",
+                        rows.get("task_id", rows["trace_id"])
+                        .fillna("")
+                        .astype(str)
+                        .to_numpy(),
+                    ),
+                ]
+            ):
+                summary = _paired_bootstrap_summary(
+                    improvement[test_mask],
+                    groups[test_mask],
+                    bootstrap_samples=bootstrap_samples,
+                    seed=20260719 + comparison_index * 10 + unit_index,
+                )
+                records.append(
+                    {
+                        "candidate": candidate_name,
+                        "reference": reference_name,
+                        "target": target,
+                        "unit": unit,
+                        "metric": (
+                            "scene_jaccard_improvement"
+                            if target == "scene_identity"
+                            else "error_reduction_m"
+                        ),
+                        **summary,
+                    }
+                )
+    return pd.DataFrame.from_records(records)
+
+
+def _row_score(
+    fitted: FittedSceneRepresentation, targets: SceneMapTargets
+) -> np.ndarray:
+    if fitted.record["target"] == "scene_identity":
+        supported = fitted.decoder.supported
+        truth = targets.presence[:, supported].astype(bool)
+        predicted = fitted.prediction[:, supported] >= float(
+            fitted.record.get("selection_threshold", 0.5)
+        )
+        intersection = np.logical_and(truth, predicted).sum(axis=1)
+        union = np.logical_or(truth, predicted).sum(axis=1)
+        return intersection / np.maximum(1, union)
+    truth = targets.position
+    available = np.isfinite(truth).all(axis=2) & fitted.decoder.supported[None, :]
+    errors = np.linalg.norm(fitted.prediction - truth, axis=2)
+    return np.asarray(
+        [
+            float(np.mean(errors[index, available[index]]))
+            if available[index].any()
+            else float("nan")
+            for index in range(len(truth))
+        ]
+    )
+
+
+def _paired_bootstrap_summary(
+    improvement: np.ndarray,
+    groups: np.ndarray,
+    *,
+    bootstrap_samples: int,
+    seed: int,
+) -> dict[str, Any]:
+    frame = pd.DataFrame(
+        {"group": np.asarray(groups).astype(str), "improvement": improvement}
+    )
+    frame = frame.loc[np.isfinite(frame["improvement"])]
+    grouped = frame.groupby("group", sort=True)["improvement"].mean().to_numpy()
+    if not len(grouped):
+        return {
+            "unit_count": 0,
+            "mean_improvement": float("nan"),
+            "ci95_low": float("nan"),
+            "ci95_high": float("nan"),
+            "probability_improvement": float("nan"),
+            "paired_bootstrap_p_value": float("nan"),
+        }
+    rng = np.random.default_rng(seed)
+    draws = rng.choice(
+        grouped,
+        size=(max(1, int(bootstrap_samples)), len(grouped)),
+        replace=True,
+    ).mean(axis=1)
+    probability = float(np.mean(draws > 0.0))
+    return {
+        "unit_count": int(len(grouped)),
+        "mean_improvement": float(grouped.mean()),
+        "ci95_low": float(np.quantile(draws, 0.025)),
+        "ci95_high": float(np.quantile(draws, 0.975)),
+        "probability_improvement": probability,
+        "paired_bootstrap_p_value": float(
+            min(1.0, 2.0 * min(probability, 1.0 - probability))
+        ),
+    }
 
 
 def _token_importance_table(
@@ -461,6 +608,7 @@ def _save_study(
     selections: pd.DataFrame,
     predictions: pd.DataFrame,
     object_results: pd.DataFrame,
+    paired_comparisons: pd.DataFrame,
     layer_weights: pd.DataFrame,
     token_importance: pd.DataFrame,
     examples: pd.DataFrame,
@@ -475,6 +623,7 @@ def _save_study(
         "selections": selections,
         "scene_predictions": predictions,
         "object_results": object_results,
+        "paired_comparisons": paired_comparisons,
         "layer_weights": layer_weights,
         "token_importance": token_importance,
         "examples": examples,
@@ -536,6 +685,7 @@ def _save_study(
             "selection_count": int(len(selections)),
             "prediction_count": int(len(predictions)),
             "object_result_count": int(len(object_results)),
+            "paired_comparison_count": int(len(paired_comparisons)),
             "token_importance_count": int(len(token_importance)),
             "source_row_count": int(len(readouts.rows)),
             "layer_count": int(len(readouts.layers)),
@@ -609,6 +759,7 @@ def _normalize_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
     probe.setdefault("min_train_episodes", 5)
     probe.setdefault("mixture_iterations", 5)
     probe.setdefault("mixture_regularization", 1e-3)
+    probe.setdefault("bootstrap_samples", 2_000)
     probe.setdefault("cache", True)
     normalized["probe"] = probe
     return normalized

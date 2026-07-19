@@ -28,4 +28,5 @@ probe:
   min_train_episodes: 5
   mixture_iterations: 5
   mixture_regularization: 0.001
+  bootstrap_samples: 2000
   cache: true
