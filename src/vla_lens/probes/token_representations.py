@@ -40,7 +40,7 @@ from vla_lens.selectors import (
 )
 from vla_lens.traces import TraceBundle, TraceDataset
 
-TOKEN_REPRESENTATION_CACHE_SCHEMA_VERSION = 3
+TOKEN_REPRESENTATION_CACHE_SCHEMA_VERSION = 4
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +153,8 @@ def build_layer_token_readouts(
         axes = _axes(first_site["axes"])
         shape = _shape(first_site["shape"])
         token_indices = np.arange(shape[axes.index("token")], dtype=np.int64)
+    else:
+        token_indices = np.unique(np.asarray(token_indices, dtype=np.int64))
     if len(token_indices) == 0:
         raise ValueError(f"No tokens matched token kind {query.token_kind!r}")
 
@@ -317,7 +319,11 @@ def _selected_token_metadata(bundle: TraceBundle, token_kind: str | None) -> pd.
     if token_kind is not None and "token_kind" in metadata:
         metadata = metadata.loc[metadata["token_kind"].astype(str) == token_kind].copy()
     if "token_index" in metadata:
-        metadata = metadata.sort_values("token_index").reset_index(drop=True)
+        metadata = (
+            metadata.sort_values("token_index")
+            .drop_duplicates("token_index", keep="first")
+            .reset_index(drop=True)
+        )
     return metadata
 
 

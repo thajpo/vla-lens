@@ -9,7 +9,10 @@ from vla_lens.probes.structured_scene_models import (
     fit_layer_mixture,
     fit_structured_scene_representations,
 )
-from vla_lens.probes.token_representations import build_layer_token_readouts
+from vla_lens.probes.token_representations import (
+    _selected_token_metadata,
+    build_layer_token_readouts,
+)
 
 
 def test_token_readouts_keep_layer_and_token_structure_in_a_small_cache(tmp_path):
@@ -52,6 +55,48 @@ def test_token_readouts_keep_layer_and_token_structure_in_a_small_cache(tmp_path
     assert first.rows["timestep"].tolist()[:8] == list(range(8))
     np.testing.assert_array_equal(first.pooled, second.pooled)
     np.testing.assert_array_equal(first.tokenwise, second.tokenwise)
+
+
+def test_dynamic_token_metadata_does_not_duplicate_model_token_positions(tmp_path):
+    dataset = create_synthetic_trace_dataset(
+        tmp_path / "dataset", num_episodes=2, timesteps=4, layers=2
+    )
+    bundle = dataset.bundles[0]
+    original = bundle.tokens
+    repeated = pd.concat(
+        [original.assign(policy_call_index=index) for index in range(3)],
+        ignore_index=True,
+    )
+    bundle.__dict__["tokens"] = repeated
+
+    metadata = _selected_token_metadata(bundle, "action")
+    readouts = build_layer_token_readouts(
+        dataset,
+        {
+            "module": "action_head.layers.*.resid",
+            "tensor_type": "resid",
+            "token_kind": "action",
+            "layers": [0, 1],
+            "timesteps": "all",
+            "dtype": "float32",
+        },
+        {
+            "kind": "existing",
+            "column": "split",
+            "train_value": "train",
+            "selection_value": "test",
+            "test_value": "test",
+        },
+        readout_dim=2,
+        token_channel_dim=2,
+        channel_sample_count=32,
+        projection_fit_rows=16,
+        io_workers=1,
+        cache=False,
+    )
+
+    assert metadata["token_index"].tolist() == list(range(8))
+    assert readouts.token_count == 8
 
 
 def test_learned_layer_mixture_favors_the_layer_with_position_signal():
