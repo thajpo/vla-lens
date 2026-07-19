@@ -43,8 +43,8 @@ def test_probe_preflight_reports_sweep_baselines_and_leakage(tmp_path):
     options = {option["kind"]: option for option in report["representation"]["options"]}
     assert report["representation"]["selected"] == {"kind": "mean_pool"}
     assert options["mean_pool"]["status"] == "ready"
-    assert options["learned_layer_mix"]["status"] == "data_ready"
-    assert options["tokenwise"]["status"] == "data_ready"
+    assert options["learned_layer_mix"]["status"] == "ready"
+    assert options["tokenwise"]["status"] == "ready"
     assert options["object_conditioned"]["status"] == "blocked"
     assert options["set_decoder"]["status"] == "blocked"
     assert any("target column" in warning for warning in report["warnings"])
@@ -123,7 +123,7 @@ def test_preflight_explains_when_selected_representation_needs_a_runner(tmp_path
     report = probe_preflight_report(dataset, spec, min_class_support=5)
 
     assert report["representation"]["selected"] == {"kind": "tokenwise"}
-    assert any("tokenwise_probe" in warning for warning in report["warnings"])
+    assert any("token_scene_probe" in warning for warning in report["warnings"])
 
 
 def _write_probe_splits(root, splits: list[str]) -> None:

@@ -305,8 +305,8 @@ global mean pooling. First show the relevant representation choices:
 | Choice | Question it answers | Default status |
 | --- | --- | --- |
 | Average tokens | Is the signal broadly available in this token group? | Supported by the generic trainer. |
-| Learn a layer mixture | Is the signal distributed across model depth? | Use when matching token positions exist across captured layers; specialized runner required. |
-| Keep tokens separate | Which tokens contain the information? | Use when the capture retains a token axis; specialized runner required. |
+| Learn a layer mixture | Is the signal distributed across model depth? | Runnable for whole-scene object identity and XYZ when matching token positions exist across captured layers. |
+| Keep tokens separate | Which tokens contain the information? | Runnable for whole-scene object identity and XYZ when the capture retains a token axis. |
 | Ask about one object | Where and how is a specified object represented? | Use when token arrays and per-object labels exist; specialized runner required. |
 | Predict an object set | Can the representation produce all scene objects without fixed simulator slots? | High-capacity exploratory method; needs token arrays, complete object-set labels, matching loss, and a specialized runner. |
 

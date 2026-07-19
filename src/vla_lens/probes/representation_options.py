@@ -85,7 +85,8 @@ def probe_representation_options(
             kind="learned_layer_mix",
             label="Learn a layer mixture",
             question="Is the signal distributed across model depth?",
-            runner="layer_mix_probe",
+            runner="token_scene_probe",
+            runnable_scope="whole-scene object identity and XYZ targets",
             keeps="matching token positions while learning layer weights",
             loses="a simple one-layer localization claim",
             data_ready=capabilities["aligned_token_layers"],
@@ -96,7 +97,8 @@ def probe_representation_options(
             kind="tokenwise",
             label="Keep tokens separate",
             question="Which tokens contain the decodable information?",
-            runner="tokenwise_probe",
+            runner="token_scene_probe",
+            runnable_scope="whole-scene object identity and XYZ targets",
             keeps="token identity and token position",
             loses="the simplicity of one vector per example",
             data_ready=capabilities["token_axis"],
@@ -155,6 +157,7 @@ def _specialized_option(
     label: str,
     question: str,
     runner: str,
+    runnable_scope: str | None = None,
     keeps: str,
     loses: str,
     data_ready: bool,
@@ -165,12 +168,19 @@ def _specialized_option(
         "kind": kind,
         "label": label,
         "question": question,
-        "status": "data_ready" if data_ready else "blocked",
+        "status": (
+            "ready" if data_ready and runnable_scope else "data_ready" if data_ready else "blocked"
+        ),
         "runner": runner,
+        "runnable_scope": runnable_scope,
         "keeps": keeps,
         "loses": loses,
         "reason": (
-            f"{ready_reason} A specialized runner is still required."
+            (
+                f"{ready_reason} The {runner} runner supports {runnable_scope}."
+                if runnable_scope
+                else f"{ready_reason} A specialized runner is still required."
+            )
             if data_ready
             else blocked_reason
         ),

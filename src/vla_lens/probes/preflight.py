@@ -521,7 +521,13 @@ def _representation_warnings(representation: Mapping[str, Any]) -> list[str]:
     )
     status = str(option.get("status") or "unknown")
     if status == "ready":
-        return []
+        runner = str(option.get("runner") or "generic_probe")
+        if runner == "generic_probe":
+            return []
+        return [
+            f"Selected representation `{selected}` is runnable for "
+            f"{option.get('runnable_scope')}; use the specialized `{runner}` runner."
+        ]
     if status == "data_ready":
         return [
             f"Selected representation `{selected}` has the required captured data, "

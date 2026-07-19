@@ -35,6 +35,11 @@ from vla_lens.probes.score_cache import (
     refresh_probe_score_cache,
 )
 from vla_lens.probes.suite import ProbeResult, run_probe_suite
+from vla_lens.probes.token_scene_study import (
+    TOKEN_SCENE_STUDY_SCHEMA_VERSION,
+    TokenSceneStudyResult,
+    run_token_scene_probe_study,
+)
 from vla_lens.probes.workflow import (
     OBJECT_FLOW_ARTIFACT_TYPE,
     POLICY_CALL_LABELS_ARTIFACT_TYPE,
@@ -59,6 +64,8 @@ __all__ = [
     "SCENE_MAP_STUDY_SCHEMA_VERSION",
     "SceneMapStudyResult",
     "SceneMapTargets",
+    "TOKEN_SCENE_STUDY_SCHEMA_VERSION",
+    "TokenSceneStudyResult",
     "ProbeScoreCacheResult",
     "ProbeResult",
     "OBJECT_FLOW_ARTIFACT_TYPE",
@@ -78,6 +85,7 @@ __all__ = [
     "run_geometry_probe_study",
     "run_motion_probe_study",
     "run_scene_map_probe_study",
+    "run_token_scene_probe_study",
     "scene_map_target_table",
     "train_probe_artifact",
     "train_probe_artifact_from_spec",
