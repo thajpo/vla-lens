@@ -17,6 +17,7 @@ from vla_lens.probes import (
     ProbeArtifactError,
     load_probe_artifact,
     train_probe_artifact_from_spec,
+    workflow_training,
 )
 
 
@@ -52,7 +53,12 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
 
     feature_dim = int(contract["model"]["feature_dim"])
     predictions = probe.predict(np.zeros((3, feature_dim), dtype=np.float32))
+    integer_predictions = probe.predict(np.zeros((3, feature_dim), dtype=np.int64))
     assert predictions.shape == (3,)
+    np.testing.assert_array_equal(
+        integer_predictions,
+        probe.predict(np.zeros((3, feature_dim), dtype=np.float64)),
+    )
     if target == "classification":
         assert not predictions.dtype.hasobject
         prediction_path = tmp_path / "predictions.npy"
@@ -81,6 +87,56 @@ def test_replay_rebuilds_features_without_trusting_the_training_cache(tmp_path):
 
     with pytest.raises(ProbeArtifactError, match="Prepared probe features changed"):
         probe.replay()
+
+
+def test_replay_validates_saved_source_sites(tmp_path):
+    dataset = _split_dataset(tmp_path)
+    saved = train_probe_artifact_from_spec(dataset, _probe_spec("classification"))
+    probe = load_probe_artifact(dataset, saved.artifact.artifact_id)
+    contract = probe.contract
+    assert contract is not None
+    path = dataset.root / contract["source"]["source_sites_path"]
+    rows = pd.read_parquet(path)
+    rows.loc[0, "trace_id"] = "changed-trace"
+    rows.to_parquet(path, index=False)
+
+    with pytest.raises(ProbeArtifactError, match="Saved source-site rows changed"):
+        probe.replay()
+
+
+def test_replay_validates_saved_prediction_row_order(tmp_path):
+    dataset = _split_dataset(tmp_path)
+    saved = train_probe_artifact_from_spec(dataset, _probe_spec("classification"))
+    probe = load_probe_artifact(dataset, saved.artifact.artifact_id)
+    contract = probe.contract
+    assert contract is not None
+    path = dataset.root / contract["source"]["scored_predictions_path"]
+    rows = pd.read_parquet(path).iloc[::-1].reset_index(drop=True)
+    rows.to_parquet(path, index=False)
+
+    with pytest.raises(ProbeArtifactError, match="Saved scored predictions changed"):
+        probe.replay()
+
+
+def test_probe_is_not_registered_when_a_sidecar_write_fails(tmp_path, monkeypatch):
+    dataset = _split_dataset(tmp_path)
+    artifact_id = "probe-suite-staging-failure"
+    monkeypatch.setattr(workflow_training, "make_artifact_id", lambda *_: artifact_id)
+    original_to_parquet = pd.DataFrame.to_parquet
+
+    def fail_source_sites(frame, path, *args, **kwargs):
+        if Path(path).name == "source_sites.parquet":
+            raise OSError("simulated sidecar failure")
+        return original_to_parquet(frame, path, *args, **kwargs)
+
+    monkeypatch.setattr(pd.DataFrame, "to_parquet", fail_source_sites)
+
+    with pytest.raises(OSError, match="simulated sidecar failure"):
+        train_probe_artifact_from_spec(dataset, _probe_spec("classification"))
+
+    artifact_dir = dataset._dataset_artifact_root() / "artifacts" / artifact_id
+    assert not artifact_dir.exists()
+    assert artifact_id not in set(dataset.artifact_index.get("artifact_id", []))
 
 
 def test_dataframe_fingerprints_survive_parquet_round_trips(tmp_path):

@@ -126,7 +126,18 @@ class LoadedProbeArtifact:
         # StandardScaler transforms floating inputs in place when possible, so a
         # float32 capture stays float32 even though the fitted statistics are
         # float64. Match that behavior to reproduce sklearn predictions exactly.
-        normalized = np.asarray(X).copy()
+        if np.issubdtype(X.dtype, np.complexfloating):
+            raise ProbeArtifactError("Probe features must be real-valued numeric data")
+        if np.issubdtype(X.dtype, np.floating):
+            normalized = X.copy()
+        else:
+            normalization_dtype = np.result_type(feature_mean.dtype, feature_scale.dtype)
+            try:
+                normalized = X.astype(normalization_dtype, copy=True)
+            except (TypeError, ValueError) as error:
+                raise ProbeArtifactError(
+                    "Probe features must be real-valued numeric data"
+                ) from error
         normalized -= feature_mean
         normalized /= feature_scale
         model_format = str(model["format"])
@@ -176,14 +187,29 @@ class LoadedProbeArtifact:
         _validate_trace_fingerprints(self.dataset, source)
         selector = ActivationQuery(**dict(source["selector"]))
         matrix = self.dataset.select_model_sites(selector).materialize(cache=False)
-        actual_sites_fingerprint = dataframe_fingerprint(matrix.rows)
+        saved_sites = _read_replay_table(
+            self.dataset,
+            source["source_sites_path"],
+            "source-site rows",
+        )
+        saved_sites_fingerprint = dataframe_fingerprint(saved_sites)
         expected_sites_fingerprint = str(source["source_sites_fingerprint"])
+        if saved_sites_fingerprint != expected_sites_fingerprint:
+            raise ProbeArtifactError(
+                "Saved source-site rows changed after training: "
+                f"expected {expected_sites_fingerprint}, got {saved_sites_fingerprint}"
+            )
+        actual_sites_fingerprint = dataframe_fingerprint(matrix.rows)
         if actual_sites_fingerprint != expected_sites_fingerprint:
             raise ProbeArtifactError(
                 "Selected model-site rows changed since this probe was trained: "
                 f"expected {expected_sites_fingerprint}, got {actual_sites_fingerprint}"
             )
-        rows = pd.read_parquet(_artifact_output_path(self.dataset, source["source_rows_path"]))
+        rows = _read_replay_table(
+            self.dataset,
+            source["source_rows_path"],
+            "source rows",
+        )
         actual_rows_fingerprint = dataframe_fingerprint(rows)
         expected_rows_fingerprint = str(source["source_rows_fingerprint"])
         if actual_rows_fingerprint != expected_rows_fingerprint:
@@ -207,9 +233,19 @@ class LoadedProbeArtifact:
                 f"expected {expected_feature_fingerprint}, got {feature_fingerprint}"
             )
         predictions = self.predict(features)
-        saved = pd.read_parquet(
-            _artifact_output_path(self.dataset, source["scored_predictions_path"])
+        saved = _read_replay_table(
+            self.dataset,
+            source["scored_predictions_path"],
+            "scored predictions",
         )
+        saved_predictions_fingerprint = dataframe_fingerprint(saved)
+        expected_predictions_fingerprint = str(source["scored_predictions_fingerprint"])
+        if saved_predictions_fingerprint != expected_predictions_fingerprint:
+            raise ProbeArtifactError(
+                "Saved scored predictions changed after training: "
+                f"expected {expected_predictions_fingerprint}, "
+                f"got {saved_predictions_fingerprint}"
+            )
         if len(saved) != len(predictions):
             raise ProbeArtifactError(
                 f"Saved predictions have {len(saved)} rows, replay produced {len(predictions)}"
@@ -258,6 +294,7 @@ def make_probe_run_contract(
     source_sites_path: str,
     source_sites: pd.DataFrame,
     scored_predictions_path: str,
+    scored_predictions: pd.DataFrame,
     feature_matrix: np.ndarray,
     source_trace_fingerprints: Mapping[str, str],
     label_sources: Sequence[Mapping[str, Any]],
@@ -282,6 +319,7 @@ def make_probe_run_contract(
             "source_sites_path": source_sites_path,
             "source_sites_fingerprint": dataframe_fingerprint(source_sites),
             "scored_predictions_path": scored_predictions_path,
+            "scored_predictions_fingerprint": dataframe_fingerprint(scored_predictions),
             "feature_matrix_fingerprint": _array_fingerprint(feature_matrix),
             "trace_fingerprints": dict(source_trace_fingerprints),
             "label_sources": [dict(value) for value in label_sources],
@@ -314,6 +352,7 @@ def validate_probe_run_contract(contract: Mapping[str, Any]) -> None:
         "source_sites_path",
         "source_sites_fingerprint",
         "scored_predictions_path",
+        "scored_predictions_fingerprint",
         "feature_matrix_fingerprint",
         "trace_fingerprints",
         "label_sources",
@@ -504,6 +543,14 @@ def _artifact_output_path(dataset: TraceDataset, value: Any) -> Path:
         if candidate.exists():
             return candidate
     return candidates[0]
+
+
+def _read_replay_table(dataset: TraceDataset, value: Any, label: str) -> pd.DataFrame:
+    path = _artifact_output_path(dataset, value)
+    try:
+        return pd.read_parquet(path)
+    except Exception as error:
+        raise ProbeArtifactError(f"Could not read saved probe {label} at {path}") from error
 
 
 def _activation(values: np.ndarray, name: str) -> np.ndarray:

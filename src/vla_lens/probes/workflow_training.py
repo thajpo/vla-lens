@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -350,6 +351,7 @@ def train_probe_artifact(
         source_sites_path=outputs["source_sites"],
         source_sites=source_sites,
         scored_predictions_path=outputs["scored_predictions"],
+        scored_predictions=scored_prediction_records,
         feature_matrix=replay_features,
         source_trace_fingerprints=source_trace_fingerprint_map(dataset, source_rows),
         label_sources=probe_label_sources(dataset),
@@ -407,23 +409,27 @@ def train_probe_artifact(
         tags=("probe", target_name),
         source_trace_ids=tuple(sorted(str(value) for value in rows["trace_id"].dropna().unique())),
     )
-    saved = dataset.save_artifact(artifact, arrays=model_arrays)
-    artifact_dir = _artifact_dir(dataset, saved)
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    prediction_records.to_parquet(artifact_dir / "predictions.parquet", index=False)
-    scored_prediction_records.to_parquet(
-        artifact_dir / "scored_predictions.parquet",
-        index=False,
-    )
-    source_rows.to_parquet(artifact_dir / "source_rows.parquet", index=False)
-    source_sites.to_parquet(artifact_dir / "source_sites.parquet", index=False)
-    per_split_metrics.to_parquet(artifact_dir / "per_split_metrics.parquet", index=False)
-    per_group_metrics.to_parquet(artifact_dir / "per_group_metrics.parquet", index=False)
-    null_metrics.to_parquet(artifact_dir / "null_metrics.parquet", index=False)
-    (artifact_dir / "metrics.json").write_text(
-        json.dumps(metrics, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    artifact_dir = _artifact_dir(dataset, artifact)
+    artifact_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        prediction_records.to_parquet(artifact_dir / "predictions.parquet", index=False)
+        scored_prediction_records.to_parquet(
+            artifact_dir / "scored_predictions.parquet",
+            index=False,
+        )
+        source_rows.to_parquet(artifact_dir / "source_rows.parquet", index=False)
+        source_sites.to_parquet(artifact_dir / "source_sites.parquet", index=False)
+        per_split_metrics.to_parquet(artifact_dir / "per_split_metrics.parquet", index=False)
+        per_group_metrics.to_parquet(artifact_dir / "per_group_metrics.parquet", index=False)
+        null_metrics.to_parquet(artifact_dir / "null_metrics.parquet", index=False)
+        (artifact_dir / "metrics.json").write_text(
+            json.dumps(metrics, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        saved = dataset.save_artifact(artifact, arrays=model_arrays)
+    except BaseException:
+        shutil.rmtree(artifact_dir)
+        raise
     save_analysis_run(
         dataset,
         AnalysisRunSpec(
