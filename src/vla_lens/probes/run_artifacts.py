@@ -26,7 +26,7 @@ from vla_lens.selectors import ActivationQuery
 from vla_lens.traces import TraceDataset
 
 PROBE_RUN_CONTRACT_KEY = "probe_run_contract"
-PROBE_RUN_CONTRACT_SCHEMA_VERSION = 1
+PROBE_RUN_CONTRACT_SCHEMA_VERSION = 2
 SOURCE_FEATURE_ROW_INDEX = "source_feature_row_index"
 
 
@@ -46,6 +46,7 @@ class ProbeReplayResult:
     mismatch_count: int
     max_absolute_difference: float | None
     absolute_tolerance: float | None
+    relative_tolerance: float | None
     feature_matrix_fingerprint: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -56,13 +57,14 @@ class ProbeReplayResult:
             "mismatch_count": self.mismatch_count,
             "max_absolute_difference": self.max_absolute_difference,
             "absolute_tolerance": self.absolute_tolerance,
+            "relative_tolerance": self.relative_tolerance,
             "feature_matrix_fingerprint": self.feature_matrix_fingerprint,
         }
 
 
 @dataclass(slots=True)
 class LoadedProbeArtifact:
-    """A saved probe that can explain itself and, for v1 artifacts, run again."""
+    """A saved probe that can explain itself and, for current artifacts, run again."""
 
     dataset: TraceDataset
     artifact: LensArtifact
@@ -74,7 +76,8 @@ class LoadedProbeArtifact:
 
     @property
     def capabilities(self) -> dict[str, Any]:
-        if self.contract is None:
+        contract = self.contract
+        if contract is None:
             return {
                 "explain": True,
                 "replay": False,
@@ -82,7 +85,24 @@ class LoadedProbeArtifact:
                 "legacy": True,
                 "reason": "Artifact predates the replayable probe-run contract.",
             }
-        return dict(self.contract.get("capabilities") or {})
+        try:
+            schema_version = int(contract.get("schema_version", -1))
+        except (TypeError, ValueError):
+            schema_version = -1
+        if schema_version != PROBE_RUN_CONTRACT_SCHEMA_VERSION:
+            reason = (
+                "Probe-run schema version 1 predates fitted-model integrity checks."
+                if schema_version == 1
+                else f"Unsupported probe-run schema version {contract.get('schema_version')!r}."
+            )
+            return {
+                "explain": True,
+                "replay": False,
+                "use": False,
+                "legacy": schema_version < PROBE_RUN_CONTRACT_SCHEMA_VERSION,
+                "reason": reason,
+            }
+        return dict(contract.get("capabilities") or {})
 
     def explain(self) -> dict[str, Any]:
         if self.contract is not None:
@@ -275,7 +295,7 @@ class LoadedProbeArtifact:
             replayed=predictions,
             saved=saved["prediction_value"].to_numpy(),
             feature_fingerprint=feature_fingerprint,
-            absolute_tolerance=model.get("prediction_tolerance"),
+            prediction_tolerance=model.get("prediction_tolerance"),
         )
 
     def _array(self, name: str) -> np.ndarray:
@@ -432,6 +452,21 @@ def validate_probe_run_contract(contract: Mapping[str, Any]) -> None:
         )
     if any(not str(value).startswith("sha256:") for value in fingerprints.values()):
         raise ProbeArtifactError("Probe-run model contains an invalid array fingerprint")
+    if str(model["probe_type"]) == "regression":
+        tolerance = model.get("prediction_tolerance")
+        if not isinstance(tolerance, Mapping):
+            raise ProbeArtifactError("Regression probe prediction tolerance must be a mapping")
+        for key in ["absolute", "relative"]:
+            try:
+                value = float(tolerance[key])
+            except (KeyError, TypeError, ValueError) as error:
+                raise ProbeArtifactError(
+                    f"Regression probe prediction tolerance is missing numeric {key!r}"
+                ) from error
+            if not np.isfinite(value) or value < 0:
+                raise ProbeArtifactError(
+                    f"Regression probe prediction tolerance {key!r} must be finite and nonnegative"
+                )
 
 
 def _fitted_array_names(array_names: Mapping[str, Any]) -> set[str]:
@@ -525,7 +560,13 @@ def _stable_cell(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [_stable_cell(item) for item in value]
     if isinstance(value, float):
-        return None if not np.isfinite(value) else value
+        if np.isnan(value):
+            return None
+        if np.isposinf(value):
+            return {"__vla_lens_float__": "positive_infinity"}
+        if np.isneginf(value):
+            return {"__vla_lens_float__": "negative_infinity"}
+        return value
     try:
         if pd.isna(value):
             return None
@@ -565,7 +606,7 @@ def _compare_predictions(
     replayed: np.ndarray,
     saved: np.ndarray,
     feature_fingerprint: str,
-    absolute_tolerance: Any,
+    prediction_tolerance: Any,
 ) -> ProbeReplayResult:
     if probe_type == "classification":
         mismatch = np.asarray(replayed).astype(str) != np.asarray(saved).astype(str)
@@ -576,20 +617,29 @@ def _compare_predictions(
             mismatch_count=int(mismatch.sum()),
             max_absolute_difference=None,
             absolute_tolerance=None,
+            relative_tolerance=None,
             feature_matrix_fingerprint=feature_fingerprint,
         )
     actual = np.asarray(replayed, dtype=np.float64).reshape(-1)
     expected = pd.to_numeric(pd.Series(saved), errors="coerce").to_numpy(dtype=np.float64)
     difference = np.abs(actual - expected)
-    tolerance = float(absolute_tolerance or 0.0)
-    mismatch = ~(difference <= tolerance)
+    tolerance = dict(prediction_tolerance or {})
+    absolute_tolerance = float(tolerance.get("absolute") or 0.0)
+    relative_tolerance = float(tolerance.get("relative") or 0.0)
+    mismatch = ~np.isclose(
+        actual,
+        expected,
+        rtol=relative_tolerance,
+        atol=absolute_tolerance,
+    )
     return ProbeReplayResult(
         artifact_id=artifact_id,
         matched=not bool(mismatch.any()),
         row_count=int(len(actual)),
         mismatch_count=int(mismatch.sum()),
         max_absolute_difference=float(difference.max()) if len(difference) else 0.0,
-        absolute_tolerance=tolerance,
+        absolute_tolerance=absolute_tolerance,
+        relative_tolerance=relative_tolerance,
         feature_matrix_fingerprint=feature_fingerprint,
     )
 

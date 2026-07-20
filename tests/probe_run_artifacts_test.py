@@ -20,6 +20,7 @@ from vla_lens.probes import (
     train_probe_artifact_from_spec,
     workflow_training,
 )
+from vla_lens.probes.run_artifacts import _compare_predictions, dataframe_fingerprint
 
 
 @pytest.mark.parametrize("target", ["classification", "regression"])
@@ -38,7 +39,7 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
     assert replay.matched is True
     assert replay.mismatch_count == 0
     assert contract is not None
-    assert contract["schema_version"] == 1
+    assert contract["schema_version"] == 2
     assert contract["uncertainty"]["confidence_intervals"]["status"] == "not_computed"
     assert contract["source"]["source_rows_fingerprint"].startswith("sha256:")
     assert contract["source"]["source_sites_fingerprint"].startswith("sha256:")
@@ -69,6 +70,13 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
             np.load(prediction_path, allow_pickle=False),
             predictions,
         )
+    else:
+        tolerance = contract["model"]["prediction_tolerance"]
+        assert tolerance["absolute"] > 0
+        assert tolerance["relative"] > 0
+        assert tolerance["operation_count"] >= feature_dim
+        assert replay.absolute_tolerance == tolerance["absolute"]
+        assert replay.relative_tolerance == tolerance["relative"]
     with pytest.raises(ProbeArtifactError, match="expects"):
         probe.predict(np.zeros((1, feature_dim + 1), dtype=np.float32))
 
@@ -221,8 +229,6 @@ def test_probe_is_not_registered_when_a_sidecar_write_fails(tmp_path, monkeypatc
 
 
 def test_dataframe_fingerprints_survive_parquet_round_trips(tmp_path):
-    from vla_lens.probes.run_artifacts import dataframe_fingerprint
-
     frame = pd.DataFrame(
         {
             "trace_id": ["trace-1", "trace-2"],
@@ -238,6 +244,49 @@ def test_dataframe_fingerprints_survive_parquet_round_trips(tmp_path):
 
     assert dataframe_fingerprint(pd.read_parquet(path)) == fingerprint
     assert dataframe_fingerprint(frame.iloc[::-1].reset_index(drop=True)) != fingerprint
+
+
+def test_dataframe_fingerprints_distinguish_infinities_from_missing_values(tmp_path):
+    frame = pd.DataFrame({"value": [np.nan, np.inf, -np.inf, 1.0]})
+    path = tmp_path / "special-values.parquet"
+    frame.to_parquet(path, index=False)
+
+    fingerprint = dataframe_fingerprint(frame)
+
+    assert dataframe_fingerprint(pd.read_parquet(path)) == fingerprint
+    for row_index in [1, 2]:
+        changed = frame.copy()
+        changed.loc[row_index, "value"] = np.nan
+        assert dataframe_fingerprint(changed) != fingerprint
+    changed = frame.copy()
+    changed.loc[1, "value"] = -np.inf
+    assert dataframe_fingerprint(changed) != fingerprint
+
+
+def test_regression_prediction_comparison_uses_absolute_and_relative_tolerance():
+    tolerance = {"absolute": 1e-8, "relative": 1e-6}
+    within = _compare_predictions(
+        artifact_id="probe",
+        probe_type="regression",
+        replayed=np.array([1e8 + 50.0, 1e-10 + 5e-9]),
+        saved=np.array([1e8, 1e-10]),
+        feature_fingerprint="sha256:features",
+        prediction_tolerance=tolerance,
+    )
+    outside = _compare_predictions(
+        artifact_id="probe",
+        probe_type="regression",
+        replayed=np.array([1e8 + 200.0, 1e-10 + 2e-8]),
+        saved=np.array([1e8, 1e-10]),
+        feature_fingerprint="sha256:features",
+        prediction_tolerance=tolerance,
+    )
+
+    assert within.matched is True
+    assert within.absolute_tolerance == tolerance["absolute"]
+    assert within.relative_tolerance == tolerance["relative"]
+    assert outside.matched is False
+    assert outside.mismatch_count == 2
 
 
 def test_legacy_probe_remains_explainable_but_is_not_claimed_as_replayable(tmp_path):
@@ -257,6 +306,28 @@ def test_legacy_probe_remains_explainable_but_is_not_claimed_as_replayable(tmp_p
     assert probe.capabilities["legacy"] is True
     assert probe.capabilities["replay"] is False
     with pytest.raises(NonReplayableProbeError, match="predates"):
+        probe.replay()
+
+
+def test_v1_probe_contract_remains_explainable_but_is_not_replayable(tmp_path):
+    dataset = _split_dataset(tmp_path)
+    saved = train_probe_artifact_from_spec(dataset, _probe_spec("classification"))
+    probe = load_probe_artifact(dataset, saved.artifact.artifact_id)
+    method = deepcopy(dict(probe.artifact.method))
+    method["probe_run_contract"]["schema_version"] = 1
+    method["probe_run_contract"]["model"].pop("array_fingerprints")
+    probe.artifact = replace(probe.artifact, method=method)
+
+    explanation = probe.explain()
+
+    assert explanation["experiment_card"]["name"] == "Replayable classification probe"
+    assert explanation["replayable"] is False
+    assert explanation["capabilities"]["explain"] is True
+    assert explanation["capabilities"]["replay"] is False
+    assert explanation["capabilities"]["use"] is False
+    with pytest.raises(NonReplayableProbeError, match="version 1 predates"):
+        probe.predict(np.zeros((1, 4), dtype=np.float32))
+    with pytest.raises(NonReplayableProbeError, match="version 1 predates"):
         probe.replay()
 
 

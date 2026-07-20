@@ -80,13 +80,16 @@ uv run python scripts/use_vla_lens_probe.py \
 ```
 
 Replay checks classification labels exactly. For regression, it records and
-uses a small absolute tolerance based on the fitted model's numeric precision,
-then reports the largest observed difference. This accounts for machine-level
-rounding differences between numerical libraries without accepting a changed
-prediction.
+uses explicit absolute and relative tolerances based on numeric precision,
+feature dimension, and prediction scale, then reports both tolerances and the
+largest observed difference. This accounts for machine-level rounding
+differences between numerical libraries without accepting a changed prediction.
 
 ## Older Artifacts
 
 Artifacts written before schema 4 do not contain the replay contract. VLA Lens
 still loads and explains the metadata they have. It does not claim that they
 can be replayed or reused when the fitted state or exact rows are missing.
+Probe-run contract v1 artifacts from early development builds are handled the
+same way because they predate fitted-array integrity checks. New replayable
+artifacts use probe-run contract v2.

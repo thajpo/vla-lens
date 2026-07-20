@@ -359,6 +359,8 @@ def train_probe_artifact(
             model_arrays,
             model_state_summary,
             hyperparameters=method["probe"]["hyperparams"],
+            feature_matrix=replay_features,
+            predictions=scored_prediction_records["prediction_value"].to_numpy(),
         ),
         uncertainty=uncertainty,
     )
@@ -566,6 +568,8 @@ def _probe_model_contract(
     model_state: Mapping[str, Any],
     *,
     hyperparameters: Mapping[str, Any],
+    feature_matrix: np.ndarray,
+    predictions: np.ndarray,
 ) -> dict[str, Any]:
     model_name = str(model_state.get("model") or "")
     probe_type = str(model_state.get("probe_type") or "unknown")
@@ -587,7 +591,13 @@ def _probe_model_contract(
         },
         "numeric_precision": numeric_precision,
         "prediction_tolerance": (
-            _floating_replay_tolerance(model_arrays) if probe_type == "regression" else None
+            _floating_replay_tolerance(
+                model_arrays,
+                feature_matrix=feature_matrix,
+                predictions=predictions,
+            )
+            if probe_type == "regression"
+            else None
         ),
     }
     if model_name == "linear":
@@ -626,16 +636,47 @@ def _probe_model_contract(
     raise ValueError(f"Selected probe model {model_name!r} cannot be saved for reuse")
 
 
-def _floating_replay_tolerance(model_arrays: Mapping[str, np.ndarray]) -> float:
-    floating_dtypes = [
-        np.asarray(value).dtype
-        for value in model_arrays.values()
-        if np.issubdtype(np.asarray(value).dtype, np.floating)
-    ]
+def _floating_replay_tolerance(
+    model_arrays: Mapping[str, np.ndarray],
+    *,
+    feature_matrix: np.ndarray,
+    predictions: np.ndarray,
+) -> dict[str, Any]:
+    arrays = [np.asarray(value) for value in model_arrays.values()]
+    arrays.append(np.asarray(feature_matrix))
+    floating_dtypes = [value.dtype for value in arrays if np.issubdtype(value.dtype, np.floating)]
     if not floating_dtypes:
-        return 0.0
-    least_precise = max(float(np.finfo(dtype).eps) for dtype in floating_dtypes)
-    return least_precise * 4.0
+        return {
+            "absolute": 0.0,
+            "relative": 0.0,
+            "least_precise_dtype": None,
+            "operation_count": 0,
+            "prediction_scale": 0.0,
+        }
+    least_precise_dtype = max(floating_dtypes, key=lambda dtype: float(np.finfo(dtype).eps))
+    epsilon = float(np.finfo(least_precise_dtype).eps)
+    feature_dim = int(feature_matrix.shape[1]) if feature_matrix.ndim == 2 else 0
+    layer_operation_count = sum(
+        int(np.asarray(value).shape[0])
+        for name, value in model_arrays.items()
+        if name.startswith("layer_weights_") and np.asarray(value).ndim > 1
+    )
+    operation_count = max(1, layer_operation_count or feature_dim)
+    accumulated_error = min(0.5, epsilon * operation_count * 4.0)
+    numeric_predictions = pd.to_numeric(pd.Series(predictions), errors="coerce").to_numpy(
+        dtype=np.float64
+    )
+    finite_predictions = numeric_predictions[np.isfinite(numeric_predictions)]
+    prediction_scale = (
+        float(np.max(np.abs(finite_predictions))) if len(finite_predictions) else 0.0
+    )
+    return {
+        "absolute": accumulated_error * max(1.0, prediction_scale),
+        "relative": accumulated_error,
+        "least_precise_dtype": str(least_precise_dtype),
+        "operation_count": operation_count,
+        "prediction_scale": prediction_scale,
+    }
 
 
 def _probe_uncertainty(
