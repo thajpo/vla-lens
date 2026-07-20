@@ -13,6 +13,10 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from vla_lens.probes.experiment_cards import (
+    experiment_card_from_preflight,
+    format_experiment_card_markdown,
+)
 from vla_lens.probes.workflow_artifacts import _probe_target, _value_counts
 from vla_lens.probes.workflow_prepare import (
     _apply_missing_policy,
@@ -104,7 +108,7 @@ def probe_preflight_report(
         large_sweep_readouts=large_sweep_readouts,
     )
 
-    return _jsonable(
+    payload = _jsonable(
         {
             "name": str(normalized.get("name") or "Probe"),
             "question": _optional_str(normalized.get("question")),
@@ -116,6 +120,7 @@ def probe_preflight_report(
                 "selected_rows": selected_row_count,
                 "rows_after_filters": int(len(rows)),
                 "feature_dim": int(X.shape[1]) if X.ndim == 2 else None,
+                "estimated_feature_bytes": int(X.nbytes),
                 "cache_key": getattr(feature_matrix, "cache_key", None),
             },
             "target": target_info,
@@ -141,10 +146,33 @@ def probe_preflight_report(
             "warnings": warnings,
         }
     )
+    payload["experiment_card"] = experiment_card_from_preflight(payload)
+    return payload
 
 
-def format_probe_preflight_markdown(report: Mapping[str, Any]) -> str:
-    """Render a preflight report as a compact human review sheet."""
+def probe_experiment_card(
+    dataset: TraceDataset,
+    spec: Mapping[str, Any],
+    *,
+    min_class_support: int = DEFAULT_MIN_CLASS_SUPPORT,
+    large_sweep_readouts: int = DEFAULT_LARGE_SWEEP_READOUTS,
+) -> dict[str, Any]:
+    """Return the small human-facing card for a planned probe run."""
+
+    report = probe_preflight_report(
+        dataset,
+        spec,
+        min_class_support=min_class_support,
+        large_sweep_readouts=large_sweep_readouts,
+    )
+    return dict(report["experiment_card"])
+
+
+def format_probe_preflight_markdown(report: Mapping[str, Any], *, details: bool = False) -> str:
+    """Render the short experiment card, with diagnostic tables on request."""
+    if not details:
+        card = report.get("experiment_card") or experiment_card_from_preflight(report)
+        return format_experiment_card_markdown(card)
     lines = [
         f"# Probe Preflight: {report.get('name', 'Probe')}",
         "",

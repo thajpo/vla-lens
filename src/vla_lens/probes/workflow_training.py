@@ -12,6 +12,14 @@ import sklearn
 
 from vla_lens.artifacts import LensArtifact, make_artifact_id
 from vla_lens.dataset import build_dataset_index
+from vla_lens.probes.experiment_cards import experiment_card_from_artifact_fields
+from vla_lens.probes.run_artifacts import (
+    PROBE_RUN_CONTRACT_KEY,
+    SOURCE_FEATURE_ROW_INDEX,
+    make_probe_run_contract,
+    probe_label_sources,
+    source_trace_fingerprint_map,
+)
 from vla_lens.probes.suite import run_probe_suite
 from vla_lens.probes.workflow_artifacts import (
     _array_fingerprint,
@@ -78,10 +86,14 @@ def train_probe_artifact(
     probe_models: Sequence[str] = ("linear",),
     research: Mapping[str, Any] | None = None,
     row_expand: Mapping[str, Any] | None = None,
+    run_spec: Mapping[str, Any] | None = None,
 ) -> SavedProbeSuite:
     """Train simple probes from an activation selector and save a ``LensArtifact``."""
     feature_matrix = dataset.select_model_sites(selector).materialize(cache=True)
-    X, rows = feature_matrix.X, feature_matrix.rows
+    source_sites = feature_matrix.rows.copy().reset_index(drop=True)
+    X = feature_matrix.X
+    rows = source_sites.copy()
+    rows[SOURCE_FEATURE_ROW_INDEX] = np.arange(len(rows), dtype=np.int64)
     if rows.empty or X.shape[0] == 0:
         raise ValueError(f"Probe selector matched no activation rows: {selector.to_dict()}")
     rows = _attach_episode_metadata(rows, dataset)
@@ -109,6 +121,8 @@ def train_probe_artifact(
         raise ValueError(
             f"Feature rows mismatch: X has {X.shape[0]} rows, metadata has {len(rows)}"
         )
+    rows = rows.reset_index(drop=True)
+    rows["prepared_row_index"] = np.arange(len(rows), dtype=np.int64)
 
     results = _run_sweep(
         X=X,
@@ -146,6 +160,11 @@ def train_probe_artifact(
     )
     if scored_prediction_records.empty:
         scored_prediction_records = prediction_records
+    if "prepared_row_index" not in scored_prediction_records:
+        raise ValueError("Selected probe predictions are missing their prepared row indices")
+    prepared_indices = scored_prediction_records["prepared_row_index"].to_numpy(dtype=np.int64)
+    source_rows = rows.iloc[prepared_indices].reset_index(drop=True)
+    replay_features = np.asarray(X[prepared_indices])
     model_arrays, model_state_summary = _best_model_arrays(
         results,
         selection_value=selection_value or test_value,
@@ -158,6 +177,8 @@ def train_probe_artifact(
         "per_split_metrics": str(output_dir / "per_split_metrics.parquet"),
         "per_group_metrics": str(output_dir / "per_group_metrics.parquet"),
         "null_metrics": str(output_dir / "null_metrics.parquet"),
+        "source_rows": str(output_dir / "source_rows.parquet"),
+        "source_sites": str(output_dir / "source_sites.parquet"),
         "weights": str(output_dir / "weights.zarr")
         if "weights" in model_arrays
         else None,
@@ -172,6 +193,27 @@ def train_probe_artifact(
         else None,
     }
     research_framing = _probe_research_framing(research)
+    normalized_run_spec = (
+        dict(run_spec)
+        if run_spec is not None
+        else _direct_probe_spec(
+            name=name,
+            selector=selector,
+            target=target_spec,
+            split_kind=split_kind,
+            split_column=split_column,
+            train_value=train_value,
+            test_value=test_value,
+            eval_values=list(eval_values or [test_value]),
+            selection_value=selection_value or test_value,
+            metadata_baseline_columns=metadata_baseline_columns,
+            sweep=sweep,
+            row_filter=row_filter,
+            row_expand=row_expand,
+            probe_models=probe_models,
+            research=research,
+        )
+    )
     method = {
         "workflow": "train_probe_artifact",
         "probe_artifact_schema_version": PROBE_ARTIFACT_SCHEMA_VERSION,
@@ -275,6 +317,39 @@ def train_probe_artifact(
                 (1 + (null_metrics["score"] >= float(best_score)).sum())
                 / (len(null_metrics) + 1)
             )
+    uncertainty = _probe_uncertainty(null_metrics, metrics)
+    experiment_card = experiment_card_from_artifact_fields(
+        name=name,
+        research=research_framing,
+        input_info=method["input"],
+        target=method["target"],
+        split=method["split"],
+        probe=method["probe"],
+        evaluation=method["evaluation"],
+        metadata_baselines=method["metadata_baseline_columns"],
+        sweep=sweep,
+        metrics=metrics,
+        uncertainty=uncertainty,
+    )
+    method[PROBE_RUN_CONTRACT_KEY] = make_probe_run_contract(
+        experiment_card=experiment_card,
+        run_spec=normalized_run_spec,
+        selector=selector.to_dict(),
+        source_rows_path=outputs["source_rows"],
+        source_rows=source_rows,
+        source_sites_path=outputs["source_sites"],
+        source_sites=source_sites,
+        scored_predictions_path=outputs["scored_predictions"],
+        feature_matrix=replay_features,
+        source_trace_fingerprints=source_trace_fingerprint_map(dataset, source_rows),
+        label_sources=probe_label_sources(dataset),
+        model=_probe_model_contract(
+            model_arrays,
+            model_state_summary,
+            hyperparameters=method["probe"]["hyperparams"],
+        ),
+        uncertainty=uncertainty,
+    )
     artifact = LensArtifact(
         artifact_id=artifact_id,
         artifact_type="probe_suite",
@@ -330,6 +405,8 @@ def train_probe_artifact(
         artifact_dir / "scored_predictions.parquet",
         index=False,
     )
+    source_rows.to_parquet(artifact_dir / "source_rows.parquet", index=False)
+    source_sites.to_parquet(artifact_dir / "source_sites.parquet", index=False)
     per_split_metrics.to_parquet(artifact_dir / "per_split_metrics.parquet", index=False)
     per_group_metrics.to_parquet(artifact_dir / "per_group_metrics.parquet", index=False)
     null_metrics.to_parquet(artifact_dir / "null_metrics.parquet", index=False)
@@ -406,6 +483,7 @@ def train_probe_artifact_from_spec(
             str(value) for value in normalized.get("probe", {}).get("models", ["linear"])
         ],
         research=normalized,
+        run_spec=normalized,
     )
 
 
@@ -421,6 +499,156 @@ def _dataset_output_dir(dataset: TraceDataset, artifact_id: str) -> Path:
     if artifact_root == dataset.root:
         return Path("artifacts") / artifact_id
     return artifact_root.relative_to(dataset.root) / "artifacts" / artifact_id
+
+
+def _direct_probe_spec(
+    *,
+    name: str,
+    selector: ActivationQuery,
+    target: Mapping[str, Any],
+    split_kind: str,
+    split_column: str,
+    train_value: str,
+    test_value: str,
+    eval_values: Sequence[str],
+    selection_value: str,
+    metadata_baseline_columns: Sequence[str],
+    sweep: str | Sequence[str],
+    row_filter: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None,
+    row_expand: Mapping[str, Any] | None,
+    probe_models: Sequence[str],
+    research: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    features = selector.to_dict()
+    features["reduction"] = features.pop("reduce_tokens")
+    spec: dict[str, Any] = {
+        "name": name,
+        "target": dict(target),
+        "features": features,
+        "split": {
+            "kind": split_kind,
+            "column": split_column,
+            "train_value": train_value,
+            "test_value": test_value,
+            "selection_value": selection_value,
+            "eval_values": list(eval_values),
+        },
+        "baseline": list(metadata_baseline_columns),
+        "probe": {"models": list(probe_models)},
+        "sweep": list(sweep) if not isinstance(sweep, str) else sweep,
+    }
+    if row_filter is not None:
+        spec["row_filter"] = row_filter
+    if row_expand is not None:
+        spec["row_expand"] = dict(row_expand)
+    spec.update(_probe_research_framing(research))
+    return spec
+
+
+def _probe_model_contract(
+    model_arrays: Mapping[str, np.ndarray],
+    model_state: Mapping[str, Any],
+    *,
+    hyperparameters: Mapping[str, Any],
+) -> dict[str, Any]:
+    model_name = str(model_state.get("model") or "")
+    probe_type = str(model_state.get("probe_type") or "unknown")
+    numeric_precision = {name: str(np.asarray(value).dtype) for name, value in model_arrays.items()}
+    common = {
+        "probe_type": probe_type,
+        "feature_dim": int(np.asarray(model_arrays["feature_mean"]).size),
+        "classes": list(model_state.get("classes") or []),
+        "hyperparameters": dict(hyperparameters.get(model_name) or {}),
+        "selected_readout": {
+            "feature": model_state.get("feature"),
+            "sweep_value": model_state.get("sweep_value"),
+            "model": model_name,
+            "selection_split": model_state.get("split_value"),
+            "primary_metric": model_state.get("primary_metric"),
+        },
+        "numeric_precision": numeric_precision,
+        "prediction_tolerance": (
+            _floating_replay_tolerance(model_arrays) if probe_type == "regression" else None
+        ),
+    }
+    if model_name == "linear":
+        required = {"weights", "bias", "feature_mean", "feature_scale"}
+        missing = sorted(required - set(model_arrays))
+        if missing:
+            raise ValueError(f"Selected linear probe is missing fitted arrays: {missing}")
+        return {
+            **common,
+            "format": "standardized_linear_v1",
+            "array_names": {name: name for name in sorted(required)},
+        }
+    if model_name == "mlp":
+        weight_names = sorted(
+            (name for name in model_arrays if name.startswith("layer_weights_")),
+            key=lambda value: int(value.rsplit("_", 1)[1]),
+        )
+        bias_names = sorted(
+            (name for name in model_arrays if name.startswith("layer_biases_")),
+            key=lambda value: int(value.rsplit("_", 1)[1]),
+        )
+        if not weight_names or len(weight_names) != len(bias_names):
+            raise ValueError("Selected MLP probe is missing fitted layer arrays")
+        return {
+            **common,
+            "format": "standardized_mlp_v1",
+            "activation": model_state.get("activation"),
+            "out_activation": model_state.get("out_activation"),
+            "array_names": {
+                "feature_mean": "feature_mean",
+                "feature_scale": "feature_scale",
+                "layer_weights": weight_names,
+                "layer_biases": bias_names,
+            },
+        }
+    raise ValueError(f"Selected probe model {model_name!r} cannot be saved for reuse")
+
+
+def _floating_replay_tolerance(model_arrays: Mapping[str, np.ndarray]) -> float:
+    floating_dtypes = [
+        np.asarray(value).dtype
+        for value in model_arrays.values()
+        if np.issubdtype(np.asarray(value).dtype, np.floating)
+    ]
+    if not floating_dtypes:
+        return 0.0
+    least_precise = max(float(np.finfo(dtype).eps) for dtype in floating_dtypes)
+    return least_precise * 4.0
+
+
+def _probe_uncertainty(
+    null_metrics: pd.DataFrame,
+    metrics: Mapping[str, Any],
+) -> dict[str, Any]:
+    null_test: dict[str, Any]
+    if null_metrics.empty:
+        null_test = {
+            "status": "not_computed",
+            "reason": "The generic null comparison is currently classification-only.",
+        }
+    else:
+        null_test = {
+            "status": "computed",
+            "method": "shuffle true labels while holding fitted predictions fixed",
+            "metric": str(null_metrics["metric"].iloc[0]),
+            "sample_count": int(len(null_metrics)),
+            "random_seed": 0,
+            "unit": "selected prediction row",
+            "p_value": metrics.get("null_p_value"),
+        }
+    return {
+        "confidence_intervals": {
+            "status": "not_computed",
+            "reason": (
+                "The generic probe runner does not yet define a resampling unit for "
+                "confidence intervals. No interval is implied by the saved point estimate."
+            ),
+        },
+        "null_test": null_test,
+    }
 
 
 def _run_sweep(

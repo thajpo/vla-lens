@@ -2,7 +2,7 @@
 
 Status: active guidance.
 
-Last updated: June 18, 2026.
+Last updated: July 20, 2026.
 
 This document is the repo-local protocol for agents and humans proposing new
 probe work. Existing probe artifacts remain the post-training source of truth.
@@ -12,8 +12,9 @@ searched, and what boring explanations must be checked.
 
 ## Core Rule
 
-Probe training should produce an auditable artifact, not just a score. Before
-training, the proposed probe must make these choices visible:
+Probe training should produce a reusable artifact, not just a score. Before
+training, the experiment card must put the choices that change the research
+claim first:
 
 - Research question in normal language.
 - Target label or regression value, including how it is constructed.
@@ -25,6 +26,12 @@ training, the proposed probe must make these choices visible:
 - Metadata baselines.
 - Sweep axes such as layer, policy call, feature site, and model type.
 - Main metrics and known failure modes.
+
+The card then shows method choices such as linear versus MLP and the planned
+sweep. File paths, cache keys, library versions, and similar internal details
+are saved in the artifact, but they should not dominate the review. This keeps
+"train a probe on X" understandable without hiding anything needed to check or
+repeat the work.
 
 The goal is not to stop broad search. It is to prevent broad search from
 quietly becoming a test-set fishing expedition.
@@ -169,7 +176,38 @@ uv run python scripts/preflight_vla_lens_probe.py \
 
 The preflight path reuses the normal YAML probe spec. It inspects selected rows,
 target labels, filters, splits, baselines, and sweep size, but it does not fit a
-probe.
+probe. Markdown shows the short experiment card by default. Add `--details` for
+the full split, label-support, and baseline tables, or use JSON when another
+tool needs every field.
+
+## After Training
+
+New generic probe artifacts save the fitted model, the exact chosen rows, the
+complete training recipe, and the details of any uncertainty calculation. They
+do not copy the large activation matrix into every artifact. The feature cache
+is only a speed-up and may be deleted; replay can rebuild the features from the
+source capture.
+
+Use the saved artifact directly:
+
+```bash
+uv run python scripts/use_vla_lens_probe.py \
+  /path/to/dataset ARTIFACT_ID explain
+
+uv run python scripts/use_vla_lens_probe.py \
+  /path/to/dataset ARTIFACT_ID replay
+
+uv run python scripts/use_vla_lens_probe.py \
+  /path/to/dataset ARTIFACT_ID use \
+  --features compatible_features.npy \
+  --output predictions.npy
+```
+
+`explain` shows the experiment card. `replay` rebuilds the selected features
+and checks them against the saved predictions without fitting. `use` applies
+the fitted probe to another compatible feature matrix. Older artifacts remain
+readable, but the command says plainly when they do not contain enough data to
+replay or reuse.
 
 ## Probe Spec Additions
 

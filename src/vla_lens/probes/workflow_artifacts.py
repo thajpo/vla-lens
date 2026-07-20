@@ -114,6 +114,7 @@ def _probe_input(
         "feature_transform": "identity",
         "feature_shape": [int(item) for item in X.shape],
         "feature_dim": int(X.shape[1]) if X.ndim == 2 else None,
+        "feature_matrix_bytes": int(X.nbytes),
         "feature_matrix_cache_key": cache_key,
         "feature_matrix_fingerprint": _array_fingerprint(X),
     }
@@ -251,7 +252,14 @@ def _best_model_arrays(
     for key in ["weights", "bias", "feature_mean", "feature_scale"]:
         value = state.get(key)
         if isinstance(value, np.ndarray) and value.size:
-            arrays[key] = value.astype(np.float32, copy=False)
+            arrays[key] = value.copy()
+    for state_key, array_prefix in [
+        ("layer_weights", "layer_weights"),
+        ("layer_biases", "layer_biases"),
+    ]:
+        for index, value in enumerate(state.get(state_key) or []):
+            if isinstance(value, np.ndarray) and value.size:
+                arrays[f"{array_prefix}_{index}"] = value.copy()
     summary = {
         "feature": str(results.loc[best_idx].get("feature")),
         "sweep_value": _json_scalar(results.loc[best_idx].get("sweep_value")),
@@ -261,6 +269,8 @@ def _best_model_arrays(
         "probe_type": state.get("probe_type"),
         "weights_space": state.get("weights_space"),
         "classes": list(state.get("classes") or []),
+        "activation": state.get("activation"),
+        "out_activation": state.get("out_activation"),
         "array_shapes": {key: [int(item) for item in value.shape] for key, value in arrays.items()},
     }
     return arrays, summary

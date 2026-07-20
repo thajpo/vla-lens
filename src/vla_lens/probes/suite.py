@@ -251,8 +251,8 @@ def _regression_result(
         return None
     probe = _regression_probe(model_name)
     probe.fit(X[train_mask], y_train)
-    pred = np.asarray(probe.predict(X[eval_mask]), dtype=np.float32)
-    all_pred = np.asarray(probe.predict(X), dtype=np.float32)
+    pred = np.asarray(probe.predict(X[eval_mask]))
+    all_pred = np.asarray(probe.predict(X))
     r2 = float(r2_score(y_eval, pred))
     mae = float(mean_absolute_error(y_eval, pred))
     baseline = np.full_like(y_eval, float(np.mean(y_train)), dtype=np.float32)
@@ -637,6 +637,8 @@ def _prediction_join_keys(
         "token_space_id": token_space_id,
         "token_index": token_index,
         "input_row_index": _optional_int(row.get("input_row_index")),
+        "prepared_row_index": _optional_int(row.get("prepared_row_index")),
+        "source_feature_row_index": _optional_int(row.get("source_feature_row_index")),
         "active_manipulated_object": _optional_str(row.get("active_manipulated_object")),
         "probe_object_name": _optional_str(row.get("probe_object_name")),
         "probe_object_base_name": _optional_str(row.get("probe_object_base_name")),
@@ -656,15 +658,31 @@ def _linear_model_state(probe: Any, *, probe_type: str, model_name: str) -> dict
         "weights_space": "normalized_feature_space",
     }
     if scaler is not None:
-        state["feature_mean"] = np.asarray(getattr(scaler, "mean_", []), dtype=np.float32)
-        state["feature_scale"] = np.asarray(getattr(scaler, "scale_", []), dtype=np.float32)
+        state["feature_mean"] = np.asarray(getattr(scaler, "mean_", [])).copy()
+        state["feature_scale"] = np.asarray(getattr(scaler, "scale_", [])).copy()
     if hasattr(estimator, "coef_"):
-        state["weights"] = np.asarray(estimator.coef_, dtype=np.float32)
+        state["weights"] = np.asarray(estimator.coef_).copy()
     if hasattr(estimator, "intercept_"):
-        state["bias"] = np.asarray(estimator.intercept_, dtype=np.float32).reshape(-1)
+        state["bias"] = np.asarray(estimator.intercept_).reshape(-1).copy()
+    if hasattr(estimator, "coefs_"):
+        state["layer_weights"] = [np.asarray(value).copy() for value in estimator.coefs_]
+    if hasattr(estimator, "intercepts_"):
+        state["layer_biases"] = [np.asarray(value).copy() for value in estimator.intercepts_]
+    if hasattr(estimator, "activation"):
+        state["activation"] = str(estimator.activation)
+    if hasattr(estimator, "out_activation_"):
+        state["out_activation"] = str(estimator.out_activation_)
     if hasattr(estimator, "classes_"):
-        state["classes"] = [str(item) for item in estimator.classes_]
+        state["classes"] = [_class_value(item) for item in estimator.classes_]
     return state
+
+
+def _class_value(value: Any) -> str | int | float | bool | None:
+    if isinstance(value, np.generic):
+        value = value.item()
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    return str(value)
 
 
 def _optional_str(value: Any) -> str | None:
