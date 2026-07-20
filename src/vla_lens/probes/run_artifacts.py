@@ -17,6 +17,7 @@ from vla_lens.probes.workflow_artifacts import (
     _bundle_fingerprint,
     _hash_json,
 )
+from vla_lens.probes.workflow_prepare import latest_loadable_artifact
 from vla_lens.probes.workflow_types import (
     INTERACTION_METRICS_ARTIFACT_TYPE,
     OBJECT_FLOW_ARTIFACT_TYPE,
@@ -482,23 +483,14 @@ def _fitted_array_names(array_names: Mapping[str, Any]) -> set[str]:
 def probe_label_sources(dataset: TraceDataset) -> list[dict[str, Any]]:
     """Record external label artifacts that may contribute probe metadata."""
 
-    table = dataset.artifact_index
-    if table.empty or "artifact_type" not in table:
-        return []
     records: list[dict[str, Any]] = []
     for artifact_type in [
         INTERACTION_METRICS_ARTIFACT_TYPE,
         OBJECT_FLOW_ARTIFACT_TYPE,
         POLICY_CALL_LABELS_ARTIFACT_TYPE,
     ]:
-        matches = table.loc[table["artifact_type"].astype(str) == artifact_type].copy()
-        if matches.empty:
-            continue
-        matches = matches.sort_values("created_utc", ascending=False, na_position="last")
-        artifact_id = str(matches.iloc[0]["artifact_id"])
-        try:
-            artifact = dataset.load_artifact(artifact_id)
-        except (FileNotFoundError, KeyError):
+        artifact = latest_loadable_artifact(dataset, artifact_type)
+        if artifact is None:
             continue
         records.append(
             {

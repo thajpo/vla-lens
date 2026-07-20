@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 
 from vla_lens.artifacts import LensArtifact
+from vla_lens.probes.run_artifacts import LoadedProbeArtifact
 from vla_lens.probes.suite import _prediction_join_keys
 from vla_lens.probes.workflow_artifacts import _array_fingerprint
 from vla_lens.probes.workflow_prepare import (
@@ -82,7 +83,7 @@ def refresh_probe_score_cache(
 
     selector = _artifact_selector(artifact)
     feature_matrix = dataset.select_model_sites(selector).materialize(cache=True)
-    X = np.asarray(feature_matrix.X, dtype=np.float32)
+    X = np.asarray(feature_matrix.X)
     rows = feature_matrix.rows
     if rows.empty or X.shape[0] == 0:
         raise ValueError(f"Probe artifact {artifact_id!r} selector matched no rows")
@@ -104,7 +105,16 @@ def refresh_probe_score_cache(
     best_state = _best_model_state(artifact)
     X, rows = _filter_best_sweep_rows(X, rows, artifact, best_state)
     model = _linear_probe_model(dataset, artifact, best_state)
-    predictions = _score_rows(X, rows, artifact, target_name, model, best_state)
+    contract_predictions = _contract_predictions(dataset, artifact, X)
+    predictions = _score_rows(
+        X,
+        rows,
+        artifact,
+        target_name,
+        model,
+        best_state,
+        contract_predictions=contract_predictions,
+    )
 
     path = probe_score_cache_path(dataset, artifact.artifact_id)
     manifest_path = probe_score_cache_manifest_path(dataset, artifact.artifact_id)
@@ -346,17 +356,16 @@ def _linear_probe_model(
             f"Probe artifact {artifact.artifact_id!r} cannot be refreshed; "
             f"missing arrays: {', '.join(missing)}"
         )
-    weights = np.asarray(dataset.load_artifact_array(artifact, "weights"), dtype=np.float32)
-    bias = np.asarray(dataset.load_artifact_array(artifact, "bias"), dtype=np.float32).reshape(-1)
-    mean = np.asarray(dataset.load_artifact_array(artifact, "feature_mean"), dtype=np.float32)
-    scale = np.asarray(dataset.load_artifact_array(artifact, "feature_scale"), dtype=np.float32)
-    scale = np.where(scale == 0, 1.0, scale)
+    weights = np.asarray(dataset.load_artifact_array(artifact, "weights"))
+    bias = np.asarray(dataset.load_artifact_array(artifact, "bias")).reshape(-1)
+    mean = np.asarray(dataset.load_artifact_array(artifact, "feature_mean"))
+    scale = np.asarray(dataset.load_artifact_array(artifact, "feature_scale"))
     return {
         "weights": weights,
         "bias": bias,
         "feature_mean": mean,
         "feature_scale": scale,
-        "classes": [str(value) for value in best_state.get("classes") or []],
+        "classes": list(best_state.get("classes") or []),
         "probe_type": str(best_state.get("probe_type") or "classification"),
     }
 
@@ -368,25 +377,44 @@ def _score_rows(
     target_name: str,
     model: Mapping[str, Any],
     best_state: Mapping[str, Any],
+    *,
+    contract_predictions: np.ndarray | None = None,
 ) -> pd.DataFrame:
     if X.shape[0] != len(rows):
         raise ValueError(f"Score row mismatch: X has {X.shape[0]} rows, metadata has {len(rows)}")
-    mean = np.asarray(model["feature_mean"], dtype=np.float32)
-    scale = np.asarray(model["feature_scale"], dtype=np.float32)
+    mean = np.asarray(model["feature_mean"])
+    scale = np.asarray(model["feature_scale"])
     if X.shape[1] != mean.shape[0]:
         raise ValueError(
             "Probe feature dimension mismatch: "
             f"selected rows have {X.shape[1]} features, saved model expects {mean.shape[0]}"
         )
-    normalized = (X.astype(np.float32, copy=False) - mean) / scale
-    weights = np.asarray(model["weights"], dtype=np.float32)
-    bias = np.asarray(model["bias"], dtype=np.float32)
-    logits = normalized @ weights.T + bias.reshape(1, -1)
+    if np.issubdtype(X.dtype, np.floating):
+        normalized = X.copy()
+    else:
+        normalized = X.astype(np.result_type(mean.dtype, scale.dtype), copy=True)
+    normalized -= mean
+    normalized /= scale
+    weights = np.asarray(model["weights"])
+    bias = np.asarray(model["bias"]).reshape(-1)
+    if weights.ndim == 1:
+        logits = normalized @ weights + bias[0]
+    else:
+        logits = normalized @ weights.T + bias
     target_kind = str(model.get("probe_type") or "classification")
     if target_kind == "classification":
-        predicted, confidence = _classification_predictions(logits, model)
+        fallback_predictions, confidence = _classification_predictions(logits, model)
+        predicted = (
+            np.asarray(contract_predictions).tolist()
+            if contract_predictions is not None
+            else fallback_predictions
+        )
     else:
-        values = logits.reshape(len(rows), -1)[:, 0]
+        values = (
+            np.asarray(contract_predictions).reshape(-1)
+            if contract_predictions is not None
+            else np.asarray(logits).reshape(len(rows), -1)[:, 0]
+        )
         predicted = [_optional_float(value) for value in values]
         confidence = [None] * len(rows)
 
@@ -430,21 +458,35 @@ def _score_rows(
     return pd.DataFrame.from_records(records)
 
 
+def _contract_predictions(
+    dataset: TraceDataset,
+    artifact: LensArtifact,
+    X: np.ndarray,
+) -> np.ndarray | None:
+    probe = LoadedProbeArtifact(dataset=dataset, artifact=artifact)
+    if not bool(probe.capabilities.get("use")):
+        return None
+    return probe.predict(X)
+
+
 def _classification_predictions(
     logits: np.ndarray,
     model: Mapping[str, Any],
-) -> tuple[list[str], list[float | None]]:
-    classes = [str(value) for value in model.get("classes") or []]
-    if logits.shape[1] == 1:
+) -> tuple[list[Any], list[float | None]]:
+    scores = np.asarray(logits)
+    if scores.ndim == 1:
+        scores = scores.reshape(-1, 1)
+    classes = list(model.get("classes") or [])
+    if scores.shape[1] == 1:
         if len(classes) < 2:
             classes = ["0", "1"]
-        probabilities = _sigmoid(logits[:, 0])
+        probabilities = _sigmoid(scores[:, 0])
         predicted = [classes[1] if value > 0.5 else classes[0] for value in probabilities]
         confidence = [float(max(value, 1.0 - value)) for value in probabilities]
         return predicted, confidence
-    if len(classes) != logits.shape[1]:
-        classes = [str(index) for index in range(logits.shape[1])]
-    probabilities = _softmax(logits)
+    if len(classes) != scores.shape[1]:
+        classes = list(range(scores.shape[1]))
+    probabilities = _softmax(scores)
     indices = np.argmax(probabilities, axis=1)
     predicted = [classes[int(index)] for index in indices]
     confidence = [float(probabilities[row_index, index]) for row_index, index in enumerate(indices)]

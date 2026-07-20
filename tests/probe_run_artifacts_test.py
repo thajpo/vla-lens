@@ -20,7 +20,13 @@ from vla_lens.probes import (
     train_probe_artifact_from_spec,
     workflow_training,
 )
-from vla_lens.probes.run_artifacts import _compare_predictions, dataframe_fingerprint
+from vla_lens.probes.run_artifacts import (
+    _compare_predictions,
+    dataframe_fingerprint,
+    probe_label_sources,
+)
+from vla_lens.probes.workflow_prepare import latest_loadable_artifact
+from vla_lens.probes.workflow_types import INTERACTION_METRICS_ARTIFACT_TYPE
 
 
 @pytest.mark.parametrize("target", ["classification", "regression"])
@@ -351,6 +357,38 @@ def test_replay_rejects_an_unknown_contract_version(tmp_path):
 
     with pytest.raises(ProbeArtifactError, match="Unsupported probe-run schema version"):
         probe.replay()
+
+
+def test_label_provenance_uses_newest_loadable_artifact(tmp_path):
+    dataset = _split_dataset(tmp_path)
+    loadable = dataset.save_artifact(
+        replace(
+            LensArtifact.create(
+                artifact_type=INTERACTION_METRICS_ARTIFACT_TYPE,
+                name="Loadable labels",
+                scope="dataset",
+            ),
+            created_utc="2026-01-01T00:00:00+00:00",
+        )
+    )
+    stale = replace(
+        LensArtifact.create(
+            artifact_type=INTERACTION_METRICS_ARTIFACT_TYPE,
+            name="Missing labels",
+            scope="dataset",
+        ),
+        created_utc="2026-02-01T00:00:00+00:00",
+    )
+    dataset.__dict__["artifact_index"] = pd.DataFrame.from_records(
+        [loadable.to_record(), stale.to_record()]
+    )
+
+    selected = latest_loadable_artifact(dataset, INTERACTION_METRICS_ARTIFACT_TYPE)
+    sources = probe_label_sources(dataset)
+
+    assert selected is not None
+    assert selected.artifact_id == loadable.artifact_id
+    assert [source["artifact_id"] for source in sources] == [loadable.artifact_id]
 
 
 def _split_dataset(tmp_path: Path):

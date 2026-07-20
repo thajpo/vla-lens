@@ -365,7 +365,7 @@ def _merge_object_flow_timestep_labels(
 
 
 def _latest_object_flow_timestep_labels(dataset: TraceDataset) -> pd.DataFrame:
-    artifact = _latest_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
+    artifact = latest_loadable_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
     if artifact is None:
         return pd.DataFrame()
     outputs = dict(artifact.method.get("outputs") or {})
@@ -379,7 +379,7 @@ def _latest_object_flow_timestep_labels(dataset: TraceDataset) -> pd.DataFrame:
 
 
 def _latest_object_roles(dataset: TraceDataset) -> pd.DataFrame:
-    artifact = _latest_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
+    artifact = latest_loadable_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
     if artifact is None:
         return pd.DataFrame()
     outputs = dict(artifact.method.get("outputs") or {})
@@ -456,7 +456,7 @@ def _merge_policy_call_labels(
 
 
 def _latest_policy_call_labels(dataset: TraceDataset) -> pd.DataFrame:
-    artifact = _latest_artifact(dataset, POLICY_CALL_LABELS_ARTIFACT_TYPE)
+    artifact = latest_loadable_artifact(dataset, POLICY_CALL_LABELS_ARTIFACT_TYPE)
     if artifact is None:
         return pd.DataFrame()
     outputs = dict(artifact.method.get("outputs") or {})
@@ -508,10 +508,13 @@ def _artifact_output_path(dataset: TraceDataset, relative_path: str) -> Path:
 
 
 def _latest_interaction_artifact(dataset: TraceDataset) -> LensArtifact | None:
-    return _latest_artifact(dataset, INTERACTION_METRICS_ARTIFACT_TYPE)
+    return latest_loadable_artifact(dataset, INTERACTION_METRICS_ARTIFACT_TYPE)
 
 
-def _latest_artifact(dataset: TraceDataset, artifact_type: str) -> LensArtifact | None:
+def latest_loadable_artifact(
+    dataset: TraceDataset,
+    artifact_type: str,
+) -> LensArtifact | None:
     table = dataset.artifact_index
     if table.empty or "artifact_type" not in table:
         return None
