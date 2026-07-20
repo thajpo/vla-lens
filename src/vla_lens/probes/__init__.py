@@ -12,6 +12,7 @@ from vla_lens.probes.run_artifacts import (
     LoadedProbeArtifact,
     NonReplayableProbeError,
     ProbeArtifactError,
+    ProbeInferenceResult,
     ProbeReplayResult,
     load_probe_artifact,
 )
@@ -37,6 +38,7 @@ __all__ = [
     "LoadedProbeArtifact",
     "NonReplayableProbeError",
     "ProbeArtifactError",
+    "ProbeInferenceResult",
     "ProbeReplayResult",
     "ProbeResult",
     "OBJECT_FLOW_ARTIFACT_TYPE",

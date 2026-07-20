@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 import yaml
 
 from vla_lens import (
@@ -101,14 +102,14 @@ def test_probe_score_cache_uses_exact_contract_inference(tmp_path, monkeypatch):
         assert model[name].dtype == dataset.load_artifact_array(artifact, name).dtype
 
     captured: dict[str, np.ndarray] = {}
-    original_predict = LoadedProbeArtifact.predict
+    original_inference = LoadedProbeArtifact.predict_with_confidence
 
-    def capture_predict(probe, features):
-        predictions = original_predict(probe, features)
-        captured["predictions"] = predictions.copy()
-        return predictions
+    def capture_inference(probe, features):
+        inference = original_inference(probe, features)
+        captured["predictions"] = inference.predictions.copy()
+        return inference
 
-    monkeypatch.setattr(LoadedProbeArtifact, "predict", capture_predict)
+    monkeypatch.setattr(LoadedProbeArtifact, "predict_with_confidence", capture_inference)
 
     refresh_probe_score_cache(dataset, artifact.artifact_id)
     score_cache = read_probe_score_cache(dataset, artifact.artifact_id)
@@ -120,8 +121,11 @@ def test_probe_score_cache_uses_exact_contract_inference(tmp_path, monkeypatch):
     )
 
 
-def test_probe_score_cache_refreshes_mlp_contract_without_linear_arrays(tmp_path, monkeypatch):
-    root = tmp_path / "mlp"
+@pytest.mark.parametrize("model_name", ["linear", "mlp"])
+def test_probe_score_cache_preserves_contract_classification_confidence(
+    tmp_path, monkeypatch, model_name
+):
+    root = tmp_path / model_name
     dataset = create_synthetic_trace_dataset(root, num_episodes=6, timesteps=8)
     trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
     pd.DataFrame(
@@ -131,26 +135,55 @@ def test_probe_score_cache_refreshes_mlp_contract_without_linear_arrays(tmp_path
         }
     ).to_csv(dataset.root / "probe_splits.csv", index=False)
     spec = yaml.safe_load(_refreshable_probe_spec())
-    spec["probe"]["models"] = ["mlp"]
+    spec["probe"]["models"] = [model_name]
     saved = train_probe_artifact_from_spec(dataset, spec)
     artifact = dataset.load_artifact(saved.artifact.artifact_id)
-    assert "weights" not in artifact.arrays
+    frozen_predictions = pd.read_parquet(
+        dataset.root
+        / "vla_lens"
+        / "artifacts"
+        / saved.artifact.artifact_id
+        / "predictions.parquet"
+    )
+    if model_name == "mlp":
+        assert "weights" not in artifact.arrays
 
     captured: dict[str, np.ndarray] = {}
-    original_predict = LoadedProbeArtifact.predict
+    original_inference = LoadedProbeArtifact.predict_with_confidence
 
-    def capture_predict(probe, features):
-        predictions = original_predict(probe, features)
-        captured["predictions"] = predictions.copy()
-        return predictions
+    def capture_inference(probe, features):
+        inference = original_inference(probe, features)
+        captured["predictions"] = inference.predictions.copy()
+        assert inference.confidence is not None
+        captured["confidence"] = inference.confidence.copy()
+        return inference
 
-    monkeypatch.setattr(LoadedProbeArtifact, "predict", capture_predict)
+    monkeypatch.setattr(LoadedProbeArtifact, "predict_with_confidence", capture_inference)
 
     refresh_probe_score_cache(dataset, artifact.artifact_id)
     score_cache = read_probe_score_cache(dataset, artifact.artifact_id)
 
     np.testing.assert_array_equal(
         score_cache["prediction_value"].to_numpy(), captured["predictions"]
+    )
+    np.testing.assert_allclose(
+        score_cache["confidence"].to_numpy(dtype=np.float64),
+        captured["confidence"],
+    )
+    assert score_cache["confidence"].notna().all()
+    assert score_cache["confidence"].between(0.5, 1.0).all()
+    join_keys = ["trace_id", "timestep", "policy_call_index", "model_site_id"]
+    overlap = score_cache.merge(
+        frozen_predictions[join_keys + ["prediction_value", "confidence"]],
+        on=join_keys,
+        suffixes=("_cache", "_frozen"),
+    )
+    assert len(overlap) == len(frozen_predictions)
+    np.testing.assert_array_equal(
+        overlap["prediction_value_cache"], overlap["prediction_value_frozen"]
+    )
+    np.testing.assert_allclose(
+        overlap["confidence_cache"], overlap["confidence_frozen"], rtol=1e-6
     )
 
 

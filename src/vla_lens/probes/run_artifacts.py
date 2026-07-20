@@ -63,6 +63,12 @@ class ProbeReplayResult:
         }
 
 
+@dataclass(frozen=True, slots=True)
+class ProbeInferenceResult:
+    predictions: np.ndarray
+    confidence: np.ndarray | None
+
+
 @dataclass(slots=True)
 class LoadedProbeArtifact:
     """A saved probe that can explain itself and, for current artifacts, run again."""
@@ -131,18 +137,23 @@ class LoadedProbeArtifact:
     def predict(self, features: np.ndarray) -> np.ndarray:
         """Apply the fitted probe to a compatible feature matrix."""
 
+        return self.predict_with_confidence(features).predictions
+
+    def predict_with_confidence(self, features: np.ndarray) -> ProbeInferenceResult:
+        """Apply the fitted probe and return classification confidence when available."""
+
         contract = self._require_replayable()
         model = dict(contract["model"])
         arrays = self._validated_model_arrays(model)
-        return self._predict(features, model=model, arrays=arrays)
+        return self._infer(features, model=model, arrays=arrays)
 
-    def _predict(
+    def _infer(
         self,
         features: np.ndarray,
         *,
         model: Mapping[str, Any],
         arrays: Mapping[str, np.ndarray],
-    ) -> np.ndarray:
+    ) -> ProbeInferenceResult:
         array_names = dict(model["array_names"])
         feature_mean = arrays[array_names["feature_mean"]]
         feature_scale = arrays[array_names["feature_scale"]]
@@ -200,17 +211,33 @@ class LoadedProbeArtifact:
             raise ProbeArtifactError(f"Unsupported fitted probe format {model_format!r}")
         if str(model["probe_type"]) == "regression":
             if scores.ndim == 1:
-                return scores
-            return scores[:, 0] if scores.shape[1] == 1 else scores
+                predictions = scores
+            else:
+                predictions = scores[:, 0] if scores.shape[1] == 1 else scores
+            return ProbeInferenceResult(predictions=predictions, confidence=None)
         classes = _prediction_classes(model.get("classes") or [])
         if len(classes) < 2:
             raise ProbeArtifactError("Classification probe is missing its fitted classes")
         if scores.ndim == 1 or (scores.ndim == 2 and scores.shape[1] == 1):
+            if len(classes) != 2:
+                raise ProbeArtifactError("Binary probe fitted classes do not match its output")
             threshold = 0.5 if model_format == "standardized_mlp_v1" else 0.0
             indices = (scores.reshape(-1) > threshold).astype(np.int64)
+            positive_probability = (
+                scores.reshape(-1)
+                if model_format == "standardized_mlp_v1"
+                else _sigmoid(scores.reshape(-1))
+            )
+            confidence = np.where(indices == 1, positive_probability, 1.0 - positive_probability)
         else:
+            if len(classes) != scores.shape[1]:
+                raise ProbeArtifactError(
+                    "Classification probe fitted classes do not match its outputs"
+                )
             indices = np.argmax(scores, axis=1)
-        return classes[indices]
+            probabilities = scores if model_format == "standardized_mlp_v1" else _softmax(scores)
+            confidence = probabilities[np.arange(len(indices)), indices]
+        return ProbeInferenceResult(predictions=classes[indices], confidence=confidence)
 
     def replay(self) -> ProbeReplayResult:
         """Rebuild saved features from the capture and reproduce saved predictions."""
@@ -272,7 +299,7 @@ class LoadedProbeArtifact:
                 "Prepared probe features changed since training: "
                 f"expected {expected_feature_fingerprint}, got {feature_fingerprint}"
             )
-        predictions = self._predict(features, model=model, arrays=arrays)
+        predictions = self._infer(features, model=model, arrays=arrays).predictions
         saved = _read_replay_table(
             self.dataset,
             source["scored_predictions_path"],
@@ -666,7 +693,7 @@ def _activation(values: np.ndarray, name: str) -> np.ndarray:
     if name == "tanh":
         return np.tanh(values)
     if name == "logistic":
-        return 1.0 / (1.0 + np.exp(-values))
+        return _sigmoid(values)
     if name == "identity":
         return values
     raise ProbeArtifactError(f"Unsupported MLP activation {name!r}")
@@ -676,9 +703,23 @@ def _output_activation(values: np.ndarray, name: str) -> np.ndarray:
     if name == "identity":
         return values
     if name == "logistic":
-        return 1.0 / (1.0 + np.exp(-values))
+        return _sigmoid(values)
     if name == "softmax":
-        shifted = values - np.max(values, axis=1, keepdims=True)
-        exp = np.exp(shifted)
-        return exp / exp.sum(axis=1, keepdims=True)
+        return _softmax(values)
     raise ProbeArtifactError(f"Unsupported MLP output activation {name!r}")
+
+
+def _sigmoid(values: np.ndarray) -> np.ndarray:
+    inputs = np.asarray(values)
+    result = np.empty_like(inputs, dtype=np.result_type(inputs.dtype, np.float32))
+    positive = inputs >= 0
+    result[positive] = 1.0 / (1.0 + np.exp(-inputs[positive]))
+    exponent = np.exp(inputs[~positive])
+    result[~positive] = exponent / (1.0 + exponent)
+    return result
+
+
+def _softmax(values: np.ndarray) -> np.ndarray:
+    shifted = values - np.max(values, axis=1, keepdims=True)
+    exponent = np.exp(shifted)
+    return exponent / exponent.sum(axis=1, keepdims=True)

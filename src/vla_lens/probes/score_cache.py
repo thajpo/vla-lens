@@ -18,7 +18,7 @@ import numpy as np
 import pandas as pd
 
 from vla_lens.artifacts import LensArtifact
-from vla_lens.probes.run_artifacts import LoadedProbeArtifact
+from vla_lens.probes.run_artifacts import LoadedProbeArtifact, ProbeInferenceResult
 from vla_lens.probes.suite import _prediction_join_keys
 from vla_lens.probes.workflow_artifacts import _array_fingerprint
 from vla_lens.probes.workflow_prepare import (
@@ -104,10 +104,10 @@ def refresh_probe_score_cache(
 
     best_state = _best_model_state(artifact)
     X, rows = _filter_best_sweep_rows(X, rows, artifact, best_state)
-    contract_predictions = _contract_predictions(dataset, artifact, X)
+    contract_inference = _contract_inference(dataset, artifact, X)
     model = (
         None
-        if contract_predictions is not None
+        if contract_inference is not None
         else _linear_probe_model(dataset, artifact, best_state)
     )
     predictions = _score_rows(
@@ -117,7 +117,7 @@ def refresh_probe_score_cache(
         target_name,
         model,
         best_state,
-        contract_predictions=contract_predictions,
+        contract_inference=contract_inference,
     )
 
     path = probe_score_cache_path(dataset, artifact.artifact_id)
@@ -377,13 +377,13 @@ def _score_rows(
     model: Mapping[str, Any] | None,
     best_state: Mapping[str, Any],
     *,
-    contract_predictions: np.ndarray | None = None,
+    contract_inference: ProbeInferenceResult | None = None,
 ) -> pd.DataFrame:
     if X.shape[0] != len(rows):
         raise ValueError(f"Score row mismatch: X has {X.shape[0]} rows, metadata has {len(rows)}")
     target_kind = str(best_state.get("probe_type") or "classification")
     logits: np.ndarray | None = None
-    if contract_predictions is None:
+    if contract_inference is None:
         if model is None:
             raise ValueError("Probe score refresh requires a saved inference contract or model")
         mean = np.asarray(model["feature_mean"])
@@ -406,16 +406,18 @@ def _score_rows(
         else:
             logits = normalized @ weights.T + bias
     if target_kind == "classification":
-        if contract_predictions is not None:
-            predicted = np.asarray(contract_predictions).tolist()
-            confidence = [None] * len(rows)
+        if contract_inference is not None:
+            predicted = np.asarray(contract_inference.predictions).tolist()
+            if contract_inference.confidence is None:
+                raise ValueError("Classification inference did not return confidence")
+            confidence = np.asarray(contract_inference.confidence).tolist()
         else:
             assert logits is not None and model is not None
             predicted, confidence = _classification_predictions(logits, model)
     else:
         values = (
-            np.asarray(contract_predictions).reshape(-1)
-            if contract_predictions is not None
+            np.asarray(contract_inference.predictions).reshape(-1)
+            if contract_inference is not None
             else np.asarray(logits).reshape(len(rows), -1)[:, 0]
         )
         predicted = [_optional_float(value) for value in values]
@@ -461,15 +463,15 @@ def _score_rows(
     return pd.DataFrame.from_records(records)
 
 
-def _contract_predictions(
+def _contract_inference(
     dataset: TraceDataset,
     artifact: LensArtifact,
     X: np.ndarray,
-) -> np.ndarray | None:
+) -> ProbeInferenceResult | None:
     probe = LoadedProbeArtifact(dataset=dataset, artifact=artifact)
     if not bool(probe.capabilities.get("use")):
         return None
-    return probe.predict(X)
+    return probe.predict_with_confidence(X)
 
 
 def _classification_predictions(
