@@ -8,6 +8,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pytest
+import zarr
 
 from vla_lens import create_synthetic_trace_dataset
 from vla_lens.artifacts import LensArtifact
@@ -52,8 +53,54 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
     feature_dim = int(contract["model"]["feature_dim"])
     predictions = probe.predict(np.zeros((3, feature_dim), dtype=np.float32))
     assert predictions.shape == (3,)
+    if target == "classification":
+        assert not predictions.dtype.hasobject
+        prediction_path = tmp_path / "predictions.npy"
+        np.save(prediction_path, predictions, allow_pickle=False)
+        np.testing.assert_array_equal(
+            np.load(prediction_path, allow_pickle=False),
+            predictions,
+        )
     with pytest.raises(ProbeArtifactError, match="expects"):
         probe.predict(np.zeros((1, feature_dim + 1), dtype=np.float32))
+
+
+def test_replay_rebuilds_features_without_trusting_the_training_cache(tmp_path):
+    dataset = _split_dataset(tmp_path)
+    saved = train_probe_artifact_from_spec(dataset, _probe_spec("classification"))
+    probe = load_probe_artifact(dataset, saved.artifact.artifact_id)
+    bundle = dataset.bundle("synthetic_004")
+    model_site = bundle.model_sites.loc[
+        bundle.model_sites["name"].astype(str) == "action_head.layers.0.resid"
+    ].iloc[0]
+    activation = zarr.open_array(
+        str(bundle.path / str(model_site["relative_path"])),
+        mode="a",
+    )
+    activation[0] = np.asarray(activation[0]) + 10.0
+
+    with pytest.raises(ProbeArtifactError, match="Prepared probe features changed"):
+        probe.replay()
+
+
+def test_dataframe_fingerprints_survive_parquet_round_trips(tmp_path):
+    from vla_lens.probes.run_artifacts import dataframe_fingerprint
+
+    frame = pd.DataFrame(
+        {
+            "trace_id": ["trace-1", "trace-2"],
+            "sample": [1, 2],
+            "optional": [None, "value"],
+            "coordinates": [[1, 2], [3, 4]],
+        }
+    )
+    path = tmp_path / "rows.parquet"
+    frame.to_parquet(path, index=False)
+
+    fingerprint = dataframe_fingerprint(frame)
+
+    assert dataframe_fingerprint(pd.read_parquet(path)) == fingerprint
+    assert dataframe_fingerprint(frame.iloc[::-1].reset_index(drop=True)) != fingerprint
 
 
 def test_legacy_probe_remains_explainable_but_is_not_claimed_as_replayable(tmp_path):

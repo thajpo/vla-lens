@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -156,7 +158,7 @@ class LoadedProbeArtifact:
             if scores.ndim == 1:
                 return scores
             return scores[:, 0] if scores.shape[1] == 1 else scores
-        classes = np.asarray(model.get("classes") or [], dtype=object)
+        classes = _prediction_classes(model.get("classes") or [])
         if len(classes) < 2:
             raise ProbeArtifactError("Classification probe is missing its fitted classes")
         if scores.ndim == 1 or (scores.ndim == 2 and scores.shape[1] == 1):
@@ -173,7 +175,7 @@ class LoadedProbeArtifact:
         source = dict(contract["source"])
         _validate_trace_fingerprints(self.dataset, source)
         selector = ActivationQuery(**dict(source["selector"]))
-        matrix = self.dataset.select_model_sites(selector).materialize(cache=True)
+        matrix = self.dataset.select_model_sites(selector).materialize(cache=False)
         actual_sites_fingerprint = dataframe_fingerprint(matrix.rows)
         expected_sites_fingerprint = str(source["source_sites_fingerprint"])
         if actual_sites_fingerprint != expected_sites_fingerprint:
@@ -385,15 +387,26 @@ def dataframe_fingerprint(frame: pd.DataFrame) -> str:
     """Stable fingerprint for replay tables, including values and row order."""
 
     columns = [str(column) for column in frame.columns]
-    records = [
-        {column: _stable_cell(row[column]) for column in columns}
-        for _, row in frame.loc[:, columns].iterrows()
-    ]
-    payload = {
-        "columns": columns,
-        "records": records,
-    }
-    return _hash_json(payload)
+    digest = hashlib.sha256()
+    _update_dataframe_digest(
+        digest,
+        {"columns": columns, "row_count": int(len(frame))},
+    )
+    for row in frame.itertuples(index=False, name=None):
+        _update_dataframe_digest(digest, [_stable_cell(value) for value in row])
+    return f"sha256:{digest.hexdigest()}"
+
+
+def _update_dataframe_digest(digest: Any, value: Any) -> None:
+    encoded = json.dumps(
+        value,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        default=str,
+    ).encode("utf-8")
+    digest.update(len(encoded).to_bytes(8, byteorder="big"))
+    digest.update(encoded)
 
 
 def _stable_cell(value: Any) -> Any:
@@ -417,6 +430,13 @@ def _stable_cell(value: Any) -> Any:
     if isinstance(value, (str, int, bool)):
         return value
     return str(value)
+
+
+def _prediction_classes(values: Sequence[Any]) -> np.ndarray:
+    classes = np.asarray(values)
+    if classes.dtype.hasobject:
+        classes = np.asarray([str(value) for value in values], dtype=np.str_)
+    return classes
 
 
 def _validate_trace_fingerprints(dataset: TraceDataset, source: Mapping[str, Any]) -> None:

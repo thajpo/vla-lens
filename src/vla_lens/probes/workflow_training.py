@@ -307,7 +307,13 @@ def train_probe_artifact(
         rows,
         group_columns=["benchmark", "task_id", "scene_family", "target_parse_status"],
     )
-    null_metrics = _null_metrics(prediction_records)
+    selection_split = selection_value or test_value
+    selection_predictions = prediction_records.loc[
+        prediction_records["eval_split"].astype(str) == str(selection_split)
+    ]
+    null_metrics = _null_metrics(selection_predictions)
+    if not null_metrics.empty:
+        null_metrics.insert(0, "cohort_split", str(selection_split))
     if not null_metrics.empty:
         metrics["null_score_mean"] = float(null_metrics["score"].mean())
         metrics["null_score_std"] = float(null_metrics["score"].std(ddof=0))
@@ -317,7 +323,11 @@ def train_probe_artifact(
                 (1 + (null_metrics["score"] >= float(best_score)).sum())
                 / (len(null_metrics) + 1)
             )
-    uncertainty = _probe_uncertainty(null_metrics, metrics)
+    uncertainty = _probe_uncertainty(
+        null_metrics,
+        metrics,
+        cohort_split=str(selection_split),
+    )
     experiment_card = experiment_card_from_artifact_fields(
         name=name,
         research=research_framing,
@@ -622,19 +632,24 @@ def _floating_replay_tolerance(model_arrays: Mapping[str, np.ndarray]) -> float:
 def _probe_uncertainty(
     null_metrics: pd.DataFrame,
     metrics: Mapping[str, Any],
+    *,
+    cohort_split: str,
 ) -> dict[str, Any]:
     null_test: dict[str, Any]
     if null_metrics.empty:
         null_test = {
             "status": "not_computed",
             "reason": "The generic null comparison is currently classification-only.",
+            "cohort_split": cohort_split,
         }
     else:
         null_test = {
             "status": "computed",
             "method": "shuffle true labels while holding fitted predictions fixed",
             "metric": str(null_metrics["metric"].iloc[0]),
-            "sample_count": int(len(null_metrics)),
+            "cohort_split": cohort_split,
+            "prediction_row_count": int(null_metrics["row_count"].iloc[0]),
+            "permutation_count": int(len(null_metrics)),
             "random_seed": 0,
             "unit": "selected prediction row",
             "p_value": metrics.get("null_p_value"),
