@@ -104,8 +104,12 @@ def refresh_probe_score_cache(
 
     best_state = _best_model_state(artifact)
     X, rows = _filter_best_sweep_rows(X, rows, artifact, best_state)
-    model = _linear_probe_model(dataset, artifact, best_state)
     contract_predictions = _contract_predictions(dataset, artifact, X)
+    model = (
+        None
+        if contract_predictions is not None
+        else _linear_probe_model(dataset, artifact, best_state)
+    )
     predictions = _score_rows(
         X,
         rows,
@@ -271,11 +275,6 @@ def _best_model_state(artifact: LensArtifact) -> Mapping[str, Any]:
     state = probe.get("best_model_state") if isinstance(probe, Mapping) else None
     if not isinstance(state, Mapping):
         raise ValueError(f"Probe artifact {artifact.artifact_id!r} has no best_model_state")
-    model = str(state.get("model") or "linear")
-    if model != "linear":
-        raise ValueError(
-            f"Probe score refresh only supports saved linear probes, got model={model!r}"
-        )
     return state
 
 
@@ -375,40 +374,44 @@ def _score_rows(
     rows: pd.DataFrame,
     artifact: LensArtifact,
     target_name: str,
-    model: Mapping[str, Any],
+    model: Mapping[str, Any] | None,
     best_state: Mapping[str, Any],
     *,
     contract_predictions: np.ndarray | None = None,
 ) -> pd.DataFrame:
     if X.shape[0] != len(rows):
         raise ValueError(f"Score row mismatch: X has {X.shape[0]} rows, metadata has {len(rows)}")
-    mean = np.asarray(model["feature_mean"])
-    scale = np.asarray(model["feature_scale"])
-    if X.shape[1] != mean.shape[0]:
-        raise ValueError(
-            "Probe feature dimension mismatch: "
-            f"selected rows have {X.shape[1]} features, saved model expects {mean.shape[0]}"
-        )
-    if np.issubdtype(X.dtype, np.floating):
-        normalized = X.copy()
-    else:
-        normalized = X.astype(np.result_type(mean.dtype, scale.dtype), copy=True)
-    normalized -= mean
-    normalized /= scale
-    weights = np.asarray(model["weights"])
-    bias = np.asarray(model["bias"]).reshape(-1)
-    if weights.ndim == 1:
-        logits = normalized @ weights + bias[0]
-    else:
-        logits = normalized @ weights.T + bias
-    target_kind = str(model.get("probe_type") or "classification")
+    target_kind = str(best_state.get("probe_type") or "classification")
+    logits: np.ndarray | None = None
+    if contract_predictions is None:
+        if model is None:
+            raise ValueError("Probe score refresh requires a saved inference contract or model")
+        mean = np.asarray(model["feature_mean"])
+        scale = np.asarray(model["feature_scale"])
+        if X.shape[1] != mean.shape[0]:
+            raise ValueError(
+                "Probe feature dimension mismatch: "
+                f"selected rows have {X.shape[1]} features, saved model expects {mean.shape[0]}"
+            )
+        if np.issubdtype(X.dtype, np.floating):
+            normalized = X.copy()
+        else:
+            normalized = X.astype(np.result_type(mean.dtype, scale.dtype), copy=True)
+        normalized -= mean
+        normalized /= scale
+        weights = np.asarray(model["weights"])
+        bias = np.asarray(model["bias"]).reshape(-1)
+        if weights.ndim == 1:
+            logits = normalized @ weights + bias[0]
+        else:
+            logits = normalized @ weights.T + bias
     if target_kind == "classification":
-        fallback_predictions, confidence = _classification_predictions(logits, model)
-        predicted = (
-            np.asarray(contract_predictions).tolist()
-            if contract_predictions is not None
-            else fallback_predictions
-        )
+        if contract_predictions is not None:
+            predicted = np.asarray(contract_predictions).tolist()
+            confidence = [None] * len(rows)
+        else:
+            assert logits is not None and model is not None
+            predicted, confidence = _classification_predictions(logits, model)
     else:
         values = (
             np.asarray(contract_predictions).reshape(-1)

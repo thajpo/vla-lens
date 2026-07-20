@@ -120,6 +120,40 @@ def test_probe_score_cache_uses_exact_contract_inference(tmp_path, monkeypatch):
     )
 
 
+def test_probe_score_cache_refreshes_mlp_contract_without_linear_arrays(tmp_path, monkeypatch):
+    root = tmp_path / "mlp"
+    dataset = create_synthetic_trace_dataset(root, num_episodes=6, timesteps=8)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    pd.DataFrame(
+        {
+            "trace_id": trace_ids,
+            "split": ["train", "train", "train", "train", "test", "test"],
+        }
+    ).to_csv(dataset.root / "probe_splits.csv", index=False)
+    spec = yaml.safe_load(_refreshable_probe_spec())
+    spec["probe"]["models"] = ["mlp"]
+    saved = train_probe_artifact_from_spec(dataset, spec)
+    artifact = dataset.load_artifact(saved.artifact.artifact_id)
+    assert "weights" not in artifact.arrays
+
+    captured: dict[str, np.ndarray] = {}
+    original_predict = LoadedProbeArtifact.predict
+
+    def capture_predict(probe, features):
+        predictions = original_predict(probe, features)
+        captured["predictions"] = predictions.copy()
+        return predictions
+
+    monkeypatch.setattr(LoadedProbeArtifact, "predict", capture_predict)
+
+    refresh_probe_score_cache(dataset, artifact.artifact_id)
+    score_cache = read_probe_score_cache(dataset, artifact.artifact_id)
+
+    np.testing.assert_array_equal(
+        score_cache["prediction_value"].to_numpy(), captured["predictions"]
+    )
+
+
 def _refreshable_probe_spec() -> str:
     return dump_probe_spec(
         {
