@@ -652,6 +652,8 @@ def _floating_replay_tolerance(
             "least_precise_dtype": None,
             "operation_count": 0,
             "prediction_scale": 0.0,
+            "estimated_relative_error": 0.0,
+            "maximum_relative_error": 0.0,
         }
     least_precise_dtype = max(floating_dtypes, key=lambda dtype: float(np.finfo(dtype).eps))
     epsilon = float(np.finfo(least_precise_dtype).eps)
@@ -662,7 +664,10 @@ def _floating_replay_tolerance(
         if name.startswith("layer_weights_") and np.asarray(value).ndim > 1
     )
     operation_count = max(1, layer_operation_count or feature_dim)
-    accumulated_error = min(0.5, epsilon * operation_count * 4.0)
+    estimated_relative_error = epsilon * operation_count * 4.0
+    maximum_relative_error = 1e-4
+    total_relative_error = min(estimated_relative_error, maximum_relative_error)
+    component_tolerance = total_relative_error / 2.0
     numeric_predictions = pd.to_numeric(pd.Series(predictions), errors="coerce").to_numpy(
         dtype=np.float64
     )
@@ -671,11 +676,13 @@ def _floating_replay_tolerance(
         float(np.max(np.abs(finite_predictions))) if len(finite_predictions) else 0.0
     )
     return {
-        "absolute": accumulated_error * max(1.0, prediction_scale),
-        "relative": accumulated_error,
+        "absolute": component_tolerance * max(1.0, prediction_scale),
+        "relative": component_tolerance,
         "least_precise_dtype": str(least_precise_dtype),
         "operation_count": operation_count,
         "prediction_scale": prediction_scale,
+        "estimated_relative_error": estimated_relative_error,
+        "maximum_relative_error": maximum_relative_error,
     }
 
 

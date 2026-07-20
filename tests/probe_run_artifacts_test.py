@@ -295,6 +295,33 @@ def test_regression_prediction_comparison_uses_absolute_and_relative_tolerance()
     assert outside.mismatch_count == 2
 
 
+def test_regression_replay_tolerance_never_accepts_large_prediction_drift():
+    feature_dim = 128
+    tolerance = workflow_training._floating_replay_tolerance(
+        {
+            "weights": np.ones(feature_dim, dtype=np.float16),
+            "bias": np.zeros(1, dtype=np.float16),
+            "feature_mean": np.zeros(feature_dim, dtype=np.float16),
+            "feature_scale": np.ones(feature_dim, dtype=np.float16),
+        },
+        feature_matrix=np.ones((2, feature_dim), dtype=np.float16),
+        predictions=np.array([1.0, 2.0], dtype=np.float16),
+    )
+
+    assert tolerance["estimated_relative_error"] > tolerance["maximum_relative_error"]
+    scale = max(1.0, tolerance["prediction_scale"])
+    assert tolerance["absolute"] / scale + tolerance["relative"] <= 1e-4
+    replay = _compare_predictions(
+        artifact_id="probe",
+        probe_type="regression",
+        replayed=np.array([2.0]),
+        saved=np.array([1.0]),
+        feature_fingerprint="sha256:features",
+        prediction_tolerance=tolerance,
+    )
+    assert replay.matched is False
+
+
 def test_legacy_probe_remains_explainable_but_is_not_claimed_as_replayable(tmp_path):
     dataset = _split_dataset(tmp_path)
     saved = dataset.save_artifact(

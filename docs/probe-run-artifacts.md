@@ -81,9 +81,9 @@ uv run python scripts/use_vla_lens_probe.py \
 
 Replay checks classification labels exactly. For regression, it records and
 uses explicit absolute and relative tolerances based on numeric precision,
-feature dimension, and prediction scale, then reports both tolerances and the
-largest observed difference. This accounts for machine-level rounding
-differences between numerical libraries without accepting a changed prediction.
+feature dimension, and prediction scale. The combined allowance is capped at
+0.01% so low-precision or very wide inputs cannot turn replay into a weak check.
+Replay reports both tolerances and the largest observed difference.
 
 ## Older Artifacts
 
