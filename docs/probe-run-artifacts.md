@@ -34,7 +34,8 @@ Each new generic probe artifact contains:
 - the selector and fingerprints for every source trace;
 - a lightweight table of all selected model-site rows;
 - the exact rows used by the chosen readout, in prediction order;
-- the fitted standardizer and model arrays at their original numeric precision;
+- the fitted standardizer and model arrays at their original numeric precision,
+  with content fingerprints checked before reuse;
 - row-level predictions, metrics, baselines, and null-test settings;
 - a clear statement when confidence intervals were not calculated;
 - identifiers for external label artifacts used by the dataset, when present.
@@ -48,7 +49,8 @@ This gives us the useful storage tradeoff:
 - repeated analysis is fast while the cache exists;
 - deleting the cache saves disk space;
 - the artifact remains understandable after cache deletion;
-- replay can rebuild features from the capture and verify their fingerprints.
+- replay can rebuild features from the capture and verify source, feature, and
+  fitted-model fingerprints.
 
 Deleting the original capture is different: replay needs that source data.
 

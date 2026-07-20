@@ -170,18 +170,22 @@ def _artifact_selector(artifact: LensArtifact) -> ActivationQuery:
         else artifact.selector
     )
     payload = dict(selector_payload or {})
-    return ActivationQuery(
-        episodes=dict(payload.get("episodes") or {}),
-        name=_optional_str(payload.get("name")),
-        module=_optional_str(payload.get("module")),
-        layers=payload.get("layers"),
-        tensor_type=_optional_str(payload.get("tensor_type")),
-        token_kind=_optional_str(payload.get("token_kind")),
-        timesteps=payload.get("timesteps", "all"),
-        policy_calls=payload.get("policy_calls", "all"),
-        generation_step=payload.get("generation_step"),
-        reduce_tokens=str(payload.get("reduce_tokens") or payload.get("reduction") or "mean"),
-        dtype=str(payload.get("dtype") or "float32"),
+    return ActivationQuery.from_dict(
+        {
+            "episodes": dict(payload.get("episodes") or {}),
+            "name": _optional_str(payload.get("name")),
+            "module": _optional_str(payload.get("module")),
+            "layers": payload.get("layers"),
+            "tensor_type": _optional_str(payload.get("tensor_type")),
+            "token_kind": _optional_str(payload.get("token_kind")),
+            "timesteps": payload.get("timesteps", "all"),
+            "policy_calls": payload.get("policy_calls", "all"),
+            "generation_step": payload.get("generation_step"),
+            "reduce_tokens": str(
+                payload.get("reduce_tokens") or payload.get("reduction") or "mean"
+            ),
+            "dtype": str(payload.get("dtype") or "float32"),
+        }
     )
 
 

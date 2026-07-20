@@ -10,12 +10,13 @@ import pandas as pd
 import pytest
 import zarr
 
-from vla_lens import create_synthetic_trace_dataset
+from vla_lens import ActivationQuery, create_synthetic_trace_dataset
 from vla_lens.artifacts import LensArtifact
 from vla_lens.probes import (
     NonReplayableProbeError,
     ProbeArtifactError,
     load_probe_artifact,
+    train_probe_artifact,
     train_probe_artifact_from_spec,
     workflow_training,
 )
@@ -42,6 +43,7 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
     assert contract["source"]["source_rows_fingerprint"].startswith("sha256:")
     assert contract["source"]["source_sites_fingerprint"].startswith("sha256:")
     assert contract["source"]["feature_matrix_fingerprint"].startswith("sha256:")
+    assert set(contract["model"]["array_fingerprints"]) == set(saved.artifact.arrays)
     assert contract["run_spec"]["name"] == f"Replayable {target} probe"
     assert set(saved.artifact.arrays) >= {
         "weights",
@@ -69,6 +71,85 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
         )
     with pytest.raises(ProbeArtifactError, match="expects"):
         probe.predict(np.zeros((1, feature_dim + 1), dtype=np.float32))
+
+
+@pytest.mark.parametrize("value", [np.nan, np.inf, -np.inf])
+def test_probe_rejects_nonfinite_features_before_inference(tmp_path, value):
+    dataset = _split_dataset(tmp_path)
+    saved = train_probe_artifact_from_spec(dataset, _probe_spec("classification"))
+    probe = load_probe_artifact(dataset, saved.artifact.artifact_id)
+    contract = probe.contract
+    assert contract is not None
+    features = np.zeros((1, int(contract["model"]["feature_dim"])), dtype=np.float32)
+    features[0, 0] = value
+
+    with pytest.raises(ProbeArtifactError, match="only finite values"):
+        probe.predict(features)
+
+
+def test_probe_validates_every_fitted_array_before_use_and_replay(tmp_path):
+    dataset = _split_dataset(tmp_path)
+    saved = train_probe_artifact_from_spec(dataset, _probe_spec("classification"))
+    probe = load_probe_artifact(dataset, saved.artifact.artifact_id)
+    contract = probe.contract
+    assert contract is not None
+    features = np.zeros((1, int(contract["model"]["feature_dim"])), dtype=np.float32)
+
+    for name, relative_path in saved.artifact.arrays.items():
+        stored = zarr.open_array(
+            str(dataset._dataset_artifact_root() / relative_path),
+            mode="a",
+        )
+        original = np.asarray(stored[...]).copy()
+        changed = original.copy()
+        changed.reshape(-1)[0] += 1
+        stored[...] = changed
+        with pytest.raises(ProbeArtifactError, match=rf"array '{name}' changed"):
+            probe.predict(features)
+        stored[...] = original
+
+    weights_path = dataset._dataset_artifact_root() / saved.artifact.arrays["weights"]
+    stored = zarr.open_array(str(weights_path), mode="a")
+    changed = np.asarray(stored[...]).copy()
+    changed.reshape(-1)[0] += 1
+    stored[...] = changed
+
+    with pytest.raises(ProbeArtifactError, match="array 'weights' changed"):
+        probe.replay()
+
+
+def test_activation_query_round_trips_temporal_slices():
+    query = ActivationQuery(
+        timesteps=slice(1, 7, 2),
+        policy_calls=slice(None, 4, 1),
+    )
+
+    restored = ActivationQuery.from_dict(query.to_dict())
+
+    assert restored.timesteps == slice(1, 7, 2)
+    assert restored.policy_calls == slice(None, 4, 1)
+
+
+def test_replay_round_trips_a_slice_selector(tmp_path):
+    dataset = _split_dataset(tmp_path)
+    selector = ActivationQuery(
+        module="action_head.layers.*.resid",
+        layers=[0],
+        tensor_type="resid",
+        token_kind="action",
+        timesteps=slice(0, None, 2),
+        policy_calls=slice(None, None, 2),
+        reduce_tokens="mean",
+        dtype="float32",
+    )
+    saved = train_probe_artifact(
+        dataset,
+        name="Slice selector probe",
+        selector=selector,
+        target="outcome",
+    )
+
+    assert load_probe_artifact(dataset, saved.artifact.artifact_id).replay().matched is True
 
 
 def test_replay_rebuilds_features_without_trusting_the_training_cache(tmp_path):

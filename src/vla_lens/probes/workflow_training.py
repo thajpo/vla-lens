@@ -574,6 +574,9 @@ def _probe_model_contract(
         "probe_type": probe_type,
         "feature_dim": int(np.asarray(model_arrays["feature_mean"]).size),
         "classes": list(model_state.get("classes") or []),
+        "array_fingerprints": {
+            name: _array_fingerprint(value) for name, value in model_arrays.items()
+        },
         "hyperparameters": dict(hyperparameters.get(model_name) or {}),
         "selected_readout": {
             "feature": model_state.get("feature"),

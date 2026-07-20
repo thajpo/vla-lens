@@ -112,9 +112,19 @@ class LoadedProbeArtifact:
 
         contract = self._require_replayable()
         model = dict(contract["model"])
+        arrays = self._validated_model_arrays(model)
+        return self._predict(features, model=model, arrays=arrays)
+
+    def _predict(
+        self,
+        features: np.ndarray,
+        *,
+        model: Mapping[str, Any],
+        arrays: Mapping[str, np.ndarray],
+    ) -> np.ndarray:
         array_names = dict(model["array_names"])
-        feature_mean = self._array(array_names["feature_mean"])
-        feature_scale = self._array(array_names["feature_scale"])
+        feature_mean = arrays[array_names["feature_mean"]]
+        feature_scale = arrays[array_names["feature_scale"]]
         X = np.asarray(features)
         if X.ndim != 2:
             raise ProbeArtifactError(f"Probe features must be 2D, got shape {X.shape}")
@@ -138,12 +148,14 @@ class LoadedProbeArtifact:
                 raise ProbeArtifactError(
                     "Probe features must be real-valued numeric data"
                 ) from error
+        if not np.isfinite(normalized).all():
+            raise ProbeArtifactError("Probe features must contain only finite values")
         normalized -= feature_mean
         normalized /= feature_scale
         model_format = str(model["format"])
         if model_format == "standardized_linear_v1":
-            weights = np.asarray(self._array(array_names["weights"]))
-            bias = np.asarray(self._array(array_names["bias"])).reshape(-1)
+            weights = np.asarray(arrays[array_names["weights"]])
+            bias = np.asarray(arrays[array_names["bias"]]).reshape(-1)
             if weights.ndim == 1:
                 scores = normalized @ weights + bias[0]
             else:
@@ -157,7 +169,7 @@ class LoadedProbeArtifact:
             for index, (weight_name, bias_name) in enumerate(
                 zip(weight_names, bias_names, strict=True)
             ):
-                scores = scores @ self._array(weight_name) + self._array(bias_name)
+                scores = scores @ arrays[weight_name] + arrays[bias_name]
                 if index < len(weight_names) - 1:
                     scores = _activation(scores, str(model.get("activation") or "relu"))
             scores = _output_activation(
@@ -183,9 +195,16 @@ class LoadedProbeArtifact:
         """Rebuild saved features from the capture and reproduce saved predictions."""
 
         contract = self._require_replayable()
+        model = dict(contract["model"])
+        arrays = self._validated_model_arrays(model)
         source = dict(contract["source"])
         _validate_trace_fingerprints(self.dataset, source)
-        selector = ActivationQuery(**dict(source["selector"]))
+        try:
+            selector = ActivationQuery.from_dict(dict(source["selector"]))
+        except (TypeError, ValueError) as error:
+            raise ProbeArtifactError(
+                "Probe artifact contains an invalid activation selector"
+            ) from error
         matrix = self.dataset.select_model_sites(selector).materialize(cache=False)
         saved_sites = _read_replay_table(
             self.dataset,
@@ -232,7 +251,7 @@ class LoadedProbeArtifact:
                 "Prepared probe features changed since training: "
                 f"expected {expected_feature_fingerprint}, got {feature_fingerprint}"
             )
-        predictions = self.predict(features)
+        predictions = self._predict(features, model=model, arrays=arrays)
         saved = _read_replay_table(
             self.dataset,
             source["scored_predictions_path"],
@@ -252,17 +271,31 @@ class LoadedProbeArtifact:
             )
         return _compare_predictions(
             artifact_id=self.artifact.artifact_id,
-            probe_type=str(dict(contract["model"])["probe_type"]),
+            probe_type=str(model["probe_type"]),
             replayed=predictions,
             saved=saved["prediction_value"].to_numpy(),
             feature_fingerprint=feature_fingerprint,
-            absolute_tolerance=dict(contract["model"]).get("prediction_tolerance"),
+            absolute_tolerance=model.get("prediction_tolerance"),
         )
 
     def _array(self, name: str) -> np.ndarray:
         if name not in self.artifact.arrays:
             raise ProbeArtifactError(f"Probe artifact is missing fitted array {name!r}")
         return np.asarray(self.dataset.load_artifact_array(self.artifact, name))
+
+    def _validated_model_arrays(self, model: Mapping[str, Any]) -> dict[str, np.ndarray]:
+        fingerprints = dict(model["array_fingerprints"])
+        arrays: dict[str, np.ndarray] = {}
+        for name, expected in fingerprints.items():
+            value = self._array(str(name))
+            actual = _array_fingerprint(value)
+            if actual != str(expected):
+                raise ProbeArtifactError(
+                    f"Fitted probe array {name!r} changed after training: "
+                    f"expected {expected}, got {actual}"
+                )
+            arrays[str(name)] = value
+        return arrays
 
     def _require_replayable(self) -> dict[str, Any]:
         contract = self.contract
@@ -345,6 +378,8 @@ def validate_probe_run_contract(contract: Mapping[str, Any]) -> None:
     if not all(bool(capabilities.get(action)) for action in ["explain", "replay", "use"]):
         raise ProbeArtifactError("Replayable probe contract must support explain, replay, and use")
     source = dict(contract["source"])
+    if not isinstance(source.get("selector"), Mapping):
+        raise ProbeArtifactError("Probe-run source selector must be a mapping")
     for key in [
         "selector",
         "source_rows_path",
@@ -360,7 +395,13 @@ def validate_probe_run_contract(contract: Mapping[str, Any]) -> None:
         if key not in source:
             raise ProbeArtifactError(f"Probe-run source is missing {key!r}")
     model = dict(contract["model"])
-    for key in ["format", "probe_type", "feature_dim", "array_names"]:
+    for key in [
+        "format",
+        "probe_type",
+        "feature_dim",
+        "array_names",
+        "array_fingerprints",
+    ]:
         if key not in model:
             raise ProbeArtifactError(f"Probe-run model is missing {key!r}")
     array_names = dict(model.get("array_names") or {})
@@ -377,6 +418,30 @@ def validate_probe_run_contract(contract: Mapping[str, Any]) -> None:
             raise ProbeArtifactError("MLP probe arrays are missing fitted layers")
     else:
         raise ProbeArtifactError(f"Unsupported fitted probe format {model_format!r}")
+    fitted_names = _fitted_array_names(array_names)
+    fingerprints = model.get("array_fingerprints")
+    if not isinstance(fingerprints, Mapping):
+        raise ProbeArtifactError("Probe-run model array fingerprints must be a mapping")
+    fingerprint_names = {str(name) for name in fingerprints}
+    if fingerprint_names != fitted_names:
+        missing = sorted(fitted_names - fingerprint_names)
+        unexpected = sorted(fingerprint_names - fitted_names)
+        raise ProbeArtifactError(
+            "Probe-run model array fingerprints do not match fitted arrays: "
+            f"missing={missing}, unexpected={unexpected}"
+        )
+    if any(not str(value).startswith("sha256:") for value in fingerprints.values()):
+        raise ProbeArtifactError("Probe-run model contains an invalid array fingerprint")
+
+
+def _fitted_array_names(array_names: Mapping[str, Any]) -> set[str]:
+    names: set[str] = set()
+    for value in array_names.values():
+        if isinstance(value, str):
+            names.add(value)
+        elif isinstance(value, Sequence):
+            names.update(str(item) for item in value)
+    return names
 
 
 def probe_label_sources(dataset: TraceDataset) -> list[dict[str, Any]]:
