@@ -4,6 +4,8 @@ from tests._support.object_flow_dataset import object_flow_dataset
 from tests._support.vla_lens_trace_mvp import *
 from vla_lens.pi05.object_flow import save_pi05_object_flow_artifact
 from vla_lens.probes import run_probe_suite
+from vla_lens.probes.suite import trained_label_shuffle_metrics
+from vla_lens.probes.workflow_artifacts import _grouped_bootstrap_intervals
 from vla_lens.probes.workflow_prepare import _apply_row_expansion
 
 
@@ -49,6 +51,61 @@ def test_object_role_row_expansion_and_regression_metadata_baselines(tmp_path):
         baseline["baseline"] == "object"
         for baseline in row["details"]["metadata_baselines"]
     )
+
+
+def test_default_probe_battery_includes_linear_and_mlp_with_trained_nulls():
+    rows = pd.DataFrame(
+        {
+            "split": ["train"] * 16 + ["val"] * 8,
+            "trace_id": [f"episode-{index // 2}" for index in range(24)],
+            "episode_id": [f"episode-{index // 2}" for index in range(24)],
+            "timestep": list(range(24)),
+            "target": [False, True] * 12,
+        }
+    )
+    features = np.arange(48, dtype=np.float32).reshape(24, 2)
+
+    results = run_probe_suite(
+        rows,
+        {"features": features},
+        ["target"],
+        eval_values=["val"],
+    )
+    nulls = trained_label_shuffle_metrics(
+        rows,
+        features,
+        "target",
+        split_column="split",
+        train_value="train",
+        eval_value="val",
+        probe_type="classification",
+        model_name="mlp",
+        runs=3,
+    )
+
+    assert set(results["model"]) == {"linear", "mlp"}
+    assert set(nulls["null_kind"]) == {"trained_label_shuffle"}
+    assert len(nulls) == 3
+
+
+def test_probe_intervals_resample_whole_episodes():
+    predictions = pd.DataFrame(
+        {
+            "split": ["test"] * 8,
+            "trace_id": ["a", "a", "b", "b", "c", "c", "d", "d"],
+            "target_kind": ["classification"] * 8,
+            "actual": [False, True] * 4,
+            "predicted": [False, True, False, False, True, True, False, True],
+            "correct": [True, True, True, False, False, True, True, True],
+        }
+    )
+
+    intervals = _grouped_bootstrap_intervals(predictions, samples=100)
+
+    assert intervals.iloc[0]["group_column"] == "trace_id"
+    assert intervals.iloc[0]["group_count"] == 4
+    assert intervals.iloc[0]["low"] <= intervals.iloc[0]["estimate"]
+    assert intervals.iloc[0]["high"] >= intervals.iloc[0]["estimate"]
 
 
 def test_artifact_api_payloads_include_probe_and_attention(tmp_path):

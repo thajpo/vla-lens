@@ -26,7 +26,7 @@ def normalize_probe_spec(spec: Mapping[str, Any] | None = None) -> dict[str, Any
     split = merged.get("split")
     if isinstance(split, str):
         merged["split"] = {"kind": split}
-    merged.setdefault("probe", {"models": ["linear"]})
+    merged.setdefault("probe", {"models": ["linear", "mlp"]})
     if isinstance(merged.get("probe"), str):
         merged["probe"] = {"models": [merged["probe"]]}
     if isinstance(merged.get("probe"), Mapping):

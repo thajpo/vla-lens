@@ -37,7 +37,8 @@ Each new generic probe artifact contains:
 - the fitted standardizer and model arrays at their original numeric precision,
   with content fingerprints checked before reuse;
 - row-level predictions, metrics, baselines, and null-test settings;
-- a clear statement when confidence intervals were not calculated;
+- episode-grouped confidence intervals for each evaluation split;
+- a trained shuffled-label control for the validation-selected readout;
 - identifiers for external label artifacts used by the dataset, when present.
 
 The artifact does not contain another copy of the activation matrix. Those
@@ -93,3 +94,11 @@ can be replayed or reused when the fitted state or exact rows are missing.
 Probe-run contract v1 artifacts from early development builds are handled the
 same way because they predate fitted-array integrity checks. New replayable
 artifacts use probe-run contract v2.
+
+## Default Readouts
+
+Unless a spec explicitly narrows the choice, the generic trainer fits a linear
+probe and the standard small MLP at every declared sweep position. Validation
+selects the replayable readout across model and sweep choices. The artifact
+keeps the complete metric comparison, while fitted arrays and exact replay rows
+are retained for the selected readout.

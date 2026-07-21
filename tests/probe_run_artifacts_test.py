@@ -46,7 +46,10 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
     assert replay.mismatch_count == 0
     assert contract is not None
     assert contract["schema_version"] == 2
-    assert contract["uncertainty"]["confidence_intervals"]["status"] == "not_computed"
+    intervals = contract["uncertainty"]["confidence_intervals"]
+    assert intervals["status"] == "computed"
+    assert intervals["unit"] == "trace_id"
+    assert intervals["intervals"]
     assert contract["source"]["source_rows_fingerprint"].startswith("sha256:")
     assert contract["source"]["source_sites_fingerprint"].startswith("sha256:")
     assert contract["source"]["feature_matrix_fingerprint"].startswith("sha256:")

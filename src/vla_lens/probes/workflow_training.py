@@ -21,16 +21,16 @@ from vla_lens.probes.run_artifacts import (
     probe_label_sources,
     source_trace_fingerprint_map,
 )
-from vla_lens.probes.suite import run_probe_suite
+from vla_lens.probes.suite import run_probe_suite, trained_label_shuffle_metrics
 from vla_lens.probes.workflow_artifacts import (
     _array_fingerprint,
     _artifact_dir,
     _best_model_arrays,
     _best_result_details,
     _best_result_index,
+    _grouped_bootstrap_intervals,
     _json_scalar,
     _metric_definitions,
-    _null_metrics,
     _per_group_metrics,
     _per_split_metrics,
     _prediction_frame,
@@ -84,7 +84,7 @@ def train_probe_artifact(
     row_filter: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
     eval_values: Sequence[str] | None = None,
     selection_value: str | None = None,
-    probe_models: Sequence[str] = ("linear",),
+    probe_models: Sequence[str] = ("linear", "mlp"),
     research: Mapping[str, Any] | None = None,
     row_expand: Mapping[str, Any] | None = None,
     run_spec: Mapping[str, Any] | None = None,
@@ -150,7 +150,7 @@ def train_probe_artifact(
     selected_result_index = _best_result_index(
         results,
         selection_value=selection_value or test_value,
-        prefer_model="linear",
+        prefer_model=None,
     )
     selected_results = results.loc[[selected_result_index]]
     selected_eval_results = _selected_eval_results(results, selected_result_index)
@@ -178,6 +178,7 @@ def train_probe_artifact(
         "per_split_metrics": str(output_dir / "per_split_metrics.parquet"),
         "per_group_metrics": str(output_dir / "per_group_metrics.parquet"),
         "null_metrics": str(output_dir / "null_metrics.parquet"),
+        "confidence_intervals": str(output_dir / "confidence_intervals.parquet"),
         "source_rows": str(output_dir / "source_rows.parquet"),
         "source_sites": str(output_dir / "source_sites.parquet"),
         "weights": str(output_dir / "weights.zarr")
@@ -248,7 +249,7 @@ def train_probe_artifact(
             "library_version": sklearn.__version__,
             "hyperparams": _probe_hyperparams(results),
             "models": list(probe_models),
-            "primary_model": "linear",
+            "primary_model": "validation_selected",
             "secondary_models": [model for model in probe_models if model != "linear"],
             "trained_on_split": train_value,
             "weights_space": "normalized_feature_space",
@@ -303,16 +304,29 @@ def train_probe_artifact(
     metrics["scored_prediction_row_count"] = int(len(scored_prediction_records))
     metrics["feature_matrix_fingerprint"] = _array_fingerprint(X)
     per_split_metrics = _per_split_metrics(prediction_records)
+    _validate_selected_outputs(
+        results,
+        selected_result_index,
+        prediction_records,
+        per_split_metrics,
+    )
     per_group_metrics = _per_group_metrics(
         prediction_records,
         rows,
         group_columns=["benchmark", "task_id", "scene_family", "target_parse_status"],
     )
+    confidence_intervals = _grouped_bootstrap_intervals(prediction_records)
     selection_split = selection_value or test_value
-    selection_predictions = prediction_records.loc[
-        prediction_records["eval_split"].astype(str) == str(selection_split)
-    ]
-    null_metrics = _null_metrics(selection_predictions)
+    null_metrics = trained_label_shuffle_metrics(
+        source_rows,
+        replay_features,
+        target_name,
+        split_column=split_column,
+        train_value=train_value,
+        eval_value=str(selection_split),
+        probe_type=str(selected_results.iloc[0]["probe_type"]),
+        model_name=str(selected_results.iloc[0]["model"]),
+    )
     if not null_metrics.empty:
         null_metrics.insert(0, "cohort_split", str(selection_split))
     if not null_metrics.empty:
@@ -327,6 +341,7 @@ def train_probe_artifact(
     uncertainty = _probe_uncertainty(
         null_metrics,
         metrics,
+        confidence_intervals,
         cohort_split=str(selection_split),
     )
     experiment_card = experiment_card_from_artifact_fields(
@@ -424,6 +439,9 @@ def train_probe_artifact(
         per_split_metrics.to_parquet(artifact_dir / "per_split_metrics.parquet", index=False)
         per_group_metrics.to_parquet(artifact_dir / "per_group_metrics.parquet", index=False)
         null_metrics.to_parquet(artifact_dir / "null_metrics.parquet", index=False)
+        confidence_intervals.to_parquet(
+            artifact_dir / "confidence_intervals.parquet", index=False
+        )
         (artifact_dir / "metrics.json").write_text(
             json.dumps(metrics, indent=2, sort_keys=True),
             encoding="utf-8",
@@ -456,6 +474,38 @@ def _selected_eval_results(results: pd.DataFrame, selected_result_index: int) ->
     if matched.empty:
         return results.loc[[selected_result_index]]
     return matched
+
+
+def _validate_selected_outputs(
+    results: pd.DataFrame,
+    selected_result_index: int,
+    predictions: pd.DataFrame,
+    per_split_metrics: pd.DataFrame,
+) -> None:
+    """Prevent sweep candidates from being mixed into selected-probe summaries."""
+
+    selected = results.loc[selected_result_index]
+    for column in ["feature", "model", "probe_type", "target"]:
+        if column not in predictions or column not in results:
+            continue
+        values = set(predictions[column].astype(str).unique())
+        expected = {str(selected[column])}
+        if values != expected:
+            raise ValueError(
+                f"Selected probe output mixes {column} values {sorted(values)!r}; "
+                f"expected {sorted(expected)!r}"
+            )
+    selected_evaluations = _selected_eval_results(results, selected_result_index)
+    for row in selected_evaluations.itertuples():
+        split = str(row.split_value)
+        saved = per_split_metrics.loc[per_split_metrics["split"].astype(str) == split]
+        if saved.empty:
+            raise ValueError(f"Selected probe output is missing split metrics for {split!r}")
+        if not np.isclose(float(saved.iloc[0]["score"]), float(row.score), atol=1e-9):
+            raise ValueError(
+                f"Selected probe score mismatch for {split!r}: "
+                f"results={float(row.score)}, predictions={float(saved.iloc[0]['score'])}"
+            )
 
 
 def train_probe_artifact_from_spec(
@@ -498,7 +548,8 @@ def train_probe_artifact_from_spec(
         ],
         selection_value=str(split.get("selection_value", split.get("test_value", "test"))),
         probe_models=[
-            str(value) for value in normalized.get("probe", {}).get("models", ["linear"])
+            str(value)
+            for value in normalized.get("probe", {}).get("models", ["linear", "mlp"])
         ],
         research=normalized,
         run_spec=normalized,
@@ -689,6 +740,7 @@ def _floating_replay_tolerance(
 def _probe_uncertainty(
     null_metrics: pd.DataFrame,
     metrics: Mapping[str, Any],
+    confidence_intervals: pd.DataFrame,
     *,
     cohort_split: str,
 ) -> dict[str, Any]:
@@ -696,29 +748,35 @@ def _probe_uncertainty(
     if null_metrics.empty:
         null_test = {
             "status": "not_computed",
-            "reason": "The generic null comparison is currently classification-only.",
+            "reason": "Training or validation rows were unavailable for the selected readout.",
             "cohort_split": cohort_split,
         }
     else:
         null_test = {
             "status": "computed",
-            "method": "shuffle true labels while holding fitted predictions fixed",
+            "method": "retrain the selected probe on shuffled training labels",
             "metric": str(null_metrics["metric"].iloc[0]),
             "cohort_split": cohort_split,
             "prediction_row_count": int(null_metrics["row_count"].iloc[0]),
             "permutation_count": int(len(null_metrics)),
             "random_seed": 0,
-            "unit": "selected prediction row",
+            "unit": "training row shuffled; validation rows held fixed",
             "p_value": metrics.get("null_p_value"),
         }
     return {
-        "confidence_intervals": {
-            "status": "not_computed",
-            "reason": (
-                "The generic probe runner does not yet define a resampling unit for "
-                "confidence intervals. No interval is implied by the saved point estimate."
-            ),
-        },
+        "confidence_intervals": (
+            {
+                "status": "computed",
+                "method": "bootstrap whole episodes with replacement",
+                "unit": "trace_id",
+                "intervals": confidence_intervals.to_dict(orient="records"),
+            }
+            if not confidence_intervals.empty
+            else {
+                "status": "not_computed",
+                "reason": "Fewer than two episodes were available in each evaluation split.",
+            }
+        ),
         "null_test": null_test,
     }
 

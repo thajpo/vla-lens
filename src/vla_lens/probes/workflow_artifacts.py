@@ -244,7 +244,7 @@ def _best_model_arrays(
 ) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
     if results.empty or "model_state" not in results:
         return {}, {}
-    best_idx = _best_result_index(results, selection_value=selection_value, prefer_model="linear")
+    best_idx = _best_result_index(results, selection_value=selection_value, prefer_model=None)
     state = results.loc[best_idx].get("model_state")
     if not isinstance(state, Mapping):
         return {}, {}
@@ -376,7 +376,7 @@ def _probe_metrics(
     target: str,
     selection_value: str | None,
 ) -> Mapping[str, Any]:
-    best_idx = _best_result_index(results, selection_value=selection_value, prefer_model="linear")
+    best_idx = _best_result_index(results, selection_value=selection_value, prefer_model=None)
     delta = results["score"] - results["baseline_score"]
     best = results.loc[best_idx]
     return {
@@ -403,7 +403,7 @@ def _best_result_details(
 ) -> Mapping[str, Any]:
     if results.empty or "details" not in results:
         return {}
-    best_idx = _best_result_index(results, selection_value=selection_value, prefer_model="linear")
+    best_idx = _best_result_index(results, selection_value=selection_value, prefer_model=None)
     details = results.loc[best_idx].get("details")
     if not isinstance(details, Mapping):
         return {}
@@ -462,27 +462,83 @@ def _per_group_metrics(
     return pd.DataFrame.from_records(records)
 
 
-def _null_metrics(predictions: pd.DataFrame, *, runs: int = 20) -> pd.DataFrame:
-    if predictions.empty or "target_kind" not in predictions:
+def _grouped_bootstrap_intervals(
+    predictions: pd.DataFrame,
+    *,
+    group_column: str = "trace_id",
+    samples: int = 1_000,
+    seed: int = 0,
+) -> pd.DataFrame:
+    """Estimate metric uncertainty by resampling whole episodes."""
+
+    if predictions.empty or "split" not in predictions or group_column not in predictions:
         return pd.DataFrame()
-    if str(predictions["target_kind"].dropna().iloc[0]) != "classification":
-        return pd.DataFrame()
-    actual = predictions["actual"].astype(str).to_numpy()
-    predicted = predictions["predicted"].astype(str).to_numpy()
-    if len(actual) == 0:
-        return pd.DataFrame()
-    rng = np.random.default_rng(0)
-    records = []
-    for run in range(runs):
-        shuffled = actual.copy()
-        rng.shuffle(shuffled)
+    rng = np.random.default_rng(seed)
+    records: list[dict[str, Any]] = []
+    for split, frame in predictions.groupby("split", dropna=False, sort=True):
+        groups = [group for _, group in frame.groupby(group_column, sort=True)]
+        if len(groups) < 2:
+            continue
+        kind = str(frame.get("target_kind", pd.Series(["classification"])).dropna().iloc[0])
+        point = float(_prediction_metric_record(frame)["score"])
+        if kind == "classification":
+            classes = sorted(frame["actual"].astype(str).unique())
+            correct = np.asarray(
+                [
+                    [
+                        int(
+                            (
+                                (group["actual"].astype(str) == label)
+                                & (group["predicted"].astype(str) == label)
+                            ).sum()
+                        )
+                        for label in classes
+                    ]
+                    for group in groups
+                ],
+                dtype=np.float64,
+            )
+            actual = np.asarray(
+                [
+                    [int((group["actual"].astype(str) == label).sum()) for label in classes]
+                    for group in groups
+                ],
+                dtype=np.float64,
+            )
+            chosen = rng.integers(0, len(groups), size=(samples, len(groups)))
+            correct_sum = correct[chosen].sum(axis=1)
+            actual_sum = actual[chosen].sum(axis=1)
+            recall = np.divide(
+                correct_sum,
+                actual_sum,
+                out=np.full_like(correct_sum, np.nan),
+                where=actual_sum > 0,
+            )
+            estimates = np.nanmean(recall, axis=1)
+            metric = "balanced_accuracy"
+        else:
+            sums = np.asarray(
+                [pd.to_numeric(group["error"], errors="coerce").abs().sum() for group in groups],
+                dtype=np.float64,
+            )
+            counts = np.asarray(
+                [pd.to_numeric(group["error"], errors="coerce").notna().sum() for group in groups],
+                dtype=np.float64,
+            )
+            chosen = rng.integers(0, len(groups), size=(samples, len(groups)))
+            estimates = -(sums[chosen].sum(axis=1) / counts[chosen].sum(axis=1))
+            metric = "negative_mae"
         records.append(
             {
-                "null_kind": "label_shuffle_predictions_fixed",
-                "run": run,
-                "score": float(balanced_accuracy_score(shuffled, predicted)),
-                "metric": "balanced_accuracy",
-                "row_count": int(len(actual)),
+                "split": str(split),
+                "metric": metric,
+                "estimate": point,
+                "low": float(np.quantile(estimates, 0.025)),
+                "high": float(np.quantile(estimates, 0.975)),
+                "group_column": group_column,
+                "group_count": len(groups),
+                "bootstrap_samples": samples,
+                "random_seed": seed,
             }
         )
     return pd.DataFrame.from_records(records)

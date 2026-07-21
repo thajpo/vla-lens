@@ -39,7 +39,7 @@ def experiment_card_from_preflight(report: Mapping[str, Any]) -> dict[str, Any]:
             "test_split": split.get("test_value"),
             "evaluation_splits": list(split.get("eval_values") or []),
             "independent_units": ["selected row", "episode"],
-            "confidence_intervals": "not configured by the generic probe runner",
+            "confidence_intervals": "bootstrap whole episodes on each evaluation split",
         },
         method_choices={
             "probe_models": list(probe.get("models") or []),

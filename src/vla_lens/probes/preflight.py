@@ -591,11 +591,15 @@ def _normalize_sweep_columns(value: Any) -> list[str]:
 
 def _probe_models(spec: Mapping[str, Any]) -> list[str]:
     probe = spec.get("probe") if isinstance(spec.get("probe"), Mapping) else {}
-    models = probe.get("models", ["linear"]) if isinstance(probe, Mapping) else ["linear"]
+    models = (
+        probe.get("models", ["linear", "mlp"])
+        if isinstance(probe, Mapping)
+        else ["linear", "mlp"]
+    )
     if isinstance(models, str):
         return [models]
     parsed = [str(model) for model in models]
-    return parsed or ["linear"]
+    return parsed or ["linear", "mlp"]
 
 
 def _numeric_summary(values: pd.Series) -> dict[str, float | int | None]:

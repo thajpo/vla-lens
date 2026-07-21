@@ -80,7 +80,8 @@ def main() -> None:
             probe = spec.get("probe", {})
             print(
                 f"dry_run spec={spec_path} name={name!r} "
-                f"target={target} split={split} models={probe.get('models', ['linear'])}"
+                f"target={target} split={split} "
+                f"models={probe.get('models', ['linear', 'mlp'])}"
             )
             records.append(ProbeBatchRecord(str(spec_path), name, "dry_run"))
             continue

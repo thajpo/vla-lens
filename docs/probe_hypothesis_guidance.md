@@ -2,7 +2,7 @@
 
 Status: active guidance.
 
-Last updated: July 20, 2026.
+Last updated: July 21, 2026.
 
 This document is the repo-local protocol for agents and humans proposing new
 probe work. Existing probe artifacts remain the post-training source of truth.
@@ -35,6 +35,25 @@ repeat the work.
 
 The goal is not to stop broad search. It is to prevent broad search from
 quietly becoming a test-set fishing expedition.
+
+## Default Cheap Battery
+
+When the user asks whether activations encode a target, do not ask them to pick
+between inexpensive readouts. Preflight the request, then train both the linear
+probe and the standard small MLP unless the spec explicitly narrows the models.
+Sweep every declared layer on validation and save the complete comparison. The
+validation-selected readout is replayable; test remains a reporting split.
+
+Tokenwise, feature-level, layer-mixture, and object-conditioned variants should
+also run automatically when the capture supports them and a runner exists. If a
+runner is missing, say that plainly instead of silently falling back to global
+mean pooling. Ask the user only when the choice changes the target or cohort,
+requires new capture, launches an intervention, or has material compute/storage
+cost.
+
+The MLP is a capacity check, not automatically the stronger scientific claim.
+Interpret the comparison: linear success means easy access; MLP-only success
+means a nonlinear readout found signal and needs stronger confound controls.
 
 ## What Can Be Automated
 
@@ -92,10 +111,10 @@ Use this rule of thumb for PI0.5-style first-pass probes:
 | Effective training rows | Feature shape | Recommended probe posture |
 | ---: | --- | --- |
 | `< 500` | any high-dimensional activation | Do not make a claim-bearing probe unless the target is extremely simple and baselines are strong. Prefer more data, narrower labels, or descriptive analysis. |
-| `500-2k` | one pooled vector, about 1024D | Use only low-capacity probes: mean pooling over a justified token set, linear/logistic or ridge, strong regularization, held-out-task split, and metadata/null baselines. Treat positive results as fragile. |
-| `2k-10k` | one pooled vector, about 1024D | Claim-bearing linear probes are reasonable if class support and held-out-task generalization are clean. Pooling variants are robustness checks, not score-shopping axes. |
-| `> 10k` | pooled or moderately reduced features | PCA, random projection, and limited pooling ablations are reasonable. Still select on validation and report the number of searched variants. |
-| `> 50k` | richer tensor summaries | Learned pooling, token concatenation, cross-layer concatenation, or MLP probes can be used as exploratory upper bounds, but they are not a substitute for simpler localization evidence. |
+| `500-2k` | one pooled vector, about 1024D | Keep the linear readout as the claim-bearing result; run the small MLP automatically as a fragile capacity check with trained shuffled-label controls. |
+| `2k-10k` | one pooled vector, about 1024D | Train linear and small MLP probes. Treat MLP-only gains as exploratory and inspect metadata and shuffled-label controls. |
+| `> 10k` | pooled or moderately reduced features | Train linear and small MLP probes; PCA, random projection, and limited pooling ablations are reasonable. Select on validation and report the number searched. |
+| `> 50k` | richer tensor summaries | Add learned pooling, token concatenation, or cross-layer variants when supported; they remain exploratory unless confirmed by simpler localization evidence. |
 
 These thresholds are not laws. They are guardrails for avoiding the common
 failure mode where the probe has enough capacity to exploit task identity,
@@ -319,7 +338,7 @@ baseline:
   - scene_family
 sweep: [layer, policy_call_index]
 probe:
-  models: [linear]
+  models: [linear, mlp]
 ```
 
 This example may need target adapter work before it runs, because object pose is
