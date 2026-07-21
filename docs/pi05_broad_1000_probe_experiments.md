@@ -2,7 +2,7 @@
 
 Status: active experiment registry.
 
-Last updated: July 18, 2026.
+Last updated: July 21, 2026.
 
 This document is the review surface for the PI0.5 broad 1000 probe campaign.
 The probes are not new capture. They train on the existing mech-light activation
@@ -672,6 +672,85 @@ were repeated once per policy call, which selected the same 50 tensor positions
 multiple times. That artifact was rejected, the loader now deduplicates exact
 token indices, and a regression test covers this case. The accepted artifacts
 contain exactly token positions 0 through 49.
+
+## July 21, 2026 Matched-Scene Visual Localization Study
+
+Purpose: test a narrower question than whole-scene decoding. If one object is
+moved between two otherwise similar initial scenes, do the visual patch tokens
+that cover the object's old and new locations change more than the other visual
+patch tokens?
+
+- Accepted artifact:
+  `matched_scene_localization_study-pi0.5-broad-1000-matched-initial-scene-visual-localization-study-scene-weighted-v1-cee2183d89`
+- This is a matched-scene comparison, not a trained probe. It directly compares
+  the saved token vectors for the two scenes.
+- Scenes are matched by benchmark environment, task, prompt, and split. A pair
+  is kept when exactly one object moves more than 1 cm, every other object moves
+  at most 1 cm, and the initial end-effector position changes by at most 1 cm.
+- The target image region is the union of the moved object's old and new
+  simulator-derived bounding boxes in the main camera.
+- The score for a visual patch is the size of the change in its token vector,
+  divided by the average size of that vector in the two scenes.
+- Sources are the image features entering the language model and visual prefix
+  layers 0, 4, 8, 12, and 17. Raw pixel change is a positive control. A visible
+  stationary object's image region is a negative control.
+- The final set contains 34 pairs from 22 scene groups: 15 train pairs from 11
+  scene groups, 10 validation pairs from 3 scene groups, and 9 final-test pairs
+  from 8 scene groups. Layer 17 was selected using validation only.
+
+Final-test results:
+
+| Source | Target-region average precision | Random-patch baseline | Improvement over random | 95% scene interval | ROC AUC | Top-region recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Raw pixels | 0.483 | 0.086 | +0.397 | +0.254 to +0.548 | 0.854 | 0.443 |
+| Image features entering the language model | 0.103 | 0.086 | +0.017 | -0.017 to +0.053 | 0.419 | 0.061 |
+| Visual prefix layer 17, selected on validation | 0.102 | 0.086 | +0.015 | -0.004 to +0.036 | 0.453 | 0.061 |
+
+Each scene group receives equal weight in the averages and confidence
+intervals, so scenes that happen to produce more matched pairs do not dominate
+the result. The confidence interval describes the range supported by resampling
+the available scene groups; an interval crossing zero does not establish an
+improvement over random patch ranking.
+
+Interpretation:
+
+- The positive control is strong. Raw image change reliably points to the moved
+  object, so the scene matching, camera alignment, patch grid, and object boxes
+  are usable for this question.
+- The selected model layer is only 0.015 average-precision points above random
+  on held-out tasks, and its interval crosses zero. Its ROC AUC is below 0.5,
+  and it ranks the moved-object region slightly worse than the stationary-object
+  control region. This study therefore does not show reliable spatial
+  localization from simple token-change magnitude.
+- The conclusion is deliberately narrow. It does not show that PI0.5 lacks
+  object identity or position information. The captured image features have
+  already passed through a vision encoder that can mix information across
+  patches, and the VLM layers can mix it again. Object information may therefore
+  be distributed across tokens, available only after an object-specific query,
+  or encoded as a relation rather than as a locally large change.
+- Validation is small and dominated by one moved object (`basket_1`), so layer
+  selection is uncertain. The held-out result covers eight scene groups and
+  seven moved-object identities, but it is still an exploratory sample rather
+  than a definitive negative result.
+
+Runtime and storage:
+
+- The accepted run took about 30 seconds. It reused the saved captures and did
+  not load PI0.5 or run the simulator.
+- The artifact saves the exact matched trace pairs, source tensor descriptions,
+  camera patch boxes, all per-patch scores, per-pair metrics, scene-weighted
+  summaries, split rules, and source-trace fingerprints. It references the
+  original activation tensors instead of copying them.
+- An earlier artifact from the same run family used pair-weighted headline
+  averages with scene-weighted confidence intervals. It is retained for audit
+  history but marked superseded by the accepted artifact above. A regression
+  test now checks equal scene weighting.
+
+The next useful experiment is an object-conditioned visual readout: provide an
+object identity or object query and test whether a low-capacity decoder can
+select that object's patch region or recover its XYZ position. That tests
+distributed object information without assuming the patch that changes most
+must be the patch containing the object.
 
 ## June 17, 2026 Stronger-Baseline Round
 

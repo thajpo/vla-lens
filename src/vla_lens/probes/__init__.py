@@ -9,6 +9,11 @@ from vla_lens.probes.geometry_study import (
     geometry_target_table,
     run_geometry_probe_study,
 )
+from vla_lens.probes.matched_scene_study import (
+    MATCHED_SCENE_STUDY_SCHEMA_VERSION,
+    MatchedSceneStudyResult,
+    run_matched_scene_localization_study,
+)
 from vla_lens.probes.motion_study import (
     MOTION_STUDY_SCHEMA_VERSION,
     MotionStudyResult,
@@ -59,6 +64,8 @@ __all__ = [
     "GeometryTarget",
     "MOTION_STUDY_SCHEMA_VERSION",
     "MotionStudyResult",
+    "MATCHED_SCENE_STUDY_SCHEMA_VERSION",
+    "MatchedSceneStudyResult",
     "DEFAULT_REPRESENTATION_KIND",
     "GENERIC_PROBE_REPRESENTATION_KINDS",
     "SCENE_MAP_STUDY_SCHEMA_VERSION",
@@ -84,6 +91,7 @@ __all__ = [
     "run_probe_suite",
     "run_geometry_probe_study",
     "run_motion_probe_study",
+    "run_matched_scene_localization_study",
     "run_scene_map_probe_study",
     "run_token_scene_probe_study",
     "scene_map_target_table",
