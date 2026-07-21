@@ -1,4 +1,4 @@
-name: PI0.5 broad 1000 matched initial-scene visual localization study scene weighted v1
+name: PI0.5 broad 1000 matched initial-scene visual localization study random ranking v2
 question: When one object moves between otherwise matched initial scenes, do PI0.5 visual patch representations change at that object's old and new image regions?
 hypothesis_family: object-local visual scene representation
 intended_claim: A controlled, non-causal test of whether object-specific scene changes are spatially localized in captured visual patch representations.

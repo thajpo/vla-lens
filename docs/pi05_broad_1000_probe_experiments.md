@@ -681,7 +681,7 @@ that cover the object's old and new locations change more than the other visual
 patch tokens?
 
 - Accepted artifact:
-  `matched_scene_localization_study-pi0.5-broad-1000-matched-initial-scene-visual-localization-study-scene-weighted-v1-cee2183d89`
+  `matched_scene_localization_study-pi0.5-broad-1000-matched-initial-scene-visual-localization-study-random-ranking-v2-e71204f77e`
 - This is a matched-scene comparison, not a trained probe. It directly compares
   the saved token vectors for the two scenes.
 - Scenes are matched by benchmark environment, task, prompt, and split. A pair
@@ -700,11 +700,11 @@ patch tokens?
 
 Final-test results:
 
-| Source | Target-region average precision | Random-patch baseline | Improvement over random | 95% scene interval | ROC AUC | Top-region recall |
+| Source | Target-region average precision | Expected random-ranking AP | Improvement over random | 95% scene interval | ROC AUC | Top-region recall |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-| Raw pixels | 0.483 | 0.086 | +0.397 | +0.254 to +0.548 | 0.854 | 0.443 |
-| Image features entering the language model | 0.103 | 0.086 | +0.017 | -0.017 to +0.053 | 0.419 | 0.061 |
-| Visual prefix layer 17, selected on validation | 0.102 | 0.086 | +0.015 | -0.004 to +0.036 | 0.453 | 0.061 |
+| Raw pixels | 0.483 | 0.105 | +0.379 | +0.235 to +0.529 | 0.854 | 0.443 |
+| Image features entering the language model | 0.103 | 0.105 | -0.002 | -0.036 to +0.035 | 0.419 | 0.061 |
+| Visual prefix layer 17, selected on validation | 0.102 | 0.105 | -0.003 | -0.022 to +0.017 | 0.453 | 0.061 |
 
 Each scene group receives equal weight in the averages and confidence
 intervals, so scenes that happen to produce more matched pairs do not dominate
@@ -717,8 +717,9 @@ Interpretation:
 - The positive control is strong. Raw image change reliably points to the moved
   object, so the scene matching, camera alignment, patch grid, and object boxes
   are usable for this question.
-- The selected model layer is only 0.015 average-precision points above random
-  on held-out tasks, and its interval crosses zero. Its ROC AUC is below 0.5,
+- The selected model layer is 0.003 average-precision points below the exact
+  random-ranking expectation on held-out tasks, and its interval crosses zero.
+  Its ROC AUC is below 0.5,
   and it ranks the moved-object region slightly worse than the stationary-object
   control region. This study therefore does not show reliable spatial
   localization from simple token-change magnitude.
@@ -741,10 +742,11 @@ Runtime and storage:
   camera patch boxes, all per-patch scores, per-pair metrics, scene-weighted
   summaries, split rules, and source-trace fingerprints. It references the
   original activation tensors instead of copying them.
-- An earlier artifact from the same run family used pair-weighted headline
-  averages with scene-weighted confidence intervals. It is retained for audit
-  history but marked superseded by the accepted artifact above. A regression
-  test now checks equal scene weighting.
+- Two earlier artifacts are retained for audit history and marked superseded.
+  One mixed pair-weighted headline averages with scene-weighted intervals. The
+  next used target-patch prevalence as if it were expected average precision
+  under a random ranking. Regression tests now cover equal scene weighting and
+  the exact finite-ranking expectation.
 
 The next useful experiment is an object-conditioned visual readout: provide an
 object identity or object query and test whether a low-capacity decoder can

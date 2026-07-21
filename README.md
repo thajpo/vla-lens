@@ -22,6 +22,7 @@ Current docs entrypoint: [docs/README.md](docs/README.md). Current operational
 state and known-good commands: [docs/current-state.md](docs/current-state.md).
 Start here for onboarding: [docs/quickstart.md](docs/quickstart.md).
 Dataset format contract: [docs/dataset-format.md](docs/dataset-format.md).
+Current research questions and findings: [RESEARCH.md](RESEARCH.md).
 
 ## Reviewer Quick Start
 

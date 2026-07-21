@@ -8,6 +8,7 @@ from vla_lens.probes.matched_scene_study import (
     _feature_sites,
     _localization_metrics,
     _matched_pairs,
+    _random_ranking_expected_ap,
     _summary_table,
 )
 from vla_lens.probes.scene_map_study import SceneMapTargets
@@ -93,6 +94,13 @@ def test_localization_metrics_separate_target_from_stationary_control():
     ]
 
 
+def test_random_ranking_average_precision_is_not_patch_prevalence():
+    expected = _random_ranking_expected_ap(256, 22)
+
+    assert np.isclose(expected, 0.104306, atol=1e-6)
+    assert expected > 22 / 256
+
+
 def test_summary_selects_feature_on_validation_only():
     rows = []
     for split, good_a, good_b in [
@@ -108,7 +116,7 @@ def test_summary_selects_feature_on_validation_only():
                     "pair_id": f"{split}-{feature}",
                     "scene_key": f"scene-{split}",
                     "target_average_precision": score,
-                    "random_average_precision": 0.1,
+                    "random_ranking_expected_average_precision": 0.1,
                     "stationary_control_average_precision": 0.2,
                     "target_roc_auc": score,
                     "target_top_k_recall": score,
@@ -135,7 +143,7 @@ def test_summary_weights_scene_groups_instead_of_pair_count():
             "pair_id": f"repeated-{index}",
             "scene_key": "repeated-scene",
             "target_average_precision": 0.9,
-            "random_average_precision": 0.1,
+            "random_ranking_expected_average_precision": 0.1,
             "stationary_control_average_precision": 0.1,
             "target_roc_auc": 0.9,
             "target_top_k_recall": 0.9,
@@ -150,7 +158,7 @@ def test_summary_weights_scene_groups_instead_of_pair_count():
             "pair_id": "single",
             "scene_key": "single-scene",
             "target_average_precision": 0.1,
-            "random_average_precision": 0.1,
+            "random_ranking_expected_average_precision": 0.1,
             "stationary_control_average_precision": 0.1,
             "target_roc_auc": 0.1,
             "target_top_k_recall": 0.1,

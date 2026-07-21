@@ -21,6 +21,11 @@ tokenwise analysis, object-conditioned decoding, and set decoding, along with
 whether each is ready, data-ready but missing a specialized runner, or blocked
 by missing capture data.
 
+Use `RESEARCH.md` as the canonical question and findings log. Add or update the
+relevant entry whenever an experiment is planned, completed, corrected, or
+superseded. Campaign wrappers and implementation retries are history, not new
+research questions.
+
 ## Critical Environment Rule
 
 Do not run PI0.5/LeRobot/LIBERO capture through the normal repo `uv run` environment.

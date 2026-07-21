@@ -543,7 +543,10 @@ def _localization_metrics(
     return {
         "patch_count": int(len(values)),
         "target_patch_count": positive_count,
-        "random_average_precision": positive_count / max(1, len(values)),
+        "target_patch_prevalence": positive_count / max(1, len(values)),
+        "random_ranking_expected_average_precision": _random_ranking_expected_ap(
+            len(values), positive_count
+        ),
         "target_average_precision": float(average_precision_score(truth, values)),
         "target_roc_auc": float(roc_auc_score(truth, values)),
         "target_top_k_recall": float(truth[top].sum() / max(1, positive_count)),
@@ -559,6 +562,23 @@ def _localization_metrics(
     }
 
 
+def _random_ranking_expected_ap(item_count: int, positive_count: int) -> float:
+    """Exact expected average precision for a uniformly random ranking."""
+
+    if item_count < 1 or positive_count < 1:
+        return 0.0
+    if positive_count >= item_count:
+        return 1.0
+    harmonic = float(np.reciprocal(np.arange(1, item_count + 1, dtype=float)).sum())
+    return float(
+        (
+            harmonic
+            + ((positive_count - 1) / (item_count - 1)) * (item_count - harmonic)
+        )
+        / item_count
+    )
+
+
 def _summary_table(
     pair_metrics: pd.DataFrame,
     *,
@@ -569,7 +589,10 @@ def _summary_table(
     for (split_value, feature_id, layer), group in pair_metrics.groupby(
         ["split", "feature_id", "layer"], dropna=False, sort=True
     ):
-        lift = group["target_average_precision"] - group["random_average_precision"]
+        lift = (
+            group["target_average_precision"]
+            - group["random_ranking_expected_average_precision"]
+        )
         control_lift = (
             group["target_average_precision"]
             - group["stationary_control_average_precision"]
@@ -592,7 +615,8 @@ def _summary_table(
                     group["target_average_precision"].to_numpy(dtype=float), scene_keys
                 ),
                 "mean_random_average_precision": _equal_weight_group_mean(
-                    group["random_average_precision"].to_numpy(dtype=float), scene_keys
+                    group["random_ranking_expected_average_precision"].to_numpy(dtype=float),
+                    scene_keys,
                 ),
                 "mean_average_precision_lift": _equal_weight_group_mean(
                     lift.to_numpy(dtype=float), scene_keys
@@ -707,11 +731,12 @@ def _save_study(
         artifact_id=artifact_id,
         artifact_type="matched_scene_localization_study",
         name=str(spec["name"]),
-        group_id="scene_map_probe_studies",
+        group_id="scene_map_diagnostics",
         scope="dataset",
         selector={"feature": spec["feature"], "matching": spec["matching"]},
         method={
             "workflow": "run_matched_scene_localization_study",
+            "experiment_kind": "diagnostic",
             "schema_version": MATCHED_SCENE_STUDY_SCHEMA_VERSION,
             "research": {
                 key: spec[key]
@@ -751,11 +776,12 @@ def _save_study(
         },
         display={
             "kind": "matched_scene_localization_study",
+            "experiment_kind": "diagnostic",
             "status": "exploratory",
             "summary": json.loads(summary.to_json(orient="records")),
         },
         tags=(
-            "probe",
+            "diagnostic",
             "scene-map",
             "matched-scenes",
             "visual-tokens",
