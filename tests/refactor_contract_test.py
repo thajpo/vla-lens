@@ -141,6 +141,9 @@ def test_probe_workflow_helper_contracts_used_by_server_modules():
     assert spec["features"]["policy_calls"] == "all"
     assert spec["features"]["dtype"] == "float32"
     assert spec["probe"]["models"] == ["linear"]
+
+    default_spec = normalize_probe_spec({"target": "outcome", "features": {}})
+    assert default_spec["probe"]["models"] == ["linear", "mlp"]
     assert baseline_columns(spec["baseline"]) == ["benchmark", "env_id"]
 
     row_target = _normalize_target_spec("outcome")

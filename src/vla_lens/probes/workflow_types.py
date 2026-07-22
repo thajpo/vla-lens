@@ -9,7 +9,7 @@ import pandas as pd
 
 from vla_lens.artifacts import LensArtifact
 
-PROBE_ARTIFACT_SCHEMA_VERSION = 3
+PROBE_ARTIFACT_SCHEMA_VERSION = 4
 
 INTERACTION_METRICS_ARTIFACT_TYPE = "pi05_interaction_metrics"
 OBJECT_FLOW_ARTIFACT_TYPE = "pi05_object_flow"

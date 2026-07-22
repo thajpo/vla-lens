@@ -48,6 +48,9 @@ experiment notes when deciding what to run or implement.
 - [probe_hypothesis_guidance.md](probe_hypothesis_guidance.md): pre-training
   probe proposal protocol, automated preflight checks, baseline guidance, and
   ready-to-review agent output expectations.
+- [probe-run-artifacts.md](probe-run-artifacts.md): what a trained probe saves,
+  how to inspect its experiment card, and how to replay or reuse it without
+  fitting it again.
 - [vla-lens-architecture-workflows.md](vla-lens-architecture-workflows.md):
   architecture and workflow contracts.
 - [research_ui_principles.md](research_ui_principles.md): design principles for

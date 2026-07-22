@@ -41,6 +41,13 @@ class ActivationQuery:
         payload["policy_calls"] = _jsonable_timesteps(self.policy_calls)
         return payload
 
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> ActivationQuery:
+        values = dict(payload)
+        values["timesteps"] = _selector_axis_from_json(values.get("timesteps", "all"))
+        values["policy_calls"] = _selector_axis_from_json(values.get("policy_calls", "all"))
+        return cls(**values)
+
 
 @dataclass(frozen=True, slots=True)
 class FeatureMatrix:
@@ -406,6 +413,15 @@ def _jsonable_timesteps(value: Any) -> Any:
     if isinstance(value, tuple):
         return list(value)
     return value
+
+
+def _selector_axis_from_json(value: Any) -> Any:
+    if not isinstance(value, Mapping) or set(value) != {"slice"}:
+        return value
+    parts = value["slice"]
+    if not isinstance(parts, (list, tuple)) or len(parts) != 3:
+        raise ValueError("Serialized selector slices must contain start, stop, and step")
+    return slice(*parts)
 
 
 def _cache_chunks(shape: Sequence[int]) -> tuple[int, ...]:

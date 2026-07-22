@@ -37,6 +37,11 @@ def parse_args() -> argparse.Namespace:
         help="Warn when planned readouts exceed this count.",
     )
     parser.add_argument("--output", type=Path, default=None, help="Optional output file path.")
+    parser.add_argument(
+        "--details",
+        action="store_true",
+        help="Include diagnostic split, support, and baseline tables in Markdown output.",
+    )
     return parser.parse_args()
 
 
@@ -53,7 +58,7 @@ def main() -> None:
     if args.format == "json":
         payload = json.dumps(report, indent=2, sort_keys=True)
     else:
-        payload = format_probe_preflight_markdown(report)
+        payload = format_probe_preflight_markdown(report, details=args.details)
     if args.output is None:
         print(payload)
         return

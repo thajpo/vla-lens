@@ -54,8 +54,11 @@ def test_probe_preflight_markdown_is_reviewable(tmp_path):
         probe_preflight_report(dataset, _outcome_probe_spec(), min_class_support=5)
     )
 
-    assert "# Probe Preflight: Synthetic outcome preflight" in markdown
-    assert "## Baselines" in markdown
+    assert "# Probe Experiment Card: Synthetic outcome preflight" in markdown
+    assert "## Choices that change the claim" in markdown
+    assert "## Method choices" in markdown
+    assert "## Execution details" in markdown
+    assert "Baselines:" in markdown
     assert "outcome" in markdown
     assert "Planned readouts: 8" in markdown
     assert "target column" in markdown
