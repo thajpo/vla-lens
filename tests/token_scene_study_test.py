@@ -15,6 +15,7 @@ from vla_lens.probes.structured_scene_models import (
 from vla_lens.probes.token_representations import (
     _selected_token_metadata,
     build_layer_token_readouts,
+    read_compressed_token_layers,
 )
 from vla_lens.probes.token_scene_study import (
     _activation_baseline_comparison_table,
@@ -78,6 +79,29 @@ def test_token_readouts_keep_layer_and_token_structure_in_a_small_cache(tmp_path
     assert first.rows["timestep"].tolist()[:8] == list(range(8))
     np.testing.assert_array_equal(first.pooled, second.pooled)
     np.testing.assert_array_equal(first.tokenwise, second.tokenwise)
+
+    compact_first = read_compressed_token_layers(
+        dataset,
+        first.rows,
+        first.source_sites,
+        first.token_metadata,
+        layers=first.layers,
+        channel_projection=first.channel_projection,
+        io_workers=2,
+    )
+    compact_second = read_compressed_token_layers(
+        dataset,
+        first.rows,
+        first.source_sites,
+        first.token_metadata,
+        layers=first.layers,
+        channel_projection=first.channel_projection,
+        io_workers=2,
+    )
+    assert compact_first.values.shape == (32, 3, 8, 3)
+    assert not compact_first.cache_hit
+    assert compact_second.cache_hit
+    np.testing.assert_array_equal(compact_first.values, compact_second.values)
 
 
 def test_dynamic_token_metadata_does_not_duplicate_model_token_positions(tmp_path):

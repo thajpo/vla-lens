@@ -91,6 +91,7 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-011 | Do visual-token changes spatially localize a moved object? | Diagnostic | No | Move to trained object queries |
 | RQ-012 | Do main-camera visual tokens encode the initial object roster and each object's XYZ? | Probe | Identity yes; XYZ mostly scene prior | Yes, localize identity and improve geometry target |
 | RQ-013 | Does the identity probe's evidence spatially cover the named object? | Probe diagnostic | Modestly for some objects; not movement-sensitive | Yes, inspect examples and intervene carefully |
+| RQ-014 | Do visual tokens explicitly encode every visible object's image location? | Probe | Run; local probe negative, scene decoder confounded | Revisit with matched scenes or object-centric decoder |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -560,6 +561,97 @@ stronger localization probe.
 
 **Accepted artifact.**
 `identity_localization_study-pi0.5-broad-1000-held-out-object-identity-patch-localization-study-b3d4c2db57`
+
+## RQ-014: Explicit Image-Plane Object Location
+
+**Question.** Can PI0.5 visual-token representations recover the identity and
+image-plane location of every visible scene object on held-out tasks?
+
+**Hypothesis.** A probe trained directly for spatial localization will recover
+object boxes more consistently than the RQ-013 attribution of a whole-scene
+identity probe. If location is carried locally, a shared patch head should
+identify which patches overlap each named object. If it is only recoverable
+from the scene as a whole, a token-preserving coordinate decoder may work
+while the local patch head fails.
+
+**Method.** Used the same initial main-camera rows, held-out-task split,
+training-only channel projection, and 39-name object vocabulary as RQ-012. A
+shared local Ridge head predicted, for every named object, whether each of 256
+image patches overlapped its simulator box. Separate named-object Ridge heads
+predicted normalized box center and size from pooled and token-preserving scene
+readouts. Validation selected layer, input width, and regularization. The test
+set contained 784 visible supported-object instances from 200 episodes and 27
+represented object identities.
+
+A fixed 32-unit MLP was also tried at each linear probe's selected input as a
+bounded capacity check, not a second architecture search. The patch MLP used at
+most 100,000 training tokens and 80 iterations. Per-object box MLPs used at
+most 200 iterations.
+
+**Baselines and controls.** Per-object training-mean image location, fixed
+per-object patch maps, prompt plus scene metadata, shuffled scene-to-box
+assignments, wrong-object regions, and unsupported identities. Report
+episode-, benchmark-task-, instruction-, and object-level results. Select all
+layers and hyperparameters on validation only.
+
+**Confounds.** Object identity, image location, task, and scene remain
+correlated. Large boxes are easier to localize. A named-object head assumes
+correspondence rather than discovering an unordered object set. Simulator
+boxes include some background and can be affected by visibility and occlusion.
+Good image-plane decoding would establish accessible visual geometry, not a
+causal object representation.
+
+**Decision rule.** Require held-out improvement over both fixed spatial maps
+and prompt/scene or training-mean location baselines. A general location claim
+also requires positive results across object identities rather than an
+aggregate driven by a few mugs, books, or large scene fixtures.
+
+**Result.** The local patch probe failed its controls. Its held-out average
+precision was 0.299, below the fixed per-object spatial map at 0.458 and the
+mean of shuffled-scene probes at 0.309. The episode-grouped AP difference from
+the fixed map was -0.161, 95% CI [-0.177, -0.143]. It did put its single highest
+patch slightly nearer the box center: 65.6 pixels versus 68.7 pixels for the
+fixed map at the raw-instance level, despite ranking the full object region
+substantially worse.
+This does not support episode-specific object location in the tested local
+linear token features.
+
+The whole-scene linear box decoder contained some location signal. It reached
+44.5-pixel center error and 0.392 IoU, versus 53.3 pixels and 0.284 IoU for each
+object's training-mean box. It also beat shuffled scene-to-box training, whose
+ten-run means were 55.3 pixels and 0.270 IoU. The improvement over the mean-box
+baseline remained positive when benchmark tasks, instructions, or object
+identities were weighted equally.
+
+However, the activation decoder did not beat the stronger prompt-and-scene
+baseline, which reached 43.1 pixels and 0.404 IoU. Episode-weighted activation
+minus context center-error improvement was -1.24 pixels, 95% CI
+[-1.79, -0.70]. Task- and instruction-weighted intervals also did not establish
+an activation advantage. The current evidence therefore fits a scene/task
+prior at least as well as an explicit visual object map.
+
+The bounded MLP check did not help. The patch MLP hit its 80-iteration cap and
+dropped to 0.243 AP. Only 3 of 35 box heads converged within 200 iterations, and
+their combined result was much worse. This rules out a cheap improvement from
+that fixed MLP setup; it does not rule out nonlinear decoding in general.
+
+**Artifact.**
+`image_location_probe_study-pi0.5-broad-1000-explicit-image-plane-object-location-study-v2-b0f3f863ca`.
+It saves the exact rows, sites, patches, boxes, visibility masks, validation
+choices, linear and MLP weights, baseline predictions, shuffled controls,
+grouped confidence intervals, examples, and test predictions. Replaying every
+saved head reproduced scores within 2.4e-6.
+
+**Workflow result.** A 71 MB rebuildable compact-token cache and 653 KB image-box
+cache reduced a repeat from about 12 minutes to 55 seconds for the linear study,
+or about 77-81 seconds with the bounded MLP checks. Raw captured activations
+remain the source of truth.
+
+**Status.** Run under GitHub issue #30. The direct local probe is negative. The
+scene decoder is positive against simple and shuffled baselines but not against
+task/scene context, so a general explicit object-location claim is not
+supported. A matched-scene position decoder or an object-centric set/query
+decoder is the most informative revisit.
 
 ## Not Yet Run
 

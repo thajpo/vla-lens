@@ -15,6 +15,11 @@ from vla_lens.probes.identity_localization_study import (
     IdentityLocalizationStudyResult,
     run_identity_localization_study,
 )
+from vla_lens.probes.image_location_study import (
+    IMAGE_LOCATION_STUDY_SCHEMA_VERSION,
+    ImageLocationStudyResult,
+    run_image_location_probe_study,
+)
 from vla_lens.probes.matched_scene_study import (
     MATCHED_SCENE_STUDY_SCHEMA_VERSION,
     MatchedSceneStudyResult,
@@ -80,6 +85,8 @@ __all__ = [
     "GeometryTarget",
     "IDENTITY_LOCALIZATION_STUDY_SCHEMA_VERSION",
     "IdentityLocalizationStudyResult",
+    "IMAGE_LOCATION_STUDY_SCHEMA_VERSION",
+    "ImageLocationStudyResult",
     "MOTION_STUDY_SCHEMA_VERSION",
     "MotionStudyResult",
     "MATCHED_SCENE_STUDY_SCHEMA_VERSION",
@@ -118,6 +125,7 @@ __all__ = [
     "run_probe_suite",
     "run_geometry_probe_study",
     "run_identity_localization_study",
+    "run_image_location_probe_study",
     "run_motion_probe_study",
     "run_matched_scene_localization_study",
     "run_scene_map_probe_study",
