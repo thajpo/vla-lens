@@ -40,10 +40,11 @@ def main() -> None:
     print("episode_localization")
     print(result.summary.to_string(index=False))
     print("object_localization")
+    primary_objects = result.object_summary.loc[
+        result.object_summary["cohort"] == "probe_predicted_present"
+    ]
     print(
-        result.object_summary.sort_values("static_lift", ascending=False).to_string(
-            index=False
-        )
+        primary_objects.sort_values("static_lift", ascending=False).to_string(index=False)
     )
     if not result.matched_pair_summary.empty:
         print("matched_scene_localization")

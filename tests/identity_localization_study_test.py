@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import numpy as np
+import pandas as pd
 
 from vla_lens.probes.identity_localization_study import (
     _grouped_bootstrap,
     _patch_metrics,
+    _summary_table,
     linear_token_contributions,
 )
 from vla_lens.probes.token_representations import ProjectionState
@@ -83,3 +85,34 @@ def test_grouped_bootstrap_drops_nonfinite_values():
 
     assert summary["group_count"] == 1
     assert np.isclose(summary["mean"], 0.4)
+
+
+def test_localization_summary_separates_probe_positives_and_misses():
+    metrics = pd.DataFrame(
+        {
+            "method": ["positive_contribution", "positive_contribution"],
+            "probe_predicted_present": [True, False],
+            "average_precision": [0.8, 0.3],
+            "average_precision_minus_random": [0.6, 0.1],
+            "static_average_precision": [0.5, 0.2],
+            "target_minus_wrong_object": [0.2, -0.1],
+            "trace_id": ["predicted", "missed"],
+            "task_key": ["suite:1", "suite:2"],
+            "instruction_key": ["one", "two"],
+        }
+    )
+
+    summary = _summary_table(metrics, bootstrap_samples=10)
+
+    assert set(summary["cohort"]) == {
+        "all_visible",
+        "probe_predicted_present",
+        "probe_missed_present",
+    }
+    primary = summary.loc[
+        (summary["cohort"] == "probe_predicted_present")
+        & (summary["metric"] == "average_precision_minus_static")
+        & (summary["unit"] == "episode")
+    ].iloc[0]
+    assert primary["group_count"] == 1
+    assert np.isclose(primary["mean"], 0.3)

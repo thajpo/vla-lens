@@ -556,41 +556,57 @@ def _summary_table(
     metrics: pd.DataFrame, *, bootstrap_samples: int
 ) -> pd.DataFrame:
     records: list[dict[str, Any]] = []
-    for method, frame in metrics.groupby("method", sort=True):
-        comparisons = {
-            "average_precision_minus_random": frame["average_precision_minus_random"].to_numpy(),
-            "average_precision_minus_static": (
-                frame["average_precision"] - frame["static_average_precision"]
-            ).to_numpy(),
-            "target_minus_wrong_object": frame[
-                "target_minus_wrong_object"
-            ].to_numpy(),
-        }
-        for metric_name, values in comparisons.items():
-            for unit_index, (unit, groups) in enumerate(
-                [
-                    ("episode", frame["trace_id"].astype(str).to_numpy()),
-                    ("benchmark_task", frame["task_key"].astype(str).to_numpy()),
-                    (
-                        "instruction",
-                        frame["instruction_key"].astype(str).to_numpy(),
-                    ),
-                ]
-            ):
-                records.append(
-                    {
-                        "method": method,
-                        "metric": metric_name,
-                        "unit": unit,
-                        **_grouped_bootstrap(
-                            values,
-                            groups,
-                            bootstrap_samples=bootstrap_samples,
-                            seed=20260722 + len(records) * 10 + unit_index,
+    for cohort, cohort_frame in _metric_cohorts(metrics):
+        for method, frame in cohort_frame.groupby("method", sort=True):
+            comparisons = {
+                "average_precision_minus_random": frame[
+                    "average_precision_minus_random"
+                ].to_numpy(),
+                "average_precision_minus_static": (
+                    frame["average_precision"] - frame["static_average_precision"]
+                ).to_numpy(),
+                "target_minus_wrong_object": frame[
+                    "target_minus_wrong_object"
+                ].to_numpy(),
+            }
+            for metric_name, values in comparisons.items():
+                for unit_index, (unit, groups) in enumerate(
+                    [
+                        ("episode", frame["trace_id"].astype(str).to_numpy()),
+                        (
+                            "benchmark_task",
+                            frame["task_key"].astype(str).to_numpy(),
                         ),
-                    }
-                )
+                        (
+                            "instruction",
+                            frame["instruction_key"].astype(str).to_numpy(),
+                        ),
+                    ]
+                ):
+                    records.append(
+                        {
+                            "cohort": cohort,
+                            "method": method,
+                            "metric": metric_name,
+                            "unit": unit,
+                            **_grouped_bootstrap(
+                                values,
+                                groups,
+                                bootstrap_samples=bootstrap_samples,
+                                seed=20260722 + len(records) * 10 + unit_index,
+                            ),
+                        }
+                    )
     return pd.DataFrame.from_records(records)
+
+
+def _metric_cohorts(metrics: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
+    predicted = metrics["probe_predicted_present"].astype(bool)
+    return [
+        ("all_visible", metrics),
+        ("probe_predicted_present", metrics.loc[predicted]),
+        ("probe_missed_present", metrics.loc[~predicted]),
+    ]
 
 
 def _grouped_bootstrap(
@@ -632,49 +648,53 @@ def _object_summary(
 ) -> pd.DataFrame:
     focus = metrics.loc[metrics["method"] == "positive_contribution"]
     records: list[dict[str, Any]] = []
-    for object_index, frame in focus.groupby("object_index", sort=True):
-        random_lift = frame["average_precision_minus_random"].to_numpy()
-        static_lift = (
-            frame["average_precision"] - frame["static_average_precision"]
-        ).to_numpy()
-        groups = frame["trace_id"].astype(str).to_numpy()
-        random_summary = _grouped_bootstrap(
-            random_lift,
-            groups,
-            bootstrap_samples=bootstrap_samples,
-            seed=20260724 + int(object_index) * 2,
-        )
-        static_summary = _grouped_bootstrap(
-            static_lift,
-            groups,
-            bootstrap_samples=bootstrap_samples,
-            seed=20260725 + int(object_index) * 2,
-        )
-        records.append(
-            {
-                "object_index": int(object_index),
-                "object_name": str(frame.iloc[0]["object_name"]),
-                "episode_count": int(frame["trace_id"].nunique()),
-                "benchmark_task_count": int(frame["task_key"].nunique()),
-                "mean_target_patch_count": float(frame["target_patch_count"].mean()),
-                "mean_average_precision": float(frame["average_precision"].mean()),
-                "mean_random_average_precision": float(
-                    frame["random_expected_average_precision"].mean()
-                ),
-                "mean_static_average_precision": float(
-                    frame["static_average_precision"].mean()
-                ),
-                "probe_recall": float(frame["probe_predicted_present"].mean()),
-                "manipulated_fraction": float(frame["role_manipulated"].mean()),
-                "distractor_fraction": float(frame["role_distractor"].mean()),
-                "random_lift": random_summary["mean"],
-                "random_lift_ci95_low": random_summary["ci95_low"],
-                "random_lift_ci95_high": random_summary["ci95_high"],
-                "static_lift": static_summary["mean"],
-                "static_lift_ci95_low": static_summary["ci95_low"],
-                "static_lift_ci95_high": static_summary["ci95_high"],
-            }
-        )
+    for cohort, cohort_frame in _metric_cohorts(focus):
+        for object_index, frame in cohort_frame.groupby("object_index", sort=True):
+            random_lift = frame["average_precision_minus_random"].to_numpy()
+            static_lift = (
+                frame["average_precision"] - frame["static_average_precision"]
+            ).to_numpy()
+            groups = frame["trace_id"].astype(str).to_numpy()
+            random_summary = _grouped_bootstrap(
+                random_lift,
+                groups,
+                bootstrap_samples=bootstrap_samples,
+                seed=20260724 + int(object_index) * 2 + len(records),
+            )
+            static_summary = _grouped_bootstrap(
+                static_lift,
+                groups,
+                bootstrap_samples=bootstrap_samples,
+                seed=20260725 + int(object_index) * 2 + len(records),
+            )
+            records.append(
+                {
+                    "cohort": cohort,
+                    "object_index": int(object_index),
+                    "object_name": str(frame.iloc[0]["object_name"]),
+                    "episode_count": int(frame["trace_id"].nunique()),
+                    "benchmark_task_count": int(frame["task_key"].nunique()),
+                    "mean_target_patch_count": float(
+                        frame["target_patch_count"].mean()
+                    ),
+                    "mean_average_precision": float(frame["average_precision"].mean()),
+                    "mean_random_average_precision": float(
+                        frame["random_expected_average_precision"].mean()
+                    ),
+                    "mean_static_average_precision": float(
+                        frame["static_average_precision"].mean()
+                    ),
+                    "probe_recall": float(frame["probe_predicted_present"].mean()),
+                    "manipulated_fraction": float(frame["role_manipulated"].mean()),
+                    "distractor_fraction": float(frame["role_distractor"].mean()),
+                    "random_lift": random_summary["mean"],
+                    "random_lift_ci95_low": random_summary["ci95_low"],
+                    "random_lift_ci95_high": random_summary["ci95_high"],
+                    "static_lift": static_summary["mean"],
+                    "static_lift_ci95_low": static_summary["ci95_low"],
+                    "static_lift_ci95_high": static_summary["ci95_high"],
+                }
+            )
     return pd.DataFrame.from_records(records)
 
 
@@ -683,9 +703,19 @@ def _example_table(metrics: pd.DataFrame, *, count: int) -> pd.DataFrame:
     if focus.empty:
         return focus
     count = max(1, int(count))
-    best = focus.nlargest(count, "average_precision").assign(example_kind="best")
-    worst = focus.nsmallest(count, "average_precision").assign(example_kind="worst")
-    return pd.concat([best, worst], ignore_index=True)
+    frames: list[pd.DataFrame] = []
+    for cohort, frame in _metric_cohorts(focus)[1:]:
+        frames.extend(
+            [
+                frame.nlargest(count, "average_precision").assign(
+                    cohort=cohort, example_kind="best"
+                ),
+                frame.nsmallest(count, "average_precision").assign(
+                    cohort=cohort, example_kind="worst"
+                ),
+            ]
+        )
+    return pd.concat(frames, ignore_index=True)
 
 
 def _matched_pair_metrics(

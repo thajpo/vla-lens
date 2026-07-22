@@ -524,33 +524,41 @@ preferences on held-out tasks, with task-grouped uncertainty above zero. Use
 the matched-scene result as a stricter supporting check, not as the primary
 claim because few pairs are available.
 
-**Result.** Across 848 visible object instances in 200 held-out episodes,
-positive patch contributions reached 0.180 mean average precision, compared
-with 0.097 for random ranking and 0.150 for the probe's fixed patch
-preferences. The episode-specific lift over the fixed map was 0.037 when
-averaging 26 benchmark tasks (95% interval 0.019 to 0.055) and 0.025 when
-averaging 20 distinct instructions (0.002 to 0.046). Signed evidence was also
-larger inside the named object than inside another visible object's region.
-The saved probe scores replayed to a maximum absolute error of
-`4.4e-7`.
+**Result.** The primary cohort contains 577 visible objects that the probe
+predicted as present, across 168 held-out episodes. Positive patch
+contributions reached 0.194 mean average precision, compared with 0.102 for
+random ranking and 0.175 for the probe's fixed patch preferences. The
+episode-specific lift over the fixed map was 0.034 when averaging 22 benchmark
+tasks (95% interval 0.010 to 0.059). It was less stable across 16 distinct
+instructions: 0.018 with an interval of -0.007 to 0.043.
 
-The aggregate hides strong variation. White/yellow mugs, porcelain mugs, and
-black books localized clearly. Many other objects did not beat the probe's
-fixed spatial pattern; wine bottles, wine racks, chocolate pudding, and the
-flat stove were notable failures. In nine held-out matched pairs, change in
-the probe contribution map did not follow the moved object beyond random
-(mean lift 0.003, interval -0.026 to 0.039), while raw-pixel change localized
-strongly (0.379, 0.233 to 0.526).
+The secondary all-visible cohort contained 848 objects across all 200 held-out
+episodes. Its mean average precision was 0.180, versus 0.097 random and 0.150
+fixed. Objects the probe missed still had some localized positive evidence,
+showing that patch localization alone does not determine whether the complete
+probe score crosses its threshold. Signed evidence was larger inside the
+named object than inside another visible object's region. The saved probe
+scores replayed to a maximum absolute error of `4.4e-7`.
+
+The aggregate hides strong variation. Among probe-positive objects,
+white/yellow mugs and black books localized clearly. Many other objects did
+not beat the fixed spatial pattern; wine bottles, wine racks, porcelain mugs,
+and the flat stove were notable failures. In nine held-out matched pairs,
+change in the probe contribution map did not follow the moved object beyond
+random (mean lift 0.003, interval -0.026 to 0.039), while raw-pixel change
+localized strongly (0.379, 0.233 to 0.526).
 
 **Decision.** Accept modest object-local evidence for a subset of identities,
-not a general object-tracking representation. The probe combines
-episode-specific visual evidence with stable scene and patch-location cues.
-Use the episode maps to inspect which object categories support a proposed
-intervention. Do not treat the identity direction as a position-sensitive
-object handle without a stronger localization probe.
+not a general object-tracking representation. The result is stable across the
+held-out benchmark tasks represented in the positive cohort, but not yet
+across distinct instruction groups. The probe combines episode-specific visual
+evidence with stable scene and patch-location cues. Use the episode maps to
+inspect which object categories support a proposed intervention. Do not treat
+the identity direction as a position-sensitive object handle without a
+stronger localization probe.
 
 **Accepted artifact.**
-`identity_localization_study-pi0.5-broad-1000-held-out-object-identity-patch-localization-study-7724e3c67c`
+`identity_localization_study-pi0.5-broad-1000-held-out-object-identity-patch-localization-study-3e3501acd9`
 
 ## Not Yet Run
 
