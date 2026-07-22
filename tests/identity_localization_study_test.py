@@ -91,6 +91,7 @@ def test_localization_summary_separates_probe_positives_and_misses():
     metrics = pd.DataFrame(
         {
             "method": ["positive_contribution", "positive_contribution"],
+            "probe_supported": [True, True],
             "probe_predicted_present": [True, False],
             "average_precision": [0.8, 0.3],
             "average_precision_minus_random": [0.6, 0.1],
@@ -116,3 +117,25 @@ def test_localization_summary_separates_probe_positives_and_misses():
     ].iloc[0]
     assert primary["group_count"] == 1
     assert np.isclose(primary["mean"], 0.3)
+
+
+def test_unsupported_identity_never_enters_primary_cohort():
+    metrics = pd.DataFrame(
+        {
+            "method": ["positive_contribution"],
+            "probe_supported": [False],
+            "probe_predicted_present": [False],
+            "average_precision": [0.8],
+            "average_precision_minus_random": [0.6],
+            "static_average_precision": [0.5],
+            "target_minus_wrong_object": [0.2],
+            "trace_id": ["unsupported"],
+            "task_key": ["suite:1"],
+            "instruction_key": ["one"],
+        }
+    )
+
+    summary = _summary_table(metrics, bootstrap_samples=10)
+
+    assert "probe_predicted_present" not in set(summary["cohort"])
+    assert "probe_unsupported" in set(summary["cohort"])

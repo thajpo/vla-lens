@@ -524,8 +524,9 @@ preferences on held-out tasks, with task-grouped uncertainty above zero. Use
 the matched-scene result as a stricter supporting check, not as the primary
 claim because few pairs are available.
 
-**Result.** The primary cohort contains 577 visible objects that the probe
-predicted as present, across 168 held-out episodes. Positive patch
+**Result.** The primary cohort contains 577 visible objects with trained
+decoder heads that the probe predicted as present, across 168 held-out
+episodes. Positive patch
 contributions reached 0.194 mean average precision, compared with 0.102 for
 random ranking and 0.175 for the probe's fixed patch preferences. The
 episode-specific lift over the fixed map was 0.034 when averaging 22 benchmark
@@ -558,7 +559,7 @@ the identity direction as a position-sensitive object handle without a
 stronger localization probe.
 
 **Accepted artifact.**
-`identity_localization_study-pi0.5-broad-1000-held-out-object-identity-patch-localization-study-3e3501acd9`
+`identity_localization_study-pi0.5-broad-1000-held-out-object-identity-patch-localization-study-b3d4c2db57`
 
 ## Not Yet Run
 

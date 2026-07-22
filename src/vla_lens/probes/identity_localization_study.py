@@ -114,7 +114,7 @@ def run_identity_localization_study(
     decoder_parameters = _artifact_table(dataset, source, "decoder_parameters")
     selection = _selected_probe(selections, normalized)
     variant = str(normalized["variant"])
-    coefficients, intercepts = _linear_parameters(
+    coefficients, intercepts, supported = _linear_parameters(
         decoder_parameters, variant=variant, target="scene_identity"
     )
     selected_layer = int(selection["selected_layer"])
@@ -200,6 +200,7 @@ def run_identity_localization_study(
         static_strength,
         evaluation_manipulated,
         evaluation_distractor,
+        supported,
         threshold=float(selection["selection_threshold"]),
     )
     summary = _summary_table(
@@ -307,7 +308,7 @@ def _selected_probe(selections: pd.DataFrame, spec: Mapping[str, Any]) -> pd.Ser
 
 def _linear_parameters(
     parameters: pd.DataFrame, *, variant: str, target: str
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     matches = parameters.loc[
         (parameters["variant"].astype(str) == variant)
         & (parameters["target"].astype(str) == target)
@@ -321,6 +322,7 @@ def _linear_parameters(
     return (
         np.asarray(row["coefficients"], dtype=np.float64).reshape(coefficient_shape),
         np.asarray(row["intercepts"], dtype=np.float64).reshape(intercept_shape),
+        np.asarray(row["supported"], dtype=bool),
     )
 
 
@@ -417,6 +419,7 @@ def _episode_object_metrics(
     static_strength: np.ndarray,
     role_manipulated: np.ndarray,
     role_distractor: np.ndarray,
+    supported: np.ndarray,
     *,
     threshold: float,
 ) -> pd.DataFrame:
@@ -457,8 +460,10 @@ def _episode_object_metrics(
                 "wrong_object_name": wrong_name,
                 "probe_score": float(probe_scores[row_index, object_index]),
                 "probe_threshold": threshold,
+                "probe_supported": bool(supported[object_index]),
                 "probe_predicted_present": bool(
-                    probe_scores[row_index, object_index] >= threshold
+                    supported[object_index]
+                    and probe_scores[row_index, object_index] >= threshold
                 ),
                 "role_manipulated": bool(role_manipulated[row_index, object_index]),
                 "role_distractor": bool(role_distractor[row_index, object_index]),
@@ -601,11 +606,13 @@ def _summary_table(
 
 
 def _metric_cohorts(metrics: pd.DataFrame) -> list[tuple[str, pd.DataFrame]]:
+    supported = metrics["probe_supported"].astype(bool)
     predicted = metrics["probe_predicted_present"].astype(bool)
     return [
         ("all_visible", metrics),
-        ("probe_predicted_present", metrics.loc[predicted]),
-        ("probe_missed_present", metrics.loc[~predicted]),
+        ("probe_predicted_present", metrics.loc[supported & predicted]),
+        ("probe_missed_present", metrics.loc[supported & ~predicted]),
+        ("probe_unsupported", metrics.loc[~supported]),
     ]
 
 
