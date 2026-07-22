@@ -405,11 +405,8 @@ def _paired_comparison_table(
                     [
                         ("episode", rows["trace_id"].astype(str).to_numpy()),
                         (
-                            "task",
-                            rows.get("task_id", rows["trace_id"])
-                            .fillna("")
-                            .astype(str)
-                            .to_numpy(),
+                            "benchmark_task",
+                            _task_keys(rows).to_numpy(),
                         ),
                     ]
                 ):
@@ -614,11 +611,8 @@ def _activation_baseline_comparison_table(
             [
                 ("episode", rows["trace_id"].astype(str).to_numpy()),
                 (
-                    "task",
-                    rows.get("task_id", rows["trace_id"])
-                    .fillna("")
-                    .astype(str)
-                    .to_numpy(),
+                    "benchmark_task",
+                    _task_keys(rows).to_numpy(),
                 ),
             ]
         ):
@@ -815,6 +809,16 @@ def _paired_bootstrap_summary(
         "ci95_high": float(np.quantile(draws, 0.975)),
         "probability_improvement": probability,
     }
+
+
+def _task_keys(rows: pd.DataFrame) -> pd.Series:
+    """Keep task identifiers from different benchmarks from colliding."""
+
+    benchmark = rows.get("benchmark", pd.Series("", index=rows.index)).astype(str)
+    task = rows.get(
+        "task_name", rows.get("task_id", pd.Series("", index=rows.index))
+    ).astype(str)
+    return benchmark + ":" + task
 
 
 def _token_importance_table(

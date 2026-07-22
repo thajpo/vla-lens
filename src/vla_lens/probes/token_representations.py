@@ -83,6 +83,52 @@ class LayerTokenReadouts:
     cache_key: str
 
 
+def read_compressed_token_layer(
+    dataset: TraceDataset,
+    rows: pd.DataFrame,
+    source_sites: pd.DataFrame,
+    token_metadata: pd.DataFrame,
+    *,
+    layer: int,
+    channel_projection: ProjectionState,
+    generation_step: int | str | None = None,
+    io_workers: int = 8,
+) -> np.ndarray:
+    """Replay one saved channel projection without rebuilding every readout.
+
+    This is the inexpensive bridge from a replayable probe artifact back to
+    episode-specific token values. It reads only the selected layer and keeps
+    the compact token/channel result in memory.
+    """
+
+    if "token_index" not in token_metadata:
+        raise KeyError("Token metadata must include token_index")
+    selected_sites = source_sites.loc[
+        pd.to_numeric(source_sites["layer"], errors="coerce") == int(layer)
+    ].copy()
+    missing_traces = sorted(
+        set(rows["trace_id"].astype(str))
+        - set(selected_sites["trace_id"].astype(str))
+    )
+    if missing_traces:
+        preview = ", ".join(repr(value) for value in missing_traces[:5])
+        raise ValueError(f"Selected layer {layer} is missing traces: {preview}")
+    token_indices = (
+        token_metadata["token_index"].astype(np.int64).drop_duplicates().to_numpy()
+    )
+    _, compressed = _read_and_compress(
+        dataset,
+        rows,
+        selected_sites,
+        (int(layer),),
+        token_indices,
+        generation_step=generation_step,
+        channel_projection=channel_projection,
+        io_workers=io_workers,
+    )
+    return compressed[:, 0]
+
+
 def build_layer_token_readouts(
     dataset: TraceDataset,
     feature_spec: Mapping[str, Any],

@@ -22,8 +22,20 @@ from vla_lens.probes.token_scene_study import (
     _fit_no_activation_baselines,
     _paired_bootstrap_summary,
     _paired_comparison_table,
+    _task_keys,
     _weighted_token_importance,
 )
+
+
+def test_task_keys_do_not_merge_same_numeric_id_across_benchmarks():
+    rows = pd.DataFrame(
+        {
+            "benchmark": ["libero_goal", "libero_object"],
+            "task_id": [8, 8],
+        }
+    )
+
+    assert _task_keys(rows).tolist() == ["libero_goal:8", "libero_object:8"]
 
 
 def test_token_readouts_keep_layer_and_token_structure_in_a_small_cache(tmp_path):

@@ -90,6 +90,7 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-010 | Do action-token positions or layer mixtures reveal a better scene map? | Probe | No | Yes with visual tokens and MLP |
 | RQ-011 | Do visual-token changes spatially localize a moved object? | Diagnostic | No | Move to trained object queries |
 | RQ-012 | Do main-camera visual tokens encode the initial object roster and each object's XYZ? | Probe | Identity yes; XYZ mostly scene prior | Yes, localize identity and improve geometry target |
+| RQ-013 | Does the identity probe's evidence spatially cover the named object? | Probe diagnostic | Modestly for some objects; not movement-sensitive | Yes, inspect examples and intervene carefully |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -480,11 +481,81 @@ camera-frame geometry before choosing an intervention.
 **Accepted artifact.**
 `token_scene_probe_study-pi0.5-broad-1000-initial-visual-object-query-identity-and-location-study-ed33f5bd37`
 
+**Uncertainty correction.** The saved task bootstrap grouped bare numeric
+`task_id` values, which accidentally combined different LIBERO benchmarks at
+IDs 8 and 9. Recomputing with benchmark plus task name produced 26 separate
+tasks and did not change the identity conclusion: the mean scene-Jaccard gain
+over prompt and scene metadata was 0.148, with a 95% interval of 0.068 to
+0.234. Future token-scene studies use the corrected task key.
+
+## RQ-013: Does The Identity Probe Look At The Object?
+
+**Question.** When the RQ-012 probe says that an object is present, does the
+episode-specific evidence come from image patches covering that object, or
+from the rest of the scene?
+
+**Hypothesis.** If the probe reads a spatial object representation, positive
+patch contributions for a visible object should rank that object's image
+region above random ranking and above the probe's fixed patch preferences.
+
+**Method.** Replayed the validation-selected token-preserving linear
+identity probe from RQ-012 without retraining it. Each held-out object score
+was decomposed through the saved PCA transforms into signed contributions from
+each image patch. Positive, signed, and absolute episode-specific contributions
+were compared with simulator object boxes. Matched scenes in which one
+object's initial position changed tested whether its contribution map followed
+the moved image region.
+
+**Baselines and controls.** Exact random-ranking average precision; the
+probe's fixed coefficient magnitude at each patch; other visible object
+regions in the same frame; raw-pixel change in matched scenes; exact replay of
+the saved probe score; and episode- and task-grouped uncertainty.
+
+**Confounds.** A linear contribution is a faithful decomposition of this
+probe, not a causal explanation of the VLA. Large object boxes are easier to
+rank. Correlated patches can share or cancel signed evidence. Simulator boxes
+may include background, occlusion, or only a small visible surface. The probe
+was trained on whole-scene identity, so scene context may be a valid and useful
+source of its prediction even if the signal does not localize.
+
+**Decision rule.** Call the signal object-local only if episode-specific
+positive contributions beat both random ranking and fixed coefficient
+preferences on held-out tasks, with task-grouped uncertainty above zero. Use
+the matched-scene result as a stricter supporting check, not as the primary
+claim because few pairs are available.
+
+**Result.** Across 848 visible object instances in 200 held-out episodes,
+positive patch contributions reached 0.180 mean average precision, compared
+with 0.097 for random ranking and 0.150 for the probe's fixed patch
+preferences. The episode-specific lift over the fixed map was 0.037 when
+averaging 26 benchmark tasks (95% interval 0.019 to 0.055) and 0.025 when
+averaging 20 distinct instructions (0.002 to 0.046). Signed evidence was also
+larger inside the named object than inside another visible object's region.
+The saved probe scores replayed to a maximum absolute error of
+`4.4e-7`.
+
+The aggregate hides strong variation. White/yellow mugs, porcelain mugs, and
+black books localized clearly. Many other objects did not beat the probe's
+fixed spatial pattern; wine bottles, wine racks, chocolate pudding, and the
+flat stove were notable failures. In nine held-out matched pairs, change in
+the probe contribution map did not follow the moved object beyond random
+(mean lift 0.003, interval -0.026 to 0.039), while raw-pixel change localized
+strongly (0.379, 0.233 to 0.526).
+
+**Decision.** Accept modest object-local evidence for a subset of identities,
+not a general object-tracking representation. The probe combines
+episode-specific visual evidence with stable scene and patch-location cues.
+Use the episode maps to inspect which object categories support a proposed
+intervention. Do not treat the identity direction as a position-sensitive
+object handle without a stronger localization probe.
+
+**Accepted artifact.**
+`identity_localization_study-pi0.5-broad-1000-held-out-object-identity-patch-localization-study-7724e3c67c`
+
 ## Not Yet Run
 
 - Feature-level sparse or nonlinear object-location probes
 - Set decoder for unordered scene objects
-- Object localization or camera-frame geometry probes
 - MLP target pose and rotation probes
 - Filtered first-moved/first-lifted target probes
 - Target-parse VLM probe (the existing selector matched no rows)
@@ -492,8 +563,10 @@ camera-frame geometry before choosing an intervention.
 
 ## Current Priority
 
-1. Inspect RQ-012 identity successes and failures across episodes and patches.
-2. Test whether the identity signal localizes to the correct image region.
-3. Reformulate geometry around object localization or camera-frame coordinates
-   before adding more probe capacity.
-4. Only then select an identity or localization intervention candidate.
+1. Add the episode-level identity map review job to the UI contract.
+2. Train an explicit object-localization or camera-frame geometry probe rather
+   than expecting a scene-identity probe to track position.
+3. Choose one well-localized and one poorly localized object identity for a
+   controlled representation intervention.
+4. Compare intervention effects with the probe score, policy output, and
+   episode behavior before broad sweeps.
