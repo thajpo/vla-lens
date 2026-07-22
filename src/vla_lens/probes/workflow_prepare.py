@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any, Mapping, Sequence
@@ -365,7 +366,7 @@ def _merge_object_flow_timestep_labels(
 
 
 def _latest_object_flow_timestep_labels(dataset: TraceDataset) -> pd.DataFrame:
-    artifact = _latest_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
+    artifact = latest_loadable_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
     if artifact is None:
         return pd.DataFrame()
     outputs = dict(artifact.method.get("outputs") or {})
@@ -379,7 +380,7 @@ def _latest_object_flow_timestep_labels(dataset: TraceDataset) -> pd.DataFrame:
 
 
 def _latest_object_roles(dataset: TraceDataset) -> pd.DataFrame:
-    artifact = _latest_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
+    artifact = latest_loadable_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
     if artifact is None:
         return pd.DataFrame()
     outputs = dict(artifact.method.get("outputs") or {})
@@ -456,7 +457,7 @@ def _merge_policy_call_labels(
 
 
 def _latest_policy_call_labels(dataset: TraceDataset) -> pd.DataFrame:
-    artifact = _latest_artifact(dataset, POLICY_CALL_LABELS_ARTIFACT_TYPE)
+    artifact = latest_loadable_artifact(dataset, POLICY_CALL_LABELS_ARTIFACT_TYPE)
     if artifact is None:
         return pd.DataFrame()
     outputs = dict(artifact.method.get("outputs") or {})
@@ -508,10 +509,13 @@ def _artifact_output_path(dataset: TraceDataset, relative_path: str) -> Path:
 
 
 def _latest_interaction_artifact(dataset: TraceDataset) -> LensArtifact | None:
-    return _latest_artifact(dataset, INTERACTION_METRICS_ARTIFACT_TYPE)
+    return latest_loadable_artifact(dataset, INTERACTION_METRICS_ARTIFACT_TYPE)
 
 
-def _latest_artifact(dataset: TraceDataset, artifact_type: str) -> LensArtifact | None:
+def latest_loadable_artifact(
+    dataset: TraceDataset,
+    artifact_type: str,
+) -> LensArtifact | None:
     table = dataset.artifact_index
     if table.empty or "artifact_type" not in table:
         return None
@@ -594,6 +598,88 @@ def _ensure_split(
         train_value,
     )
     return rows
+
+
+def _ensure_selection_split(
+    rows: pd.DataFrame,
+    split_column: str,
+    *,
+    train_value: str,
+    selection_value: str,
+    test_value: str,
+    split_kind: str,
+    validation_fraction: float = 0.2,
+) -> tuple[pd.DataFrame, dict[str, Any]]:
+    """Ensure model selection has a grouped split separate from final test data."""
+
+    if selection_value == test_value:
+        raise ValueError(
+            "Probe selection_value must differ from test_value. Select layers, models, "
+            "and transforms on validation data, then use test only for the final estimate."
+        )
+    if split_column not in rows:
+        raise KeyError(f"Probe split column {split_column!r} is missing")
+    values = rows[split_column].astype(str)
+    if bool((values == selection_value).any()):
+        return rows, {
+            "selection_value": selection_value,
+            "created": False,
+            "group_column": _split_group_column(split_kind, rows),
+            "validation_fraction": None,
+        }
+
+    train_mask = values == train_value
+    if not bool(train_mask.any()):
+        raise ValueError(
+            f"Cannot create validation split {selection_value!r}: "
+            f"training split {train_value!r} has no rows."
+        )
+    group_column = _split_group_column(split_kind, rows)
+    train_groups = sorted(
+        str(value) for value in rows.loc[train_mask, group_column].dropna().unique()
+    )
+    if len(train_groups) < 2:
+        raise ValueError(
+            f"Cannot create grouped validation split {selection_value!r}: training data has "
+            f"fewer than two {group_column!r} groups. Supply an explicit validation split."
+        )
+    fraction = float(validation_fraction)
+    if not 0.0 < fraction < 1.0:
+        raise ValueError("validation_fraction must be between zero and one")
+    count = min(len(train_groups) - 1, max(1, int(round(len(train_groups) * fraction))))
+    ranked = sorted(train_groups, key=lambda value: hashlib.sha256(value.encode()).hexdigest())
+    validation_groups = set(ranked[:count])
+    validation_mask = train_mask & rows[group_column].astype(str).isin(validation_groups)
+    if not bool(validation_mask.any()) or bool((train_mask & ~validation_mask).sum() == 0):
+        raise ValueError("Automatic grouped validation split left an empty train or validation set")
+    out = rows.copy()
+    out.loc[validation_mask, split_column] = selection_value
+    return out, {
+        "selection_value": selection_value,
+        "created": True,
+        "group_column": group_column,
+        "validation_fraction": fraction,
+        "validation_group_count": len(validation_groups),
+        "validation_groups": sorted(validation_groups),
+    }
+
+
+def _split_group_column(split_kind: str, rows: pd.DataFrame) -> str:
+    aliases = {
+        "heldout_benchmark": "benchmark",
+        "heldout_env": "env_id",
+        "heldout_task": "task_id",
+        "heldout_object": "target_object",
+        "heldout_target_object": "target_object",
+    }
+    column = aliases.get(split_kind)
+    if column is None and split_kind.startswith("heldout_"):
+        column = split_kind.removeprefix("heldout_")
+    if column and column in rows and rows[column].notna().any():
+        return column
+    if "trace_id" not in rows:
+        raise KeyError("Grouped probe splitting requires trace_id")
+    return "trace_id"
 
 
 def _apply_row_filters(

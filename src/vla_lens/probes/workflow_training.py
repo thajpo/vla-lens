@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -12,21 +13,29 @@ import sklearn
 
 from vla_lens.artifacts import LensArtifact, make_artifact_id
 from vla_lens.dataset import build_dataset_index
+from vla_lens.probes.experiment_cards import experiment_card_from_artifact_fields
 from vla_lens.probes.representation_options import (
     normalize_representation_spec,
-    representation_kind_for_token_reduction,
-    require_generic_probe_representation,
+    require_generic_representation,
 )
-from vla_lens.probes.suite import run_probe_suite
+from vla_lens.probes.run_artifacts import (
+    PROBE_RUN_CONTRACT_KEY,
+    SOURCE_FEATURE_ROW_INDEX,
+    make_probe_run_contract,
+    probe_label_sources,
+    source_trace_fingerprint_map,
+)
+from vla_lens.probes.suite import run_probe_suite, trained_label_shuffle_metrics
 from vla_lens.probes.workflow_artifacts import (
     _array_fingerprint,
     _artifact_dir,
     _best_model_arrays,
     _best_result_details,
     _best_result_index,
+    _candidate_results_table,
+    _grouped_bootstrap_intervals,
     _json_scalar,
     _metric_definitions,
-    _null_metrics,
     _per_group_metrics,
     _per_split_metrics,
     _prediction_frame,
@@ -46,12 +55,18 @@ from vla_lens.probes.workflow_artifacts import (
     _split_summary,
     _value_counts,
 )
+from vla_lens.probes.workflow_models import (
+    _probe_model_contract,
+    _retained_readout_contracts,
+)
 from vla_lens.probes.workflow_prepare import (
     _apply_missing_policy,
     _apply_row_expansion,
     _apply_row_filters,
     _attach_episode_metadata,
+    _ensure_selection_split,
     _ensure_split,
+    _split_group_column,
 )
 from vla_lens.probes.workflow_spec import baseline_columns, normalize_probe_spec
 from vla_lens.probes.workflow_targets import (
@@ -80,14 +95,17 @@ def train_probe_artifact(
     row_filter: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None = None,
     eval_values: Sequence[str] | None = None,
     selection_value: str | None = None,
-    probe_models: Sequence[str] = ("linear",),
+    probe_models: Sequence[str] = ("linear", "mlp"),
     research: Mapping[str, Any] | None = None,
     row_expand: Mapping[str, Any] | None = None,
+    run_spec: Mapping[str, Any] | None = None,
 ) -> SavedProbeSuite:
     """Train simple probes from an activation selector and save a ``LensArtifact``."""
-    representation = _direct_probe_representation(selector, research)
     feature_matrix = dataset.select_model_sites(selector).materialize(cache=True)
-    X, rows = feature_matrix.X, feature_matrix.rows
+    source_sites = feature_matrix.rows.copy().reset_index(drop=True)
+    X = feature_matrix.X
+    rows = source_sites.copy()
+    rows[SOURCE_FEATURE_ROW_INDEX] = np.arange(len(rows), dtype=np.int64)
     if rows.empty or X.shape[0] == 0:
         raise ValueError(f"Probe selector matched no activation rows: {selector.to_dict()}")
     rows = _attach_episode_metadata(rows, dataset)
@@ -109,12 +127,31 @@ def train_probe_artifact(
         test_value=test_value,
         split_kind=split_kind,
     )
+    resolved_selection_value = _resolve_selection_value(
+        rows,
+        split_column=split_column,
+        requested=selection_value,
+        test_value=test_value,
+    )
+    rows, validation_summary = _ensure_selection_split(
+        rows,
+        split_column,
+        train_value=train_value,
+        selection_value=resolved_selection_value,
+        test_value=test_value,
+        split_kind=split_kind,
+    )
+    resolved_eval_values = list(
+        dict.fromkeys([resolved_selection_value, *(eval_values or ()), test_value])
+    )
     if target_name not in rows:
         raise KeyError(f"Probe target '{target_name}' is not present in selected rows")
     if X.shape[0] != len(rows):
         raise ValueError(
             f"Feature rows mismatch: X has {X.shape[0]} rows, metadata has {len(rows)}"
         )
+    rows = rows.reset_index(drop=True)
+    rows["prepared_row_index"] = np.arange(len(rows), dtype=np.int64)
 
     results = _run_sweep(
         X=X,
@@ -128,7 +165,7 @@ def train_probe_artifact(
         ],
         sweep=sweep,
         target_kind=str(_probe_target(target_name, rows, target_spec=target_spec)["kind"]),
-        eval_values=list(eval_values or [test_value]),
+        eval_values=resolved_eval_values,
         probe_models=list(probe_models),
     )
     if results.empty:
@@ -140,8 +177,8 @@ def train_probe_artifact(
     artifact_id = make_artifact_id(name, "probe_suite")
     selected_result_index = _best_result_index(
         results,
-        selection_value=selection_value or test_value,
-        prefer_model="linear",
+        selection_value=resolved_selection_value,
+        prefer_model=None,
     )
     selected_results = results.loc[[selected_result_index]]
     selected_eval_results = _selected_eval_results(results, selected_result_index)
@@ -152,9 +189,14 @@ def train_probe_artifact(
     )
     if scored_prediction_records.empty:
         scored_prediction_records = prediction_records
+    if "prepared_row_index" not in scored_prediction_records:
+        raise ValueError("Selected probe predictions are missing their prepared row indices")
+    prepared_indices = scored_prediction_records["prepared_row_index"].to_numpy(dtype=np.int64)
+    source_rows = rows.iloc[prepared_indices].reset_index(drop=True)
+    replay_features = np.asarray(X[prepared_indices])
     model_arrays, model_state_summary = _best_model_arrays(
         results,
-        selection_value=selection_value or test_value,
+        selection_value=resolved_selection_value,
     )
     output_dir = _dataset_output_dir(dataset, artifact_id)
     outputs = {
@@ -164,6 +206,10 @@ def train_probe_artifact(
         "per_split_metrics": str(output_dir / "per_split_metrics.parquet"),
         "per_group_metrics": str(output_dir / "per_group_metrics.parquet"),
         "null_metrics": str(output_dir / "null_metrics.parquet"),
+        "confidence_intervals": str(output_dir / "confidence_intervals.parquet"),
+        "candidate_results": str(output_dir / "candidate_results.parquet"),
+        "source_rows": str(output_dir / "source_rows.parquet"),
+        "source_sites": str(output_dir / "source_sites.parquet"),
         "weights": str(output_dir / "weights.zarr")
         if "weights" in model_arrays
         else None,
@@ -177,7 +223,41 @@ def train_probe_artifact(
         if "feature_scale" in model_arrays
         else None,
     }
+    uncertainty_group_column = _split_group_column(split_kind, rows)
     research_framing = _probe_research_framing(research)
+    representation = normalize_representation_spec(
+        (research or {}).get("representation"),
+        reduction=selector.reduce_tokens,
+    )
+    normalized_run_spec = (
+        _resolved_run_spec(
+            run_spec,
+            split_column=split_column,
+            train_value=train_value,
+            test_value=test_value,
+            selection_value=resolved_selection_value,
+            eval_values=resolved_eval_values,
+            validation_summary=validation_summary,
+        )
+        if run_spec is not None
+        else _direct_probe_spec(
+            name=name,
+            selector=selector,
+            target=target_spec,
+            split_kind=split_kind,
+            split_column=split_column,
+            train_value=train_value,
+            test_value=test_value,
+            eval_values=resolved_eval_values,
+            selection_value=resolved_selection_value,
+            metadata_baseline_columns=metadata_baseline_columns,
+            sweep=sweep,
+            row_filter=row_filter,
+            row_expand=row_expand,
+            probe_models=probe_models,
+            research=research,
+        )
+    )
     method = {
         "workflow": "train_probe_artifact",
         "probe_artifact_schema_version": PROBE_ARTIFACT_SCHEMA_VERSION,
@@ -194,8 +274,8 @@ def train_probe_artifact(
             split_column=split_column,
             train_value=train_value,
             test_value=test_value,
-            eval_values=list(eval_values or [test_value]),
-            selection_value=selection_value or test_value,
+            eval_values=resolved_eval_values,
+            selection_value=resolved_selection_value,
         ),
         "normalization": {
             "method": "standardize",
@@ -212,24 +292,29 @@ def train_probe_artifact(
             "library_version": sklearn.__version__,
             "hyperparams": _probe_hyperparams(results),
             "models": list(probe_models),
-            "primary_model": "linear",
+            "primary_model": "validation_selected",
             "secondary_models": [model for model in probe_models if model != "linear"],
             "trained_on_split": train_value,
             "weights_space": "normalized_feature_space",
             "best_model_state": model_state_summary,
+            "candidate_retention": {
+                "metrics": "all_candidates",
+                "fitted_state": "validation_selected_only",
+            },
         },
         "evaluation": {
             "primary_split": test_value,
-            "selection_split": selection_value or test_value,
-            "eval_splits": list(eval_values or [test_value]),
+            "selection_split": resolved_selection_value,
+            "eval_splits": resolved_eval_values,
             "primary_metric": _primary_metric(results),
             "grain": "row",
             "aggregation": "over_rows",
+            "independent_group": uncertainty_group_column,
             "metric_definitions": _metric_definitions(results),
         },
         "prediction_retention": {
             "mode": "row_level_eval_plus_all_source_scoring",
-            "eval_splits": list(eval_values or [test_value]),
+            "eval_splits": resolved_eval_values,
             "eval_row_count": int(len(prediction_records)),
             "scored_split_values": sorted(
                 str(value)
@@ -246,8 +331,9 @@ def train_probe_artifact(
         "split_column": split_column,
         "train_value": train_value,
         "test_value": test_value,
-        "eval_values": list(eval_values or [test_value]),
-        "selection_value": selection_value or test_value,
+        "eval_values": resolved_eval_values,
+        "selection_value": resolved_selection_value,
+        "validation_split": validation_summary,
         "metadata_baseline_columns": [
             column for column in metadata_baseline_columns if column in rows.columns
         ],
@@ -260,28 +346,124 @@ def train_probe_artifact(
         results,
         rows,
         target=target_name,
-        selection_value=selection_value or test_value,
+        selection_value=resolved_selection_value,
     )
     metrics["probe_artifact_schema_version"] = PROBE_ARTIFACT_SCHEMA_VERSION
     metrics["prediction_row_count"] = int(len(prediction_records))
     metrics["scored_prediction_row_count"] = int(len(scored_prediction_records))
     metrics["feature_matrix_fingerprint"] = _array_fingerprint(X)
     per_split_metrics = _per_split_metrics(prediction_records)
+    candidate_results = _candidate_results_table(
+        results,
+        selection_value=resolved_selection_value,
+        selected_result_index=selected_result_index,
+    )
+    method["probe"]["candidate_retention"]["candidate_count"] = int(
+        candidate_results["readout_id"].nunique()
+    )
+    _validate_selected_outputs(
+        results,
+        selected_result_index,
+        prediction_records,
+        per_split_metrics,
+    )
     per_group_metrics = _per_group_metrics(
         prediction_records,
         rows,
         group_columns=["benchmark", "task_id", "scene_family", "target_parse_status"],
     )
-    null_metrics = _null_metrics(prediction_records)
+    confidence_intervals = _grouped_bootstrap_intervals(
+        prediction_records,
+        group_column=uncertainty_group_column,
+    )
+    selection_split = resolved_selection_value
+    null_metrics = trained_label_shuffle_metrics(
+        source_rows,
+        replay_features,
+        target_name,
+        split_column=split_column,
+        train_value=train_value,
+        eval_value=str(selection_split),
+        probe_type=str(selected_results.iloc[0]["probe_type"]),
+        model_name=str(selected_results.iloc[0]["model"]),
+        group_column=uncertainty_group_column,
+    )
+    if not null_metrics.empty:
+        null_metrics.insert(0, "cohort_split", str(selection_split))
     if not null_metrics.empty:
         metrics["null_score_mean"] = float(null_metrics["score"].mean())
         metrics["null_score_std"] = float(null_metrics["score"].std(ddof=0))
+        metrics["null_p_value_resolution"] = float(1 / (len(null_metrics) + 1))
         best_score = metrics.get("best_score")
         if best_score is not None:
             metrics["null_p_value"] = float(
                 (1 + (null_metrics["score"] >= float(best_score)).sum())
                 / (len(null_metrics) + 1)
             )
+    uncertainty = _probe_uncertainty(
+        null_metrics,
+        metrics,
+        confidence_intervals,
+        cohort_split=str(selection_split),
+        group_column=uncertainty_group_column,
+    )
+    experiment_card = experiment_card_from_artifact_fields(
+        name=name,
+        research=research_framing,
+        input_info=method["input"],
+        target=method["target"],
+        split=method["split"],
+        probe=method["probe"],
+        evaluation=method["evaluation"],
+        metadata_baselines=method["metadata_baseline_columns"],
+        sweep=sweep,
+        metrics=metrics,
+        uncertainty=uncertainty,
+        representation=representation,
+    )
+    selected_model_contract = _probe_model_contract(
+        model_arrays,
+        model_state_summary,
+        hyperparameters=method["probe"]["hyperparams"],
+        feature_matrix=replay_features,
+        predictions=scored_prediction_records["prediction_value"].to_numpy(),
+    )
+    retained_readouts, retained_arrays = _retained_readout_contracts(
+        results,
+        selection_value=resolved_selection_value,
+        feature_matrix=X,
+        hyperparameters=method["probe"]["hyperparams"],
+    )
+    model_arrays.update(retained_arrays)
+    retained_ids = {readout["readout_id"] for readout in retained_readouts}
+    candidate_results["fitted_state_retained"] = candidate_results["readout_id"].isin(
+        retained_ids
+    )
+    method["probe"]["candidate_retention"].update(
+        {
+            "fitted_state": "best_validation_candidate_per_model_family",
+            "retained_readout_count": len(retained_readouts),
+            "retained_readout_ids": sorted(retained_ids),
+        }
+    )
+    method["probe"]["retained_readouts"] = retained_readouts
+    method[PROBE_RUN_CONTRACT_KEY] = make_probe_run_contract(
+        experiment_card=experiment_card,
+        run_spec=normalized_run_spec,
+        selector=selector.to_dict(),
+        source_rows_path=outputs["source_rows"],
+        source_rows=source_rows,
+        source_sites_path=outputs["source_sites"],
+        source_sites=source_sites,
+        scored_predictions_path=outputs["scored_predictions"],
+        scored_predictions=scored_prediction_records,
+        feature_matrix=replay_features,
+        source_trace_fingerprints=source_trace_fingerprint_map(dataset, source_rows),
+        label_sources=probe_label_sources(dataset),
+        model=selected_model_contract,
+        uncertainty=uncertainty,
+        readouts=retained_readouts,
+    )
     artifact = LensArtifact(
         artifact_id=artifact_id,
         artifact_type="probe_suite",
@@ -298,7 +480,7 @@ def train_probe_artifact(
             "results": _records(results),
             "best_result_details": _best_result_details(
                 results,
-                selection_value=selection_value or test_value,
+                selection_value=resolved_selection_value,
             ),
             "target": target_name,
             "split_summary": _split_summary(rows, split_column),
@@ -330,21 +512,31 @@ def train_probe_artifact(
         tags=("probe", target_name),
         source_trace_ids=tuple(sorted(str(value) for value in rows["trace_id"].dropna().unique())),
     )
-    saved = dataset.save_artifact(artifact, arrays=model_arrays)
-    artifact_dir = _artifact_dir(dataset, saved)
-    artifact_dir.mkdir(parents=True, exist_ok=True)
-    prediction_records.to_parquet(artifact_dir / "predictions.parquet", index=False)
-    scored_prediction_records.to_parquet(
-        artifact_dir / "scored_predictions.parquet",
-        index=False,
-    )
-    per_split_metrics.to_parquet(artifact_dir / "per_split_metrics.parquet", index=False)
-    per_group_metrics.to_parquet(artifact_dir / "per_group_metrics.parquet", index=False)
-    null_metrics.to_parquet(artifact_dir / "null_metrics.parquet", index=False)
-    (artifact_dir / "metrics.json").write_text(
-        json.dumps(metrics, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
+    artifact_dir = _artifact_dir(dataset, artifact)
+    artifact_dir.mkdir(parents=True, exist_ok=False)
+    try:
+        prediction_records.to_parquet(artifact_dir / "predictions.parquet", index=False)
+        scored_prediction_records.to_parquet(
+            artifact_dir / "scored_predictions.parquet",
+            index=False,
+        )
+        source_rows.to_parquet(artifact_dir / "source_rows.parquet", index=False)
+        source_sites.to_parquet(artifact_dir / "source_sites.parquet", index=False)
+        per_split_metrics.to_parquet(artifact_dir / "per_split_metrics.parquet", index=False)
+        per_group_metrics.to_parquet(artifact_dir / "per_group_metrics.parquet", index=False)
+        null_metrics.to_parquet(artifact_dir / "null_metrics.parquet", index=False)
+        confidence_intervals.to_parquet(
+            artifact_dir / "confidence_intervals.parquet", index=False
+        )
+        candidate_results.to_parquet(artifact_dir / "candidate_results.parquet", index=False)
+        (artifact_dir / "metrics.json").write_text(
+            json.dumps(metrics, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        saved = dataset.save_artifact(artifact, arrays=model_arrays)
+    except BaseException:
+        shutil.rmtree(artifact_dir)
+        raise
     save_analysis_run(
         dataset,
         AnalysisRunSpec(
@@ -359,23 +551,6 @@ def train_probe_artifact(
     return SavedProbeSuite(artifact=saved, results=results, rows=rows)
 
 
-def _direct_probe_representation(
-    selector: ActivationQuery,
-    research: Mapping[str, Any] | None,
-) -> dict[str, Any]:
-    reduction_kind = representation_kind_for_token_reduction(selector.reduce_tokens)
-    requested = (research or {}).get("representation")
-    representation = require_generic_probe_representation(
-        normalize_representation_spec(reduction_kind if requested is None else requested)
-    )
-    if representation["kind"] != reduction_kind:
-        raise ValueError(
-            f"Representation {representation['kind']!r} contradicts selector token "
-            f"reduction {selector.reduce_tokens!r}, which produces {reduction_kind!r}."
-        )
-    return representation
-
-
 def _selected_eval_results(results: pd.DataFrame, selected_result_index: int) -> pd.DataFrame:
     selected = results.loc[selected_result_index]
     mask = pd.Series(True, index=results.index)
@@ -388,14 +563,49 @@ def _selected_eval_results(results: pd.DataFrame, selected_result_index: int) ->
     return matched
 
 
+def _validate_selected_outputs(
+    results: pd.DataFrame,
+    selected_result_index: int,
+    predictions: pd.DataFrame,
+    per_split_metrics: pd.DataFrame,
+) -> None:
+    """Prevent sweep candidates from being mixed into selected-probe summaries."""
+
+    selected = results.loc[selected_result_index]
+    for column in ["feature", "model", "probe_type", "target"]:
+        if column not in predictions or column not in results:
+            continue
+        values = set(predictions[column].astype(str).unique())
+        expected = {str(selected[column])}
+        if values != expected:
+            raise ValueError(
+                f"Selected probe output mixes {column} values {sorted(values)!r}; "
+                f"expected {sorted(expected)!r}"
+            )
+    selected_evaluations = _selected_eval_results(results, selected_result_index)
+    for row in selected_evaluations.itertuples():
+        split = str(row.split_value)
+        saved = per_split_metrics.loc[per_split_metrics["split"].astype(str) == split]
+        if saved.empty:
+            raise ValueError(f"Selected probe output is missing split metrics for {split!r}")
+        if not np.isclose(float(saved.iloc[0]["score"]), float(row.score), atol=1e-9):
+            raise ValueError(
+                f"Selected probe score mismatch for {split!r}: "
+                f"results={float(row.score)}, predictions={float(saved.iloc[0]['score'])}"
+            )
+
+
 def train_probe_artifact_from_spec(
     dataset: TraceDataset,
     spec: Mapping[str, Any],
 ) -> SavedProbeSuite:
     """Train a probe artifact from a YAML/JSON-compatible spec."""
     normalized = normalize_probe_spec(spec)
-    require_generic_probe_representation(normalized.get("representation"))
     features = normalized["features"]
+    require_generic_representation(
+        normalized["representation"],
+        reduction=str(features.get("reduction", "mean")),
+    )
     selector = ActivationQuery(
         episodes=dict(features.get("episodes") or {}),
         name=features.get("name"),
@@ -423,16 +633,48 @@ def train_probe_artifact_from_spec(
         sweep=normalized.get("sweep", "layer"),
         row_filter=normalized.get("row_filter"),
         row_expand=normalized.get("row_expand"),
-        eval_values=[
-            str(value)
-            for value in split.get("eval_values", [split.get("test_value", "test")])
-        ],
-        selection_value=str(split.get("selection_value", split.get("test_value", "test"))),
+        eval_values=(
+            [str(value) for value in split["eval_values"]]
+            if "eval_values" in split
+            else None
+        ),
+        selection_value=(
+            str(split["selection_value"]) if split.get("selection_value") is not None else None
+        ),
         probe_models=[
-            str(value) for value in normalized.get("probe", {}).get("models", ["linear"])
+            str(value)
+            for value in normalized.get("probe", {}).get("models", ["linear", "mlp"])
         ],
         research=normalized,
+        run_spec=normalized,
     )
+
+
+def _resolve_selection_value(
+    rows: pd.DataFrame,
+    *,
+    split_column: str,
+    requested: str | None,
+    test_value: str,
+) -> str:
+    if requested is not None:
+        value = str(requested)
+        if value == test_value:
+            raise ValueError(
+                "Probe selection_value must differ from test_value; final test data cannot "
+                "choose a layer, model, or transform."
+            )
+        return value
+    values = (
+        set(rows[split_column].dropna().astype(str)) if split_column in rows else set()
+    )
+    for candidate in ["validation", "val"]:
+        if candidate in values:
+            return candidate
+    validation_like = sorted(
+        value for value in values if value.startswith("val_") or "validation" in value
+    )
+    return validation_like[0] if validation_like else "validation"
 
 
 def _probe_research_framing(spec: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -447,6 +689,131 @@ def _dataset_output_dir(dataset: TraceDataset, artifact_id: str) -> Path:
     if artifact_root == dataset.root:
         return Path("artifacts") / artifact_id
     return artifact_root.relative_to(dataset.root) / "artifacts" / artifact_id
+
+
+def _direct_probe_spec(
+    *,
+    name: str,
+    selector: ActivationQuery,
+    target: Mapping[str, Any],
+    split_kind: str,
+    split_column: str,
+    train_value: str,
+    test_value: str,
+    eval_values: Sequence[str],
+    selection_value: str,
+    metadata_baseline_columns: Sequence[str],
+    sweep: str | Sequence[str],
+    row_filter: Sequence[Mapping[str, Any]] | Mapping[str, Any] | None,
+    row_expand: Mapping[str, Any] | None,
+    probe_models: Sequence[str],
+    research: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    features = selector.to_dict()
+    features["reduction"] = features.pop("reduce_tokens")
+    spec: dict[str, Any] = {
+        "name": name,
+        "target": dict(target),
+        "features": features,
+        "split": {
+            "kind": split_kind,
+            "column": split_column,
+            "train_value": train_value,
+            "test_value": test_value,
+            "selection_value": selection_value,
+            "eval_values": list(eval_values),
+        },
+        "baseline": list(metadata_baseline_columns),
+        "probe": {"models": list(probe_models)},
+        "sweep": list(sweep) if not isinstance(sweep, str) else sweep,
+    }
+    if row_filter is not None:
+        spec["row_filter"] = row_filter
+    if row_expand is not None:
+        spec["row_expand"] = dict(row_expand)
+    spec.update(_probe_research_framing(research))
+    return spec
+
+
+def _resolved_run_spec(
+    run_spec: Mapping[str, Any],
+    *,
+    split_column: str,
+    train_value: str,
+    test_value: str,
+    selection_value: str,
+    eval_values: Sequence[str],
+    validation_summary: Mapping[str, Any],
+) -> dict[str, Any]:
+    resolved = dict(run_spec)
+    split = dict(resolved.get("split") or {})
+    split.update(
+        {
+            "column": split_column,
+            "train_value": train_value,
+            "test_value": test_value,
+            "selection_value": selection_value,
+            "eval_values": list(eval_values),
+            "automatic_validation": dict(validation_summary),
+        }
+    )
+    resolved["split"] = split
+    return resolved
+
+
+def _probe_uncertainty(
+    null_metrics: pd.DataFrame,
+    metrics: Mapping[str, Any],
+    confidence_intervals: pd.DataFrame,
+    *,
+    cohort_split: str,
+    group_column: str,
+) -> dict[str, Any]:
+    null_test: dict[str, Any]
+    if null_metrics.empty:
+        null_test = {
+            "status": "not_computed",
+            "reason": "Training or validation rows were unavailable for the selected readout.",
+            "cohort_split": cohort_split,
+        }
+    else:
+        null_test = {
+            "status": "computed",
+            "method": "retrain the selected probe on shuffled training labels",
+            "metric": str(null_metrics["metric"].iloc[0]),
+            "cohort_split": cohort_split,
+            "prediction_row_count": int(null_metrics["row_count"].iloc[0]),
+            "permutation_count": int(len(null_metrics)),
+            "random_seed": 0,
+            "unit": f"training labels shuffled within or across {group_column} groups",
+            "group_column": group_column,
+            "shuffle_strategy": str(null_metrics["shuffle_strategy"].iloc[0]),
+            "p_value": metrics.get("null_p_value"),
+            "p_value_resolution": metrics.get("null_p_value_resolution"),
+            "interpretation": (
+                "Exploratory trained-null comparison; use the effect and grouped interval "
+                "as the main evidence, not a thresholded p-value."
+            ),
+        }
+    return {
+        "confidence_intervals": (
+            {
+                "status": "computed",
+                "method": f"bootstrap whole {group_column} groups with replacement",
+                "unit": group_column,
+                "intervals": confidence_intervals.to_dict(orient="records"),
+            }
+            if not confidence_intervals.empty
+            else {
+                "status": "not_computed",
+                "reason": (
+                    f"Fewer than two {group_column} groups were available in each "
+                    "evaluation split."
+                ),
+            }
+        ),
+        "null_test": null_test,
+    }
 
 
 def _run_sweep(

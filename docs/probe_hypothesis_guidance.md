@@ -2,7 +2,7 @@
 
 Status: active guidance.
 
-Last updated: June 18, 2026.
+Last updated: July 21, 2026.
 
 This document is the repo-local protocol for agents and humans proposing new
 probe work. Existing probe artifacts remain the post-training source of truth.
@@ -12,8 +12,9 @@ searched, and what boring explanations must be checked.
 
 ## Core Rule
 
-Probe training should produce an auditable artifact, not just a score. Before
-training, the proposed probe must make these choices visible:
+Probe training should produce a reusable artifact, not just a score. Before
+training, the experiment card must put the choices that change the research
+claim first:
 
 - Research question in normal language.
 - Target label or regression value, including how it is constructed.
@@ -26,8 +27,33 @@ training, the proposed probe must make these choices visible:
 - Sweep axes such as layer, policy call, feature site, and model type.
 - Main metrics and known failure modes.
 
+The card then shows method choices such as linear versus MLP and the planned
+sweep. File paths, cache keys, library versions, and similar internal details
+are saved in the artifact, but they should not dominate the review. This keeps
+"train a probe on X" understandable without hiding anything needed to check or
+repeat the work.
+
 The goal is not to stop broad search. It is to prevent broad search from
 quietly becoming a test-set fishing expedition.
+
+## Default Cheap Battery
+
+When the user asks whether activations encode a target, do not ask them to pick
+between inexpensive readouts. Preflight the request, then train both the linear
+probe and the standard small MLP unless the spec explicitly narrows the models.
+Sweep every declared layer on validation and save the complete comparison. The
+validation-selected readout is replayable; test remains a reporting split.
+
+Tokenwise, feature-level, layer-mixture, and object-conditioned variants should
+also run automatically when the capture supports them and a runner exists. If a
+runner is missing, say that plainly instead of silently falling back to global
+mean pooling. Ask the user only when the choice changes the target or cohort,
+requires new capture, launches an intervention, or has material compute/storage
+cost.
+
+The MLP is a capacity check, not automatically the stronger scientific claim.
+Interpret the comparison: linear success means easy access; MLP-only success
+means a nonlinear readout found signal and needs stronger confound controls.
 
 ## What Can Be Automated
 
@@ -44,7 +70,9 @@ These checks should be handled by scripts whenever possible:
 | List metadata baselines | Makes boring explanations visible. |
 | Flag target-as-baseline leakage | Avoids probes that compare against their own label. |
 | Count planned readouts | Makes "train all layers" an explicit sweep. |
-| Warn when selection equals test | Prevents using final evaluation as model/site selection. |
+| Reject selection equal to test | Prevents using final evaluation as model/site selection. |
+| Create grouped validation when absent | Keeps routine train/test datasets usable without test-set tuning. |
+| Match uncertainty groups to the claim | Uses tasks for held-out-task claims and episodes for episode claims. |
 
 These checks do not decide whether a scientific question matters. They only make
 the proposed experiment reviewable.
@@ -85,10 +113,10 @@ Use this rule of thumb for PI0.5-style first-pass probes:
 | Effective training rows | Feature shape | Recommended probe posture |
 | ---: | --- | --- |
 | `< 500` | any high-dimensional activation | Do not make a claim-bearing probe unless the target is extremely simple and baselines are strong. Prefer more data, narrower labels, or descriptive analysis. |
-| `500-2k` | one pooled vector, about 1024D | Use only low-capacity probes: mean pooling over a justified token set, linear/logistic or ridge, strong regularization, held-out-task split, and metadata/null baselines. Treat positive results as fragile. |
-| `2k-10k` | one pooled vector, about 1024D | Claim-bearing linear probes are reasonable if class support and held-out-task generalization are clean. Pooling variants are robustness checks, not score-shopping axes. |
-| `> 10k` | pooled or moderately reduced features | PCA, random projection, and limited pooling ablations are reasonable. Still select on validation and report the number of searched variants. |
-| `> 50k` | richer tensor summaries | Learned pooling, token concatenation, cross-layer concatenation, or MLP probes can be used as exploratory upper bounds, but they are not a substitute for simpler localization evidence. |
+| `500-2k` | one pooled vector, about 1024D | Keep the linear readout as the claim-bearing result; run the small MLP automatically as a fragile capacity check with trained shuffled-label controls. |
+| `2k-10k` | one pooled vector, about 1024D | Train linear and small MLP probes. Treat MLP-only gains as exploratory and inspect metadata and shuffled-label controls. |
+| `> 10k` | pooled or moderately reduced features | Train linear and small MLP probes; PCA, random projection, and limited pooling ablations are reasonable. Select on validation and report the number searched. |
+| `> 50k` | richer tensor summaries | Add learned pooling, token concatenation, or cross-layer variants when supported; they remain exploratory unless confirmed by simpler localization evidence. |
 
 These thresholds are not laws. They are guardrails for avoiding the common
 failure mode where the probe has enough capacity to exploit task identity,
@@ -169,7 +197,38 @@ uv run python scripts/preflight_vla_lens_probe.py \
 
 The preflight path reuses the normal YAML probe spec. It inspects selected rows,
 target labels, filters, splits, baselines, and sweep size, but it does not fit a
-probe.
+probe. Markdown shows the short experiment card by default. Add `--details` for
+the full split, label-support, and baseline tables, or use JSON when another
+tool needs every field.
+
+## After Training
+
+New generic probe artifacts save the fitted model, the exact chosen rows, the
+complete training recipe, and the details of any uncertainty calculation. They
+do not copy the large activation matrix into every artifact. The feature cache
+is only a speed-up and may be deleted; replay can rebuild the features from the
+source capture.
+
+Use the saved artifact directly:
+
+```bash
+uv run python scripts/use_vla_lens_probe.py \
+  /path/to/dataset ARTIFACT_ID explain
+
+uv run python scripts/use_vla_lens_probe.py \
+  /path/to/dataset ARTIFACT_ID replay
+
+uv run python scripts/use_vla_lens_probe.py \
+  /path/to/dataset ARTIFACT_ID use \
+  --features compatible_features.npy \
+  --output predictions.npy
+```
+
+`explain` shows the experiment card. `replay` rebuilds the selected features
+and checks them against the saved predictions without fitting. `use` applies
+the fitted probe to another compatible feature matrix. Older artifacts remain
+readable, but the command says plainly when they do not contain enough data to
+replay or reuse.
 
 ## Probe Spec Additions
 
@@ -201,7 +260,10 @@ split:
 ```
 
 Use validation for layer/site/model selection. Treat the test split as the final
-report surface, not as a search surface.
+report surface, not as a search surface. The trainer rejects an explicit
+selection/test collision. When validation labels are absent, it deterministically
+moves whole groups from train into validation and records exactly which groups
+were moved.
 
 ## Sweeps Are Allowed
 
@@ -210,7 +272,9 @@ not know where a signal might live. The guardrail is not "avoid sweeping." The
 guardrail is:
 
 - Declare the sweep axes before training.
-- Save all readouts, not only the best one.
+- Save every readout's comparison row and validation rank, not only the winner.
+- Retain exact replay state for the selected readout and reusable fitted state
+  for the best validation candidate from each model family.
 - Select on validation.
 - Report the test split only after selection.
 - Include null and metadata baselines.
@@ -281,7 +345,7 @@ baseline:
   - scene_family
 sweep: [layer, policy_call_index]
 probe:
-  models: [linear]
+  models: [linear, mlp]
 ```
 
 This example may need target adapter work before it runs, because object pose is

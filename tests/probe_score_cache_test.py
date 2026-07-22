@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 import yaml
 
 from vla_lens import (
@@ -14,7 +15,10 @@ from vla_lens import (
 )
 from vla_lens.dataset import build_dataset_index
 from vla_lens.probes import dump_probe_spec, train_probe_artifact_from_spec
+from vla_lens.probes.run_artifacts import LoadedProbeArtifact
 from vla_lens.probes.score_cache import (
+    _best_model_state,
+    _linear_probe_model,
     _normalized_value,
     _sweep_value_from_best_state,
     read_probe_score_cache,
@@ -78,6 +82,111 @@ def test_probe_score_cache_refresh_scores_new_episodes_without_retraining(tmp_pa
     assert probe_index["prediction_summary"]["unscored"] == 0
 
 
+def test_probe_score_cache_uses_exact_contract_inference(tmp_path, monkeypatch):
+    root = tmp_path / "regression"
+    dataset = create_synthetic_trace_dataset(root, num_episodes=6, timesteps=8)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    pd.DataFrame(
+        {
+            "trace_id": trace_ids,
+            "split": ["train", "train", "train", "train", "test", "test"],
+        }
+    ).to_csv(dataset.root / "probe_splits.csv", index=False)
+    saved = train_probe_artifact_from_spec(
+        dataset,
+        yaml.safe_load(_refreshable_regression_probe_spec()),
+    )
+    artifact = dataset.load_artifact(saved.artifact.artifact_id)
+    model = _linear_probe_model(dataset, artifact, _best_model_state(artifact))
+    for name in ["weights", "bias", "feature_mean", "feature_scale"]:
+        assert model[name].dtype == dataset.load_artifact_array(artifact, name).dtype
+
+    captured: dict[str, np.ndarray] = {}
+    original_inference = LoadedProbeArtifact.predict_with_confidence
+
+    def capture_inference(probe, features):
+        inference = original_inference(probe, features)
+        captured["predictions"] = inference.predictions.copy()
+        return inference
+
+    monkeypatch.setattr(LoadedProbeArtifact, "predict_with_confidence", capture_inference)
+
+    refresh_probe_score_cache(dataset, artifact.artifact_id)
+    score_cache = read_probe_score_cache(dataset, artifact.artifact_id)
+
+    assert captured["predictions"].dtype == np.float64
+    np.testing.assert_array_equal(
+        score_cache["prediction_value"].to_numpy(),
+        captured["predictions"],
+    )
+
+
+@pytest.mark.parametrize("model_name", ["linear", "mlp"])
+def test_probe_score_cache_preserves_contract_classification_confidence(
+    tmp_path, monkeypatch, model_name
+):
+    root = tmp_path / model_name
+    dataset = create_synthetic_trace_dataset(root, num_episodes=6, timesteps=8)
+    trace_ids = [bundle.manifest.trace_id for bundle in dataset.bundles]
+    pd.DataFrame(
+        {
+            "trace_id": trace_ids,
+            "split": ["train", "train", "train", "train", "test", "test"],
+        }
+    ).to_csv(dataset.root / "probe_splits.csv", index=False)
+    spec = yaml.safe_load(_refreshable_probe_spec())
+    spec["probe"]["models"] = [model_name]
+    saved = train_probe_artifact_from_spec(dataset, spec)
+    artifact = dataset.load_artifact(saved.artifact.artifact_id)
+    frozen_predictions = pd.read_parquet(
+        dataset.root
+        / "vla_lens"
+        / "artifacts"
+        / saved.artifact.artifact_id
+        / "predictions.parquet"
+    )
+    if model_name == "mlp":
+        assert "weights" not in artifact.arrays
+
+    captured: dict[str, np.ndarray] = {}
+    original_inference = LoadedProbeArtifact.predict_with_confidence
+
+    def capture_inference(probe, features):
+        inference = original_inference(probe, features)
+        captured["predictions"] = inference.predictions.copy()
+        assert inference.confidence is not None
+        captured["confidence"] = inference.confidence.copy()
+        return inference
+
+    monkeypatch.setattr(LoadedProbeArtifact, "predict_with_confidence", capture_inference)
+
+    refresh_probe_score_cache(dataset, artifact.artifact_id)
+    score_cache = read_probe_score_cache(dataset, artifact.artifact_id)
+
+    np.testing.assert_array_equal(
+        score_cache["prediction_value"].to_numpy(), captured["predictions"]
+    )
+    np.testing.assert_allclose(
+        score_cache["confidence"].to_numpy(dtype=np.float64),
+        captured["confidence"],
+    )
+    assert score_cache["confidence"].notna().all()
+    assert score_cache["confidence"].between(0.5, 1.0).all()
+    join_keys = ["trace_id", "timestep", "policy_call_index", "model_site_id"]
+    overlap = score_cache.merge(
+        frozen_predictions[join_keys + ["prediction_value", "confidence"]],
+        on=join_keys,
+        suffixes=("_cache", "_frozen"),
+    )
+    assert len(overlap) == len(frozen_predictions)
+    np.testing.assert_array_equal(
+        overlap["prediction_value_cache"], overlap["prediction_value_frozen"]
+    )
+    np.testing.assert_allclose(
+        overlap["confidence_cache"], overlap["confidence_frozen"], rtol=1e-6
+    )
+
+
 def _refreshable_probe_spec() -> str:
     return dump_probe_spec(
         {
@@ -95,6 +204,35 @@ def _refreshable_probe_spec() -> str:
                 "test_value": "test",
             },
             "baseline": ["majority_class"],
+            "probe": {"models": ["linear"]},
+            "sweep": "layer",
+        }
+    )
+
+
+def _refreshable_regression_probe_spec() -> str:
+    return dump_probe_spec(
+        {
+            "name": "Refreshable timestep probe",
+            "target": {
+                "kind": "regression",
+                "name": "timestep",
+                "source": "row",
+                "column": "timestep",
+            },
+            "features": {
+                "module": "action_head.layers.*.resid",
+                "tensor_type": "resid",
+                "token_kind": "action",
+                "reduction": "mean",
+                "dtype": "float64",
+            },
+            "split": {
+                "kind": "random_episode",
+                "column": "split_sidecar_split",
+                "test_value": "test",
+            },
+            "baseline": ["train_mean"],
             "probe": {"models": ["linear"]},
             "sweep": "layer",
         }

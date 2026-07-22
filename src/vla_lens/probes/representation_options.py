@@ -18,11 +18,15 @@ from vla_lens.selectors import ActivationQuery
 from vla_lens.traces import TraceDataset
 
 DEFAULT_REPRESENTATION_KIND = "mean_pool"
-GENERIC_PROBE_REPRESENTATION_KINDS = frozenset({DEFAULT_REPRESENTATION_KIND})
+_REDUCTION_KIND = {"mean": "mean_pool", "flat": "flat_tokens", "none": "vector"}
+GENERIC_PROBE_REPRESENTATION_KINDS = frozenset(_REDUCTION_KIND.values())
 
 _ALIASES = {
     "mean": "mean_pool",
     "mean_pooled": "mean_pool",
+    "pooled": "mean_pool",
+    "flat": "flat_tokens",
+    "flatten": "flat_tokens",
     "layer_mix": "learned_layer_mix",
     "learned_mix": "learned_layer_mix",
     "tokens": "tokenwise",
@@ -32,24 +36,35 @@ _ALIASES = {
 }
 
 
-def normalize_representation_spec(value: Any) -> dict[str, Any]:
+def normalize_representation_spec(
+    value: Any,
+    *,
+    reduction: str = "mean",
+) -> dict[str, Any]:
     """Normalize a probe representation request without claiming runner support."""
 
+    inferred = _REDUCTION_KIND.get(str(reduction))
+    if inferred is None:
+        raise ValueError(f"Unknown token reduction {reduction!r}")
     if value is None or value == "":
-        return {"kind": DEFAULT_REPRESENTATION_KIND}
+        return {"kind": inferred, "inferred_from_reduction": True}
     if isinstance(value, str):
         parsed: dict[str, Any] = {"kind": value}
     elif isinstance(value, Mapping):
         parsed = dict(value)
     else:
         raise TypeError("Probe representation must be a string or mapping")
-    kind = str(parsed.get("kind") or DEFAULT_REPRESENTATION_KIND).strip().lower()
+    kind = str(parsed.get("kind") or inferred).strip().lower()
     parsed["kind"] = _ALIASES.get(kind, kind)
+    parsed.setdefault("inferred_from_reduction", False)
     return parsed
 
 
 def representation_kind_for_token_reduction(value: Any) -> str:
-    return "mean_pool" if str(value or "mean") == "mean" else "tokenwise"
+    reduction = str(value or "mean")
+    if reduction not in _REDUCTION_KIND:
+        raise ValueError(f"Unknown token reduction {reduction!r}")
+    return _REDUCTION_KIND[reduction]
 
 
 def require_generic_probe_representation(value: Any) -> dict[str, Any]:
@@ -64,6 +79,27 @@ def require_generic_probe_representation(value: Any) -> dict[str, Any]:
             "specialized runner named in representation_options."
         )
     return normalized
+
+
+def require_generic_representation(
+    spec: Mapping[str, Any],
+    *,
+    reduction: str,
+) -> None:
+    """Require the named representation to match the constructed feature matrix."""
+
+    kind = str(spec.get("kind"))
+    expected = representation_kind_for_token_reduction(reduction)
+    if kind not in GENERIC_PROBE_REPRESENTATION_KINDS:
+        raise ValueError(
+            f"Representation {kind!r} needs a specialized probe runner; the generic "
+            "trainer will not silently replace it with pooled features."
+        )
+    if kind != expected:
+        raise ValueError(
+            f"Representation {kind!r} conflicts with features.reduction={reduction!r}; "
+            f"that reduction constructs {expected!r}."
+        )
 
 
 def probe_representation_options(
@@ -87,6 +123,34 @@ def probe_representation_options(
             "keeps": "one feature vector per example",
             "loses": "which token carried the signal",
             "reason": "The generic linear/logistic probe trainer supports this now.",
+        },
+        {
+            "kind": "flat_tokens",
+            "label": "Keep token positions by flattening",
+            "question": "Does preserving token position reveal information pooling hides?",
+            "status": "ready" if capabilities["token_axis"] else "blocked",
+            "runner": "generic_probe",
+            "keeps": "token positions as separate feature columns",
+            "loses": "a shared readout that can move across token positions",
+            "reason": (
+                "The generic trainer can flatten the retained token axis."
+                if capabilities["token_axis"]
+                else "The selected arrays do not retain a token axis."
+            ),
+        },
+        {
+            "kind": "vector",
+            "label": "Use the captured vector",
+            "question": "Is the signal available in an already vector-shaped activation?",
+            "status": "ready" if not capabilities["token_axis"] else "blocked",
+            "runner": "generic_probe",
+            "keeps": "the selected vector without token pooling",
+            "loses": "token structure when the source is token-shaped",
+            "reason": (
+                "The selected source is already vector-shaped."
+                if not capabilities["token_axis"]
+                else "Token-shaped sources need mean or flat token handling."
+            ),
         },
         _specialized_option(
             kind="learned_layer_mix",
@@ -156,6 +220,66 @@ def probe_representation_options(
         "capabilities": capabilities,
         "options": options,
     }
+
+
+def representation_options(
+    feature_rows: pd.DataFrame,
+    *,
+    selected: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Return lightweight options when dataset-level capability checks are unavailable."""
+
+    axes = feature_rows.get("axes", pd.Series(dtype=object)).map(_parse_axes)
+    has_token_axis = bool(axes.map(lambda value: "token" in value).any())
+    layer_count = int(
+        pd.to_numeric(feature_rows.get("layer", pd.Series(dtype=float)), errors="coerce")
+        .dropna()
+        .nunique()
+    )
+    return {
+        "selected": dict(selected),
+        "options": [
+            _simple_option("mean_pool", "Average tokens", "ready", "One vector per example."),
+            _simple_option(
+                "flat_tokens",
+                "Keep token positions by flattening",
+                "ready" if has_token_axis else "blocked",
+                (
+                    "Token positions become separate feature columns."
+                    if has_token_axis
+                    else "The selected arrays do not retain a token axis."
+                ),
+            ),
+            _simple_option(
+                "learned_layer_mix",
+                "Learn a layer mixture",
+                "data_ready" if has_token_axis and layer_count > 1 else "blocked",
+                "Needs an aligned multi-layer runner and validation-only mixture fitting.",
+            ),
+            _simple_option(
+                "tokenwise",
+                "Shared token-level readout",
+                "data_ready" if has_token_axis else "blocked",
+                "Needs a runner that treats tokens as examples.",
+            ),
+            _simple_option(
+                "object_conditioned",
+                "Ask about one object",
+                "data_ready" if has_token_axis else "blocked",
+                "Needs an explicit object query joined to token-preserving features.",
+            ),
+            _simple_option(
+                "set_decoder",
+                "Predict an unordered object set",
+                "data_ready" if has_token_axis else "blocked",
+                "Needs a structured target and matching-based evaluation.",
+            ),
+        ],
+    }
+
+
+def _simple_option(kind: str, label: str, status: str, reason: str) -> dict[str, str]:
+    return {"kind": kind, "label": label, "status": status, "reason": reason}
 
 
 def _specialized_option(

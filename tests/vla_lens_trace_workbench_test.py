@@ -323,7 +323,7 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
     assert saved.artifact.display["best_result_details"]
     assert saved.artifact.display["data_quality"]
     method = saved.artifact.method
-    assert method["probe_artifact_schema_version"] == 3
+    assert method["probe_artifact_schema_version"] == 4
     for key in [
         "lineage",
         "source",
@@ -336,6 +336,7 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
         "evaluation",
         "prediction_retention",
         "outputs",
+        "probe_run_contract",
     ]:
         assert key in method
     assert method["split"]["group_key"] == "trace_id"
@@ -348,6 +349,8 @@ def test_probe_workflow_saves_dataset_artifact_from_yaml_spec(tmp_path):
     assert method["examples"]["row_index_fingerprint"].startswith("sha256:")
     artifact_dir = dataset.root / "vla_lens" / "artifacts" / saved.artifact.artifact_id
     assert (artifact_dir / "metrics.json").exists()
+    assert (artifact_dir / "source_rows.parquet").exists()
+    assert (artifact_dir / "source_sites.parquet").exists()
     predictions_path = artifact_dir / "predictions.parquet"
     assert predictions_path.exists()
     predictions = pd.read_parquet(predictions_path)
@@ -573,6 +576,19 @@ def test_probe_workflow_uses_probe_split_sidecar(tmp_path):
     assert saved.artifact.method["probe"]["models"] == ["linear", "mlp"]
     assert set(saved.results["split_value"]) == {"val_heldout_task", "test_heldout_task"}
     assert set(saved.results["model"]) == {"linear", "mlp"}
+    artifact_dir = dataset.root / "vla_lens" / "artifacts" / saved.artifact.artifact_id
+    predictions = pd.read_parquet(artifact_dir / "predictions.parquet")
+    selection_predictions = predictions.loc[
+        predictions["eval_split"].astype(str) == "val_heldout_task"
+    ]
+    null_metrics = pd.read_parquet(artifact_dir / "null_metrics.parquet")
+    null_test = saved.artifact.method["probe_run_contract"]["uncertainty"]["null_test"]
+    assert set(null_metrics["cohort_split"]) == {"val_heldout_task"}
+    assert set(null_metrics["row_count"]) == {len(selection_predictions)}
+    assert null_test["cohort_split"] == "val_heldout_task"
+    assert null_test["prediction_row_count"] == len(selection_predictions)
+    assert null_test["permutation_count"] == len(null_metrics)
+    assert "sample_count" not in null_test
     reopened = TraceDataset.open(dataset.root)
     index_payload = _probe_index_payload(reopened)
     probe_index = next(

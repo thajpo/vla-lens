@@ -5,11 +5,10 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from vla_lens import ActivationQuery, create_synthetic_trace_dataset
+from vla_lens import create_synthetic_trace_dataset
 from vla_lens.probes import (
     format_probe_preflight_markdown,
     probe_preflight_report,
-    train_probe_artifact,
     train_probe_artifact_from_spec,
 )
 
@@ -41,13 +40,12 @@ def test_probe_preflight_reports_sweep_baselines_and_leakage(tmp_path):
     assert report["sweep"]["columns"] == ["layer", "policy_call_index"]
     assert report["sweep"]["group_count"] == 4
     assert report["sweep"]["planned_readout_count"] == 8
-    options = {option["kind"]: option for option in report["representation"]["options"]}
-    assert report["representation"]["selected"] == {"kind": "mean_pool"}
-    assert options["mean_pool"]["status"] == "ready"
-    assert options["learned_layer_mix"]["status"] == "ready"
-    assert options["tokenwise"]["status"] == "ready"
-    assert options["object_conditioned"]["status"] == "blocked"
-    assert options["set_decoder"]["status"] == "blocked"
+    assert report["representation"]["selected"]["kind"] == "mean_pool"
+    assert {option["kind"] for option in report["representation"]["options"]} >= {
+        "mean_pool",
+        "flat_tokens",
+        "object_conditioned",
+    }
     assert any("target column" in warning for warning in report["warnings"])
     assert any("lacks some target classes" in warning for warning in report["warnings"])
 
@@ -63,13 +61,13 @@ def test_probe_preflight_markdown_is_reviewable(tmp_path):
         probe_preflight_report(dataset, _outcome_probe_spec(), min_class_support=5)
     )
 
-    assert "# Probe Preflight: Synthetic outcome preflight" in markdown
-    assert "## Baselines" in markdown
+    assert "# Probe Experiment Card: Synthetic outcome preflight" in markdown
+    assert "## Choices that change the claim" in markdown
+    assert "## Method choices" in markdown
+    assert "## Execution details" in markdown
+    assert "Baselines:" in markdown
     assert "outcome" in markdown
     assert "Planned readouts: 8" in markdown
-    assert "## Representation Options" in markdown
-    assert "Learn a layer mixture" in markdown
-    assert "Keep tokens separate" in markdown
     assert "target column" in markdown
 
 
@@ -88,8 +86,7 @@ def test_probe_training_persists_research_framing_from_spec(tmp_path):
         "question": "Can outcome be decoded from synthetic action hidden states?",
     }
     assert saved.artifact.display["research"] == saved.artifact.method["research"]
-    assert saved.artifact.method["representation"] == {"kind": "mean_pool"}
-    assert saved.artifact.display["representation"] == {"kind": "mean_pool"}
+    assert saved.artifact.method["representation"]["kind"] == "mean_pool"
     artifact_path = Path(str(saved.artifact.path))
     if not artifact_path.is_absolute():
         candidates = [
@@ -103,86 +100,17 @@ def test_probe_training_persists_research_framing_from_spec(tmp_path):
     assert set(predictions["split"].astype(str)) == {"test_heldout_task", "val_heldout_task"}
 
 
-def test_generic_probe_rejects_richer_representation_instead_of_pooling_it(tmp_path):
-    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
-    spec = _outcome_probe_spec()
-    spec["representation"] = {"kind": "tokenwise"}
-
-    with pytest.raises(ValueError, match="not supported by the generic probe trainer"):
-        train_probe_artifact_from_spec(dataset, spec)
-
-
-def test_direct_probe_rejects_requested_richer_representation(tmp_path):
-    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2)
-
-    with pytest.raises(ValueError, match="not supported by the generic probe trainer"):
-        train_probe_artifact(
-            dataset,
-            name="unsupported direct probe",
-            selector=ActivationQuery(
-                module="action_head.layers.*.resid",
-                reduce_tokens="mean",
-            ),
-            research={"representation": {"kind": "tokenwise"}},
-        )
-
-
-def test_direct_probe_derives_tokenwise_from_unpooled_selector(tmp_path):
-    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2)
-
-    with pytest.raises(ValueError, match="Representation 'tokenwise' is not supported"):
-        train_probe_artifact(
-            dataset,
-            name="unsupported unpooled direct probe",
-            selector=ActivationQuery(
-                module="action_head.layers.*.resid",
-                reduce_tokens="none",
-            ),
-        )
-
-
-def test_preflight_explains_when_selected_representation_needs_a_runner(tmp_path):
+def test_probe_training_rejects_representation_reduction_mismatch(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
     _write_probe_splits(
         dataset.root,
         ["train", "train", "train", "train", "val_heldout_task", "test_heldout_task"],
     )
     spec = _outcome_probe_spec()
-    spec["representation"] = "tokenwise"
+    spec["representation"] = {"kind": "object_conditioned"}
 
-    report = probe_preflight_report(dataset, spec, min_class_support=5)
-
-    assert report["representation"]["selected"] == {"kind": "tokenwise"}
-    assert any("token_scene_probe" in warning for warning in report["warnings"])
-
-
-def test_preflight_derives_tokenwise_from_flat_feature_reduction(tmp_path):
-    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=3, timesteps=4)
-    spec = _outcome_probe_spec()
-    spec["features"]["reduction"] = "flat"
-
-    report = probe_preflight_report(dataset, spec, min_class_support=1)
-
-    assert report["representation"]["selected"] == {"kind": "tokenwise"}
-
-
-def test_preflight_blocks_token_runner_for_mismatched_trace_topology(tmp_path):
-    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=3, timesteps=4)
-    bundle = dataset.bundle("synthetic_001")
-    tokens = bundle.tokens.copy()
-    action = tokens["token_kind"].astype(str) == "action"
-    last_action_index = tokens.loc[action, "token_index"].astype(int).max()
-    tokens = tokens.loc[~(action & (tokens["token_index"].astype(int) == last_action_index))]
-    tokens.to_parquet(bundle.overlay_bundle.path / "tables/tokens.parquet", index=False)
-    bundle.__dict__.pop("tokens", None)
-    bundle.overlay_bundle.__dict__.pop("tokens", None)
-
-    report = probe_preflight_report(dataset, _outcome_probe_spec(), min_class_support=1)
-    options = {option["kind"]: option for option in report["representation"]["options"]}
-
-    assert options["tokenwise"]["status"] == "blocked"
-    assert options["learned_layer_mix"]["status"] == "blocked"
-    assert "identical token counts, indices, and metadata" in options["tokenwise"]["reason"]
+    with pytest.raises(ValueError, match="specialized probe runner"):
+        train_probe_artifact_from_spec(dataset, spec)
 
 
 def _write_probe_splits(root, splits: list[str]) -> None:

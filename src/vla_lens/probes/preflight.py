@@ -13,6 +13,10 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 
+from vla_lens.probes.experiment_cards import (
+    experiment_card_from_preflight,
+    format_experiment_card_markdown,
+)
 from vla_lens.probes.representation_options import probe_representation_options
 from vla_lens.probes.workflow_artifacts import _probe_target, _value_counts
 from vla_lens.probes.workflow_prepare import (
@@ -20,6 +24,7 @@ from vla_lens.probes.workflow_prepare import (
     _apply_row_expansion,
     _apply_row_filters,
     _attach_episode_metadata,
+    _ensure_selection_split,
     _ensure_split,
 )
 from vla_lens.probes.workflow_spec import baseline_columns, normalize_probe_spec
@@ -88,6 +93,14 @@ def probe_preflight_report(
         test_value=test_value,
         split_kind=str(split.get("kind", "random_episode")),
     )
+    rows, validation_summary = _ensure_selection_split(
+        rows,
+        split_column,
+        train_value=train_value,
+        selection_value=selection_value,
+        test_value=test_value,
+        split_kind=str(split.get("kind", "random_episode")),
+    )
 
     target_info = _probe_target(target_name, rows, target_spec=target_spec)
     target_kind = str(target_info.get("kind") or "classification")
@@ -112,7 +125,7 @@ def probe_preflight_report(
     )
     warnings.extend(_representation_warnings(representation))
 
-    return _jsonable(
+    payload = _jsonable(
         {
             "name": str(normalized.get("name") or "Probe"),
             "question": _optional_str(normalized.get("question")),
@@ -120,10 +133,12 @@ def probe_preflight_report(
             "intended_claim": _optional_str(normalized.get("intended_claim")),
             "dataset_root": str(dataset.root),
             "selector": selector.to_dict(),
+            "representation": representation,
             "feature_matrix": {
                 "selected_rows": selected_row_count,
                 "rows_after_filters": int(len(rows)),
                 "feature_dim": int(X.shape[1]) if X.ndim == 2 else None,
+                "estimated_feature_bytes": int(X.nbytes),
                 "cache_key": getattr(feature_matrix, "cache_key", None),
             },
             "target": target_info,
@@ -134,6 +149,7 @@ def probe_preflight_report(
                 "selection_value": selection_value,
                 "test_value": test_value,
                 "eval_values": eval_values,
+                "automatic_validation": validation_summary,
                 "summary": split_summary,
             },
             "filters": filter_summary,
@@ -144,16 +160,38 @@ def probe_preflight_report(
                 "models": list(dict.fromkeys(str(v) for v in _probe_models(normalized))),
                 "primary_model": str(_probe_models(normalized)[0]),
             },
-            "representation": representation,
             "sweep": sweep_info,
             "target_summary": target_summary,
             "warnings": warnings,
         }
     )
+    payload["experiment_card"] = experiment_card_from_preflight(payload)
+    return payload
 
 
-def format_probe_preflight_markdown(report: Mapping[str, Any]) -> str:
-    """Render a preflight report as a compact human review sheet."""
+def probe_experiment_card(
+    dataset: TraceDataset,
+    spec: Mapping[str, Any],
+    *,
+    min_class_support: int = DEFAULT_MIN_CLASS_SUPPORT,
+    large_sweep_readouts: int = DEFAULT_LARGE_SWEEP_READOUTS,
+) -> dict[str, Any]:
+    """Return the small human-facing card for a planned probe run."""
+
+    report = probe_preflight_report(
+        dataset,
+        spec,
+        min_class_support=min_class_support,
+        large_sweep_readouts=large_sweep_readouts,
+    )
+    return dict(report["experiment_card"])
+
+
+def format_probe_preflight_markdown(report: Mapping[str, Any], *, details: bool = False) -> str:
+    """Render the short experiment card, with diagnostic tables on request."""
+    if not details:
+        card = report.get("experiment_card") or experiment_card_from_preflight(report)
+        return format_experiment_card_markdown(card)
     lines = [
         f"# Probe Preflight: {report.get('name', 'Probe')}",
         "",
@@ -629,11 +667,15 @@ def _normalize_sweep_columns(value: Any) -> list[str]:
 
 def _probe_models(spec: Mapping[str, Any]) -> list[str]:
     probe = spec.get("probe") if isinstance(spec.get("probe"), Mapping) else {}
-    models = probe.get("models", ["linear"]) if isinstance(probe, Mapping) else ["linear"]
+    models = (
+        probe.get("models", ["linear", "mlp"])
+        if isinstance(probe, Mapping)
+        else ["linear", "mlp"]
+    )
     if isinstance(models, str):
         return [models]
     parsed = [str(model) for model in models]
-    return parsed or ["linear"]
+    return parsed or ["linear", "mlp"]
 
 
 def _numeric_summary(values: pd.Series) -> dict[str, float | int | None]:

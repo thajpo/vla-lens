@@ -31,7 +31,7 @@ from vla_lens.probes.workflow_prepare import (
     _artifact_output_path,
     _attach_episode_metadata,
     _ensure_split,
-    _latest_artifact,
+    latest_loadable_artifact,
 )
 from vla_lens.probes.workflow_spec import load_probe_spec, normalize_probe_spec
 from vla_lens.probes.workflow_targets import (
@@ -1096,7 +1096,7 @@ def attach_error_browser_context(dataset: TraceDataset, predictions: pd.DataFram
 
 
 def _load_interaction_events(dataset: TraceDataset) -> pd.DataFrame:
-    artifact = _latest_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
+    artifact = latest_loadable_artifact(dataset, OBJECT_FLOW_ARTIFACT_TYPE)
     if artifact is None:
         return pd.DataFrame()
     outputs = dict(artifact.method.get("outputs") or {})

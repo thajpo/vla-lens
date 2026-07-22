@@ -137,6 +137,10 @@ def main() -> None:
     print(f"best_score={metrics.get('best_score')}")
     print(f"best_delta={metrics.get('best_delta')}")
     print(f"path={saved.artifact.path}")
+    root = str(args.root)
+    artifact_id = saved.artifact.artifact_id
+    print(f"explain=uv run python scripts/use_vla_lens_probe.py {root} {artifact_id} explain")
+    print(f"replay=uv run python scripts/use_vla_lens_probe.py {root} {artifact_id} replay")
 
 
 def _parse_filters(items: list[str]) -> dict[str, Any]:
