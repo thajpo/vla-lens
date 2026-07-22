@@ -69,6 +69,29 @@ class ProbeInferenceResult:
     confidence: np.ndarray | None
 
 
+def _explainable_readout(readout: Mapping[str, Any]) -> dict[str, Any]:
+    """Return enough fitted-readout metadata to identify and use it safely."""
+
+    explained = {
+        key: value for key, value in dict(readout).items() if key != "model"
+    }
+    model = dict(readout.get("model") or {})
+    public_model_fields = (
+        "format",
+        "probe_type",
+        "feature_dim",
+        "classes",
+        "hyperparameters",
+        "selected_readout",
+        "activation",
+        "out_activation",
+    )
+    explained["model"] = {
+        key: model[key] for key in public_model_fields if key in model
+    }
+    return explained
+
+
 @dataclass(slots=True)
 class LoadedProbeArtifact:
     """A saved probe that can explain itself and, for current artifacts, run again."""
@@ -121,11 +144,7 @@ class LoadedProbeArtifact:
                 "uncertainty": dict(self.contract.get("uncertainty") or {}),
                 "capabilities": self.capabilities,
                 "retained_readouts": [
-                    {
-                        key: value
-                        for key, value in dict(readout).items()
-                        if key != "model"
-                    }
+                    _explainable_readout(readout)
                     for readout in self.contract.get("readouts") or []
                 ],
             }

@@ -57,6 +57,16 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
     assert contract["source"]["feature_matrix_fingerprint"].startswith("sha256:")
     assert set(contract["model"]["array_fingerprints"]) <= set(saved.artifact.arrays)
     assert contract["readouts"]
+    assert explanation["retained_readouts"]
+    for explained, retained in zip(
+        explanation["retained_readouts"], contract["readouts"], strict=True
+    ):
+        assert explained["readout_id"] == retained["readout_id"]
+        assert explained["model"]["feature_dim"] == retained["model"]["feature_dim"]
+        assert explained["model"]["probe_type"] == retained["model"]["probe_type"]
+        assert explained["model"]["selected_readout"]["model"] in {"linear", "mlp"}
+        assert "array_names" not in explained["model"]
+        assert "array_fingerprints" not in explained["model"]
     assert contract["run_spec"]["name"] == f"Replayable {target} probe"
     assert set(saved.artifact.arrays) >= {
         "weights",
