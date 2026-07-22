@@ -120,6 +120,14 @@ class LoadedProbeArtifact:
                 "experiment_card": dict(self.contract.get("experiment_card") or {}),
                 "uncertainty": dict(self.contract.get("uncertainty") or {}),
                 "capabilities": self.capabilities,
+                "retained_readouts": [
+                    {
+                        key: value
+                        for key, value in dict(readout).items()
+                        if key != "model"
+                    }
+                    for readout in self.contract.get("readouts") or []
+                ],
             }
         return {
             "artifact_id": self.artifact.artifact_id,
@@ -134,18 +142,41 @@ class LoadedProbeArtifact:
             "capabilities": self.capabilities,
         }
 
-    def predict(self, features: np.ndarray) -> np.ndarray:
+    def predict(self, features: np.ndarray, *, readout_id: str | None = None) -> np.ndarray:
         """Apply the fitted probe to a compatible feature matrix."""
 
-        return self.predict_with_confidence(features).predictions
+        return self.predict_with_confidence(features, readout_id=readout_id).predictions
 
-    def predict_with_confidence(self, features: np.ndarray) -> ProbeInferenceResult:
+    def predict_with_confidence(
+        self,
+        features: np.ndarray,
+        *,
+        readout_id: str | None = None,
+    ) -> ProbeInferenceResult:
         """Apply the fitted probe and return classification confidence when available."""
 
         contract = self._require_replayable()
-        model = dict(contract["model"])
+        model = self._readout_model(contract, readout_id=readout_id)
         arrays = self._validated_model_arrays(model)
         return self._infer(features, model=model, arrays=arrays)
+
+    def _readout_model(
+        self,
+        contract: Mapping[str, Any],
+        *,
+        readout_id: str | None,
+    ) -> dict[str, Any]:
+        if readout_id is None:
+            return dict(contract["model"])
+        for readout in contract.get("readouts") or []:
+            if str(readout.get("readout_id")) == str(readout_id):
+                return dict(readout["model"])
+        available = sorted(
+            str(readout.get("readout_id")) for readout in contract.get("readouts") or []
+        )
+        raise ProbeArtifactError(
+            f"Unknown retained readout {readout_id!r}; available={available!r}"
+        )
 
     def _infer(
         self,
@@ -381,6 +412,7 @@ def make_probe_run_contract(
     label_sources: Sequence[Mapping[str, Any]],
     model: Mapping[str, Any],
     uncertainty: Mapping[str, Any],
+    readouts: Sequence[Mapping[str, Any]] = (),
 ) -> dict[str, Any]:
     contract = {
         "schema_version": PROBE_RUN_CONTRACT_SCHEMA_VERSION,
@@ -406,6 +438,7 @@ def make_probe_run_contract(
             "label_sources": [dict(value) for value in label_sources],
         },
         "model": dict(model),
+        "readouts": [dict(readout) for readout in readouts],
         "uncertainty": dict(uncertainty),
     }
     validate_probe_run_contract(contract)
@@ -443,6 +476,24 @@ def validate_probe_run_contract(contract: Mapping[str, Any]) -> None:
         if key not in source:
             raise ProbeArtifactError(f"Probe-run source is missing {key!r}")
     model = dict(contract["model"])
+    _validate_probe_model_contract(model)
+    readouts = contract.get("readouts") or []
+    if not isinstance(readouts, Sequence) or isinstance(readouts, (str, bytes)):
+        raise ProbeArtifactError("Probe-run readouts must be a sequence")
+    readout_ids: set[str] = set()
+    for readout in readouts:
+        if not isinstance(readout, Mapping):
+            raise ProbeArtifactError("Probe-run readout entries must be mappings")
+        readout_id = str(readout.get("readout_id") or "")
+        if not readout_id or readout_id in readout_ids:
+            raise ProbeArtifactError("Probe-run readout IDs must be non-empty and unique")
+        readout_ids.add(readout_id)
+        if not isinstance(readout.get("model"), Mapping):
+            raise ProbeArtifactError(f"Probe-run readout {readout_id!r} is missing its model")
+        _validate_probe_model_contract(dict(readout["model"]))
+
+
+def _validate_probe_model_contract(model: Mapping[str, Any]) -> None:
     for key in [
         "format",
         "probe_type",

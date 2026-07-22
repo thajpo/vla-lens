@@ -7,6 +7,7 @@ from typing import Any, Mapping, Sequence
 
 import yaml
 
+from vla_lens.probes.representation_options import normalize_representation_spec
 from vla_lens.probes.workflow_types import DEFAULT_PROBE_SPEC
 
 
@@ -23,9 +24,17 @@ def normalize_probe_spec(spec: Mapping[str, Any] | None = None) -> dict[str, Any
         features["policy_calls"] = "all"
     if "dtype" not in features:
         features["dtype"] = "float32"
+    merged["representation"] = normalize_representation_spec(
+        merged.get("representation"),
+        reduction=str(features.get("reduction", "mean")),
+    )
     split = merged.get("split")
     if isinstance(split, str):
         merged["split"] = {"kind": split}
+    split = merged.setdefault("split", {"kind": "heldout_benchmark"})
+    split.setdefault("selection_value", "validation")
+    split.setdefault("test_value", "test")
+    split.setdefault("eval_values", [split["selection_value"], split["test_value"]])
     merged.setdefault("probe", {"models": ["linear", "mlp"]})
     if isinstance(merged.get("probe"), str):
         merged["probe"] = {"models": [merged["probe"]]}

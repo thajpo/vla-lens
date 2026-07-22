@@ -17,12 +17,14 @@ from vla_lens.probes.experiment_cards import (
     experiment_card_from_preflight,
     format_experiment_card_markdown,
 )
+from vla_lens.probes.representation_options import representation_options
 from vla_lens.probes.workflow_artifacts import _probe_target, _value_counts
 from vla_lens.probes.workflow_prepare import (
     _apply_missing_policy,
     _apply_row_expansion,
     _apply_row_filters,
     _attach_episode_metadata,
+    _ensure_selection_split,
     _ensure_split,
 )
 from vla_lens.probes.workflow_spec import baseline_columns, normalize_probe_spec
@@ -55,6 +57,10 @@ def probe_preflight_report(
         raise ValueError(f"Probe selector matched no activation rows: {selector.to_dict()}")
 
     selected_row_count = int(len(rows))
+    representation = representation_options(
+        rows,
+        selected=normalized["representation"],
+    )
     rows = _attach_episode_metadata(rows, dataset)
     X, rows, expansion_summary = _apply_row_expansion(
         X,
@@ -82,6 +88,14 @@ def probe_preflight_report(
         rows,
         split_column,
         train_value=train_value,
+        test_value=test_value,
+        split_kind=str(split.get("kind", "random_episode")),
+    )
+    rows, validation_summary = _ensure_selection_split(
+        rows,
+        split_column,
+        train_value=train_value,
+        selection_value=selection_value,
         test_value=test_value,
         split_kind=str(split.get("kind", "random_episode")),
     )
@@ -116,6 +130,7 @@ def probe_preflight_report(
             "intended_claim": _optional_str(normalized.get("intended_claim")),
             "dataset_root": str(dataset.root),
             "selector": selector.to_dict(),
+            "representation": representation,
             "feature_matrix": {
                 "selected_rows": selected_row_count,
                 "rows_after_filters": int(len(rows)),
@@ -131,6 +146,7 @@ def probe_preflight_report(
                 "selection_value": selection_value,
                 "test_value": test_value,
                 "eval_values": eval_values,
+                "automatic_validation": validation_summary,
                 "summary": split_summary,
             },
             "filters": filter_summary,

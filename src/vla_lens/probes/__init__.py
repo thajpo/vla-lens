@@ -8,6 +8,7 @@ from vla_lens.probes.preflight import (
     probe_experiment_card,
     probe_preflight_report,
 )
+from vla_lens.probes.representation_options import representation_options
 from vla_lens.probes.run_artifacts import (
     LoadedProbeArtifact,
     NonReplayableProbeError,
@@ -54,6 +55,7 @@ __all__ = [
     "probe_preflight_report",
     "refresh_all_probe_score_caches",
     "refresh_probe_score_cache",
+    "representation_options",
     "run_probe_suite",
     "train_probe_artifact",
     "train_probe_artifact_from_spec",

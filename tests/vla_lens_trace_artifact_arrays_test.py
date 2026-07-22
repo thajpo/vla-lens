@@ -6,7 +6,7 @@ from vla_lens.pi05.object_flow import save_pi05_object_flow_artifact
 from vla_lens.probes import run_probe_suite
 from vla_lens.probes.suite import trained_label_shuffle_metrics
 from vla_lens.probes.workflow_artifacts import _grouped_bootstrap_intervals
-from vla_lens.probes.workflow_prepare import _apply_row_expansion
+from vla_lens.probes.workflow_prepare import _apply_row_expansion, _ensure_selection_split
 
 
 def test_object_role_row_expansion_and_regression_metadata_baselines(tmp_path):
@@ -88,6 +88,71 @@ def test_default_probe_battery_includes_linear_and_mlp_with_trained_nulls():
     assert len(nulls) == 3
 
 
+def test_trained_null_permutes_constant_labels_by_episode():
+    rows = pd.DataFrame(
+        {
+            "split": ["train"] * 8 + ["validation"] * 4,
+            "trace_id": ["a"] * 4 + ["b"] * 4 + ["c"] * 4,
+            "target": [False] * 4 + [True] * 4 + [False, True, False, True],
+        }
+    )
+    nulls = trained_label_shuffle_metrics(
+        rows,
+        np.arange(24, dtype=np.float32).reshape(12, 2),
+        "target",
+        split_column="split",
+        train_value="train",
+        eval_value="validation",
+        probe_type="classification",
+        model_name="linear",
+        group_column="trace_id",
+        runs=3,
+    )
+
+    assert set(nulls["shuffle_strategy"]) == {"permute_group_labels"}
+    assert set(nulls["shuffle_group_column"]) == {"trace_id"}
+
+
+def test_automatic_validation_split_is_grouped_and_keeps_test_locked():
+    rows = pd.DataFrame(
+        {
+            "trace_id": [f"trace-{index}" for index in range(8)],
+            "task_id": [0, 0, 1, 1, 2, 2, 3, 3],
+            "split": ["train"] * 6 + ["test"] * 2,
+        }
+    )
+
+    split_rows, summary = _ensure_selection_split(
+        rows,
+        "split",
+        train_value="train",
+        selection_value="validation",
+        test_value="test",
+        split_kind="heldout_task",
+    )
+
+    assert summary["created"] is True
+    assert summary["group_column"] == "task_id"
+    assert set(split_rows.loc[split_rows["split"] == "test", "task_id"]) == {3}
+    train_tasks = set(split_rows.loc[split_rows["split"] == "train", "task_id"])
+    validation_tasks = set(split_rows.loc[split_rows["split"] == "validation", "task_id"])
+    assert train_tasks.isdisjoint(validation_tasks)
+
+
+def test_probe_selection_cannot_use_final_test_split():
+    rows = pd.DataFrame({"trace_id": ["a", "b"], "split": ["train", "test"]})
+
+    with pytest.raises(ValueError, match="must differ from test_value"):
+        _ensure_selection_split(
+            rows,
+            "split",
+            train_value="train",
+            selection_value="test",
+            test_value="test",
+            split_kind="random_episode",
+        )
+
+
 def test_probe_intervals_resample_whole_episodes():
     predictions = pd.DataFrame(
         {
@@ -97,6 +162,7 @@ def test_probe_intervals_resample_whole_episodes():
             "actual": [False, True] * 4,
             "predicted": [False, True, False, False, True, True, False, True],
             "correct": [True, True, True, False, False, True, True, True],
+            "baseline_prediction": [False] * 8,
         }
     )
 
@@ -106,6 +172,8 @@ def test_probe_intervals_resample_whole_episodes():
     assert intervals.iloc[0]["group_count"] == 4
     assert intervals.iloc[0]["low"] <= intervals.iloc[0]["estimate"]
     assert intervals.iloc[0]["high"] >= intervals.iloc[0]["estimate"]
+    assert intervals.iloc[0]["delta_low"] <= intervals.iloc[0]["delta_estimate"]
+    assert intervals.iloc[0]["delta_high"] >= intervals.iloc[0]["delta_estimate"]
 
 
 def test_artifact_api_payloads_include_probe_and_attention(tmp_path):

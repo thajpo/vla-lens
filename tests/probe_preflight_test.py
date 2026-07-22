@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pytest
 
 from vla_lens import create_synthetic_trace_dataset
 from vla_lens.probes import (
@@ -39,6 +40,12 @@ def test_probe_preflight_reports_sweep_baselines_and_leakage(tmp_path):
     assert report["sweep"]["columns"] == ["layer", "policy_call_index"]
     assert report["sweep"]["group_count"] == 4
     assert report["sweep"]["planned_readout_count"] == 8
+    assert report["representation"]["selected"]["kind"] == "mean_pool"
+    assert {option["kind"] for option in report["representation"]["options"]} >= {
+        "mean_pool",
+        "flat_tokens",
+        "object_conditioned",
+    }
     assert any("target column" in warning for warning in report["warnings"])
     assert any("lacks some target classes" in warning for warning in report["warnings"])
 
@@ -79,6 +86,7 @@ def test_probe_training_persists_research_framing_from_spec(tmp_path):
         "question": "Can outcome be decoded from synthetic action hidden states?",
     }
     assert saved.artifact.display["research"] == saved.artifact.method["research"]
+    assert saved.artifact.method["representation"]["kind"] == "mean_pool"
     artifact_path = Path(str(saved.artifact.path))
     if not artifact_path.is_absolute():
         candidates = [
@@ -90,6 +98,19 @@ def test_probe_training_persists_research_framing_from_spec(tmp_path):
     predictions = pd.read_parquet(predictions_path)
     assert set(predictions["feature"].astype(str)) == {saved.artifact.metrics["best_feature"]}
     assert set(predictions["split"].astype(str)) == {"test_heldout_task", "val_heldout_task"}
+
+
+def test_probe_training_rejects_representation_reduction_mismatch(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=6, timesteps=8)
+    _write_probe_splits(
+        dataset.root,
+        ["train", "train", "train", "train", "val_heldout_task", "test_heldout_task"],
+    )
+    spec = _outcome_probe_spec()
+    spec["representation"] = {"kind": "object_conditioned"}
+
+    with pytest.raises(ValueError, match="specialized probe runner"):
+        train_probe_artifact_from_spec(dataset, spec)
 
 
 def _write_probe_splits(root, splits: list[str]) -> None:

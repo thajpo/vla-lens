@@ -28,6 +28,11 @@ def parse_args() -> argparse.Namespace:
         help="For 'use': optional .npy path for predictions.",
     )
     parser.add_argument(
+        "--readout",
+        default=None,
+        help="For 'use': optional retained readout ID from the JSON explanation.",
+    )
+    parser.add_argument(
         "--format",
         choices=["markdown", "json"],
         default="markdown",
@@ -54,7 +59,10 @@ def main() -> None:
         return
     if args.features is None:
         raise SystemExit("'use' requires --features PATH.npy")
-    predictions = probe.predict(np.load(args.features, allow_pickle=False))
+    predictions = probe.predict(
+        np.load(args.features, allow_pickle=False),
+        readout_id=args.readout,
+    )
     if args.output is not None:
         args.output.parent.mkdir(parents=True, exist_ok=True)
         np.save(args.output, predictions, allow_pickle=False)

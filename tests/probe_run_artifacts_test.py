@@ -25,6 +25,7 @@ from vla_lens.probes.run_artifacts import (
     dataframe_fingerprint,
     probe_label_sources,
 )
+from vla_lens.probes.workflow_models import _floating_replay_tolerance
 from vla_lens.probes.workflow_prepare import latest_loadable_artifact
 from vla_lens.probes.workflow_types import INTERACTION_METRICS_ARTIFACT_TYPE
 
@@ -47,13 +48,15 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
     assert contract is not None
     assert contract["schema_version"] == 2
     intervals = contract["uncertainty"]["confidence_intervals"]
-    assert intervals["status"] == "computed"
-    assert intervals["unit"] == "trace_id"
-    assert intervals["intervals"]
+    assert intervals["status"] == "not_computed"
+    assert "Fewer than two" in intervals["reason"]
+    assert contract["run_spec"]["split"]["selection_value"] == "validation"
+    assert contract["run_spec"]["split"]["automatic_validation"]["created"] is True
     assert contract["source"]["source_rows_fingerprint"].startswith("sha256:")
     assert contract["source"]["source_sites_fingerprint"].startswith("sha256:")
     assert contract["source"]["feature_matrix_fingerprint"].startswith("sha256:")
-    assert set(contract["model"]["array_fingerprints"]) == set(saved.artifact.arrays)
+    assert set(contract["model"]["array_fingerprints"]) <= set(saved.artifact.arrays)
+    assert contract["readouts"]
     assert contract["run_spec"]["name"] == f"Replayable {target} probe"
     assert set(saved.artifact.arrays) >= {
         "weights",
@@ -62,11 +65,23 @@ def test_saved_linear_probe_explains_replays_and_runs_without_refitting(tmp_path
         "feature_scale",
     }
     assert not any("feature_matrix" in name for name in saved.artifact.arrays)
+    artifact_dir = dataset.root / "vla_lens" / "artifacts" / saved.artifact.artifact_id
+    candidates = pd.read_parquet(artifact_dir / "candidate_results.parquet")
+    assert candidates["readout_id"].nunique() >= 1
+    assert candidates["selected"].any()
+    assert candidates.loc[candidates["selected"], "fitted_state_retained"].all()
 
     feature_dim = int(contract["model"]["feature_dim"])
     predictions = probe.predict(np.zeros((3, feature_dim), dtype=np.float32))
     integer_predictions = probe.predict(np.zeros((3, feature_dim), dtype=np.int64))
     assert predictions.shape == (3,)
+    for readout in contract["readouts"]:
+        readout_dim = int(readout["model"]["feature_dim"])
+        readout_predictions = probe.predict(
+            np.zeros((2, readout_dim), dtype=np.float32),
+            readout_id=str(readout["readout_id"]),
+        )
+        assert readout_predictions.shape == (2,)
     np.testing.assert_array_equal(
         integer_predictions,
         probe.predict(np.zeros((3, feature_dim), dtype=np.float64)),
@@ -110,7 +125,6 @@ def test_probe_validates_every_fitted_array_before_use_and_replay(tmp_path):
     probe = load_probe_artifact(dataset, saved.artifact.artifact_id)
     contract = probe.contract
     assert contract is not None
-    features = np.zeros((1, int(contract["model"]["feature_dim"])), dtype=np.float32)
 
     for name, relative_path in saved.artifact.arrays.items():
         stored = zarr.open_array(
@@ -121,8 +135,19 @@ def test_probe_validates_every_fitted_array_before_use_and_replay(tmp_path):
         changed = original.copy()
         changed.reshape(-1)[0] += 1
         stored[...] = changed
+        readout_id = name.split("__", 1)[0] if "__" in name else None
+        model = (
+            next(
+                readout["model"]
+                for readout in contract["readouts"]
+                if readout["readout_id"] == readout_id
+            )
+            if readout_id is not None
+            else contract["model"]
+        )
+        candidate_features = np.zeros((1, int(model["feature_dim"])), dtype=np.float32)
         with pytest.raises(ProbeArtifactError, match=rf"array '{name}' changed"):
-            probe.predict(features)
+            probe.predict(candidate_features, readout_id=readout_id)
         stored[...] = original
 
     weights_path = dataset._dataset_artifact_root() / saved.artifact.arrays["weights"]
@@ -300,7 +325,7 @@ def test_regression_prediction_comparison_uses_absolute_and_relative_tolerance()
 
 def test_regression_replay_tolerance_never_accepts_large_prediction_drift():
     feature_dim = 128
-    tolerance = workflow_training._floating_replay_tolerance(
+    tolerance = _floating_replay_tolerance(
         {
             "weights": np.ones(feature_dim, dtype=np.float16),
             "bias": np.zeros(1, dtype=np.float16),
