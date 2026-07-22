@@ -26,6 +26,18 @@ relevant entry whenever an experiment is planned, completed, corrected, or
 superseded. Campaign wrappers and implementation retries are history, not new
 research questions.
 
+## Research Product Loop
+
+Let concrete research drive VLA Lens development. While running experiments,
+remove repeated friction and add the smallest reusable analysis, artifact, or
+orchestration tool that makes the next investigation faster.
+
+Do not invent broad UI from hypothetical needs. Once an experiment reveals a
+specific inspection, comparison, or intervention job, wire the supported data
+into the existing lens-conditioned episode workflow when the design is clear.
+Otherwise create a focused GitHub issue that records the research evidence,
+screen job, required backend fields, and acceptance criteria.
+
 ## Critical Environment Rule
 
 Do not run PI0.5/LeRobot/LIBERO capture through the normal repo `uv run` environment.

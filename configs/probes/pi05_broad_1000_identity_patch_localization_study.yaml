@@ -1,0 +1,17 @@
+name: PI0.5 broad 1000 held-out object identity patch localization study
+question: When the identity probe says an object is present, does its episode-specific evidence come from patches covering that object?
+hypothesis_family: object-conditioned visual scene representation
+intended_claim: >-
+  Exploratory held-out-task evidence about whether the accepted RQ-012 linear
+  identity probe reads object-local visual evidence or distributed scene context.
+source_probe_artifact_id: token_scene_probe_study-pi0.5-broad-1000-initial-visual-object-query-identity-and-location-study-ed33f5bd37
+matched_scene_artifact_id: matched_scene_localization_study-pi0.5-broad-1000-matched-initial-scene-visual-localization-study-random-ranking-v2-e71204f77e
+variant: tokenwise__single_layer__linear
+evaluation_value: test_heldout_task
+camera_id: main
+camera_name: agentview
+analysis:
+  io_workers: 8
+  bootstrap_samples: 2000
+  example_count: 12
+  replay_tolerance: 0.0001
