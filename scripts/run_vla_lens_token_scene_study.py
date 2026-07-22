@@ -61,6 +61,32 @@ def main() -> None:
     ]
     available = [column for column in columns if column in result.selections]
     print(result.selections[available].to_string(index=False))
+    baseline_columns = [
+        "baseline",
+        "target",
+        "ridge_alpha",
+        "test_scene_jaccard",
+        "test_macro_average_precision",
+        "test_error_m",
+    ]
+    available = [column for column in baseline_columns if column in result.baselines]
+    print("baselines")
+    print(result.baselines[available].to_string(index=False))
+    print("activation_vs_baseline")
+    print(result.baseline_comparisons.to_string(index=False))
+    if not result.shuffled_label_controls.empty:
+        metric = result.shuffled_label_controls.assign(
+            test_score=result.shuffled_label_controls["test_scene_jaccard"].fillna(
+                result.shuffled_label_controls["test_error_m"]
+            )
+        )
+        summary = (
+            metric.groupby("target", sort=True)["test_score"]
+            .agg(["count", "mean", "std", "min", "max"])
+            .reset_index()
+        )
+        print("shuffled_training_scene_controls")
+        print(summary.to_string(index=False))
 
 
 if __name__ == "__main__":

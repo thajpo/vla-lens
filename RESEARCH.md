@@ -2,7 +2,7 @@
 
 Status: active source of truth for research questions and findings.
 
-Last updated: July 21, 2026.
+Last updated: July 22, 2026.
 
 This file answers three questions:
 
@@ -89,6 +89,7 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-009 | Can one global activation reconstruct the whole scene object map? | Probe | Limited state signal, inaccurate map | Yes, object-conditioned |
 | RQ-010 | Do action-token positions or layer mixtures reveal a better scene map? | Probe | No | Yes with visual tokens and MLP |
 | RQ-011 | Do visual-token changes spatially localize a moved object? | Diagnostic | No | Move to trained object queries |
+| RQ-012 | Do main-camera visual tokens encode the initial object roster and each object's XYZ? | Probe | Identity yes; XYZ mostly scene prior | Yes, localize identity and improve geometry target |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -425,12 +426,65 @@ trained object-conditioned visual probes.
 
 The earlier pair-weighted and prevalence-baseline artifacts are superseded.
 
+## RQ-012: Initial Visual Object Identity And XYZ
+
+**Question.** Do main-camera visual tokens encode which objects are present and
+the XYZ position of each named object in the initial scene?
+
+**Hypothesis.** Preserving visual patch positions and adding small nonlinear
+readouts will reveal a structured scene representation that global action
+features missed.
+
+**Method.** One initial-scene row per episode. Main-camera image patches from
+VLM layers 0, 4, 8, 12, and 17 were compared as pooled and token-preserving
+readouts. Training-only PCA produced 32- and 64-dimensional inputs. The battery
+fit ridge and one-hidden-layer MLP probes. Identity was predicted as the whole
+object roster; XYZ used a separate head for each named object. Layers,
+capacity, regularization, and learned linear layer mixtures were selected only
+on validation tasks. Test contains 200 episodes from 20 held-out tasks.
+
+**Baselines and controls.** Object frequency, each object's training-set mean
+position, prompt plus scene metadata, and 20 probes retrained after shuffling
+training scenes. Paired uncertainty resampled both episodes and tasks. Initial
+and previous position were intentionally excluded: at the initial frame they
+are the answer, not fair baselines.
+
+**Confounds.** Object rosters and locations remain strongly tied to task and
+scene. Four of 39 object identities did not have enough training support, which
+produced 64 unseen positive labels in test. Nearly all evaluated objects were
+visible. Named XYZ heads assume object identity instead of solving visual
+correspondence. All selected MLPs reached the 300-step limit, so their results
+are provisional rather than evidence that nonlinear probes cannot help.
+
+**Result.** Initial object identity is meaningfully decodable. The
+validation-selected token-preserving linear probe reached 0.579 scene Jaccard
+on held-out tasks, versus 0.424 from prompt and scene metadata and about 0.079
+for shuffled-label probes. The activation gain over metadata remained positive
+when resampling either episodes or tasks. Keeping patch positions separate
+only slightly improved the linear probe over pooling, while it substantially
+helped the MLP.
+
+XYZ is much weaker. The best tested linear representation reached 0.196 m mean
+3D error, compared with 0.204 m for prompt and scene metadata, 0.248 m for the
+per-object training mean, and about 0.272 m after shuffling training scenes.
+The roughly 8 mm advantage over metadata was positive across episodes but not
+stable across held-out tasks. Y was the largest average coordinate error. MLP
+XYZ probes were almost entirely unconverged and worse (0.249-0.281 m).
+
+**Decision.** Accept initial scene identity as a positive decodability finding,
+not yet a causal or object-local representation claim. Treat initial XYZ as
+mostly explained by scene/task priors. Next, inspect identity successes and
+failures over episodes and patches, then test object localization or
+camera-frame geometry before choosing an intervention.
+
+**Accepted artifact.**
+`token_scene_probe_study-pi0.5-broad-1000-initial-visual-object-query-identity-and-location-study-ed33f5bd37`
+
 ## Not Yet Run
 
-- Object-conditioned visual identity and XYZ probes
-- Visual token-level MLP probes
 - Feature-level sparse or nonlinear object-location probes
 - Set decoder for unordered scene objects
+- Object localization or camera-frame geometry probes
 - MLP target pose and rotation probes
 - Filtered first-moved/first-lifted target probes
 - Target-parse VLM probe (the existing selector matched no rows)
@@ -438,8 +492,8 @@ The earlier pair-weighted and prevalence-baseline artifacts are superseded.
 
 ## Current Priority
 
-1. Finish the replayable automatic linear-plus-MLP probe battery.
-2. Run object-conditioned visual identity and location probes across captured
-   visual layers, pooled and token-preserving inputs, and linear/MLP readouts.
-3. Inspect episode-level successes and failures in VLA Lens.
-4. Only then select intervention candidates.
+1. Inspect RQ-012 identity successes and failures across episodes and patches.
+2. Test whether the identity signal localizes to the correct image region.
+3. Reformulate geometry around object localization or camera-frame coordinates
+   before adding more probe capacity.
+4. Only then select an identity or localization intervention candidate.

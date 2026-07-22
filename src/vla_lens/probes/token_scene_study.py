@@ -13,13 +13,20 @@ import pandas as pd
 from sklearn.metrics import average_precision_score
 
 from vla_lens.artifacts import LensArtifact, make_artifact_id
-from vla_lens.probes.scene_map_study import SceneMapTargets, scene_map_target_table
+from vla_lens.probes.scene_map_study import (
+    SceneMapTargets,
+    _context_design,
+    _supported_objects,
+    scene_map_target_table,
+)
 from vla_lens.probes.structured_scene_models import (
     FittedMLP,
     FittedSceneRepresentation,
     SceneLinearDecoder,
     SceneMLPDecoder,
+    fit_scene_decoder,
     fit_structured_scene_representations,
+    scene_metrics,
 )
 from vla_lens.probes.token_representations import (
     LayerTokenReadouts,
@@ -28,7 +35,7 @@ from vla_lens.probes.token_representations import (
 )
 from vla_lens.traces import TraceDataset
 
-TOKEN_SCENE_STUDY_SCHEMA_VERSION = 1
+TOKEN_SCENE_STUDY_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,11 +48,22 @@ class TokenSceneStudyResult:
     predictions: pd.DataFrame
     object_results: pd.DataFrame
     paired_comparisons: pd.DataFrame
+    baselines: pd.DataFrame
+    baseline_predictions: pd.DataFrame
+    baseline_comparisons: pd.DataFrame
+    shuffled_label_controls: pd.DataFrame
     layer_weights: pd.DataFrame
     token_importance: pd.DataFrame
     examples: pd.DataFrame
     vocabulary: pd.DataFrame
     timings: Mapping[str, float]
+
+
+@dataclass(frozen=True, slots=True)
+class _BaselineResult:
+    record: Mapping[str, Any]
+    prediction: np.ndarray
+    supported: np.ndarray
 
 
 def run_token_scene_probe_study(
@@ -110,6 +128,38 @@ def run_token_scene_probe_study(
         normalized["split"],
         bootstrap_samples=int(normalized["probe"]["bootstrap_samples"]),
     )
+    baseline_models = _fit_no_activation_baselines(
+        readouts.rows,
+        targets,
+        normalized["split"],
+        ridge_alphas=[
+            float(value) for value in normalized["probe"]["baseline_ridge_alphas"]
+        ],
+        min_train_episodes=int(normalized["probe"]["min_train_episodes"]),
+        context_columns=[str(value) for value in normalized["context_columns"]],
+    )
+    baselines = pd.DataFrame.from_records(
+        [dict(value.record) for value in baseline_models]
+    )
+    baseline_predictions = _baseline_prediction_table(
+        baseline_models, readouts.rows, targets, normalized["split"]
+    )
+    baseline_comparisons = _activation_baseline_comparison_table(
+        selected,
+        baseline_models,
+        readouts.rows,
+        targets,
+        normalized["split"],
+        bootstrap_samples=int(normalized["probe"]["bootstrap_samples"]),
+    )
+    shuffled_label_controls = _shuffled_label_control_table(
+        selected,
+        readouts,
+        targets,
+        normalized["split"],
+        repeats=int(normalized["probe"]["shuffle_repeats"]),
+        min_train_episodes=int(normalized["probe"]["min_train_episodes"]),
+    )
     layer_weights = _layer_weight_table(selected, readouts.layers)
     token_importance = _token_importance_table(
         selected, readouts, targets.vocabulary
@@ -127,6 +177,10 @@ def run_token_scene_probe_study(
             predictions,
             object_results,
             paired_comparisons,
+            baselines,
+            baseline_predictions,
+            baseline_comparisons,
+            shuffled_label_controls,
             layer_weights,
             token_importance,
             examples,
@@ -144,6 +198,10 @@ def run_token_scene_probe_study(
         predictions=predictions,
         object_results=object_results,
         paired_comparisons=paired_comparisons,
+        baselines=baselines,
+        baseline_predictions=baseline_predictions,
+        baseline_comparisons=baseline_comparisons,
+        shuffled_label_controls=shuffled_label_controls,
         layer_weights=layer_weights,
         token_importance=token_importance,
         examples=examples,
@@ -379,6 +437,325 @@ def _paired_comparison_table(
     return pd.DataFrame.from_records(records)
 
 
+def _fit_no_activation_baselines(
+    rows: pd.DataFrame,
+    targets: SceneMapTargets,
+    split: Mapping[str, Any],
+    *,
+    ridge_alphas: Sequence[float],
+    min_train_episodes: int,
+    context_columns: Sequence[str],
+) -> list[_BaselineResult]:
+    """Fit scene-prior and prompt/metadata baselines on the same split."""
+
+    masks = _split_masks(rows, split)
+    supported = _supported_objects(
+        targets.presence, rows, masks["train"], min_train_episodes
+    )
+    results: list[_BaselineResult] = []
+
+    frequency = np.repeat(
+        targets.presence[masks["train"]].mean(axis=0, keepdims=True),
+        len(rows),
+        axis=0,
+    )
+    frequency_metrics = scene_metrics(
+        targets, "scene_identity", frequency, rows, masks, supported
+    )
+    results.append(
+        _BaselineResult(
+            {"baseline": "training_frequency", "target": "scene_identity", **frequency_metrics},
+            frequency,
+            supported.copy(),
+        )
+    )
+
+    means = np.full((len(targets.vocabulary), 3), np.nan, dtype=np.float64)
+    for object_index in np.flatnonzero(supported):
+        available = masks["train"] & np.isfinite(
+            targets.position[:, object_index]
+        ).all(axis=1)
+        if available.any():
+            means[object_index] = targets.position[available, object_index].mean(axis=0)
+    mean_prediction = np.broadcast_to(means, targets.position.shape).copy()
+    mean_metrics = scene_metrics(
+        targets, "object_position", mean_prediction, rows, masks, supported
+    )
+    results.append(
+        _BaselineResult(
+            {
+                "baseline": "per_object_training_mean",
+                "target": "object_position",
+                **mean_metrics,
+            },
+            mean_prediction,
+            supported.copy(),
+        )
+    )
+
+    context = _context_design(rows, masks["train"], context_columns)
+    for target, truth in [
+        ("scene_identity", targets.presence),
+        ("object_position", targets.position),
+    ]:
+        best: _BaselineResult | None = None
+        for alpha in ridge_alphas:
+            decoder = fit_scene_decoder(
+                context,
+                truth,
+                rows,
+                masks["train"],
+                supported,
+                target=target,
+                alpha=float(alpha),
+                min_train_episodes=min_train_episodes,
+            )
+            prediction = decoder.predict(context)
+            metrics = scene_metrics(
+                targets, target, prediction, rows, masks, decoder.supported
+            )
+            candidate = _BaselineResult(
+                {
+                    "baseline": "prompt_and_scene_context",
+                    "target": target,
+                    "ridge_alpha": float(alpha),
+                    "context_columns": json.dumps(list(context_columns)),
+                    "context_feature_dim": int(context.shape[1]),
+                    **metrics,
+                },
+                prediction,
+                decoder.supported.copy(),
+            )
+            if best is None or _record_selection_score(candidate.record) > _record_selection_score(
+                best.record
+            ):
+                best = candidate
+        if best is not None:
+            results.append(best)
+    return results
+
+
+def _baseline_prediction_table(
+    baselines: Sequence[_BaselineResult],
+    rows: pd.DataFrame,
+    targets: SceneMapTargets,
+    split: Mapping[str, Any],
+) -> pd.DataFrame:
+    records: list[dict[str, Any]] = []
+    split_column = str(split["column"])
+    for baseline in baselines:
+        target = str(baseline.record["target"])
+        truth = targets.presence if target == "scene_identity" else targets.position
+        for split_name, split_value in [
+            ("selection", str(split["selection_value"])),
+            ("test", str(split["test_value"])),
+        ]:
+            for index in np.flatnonzero(
+                rows[split_column].astype(str).to_numpy() == split_value
+            ):
+                records.append(
+                    {
+                        "baseline": baseline.record["baseline"],
+                        "target": target,
+                        "split": split_name,
+                        "trace_id": str(rows.iloc[index]["trace_id"]),
+                        "task_id": rows.iloc[index].get("task_id"),
+                        "threshold": baseline.record.get("selection_threshold"),
+                        "supported": baseline.supported.astype(np.uint8).tolist(),
+                        "truth": np.asarray(truth[index]).reshape(-1).tolist(),
+                        "prediction": np.asarray(baseline.prediction[index])
+                        .reshape(-1)
+                        .tolist(),
+                    }
+                )
+    return pd.DataFrame.from_records(records)
+
+
+def _activation_baseline_comparison_table(
+    selected: Sequence[FittedSceneRepresentation],
+    baselines: Sequence[_BaselineResult],
+    rows: pd.DataFrame,
+    targets: SceneMapTargets,
+    split: Mapping[str, Any],
+    *,
+    bootstrap_samples: int,
+) -> pd.DataFrame:
+    best_activation: dict[str, FittedSceneRepresentation] = {}
+    for fitted in selected:
+        target = str(fitted.record["target"])
+        current = best_activation.get(target)
+        if current is None or _record_selection_score(
+            fitted.record
+        ) > _record_selection_score(current.record):
+            best_activation[target] = fitted
+    test_mask = rows[str(split["column"])].astype(str).to_numpy() == str(
+        split["test_value"]
+    )
+    records: list[dict[str, Any]] = []
+    for comparison_index, baseline in enumerate(baselines):
+        target = str(baseline.record["target"])
+        candidate = best_activation.get(target)
+        if candidate is None:
+            continue
+        candidate_score = _row_score(candidate, targets)
+        reference_score = _prediction_row_score(
+            target,
+            baseline.prediction,
+            baseline.supported,
+            targets,
+            threshold=float(baseline.record.get("selection_threshold", 0.5)),
+        )
+        improvement = (
+            candidate_score - reference_score
+            if target == "scene_identity"
+            else reference_score - candidate_score
+        )
+        for unit_index, (unit, groups) in enumerate(
+            [
+                ("episode", rows["trace_id"].astype(str).to_numpy()),
+                (
+                    "task",
+                    rows.get("task_id", rows["trace_id"])
+                    .fillna("")
+                    .astype(str)
+                    .to_numpy(),
+                ),
+            ]
+        ):
+            records.append(
+                {
+                    "candidate": _variant(candidate),
+                    "reference": baseline.record["baseline"],
+                    "target": target,
+                    "unit": unit,
+                    "metric": (
+                        "scene_jaccard_improvement"
+                        if target == "scene_identity"
+                        else "error_reduction_m"
+                    ),
+                    **_paired_bootstrap_summary(
+                        improvement[test_mask],
+                        groups[test_mask],
+                        bootstrap_samples=bootstrap_samples,
+                        seed=20260722 + comparison_index * 10 + unit_index,
+                    ),
+                }
+            )
+    return pd.DataFrame.from_records(records)
+
+
+def _shuffled_label_control_table(
+    selected: Sequence[FittedSceneRepresentation],
+    readouts: LayerTokenReadouts,
+    targets: SceneMapTargets,
+    split: Mapping[str, Any],
+    *,
+    repeats: int,
+    min_train_episodes: int,
+) -> pd.DataFrame:
+    """Refit the best linear architecture after shuffling training scenes."""
+
+    masks = _split_masks(readouts.rows, split)
+    train_indices = np.flatnonzero(masks["train"])
+    records: list[dict[str, Any]] = []
+    for target, truth in [
+        ("scene_identity", targets.presence),
+        ("object_position", targets.position),
+    ]:
+        eligible = [
+            fitted
+            for fitted in selected
+            if fitted.record["target"] == target and fitted.record["model"] == "linear"
+        ]
+        if not eligible:
+            continue
+        source = max(eligible, key=lambda value: _record_selection_score(value.record))
+        representation = str(source.record["representation"])
+        dim = int(source.record["readout_dim"])
+        values = getattr(readouts, representation)[:, :, :dim]
+        design = np.einsum(
+            "nld,l->nd", values, source.layer_weights, optimize=True
+        )
+        for repeat in range(max(0, int(repeats))):
+            seed = 20260722 + repeat
+            shuffled = np.asarray(truth).copy()
+            shuffled[train_indices] = truth[
+                np.random.default_rng(seed).permutation(train_indices)
+            ]
+            decoder = fit_scene_decoder(
+                design,
+                shuffled,
+                readouts.rows,
+                masks["train"],
+                source.decoder.supported,
+                target=target,
+                alpha=float(source.record["ridge_alpha"]),
+                min_train_episodes=min_train_episodes,
+            )
+            metrics = scene_metrics(
+                targets,
+                target,
+                decoder.predict(design),
+                readouts.rows,
+                masks,
+                decoder.supported,
+            )
+            records.append(
+                {
+                    "control": "shuffled_training_scenes",
+                    "source_variant": _variant(source),
+                    "target": target,
+                    "repeat": repeat,
+                    "seed": seed,
+                    **metrics,
+                }
+            )
+    return pd.DataFrame.from_records(records)
+
+
+def _split_masks(rows: pd.DataFrame, split: Mapping[str, Any]) -> dict[str, np.ndarray]:
+    column = str(split["column"])
+    return {
+        name: rows[column].astype(str).to_numpy() == str(split[f"{name}_value"])
+        for name in ["train", "selection", "test"]
+    }
+
+
+def _record_selection_score(record: Mapping[str, Any]) -> float:
+    if record["target"] == "object_position":
+        value = float(record.get("selection_error_m", float("inf")))
+        return -value if np.isfinite(value) else -float("inf")
+    value = float(record.get("selection_scene_jaccard", -float("inf")))
+    return value if np.isfinite(value) else -float("inf")
+
+
+def _prediction_row_score(
+    target: str,
+    prediction: np.ndarray,
+    supported: np.ndarray,
+    targets: SceneMapTargets,
+    *,
+    threshold: float,
+) -> np.ndarray:
+    if target == "scene_identity":
+        truth = targets.presence[:, supported].astype(bool)
+        predicted = prediction[:, supported] >= threshold
+        intersection = np.logical_and(truth, predicted).sum(axis=1)
+        union = np.logical_or(truth, predicted).sum(axis=1)
+        return intersection / np.maximum(1, union)
+    truth = targets.position
+    available = np.isfinite(truth).all(axis=2) & supported[None, :]
+    errors = np.linalg.norm(prediction - truth, axis=2)
+    return np.asarray(
+        [
+            float(np.mean(errors[index, available[index]]))
+            if available[index].any()
+            else float("nan")
+            for index in range(len(truth))
+        ]
+    )
+
+
 def _row_score(
     fitted: FittedSceneRepresentation, targets: SceneMapTargets
 ) -> np.ndarray:
@@ -449,7 +826,10 @@ def _token_importance_table(
     projection = readouts.tokenwise_projection
     token_metadata = readouts.token_metadata.reset_index(drop=True)
     for fitted in selected:
-        if fitted.record["representation"] != "tokenwise":
+        if (
+            fitted.record["representation"] != "tokenwise"
+            or not isinstance(fitted.decoder, SceneLinearDecoder)
+        ):
             continue
         dim = int(fitted.record["readout_dim"])
         components = projection.components[:dim]
@@ -657,6 +1037,9 @@ def _mlp_parameter_records(
             "feature_mean": network.feature_mean.tolist(),
             "feature_scale": network.feature_scale.tolist(),
             "out_activation": network.out_activation,
+            "n_iter": network.n_iter,
+            "final_loss": network.final_loss,
+            "converged": network.converged,
         }
     ]
     for layer, (weights, biases) in enumerate(
@@ -687,6 +1070,10 @@ def _save_study(
     predictions: pd.DataFrame,
     object_results: pd.DataFrame,
     paired_comparisons: pd.DataFrame,
+    baselines: pd.DataFrame,
+    baseline_predictions: pd.DataFrame,
+    baseline_comparisons: pd.DataFrame,
+    shuffled_label_controls: pd.DataFrame,
     layer_weights: pd.DataFrame,
     token_importance: pd.DataFrame,
     examples: pd.DataFrame,
@@ -702,6 +1089,10 @@ def _save_study(
         "scene_predictions": predictions,
         "object_results": object_results,
         "paired_comparisons": paired_comparisons,
+        "baselines": baselines,
+        "baseline_predictions": baseline_predictions,
+        "baseline_comparisons": baseline_comparisons,
+        "shuffled_label_controls": shuffled_label_controls,
         "layer_weights": layer_weights,
         "token_importance": token_importance,
         "examples": examples,
@@ -733,6 +1124,7 @@ def _save_study(
                 if spec.get(key)
             },
             "split": spec["split"],
+            "context_columns": spec["context_columns"],
             "probe": spec["probe"],
             "representations": {
                 "pooled": "mean tokens, then a shared training-only PCA",
@@ -754,6 +1146,16 @@ def _save_study(
                     "linear and small one-hidden-layer MLP readouts are selected only "
                     "on validation and reported separately"
                 ),
+                "token_importance": (
+                    "coefficient-based patch importance is reported for linear "
+                    "tokenwise probes only; nonlinear probes require a different "
+                    "attribution method"
+                ),
+                "controls": (
+                    "training-frequency identity, per-object training-mean XYZ, "
+                    "prompt/scene-context ridge, and repeated shuffled-training-scene "
+                    "linear probes use the same split as activation probes"
+                ),
             },
             "storage_contract": {
                 "raw_activations": "referenced from capture and never copied",
@@ -773,6 +1175,9 @@ def _save_study(
             "prediction_count": int(len(predictions)),
             "object_result_count": int(len(object_results)),
             "paired_comparison_count": int(len(paired_comparisons)),
+            "baseline_count": int(len(baselines)),
+            "baseline_comparison_count": int(len(baseline_comparisons)),
+            "shuffled_label_control_count": int(len(shuffled_label_controls)),
             "token_importance_count": int(len(token_importance)),
             "source_row_count": int(len(readouts.rows)),
             "layer_count": int(len(readouts.layers)),
@@ -836,9 +1241,13 @@ def _normalize_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
             "test_value": "test_heldout_task",
         },
     )
+    normalized.setdefault(
+        "context_columns", ["benchmark", "scene_family", "task_phase"]
+    )
     probe = dict(normalized.get("probe") or {})
     probe.setdefault("readout_dims", [64, 128])
     probe.setdefault("ridge_alphas", [1.0, 10.0])
+    probe.setdefault("baseline_ridge_alphas", probe["ridge_alphas"])
     probe.setdefault("models", ["linear", "mlp"])
     probe.setdefault("mlp_hidden_layer_sizes", [64])
     probe.setdefault("mlp_max_iter", 300)
@@ -851,6 +1260,7 @@ def _normalize_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
     probe.setdefault("mixture_iterations", 5)
     probe.setdefault("mixture_regularization", 1e-3)
     probe.setdefault("bootstrap_samples", 2_000)
+    probe.setdefault("shuffle_repeats", 20)
     probe.setdefault("cache", True)
     normalized["probe"] = probe
     return normalized

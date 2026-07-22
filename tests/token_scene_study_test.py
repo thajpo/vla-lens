@@ -17,7 +17,9 @@ from vla_lens.probes.token_representations import (
     build_layer_token_readouts,
 )
 from vla_lens.probes.token_scene_study import (
+    _activation_baseline_comparison_table,
     _decoder_parameter_table,
+    _fit_no_activation_baselines,
     _paired_bootstrap_summary,
     _paired_comparison_table,
     _weighted_token_importance,
@@ -264,6 +266,15 @@ def test_matched_study_selects_all_four_representation_variants():
         {
             "trace_id": [f"episode_{index}" for index in range(row_count)],
             "split": ["train"] * 45 + ["selection"] * 15 + ["test"] * 15,
+            "task_id": np.arange(row_count) % 5,
+            "prompt": [
+                f"{['move', 'lift', 'place', 'open', 'close'][index % 5]} "
+                f"object {index % 7} near zone {index % 3}"
+                for index in range(row_count)
+            ],
+            "benchmark": "synthetic",
+            "scene_family": np.arange(row_count) % 3,
+            "task_phase": "initial",
         }
     )
     targets = SceneMapTargets(
@@ -320,6 +331,41 @@ def test_matched_study_selects_all_four_representation_variants():
     assert len(comparisons) == 16
     assert set(comparisons["model"]) == {"linear"}
     assert comparisons["candidate"].str.endswith("__linear").all()
+    baselines = _fit_no_activation_baselines(
+        rows,
+        targets,
+        {
+            "column": "split",
+            "train_value": "train",
+            "selection_value": "selection",
+            "test_value": "test",
+        },
+        ridge_alphas=[0.1, 1.0],
+        min_train_episodes=1,
+        context_columns=["benchmark", "scene_family", "task_phase"],
+    )
+    assert {
+        (item.record["baseline"], item.record["target"]) for item in baselines
+    } == {
+        ("training_frequency", "scene_identity"),
+        ("per_object_training_mean", "object_position"),
+        ("prompt_and_scene_context", "scene_identity"),
+        ("prompt_and_scene_context", "object_position"),
+    }
+    baseline_comparisons = _activation_baseline_comparison_table(
+        selected,
+        baselines,
+        rows,
+        targets,
+        {
+            "column": "split",
+            "train_value": "train",
+            "selection_value": "selection",
+            "test_value": "test",
+        },
+        bootstrap_samples=100,
+    )
+    assert len(baseline_comparisons) == 8
 
 
 def test_object_conditioned_mlp_position_heads_replay_without_sklearn(tmp_path):
@@ -349,6 +395,10 @@ def test_object_conditioned_mlp_position_heads_replay_without_sklearn(tmp_path):
     )
 
     assert isinstance(decoder, SceneMLPDecoder)
+    assert all(
+        network is not None and network.n_iter > 0 and np.isfinite(network.final_loss)
+        for network in decoder.networks
+    )
     prediction = decoder.predict(X[70:])
     assert prediction.shape == (20, 2, 3)
     assert np.isfinite(prediction).all()
@@ -370,3 +420,5 @@ def test_object_conditioned_mlp_position_heads_replay_without_sklearn(tmp_path):
     parameters = _decoder_parameter_table([fitted])
     parameters.to_parquet(tmp_path / "decoder_parameters.parquet", index=False)
     assert set(parameters["parameter_kind"]) == {"standardizer", "mlp_layer"}
+    assert parameters["n_iter"].dropna().gt(0).all()
+    assert parameters["converged"].dropna().isin([True, False]).all()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import warnings
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
@@ -10,6 +11,7 @@ from typing import Any, Mapping, Sequence
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
+from sklearn.exceptions import ConvergenceWarning
 from sklearn.linear_model import Ridge
 from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import StandardScaler
@@ -61,6 +63,9 @@ class FittedMLP:
     weights: tuple[np.ndarray, ...]
     biases: tuple[np.ndarray, ...]
     out_activation: str
+    n_iter: int
+    final_loss: float
+    converged: bool
 
     def predict(self, X: np.ndarray) -> np.ndarray:
         values = (np.asarray(X, dtype=np.float64) - self.feature_mean) / self.feature_scale
@@ -204,6 +209,7 @@ def fit_structured_scene_representations(
                                 model=str(model_name),
                                 selected_layer=int(layer),
                                 mixture_iterations=0,
+                                decoder=decoder,
                             )
                             candidate_records.append(record)
                             _consider_best(
@@ -247,6 +253,7 @@ def fit_structured_scene_representations(
                         model="linear",
                         selected_layer=None,
                         mixture_iterations=iterations,
+                        decoder=decoder,
                     )
                     candidate_records.append(record)
                     _consider_best(
@@ -394,13 +401,19 @@ def _fit_mlp(
         alpha=float(alpha),
         max_iter=int(max_iter),
         random_state=0,
-    ).fit(scaler.transform(X), y)
+    )
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", ConvergenceWarning)
+        model.fit(scaler.transform(X), y)
     return FittedMLP(
         feature_mean=np.asarray(scaler.mean_, dtype=np.float64),
         feature_scale=np.asarray(scaler.scale_, dtype=np.float64),
         weights=tuple(np.asarray(value, dtype=np.float64) for value in model.coefs_),
         biases=tuple(np.asarray(value, dtype=np.float64) for value in model.intercepts_),
         out_activation=str(model.out_activation_),
+        n_iter=int(model.n_iter_),
+        final_loss=float(model.loss_),
+        converged=int(model.n_iter_) < int(max_iter),
     )
 
 
@@ -542,6 +555,7 @@ def _candidate_record(
     model: str,
     selected_layer: int | None,
     mixture_iterations: int,
+    decoder: SceneLinearDecoder | SceneMLPDecoder | None = None,
 ) -> dict[str, Any]:
     return {
         "representation": representation,
@@ -554,7 +568,34 @@ def _candidate_record(
         "layers": json.dumps([int(value) for value in layers]),
         "layer_weights": json.dumps([float(value) for value in weights]),
         "mixture_iterations": int(mixture_iterations),
+        **_decoder_training_metrics(decoder),
         **dict(metrics),
+    }
+
+
+def _decoder_training_metrics(
+    decoder: SceneLinearDecoder | SceneMLPDecoder | None,
+) -> dict[str, Any]:
+    if not isinstance(decoder, SceneMLPDecoder):
+        return {}
+    networks = [network for network in decoder.networks if network is not None]
+    if not networks:
+        return {
+            "mlp_head_count": 0,
+            "mlp_converged_head_count": 0,
+            "mlp_converged_fraction": float("nan"),
+            "mlp_max_n_iter": 0,
+            "mlp_mean_final_loss": float("nan"),
+        }
+    converged = sum(network.converged for network in networks)
+    return {
+        "mlp_head_count": int(len(networks)),
+        "mlp_converged_head_count": int(converged),
+        "mlp_converged_fraction": float(converged / len(networks)),
+        "mlp_max_n_iter": int(max(network.n_iter for network in networks)),
+        "mlp_mean_final_loss": float(
+            np.mean([network.final_loss for network in networks])
+        ),
     }
 
 

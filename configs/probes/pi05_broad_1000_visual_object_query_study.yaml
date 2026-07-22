@@ -4,7 +4,7 @@ hypothesis_family: object-conditioned visual scene geometry
 intended_claim: >-
   Exploratory held-out-task evidence for object identity and location in captured
   visual representations, with validation-only layer/model selection and direct
-  comparison against scene priors and initial/previous-position baselines.
+  comparison against scene priors, prompt/scene context, and shuffled labels.
 feature:
   module: pi05.vlm.layers.*
   tensor_type: hidden_tokens
@@ -21,10 +21,12 @@ split:
   train_value: train
   selection_value: val_heldout_task
   test_value: test_heldout_task
+context_columns: [benchmark, scene_family, task_phase]
 probe:
   models: [linear, mlp]
   readout_dims: [32, 64]
-  ridge_alphas: [0.01, 1.0]
+  ridge_alphas: [0.01, 1.0, 10.0]
+  baseline_ridge_alphas: [0.01, 1.0]
   mlp_hidden_layer_sizes: [64]
   mlp_max_iter: 300
   mlp_workers: 8
@@ -36,4 +38,5 @@ probe:
   mixture_iterations: 5
   mixture_regularization: 0.001
   bootstrap_samples: 2000
+  shuffle_repeats: 20
   cache: true
