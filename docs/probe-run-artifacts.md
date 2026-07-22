@@ -37,8 +37,10 @@ Each new generic probe artifact contains:
 - the fitted standardizer and model arrays at their original numeric precision,
   with content fingerprints checked before reuse;
 - row-level predictions, metrics, baselines, and null-test settings;
-- episode-grouped confidence intervals for each evaluation split;
-- a trained shuffled-label control for the validation-selected readout;
+- claim-grouped confidence intervals for each evaluation split;
+- a trained, group-aware shuffled-label control for the validation-selected readout;
+- `candidate_results.parquet`, comparing every trained layer/model candidate,
+  its validation rank, baseline, and held-out score;
 - identifiers for external label artifacts used by the dataset, when present.
 
 The artifact does not contain another copy of the activation matrix. Those
@@ -80,6 +82,11 @@ uv run python scripts/use_vla_lens_probe.py \
   --output predictions.npy
 ```
 
+Use `explain --format json` to list the best retained candidate from each model
+family, then pass `--readout READOUT_ID` to apply one of those alternatives.
+Only the validation-selected readout supports exact replay from the capture;
+alternative retained readouts support direct use with compatible features.
+
 Replay checks classification labels exactly. For regression, it records and
 uses explicit absolute and relative tolerances based on numeric precision,
 feature dimension, and prediction scale. The combined allowance is capped at
@@ -100,5 +107,34 @@ artifacts use probe-run contract v2.
 Unless a spec explicitly narrows the choice, the generic trainer fits a linear
 probe and the standard small MLP at every declared sweep position. Validation
 selects the replayable readout across model and sweep choices. The artifact
-keeps the complete metric comparison, while fitted arrays and exact replay rows
-are retained for the selected readout.
+keeps the complete metric comparison. Exact capture replay rows are retained
+for the selected readout. Fitted state is also retained for the best validation
+candidate from each model family, so a researcher can apply and compare the
+linear and MLP alternatives without retraining them.
+
+The final test split is never a valid selection split. If a dataset has only
+train and test labels, the trainer creates a deterministic validation split from
+whole training groups. The group follows the claim: whole tasks for a
+held-out-task split, whole objects for held-out-object work, and whole episodes
+for episode generalization. An explicitly test-selected spec fails before
+training.
+
+Confidence intervals use that same group, and saved predictions include the
+winning baseline's row-level predictions. This permits paired intervals for the
+probe's improvement over the baseline instead of comparing unrelated headline
+scores.
+
+The shuffled-label comparison records its p-value resolution explicitly. With
+20 refits, for example, the smallest possible value is `1/21 = 0.0476`; this is
+an exploratory control, not precise evidence for a significance threshold. The
+paired effect and its group-level interval are the main result.
+
+## Representation Contract
+
+Probe specs name the representation constructed before fitting. The generic
+trainer supports average-token vectors, flattened token-position vectors, and
+already-vector inputs. Preflight also reports richer data-supported options,
+including shared token readouts, learned layer mixtures, object-conditioned
+probes, and set decoders. Richer requests fail clearly until their specialized
+runner is wired into the common study contract; they are never silently
+replaced by mean pooling.

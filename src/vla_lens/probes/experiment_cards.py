@@ -22,6 +22,9 @@ def experiment_card_from_preflight(report: Mapping[str, Any]) -> dict[str, Any]:
     probe = dict(report.get("probe") or {})
     sweep = dict(report.get("sweep") or {})
     feature_matrix = dict(report.get("feature_matrix") or {})
+    representation = dict(report.get("representation") or {})
+    validation = dict(split.get("automatic_validation") or {})
+    independent_group = validation.get("group_column") or "trace_id"
     return _card(
         name=str(report.get("name") or "Probe"),
         question=_optional_str(report.get("question")),
@@ -38,8 +41,10 @@ def experiment_card_from_preflight(report: Mapping[str, Any]) -> dict[str, Any]:
             "selection_split": split.get("selection_value"),
             "test_split": split.get("test_value"),
             "evaluation_splits": list(split.get("eval_values") or []),
-            "independent_units": ["selected row", "episode"],
-            "confidence_intervals": "bootstrap whole episodes on each evaluation split",
+            "independent_units": ["selected row", independent_group],
+            "confidence_intervals": (
+                f"bootstrap whole {independent_group} groups on each evaluation split"
+            ),
         },
         method_choices={
             "probe_models": list(probe.get("models") or []),
@@ -48,6 +53,7 @@ def experiment_card_from_preflight(report: Mapping[str, Any]) -> dict[str, Any]:
             "planned_readouts": sweep.get("planned_readout_count"),
             "token_reduction": selector.get("reduce_tokens"),
             "feature_dtype": selector.get("dtype"),
+            "representation": dict(representation.get("selected") or {}).get("kind"),
         },
         execution={
             "selected_rows": feature_matrix.get("selected_rows"),
@@ -76,6 +82,7 @@ def experiment_card_from_artifact_fields(
     sweep: Any,
     metrics: Mapping[str, Any],
     uncertainty: Mapping[str, Any],
+    representation: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Build the card stored after the selected probe has been fitted."""
 
@@ -101,6 +108,7 @@ def experiment_card_from_artifact_fields(
             "sweep": sweep,
             "token_reduction": selector.get("reduce_tokens"),
             "feature_dtype": input_info.get("dtype"),
+            "representation": dict(representation or {}).get("kind"),
         },
         execution={
             "source_episode_count": metrics.get("source_episode_count"),
@@ -149,6 +157,7 @@ def format_experiment_card_markdown(card: Mapping[str, Any]) -> str:
             "- Primary or selected model: `"
             f"{method.get('primary_model') or method.get('selected_model')}`",
             "- Sweep: " + _joined(method.get("sweep_columns") or method.get("sweep")),
+            f"- Representation: `{method.get('representation') or '-'}`",
             f"- Planned readouts: {method.get('planned_readouts', '-')}",
             "",
             "## Execution details",

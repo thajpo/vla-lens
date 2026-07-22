@@ -70,7 +70,9 @@ These checks should be handled by scripts whenever possible:
 | List metadata baselines | Makes boring explanations visible. |
 | Flag target-as-baseline leakage | Avoids probes that compare against their own label. |
 | Count planned readouts | Makes "train all layers" an explicit sweep. |
-| Warn when selection equals test | Prevents using final evaluation as model/site selection. |
+| Reject selection equal to test | Prevents using final evaluation as model/site selection. |
+| Create grouped validation when absent | Keeps routine train/test datasets usable without test-set tuning. |
+| Match uncertainty groups to the claim | Uses tasks for held-out-task claims and episodes for episode claims. |
 
 These checks do not decide whether a scientific question matters. They only make
 the proposed experiment reviewable.
@@ -258,7 +260,10 @@ split:
 ```
 
 Use validation for layer/site/model selection. Treat the test split as the final
-report surface, not as a search surface.
+report surface, not as a search surface. The trainer rejects an explicit
+selection/test collision. When validation labels are absent, it deterministically
+moves whole groups from train into validation and records exactly which groups
+were moved.
 
 ## Sweeps Are Allowed
 
@@ -267,7 +272,9 @@ not know where a signal might live. The guardrail is not "avoid sweeping." The
 guardrail is:
 
 - Declare the sweep axes before training.
-- Save all readouts, not only the best one.
+- Save every readout's comparison row and validation rank, not only the winner.
+- Retain exact replay state for the selected readout and reusable fitted state
+  for the best validation candidate from each model family.
 - Select on validation.
 - Report the test split only after selection.
 - Include null and metadata baselines.

@@ -194,10 +194,22 @@ def _probe_split(
     selection_value: str,
 ) -> dict[str, Any]:
     eval_values = list(dict.fromkeys(str(value) for value in eval_values))
+    group_key = {
+        "heldout_benchmark": "benchmark",
+        "heldout_env": "env_id",
+        "heldout_task": "task_id",
+        "heldout_object": "target_object",
+        "heldout_target_object": "target_object",
+    }.get(split_kind)
+    if group_key is None and split_kind.startswith("heldout_"):
+        candidate = split_kind.removeprefix("heldout_")
+        group_key = candidate if candidate in rows else None
+    if group_key not in rows:
+        group_key = "trace_id" if split_kind != "random_row" else None
     out: dict[str, Any] = {
         "method": "grouped" if split_kind != "random_row" else "random_row",
         "kind": split_kind,
-        "group_key": "trace_id" if split_kind != "random_row" else None,
+        "group_key": group_key,
         "column": split_column,
         "train_value": train_value,
         "test_value": test_value,
@@ -245,7 +257,13 @@ def _best_model_arrays(
     if results.empty or "model_state" not in results:
         return {}, {}
     best_idx = _best_result_index(results, selection_value=selection_value, prefer_model=None)
-    state = results.loc[best_idx].get("model_state")
+    return _result_model_arrays(results.loc[best_idx])
+
+
+def _result_model_arrays(
+    row: Mapping[str, Any] | pd.Series,
+) -> tuple[dict[str, np.ndarray], dict[str, Any]]:
+    state = row.get("model_state")
     if not isinstance(state, Mapping):
         return {}, {}
     arrays: dict[str, np.ndarray] = {}
@@ -261,11 +279,11 @@ def _best_model_arrays(
             if isinstance(value, np.ndarray) and value.size:
                 arrays[f"{array_prefix}_{index}"] = value.copy()
     summary = {
-        "feature": str(results.loc[best_idx].get("feature")),
-        "sweep_value": _json_scalar(results.loc[best_idx].get("sweep_value")),
-        "model": str(results.loc[best_idx].get("model", state.get("model", "linear"))),
-        "split_value": str(results.loc[best_idx].get("split_value", selection_value)),
-        "primary_metric": str(results.loc[best_idx].get("primary_metric", "score")),
+        "feature": str(row.get("feature")),
+        "sweep_value": _json_scalar(row.get("sweep_value")),
+        "model": str(row.get("model", state.get("model", "linear"))),
+        "split_value": str(row.get("split_value")),
+        "primary_metric": str(row.get("primary_metric", "score")),
         "probe_type": state.get("probe_type"),
         "weights_space": state.get("weights_space"),
         "classes": list(state.get("classes") or []),
@@ -416,6 +434,62 @@ def _best_result_details(
     }
 
 
+def _candidate_results_table(
+    results: pd.DataFrame,
+    *,
+    selection_value: str,
+    selected_result_index: int,
+) -> pd.DataFrame:
+    """Build a compact, durable comparison of every trained readout candidate."""
+
+    records: list[dict[str, Any]] = []
+    selected = results.loc[selected_result_index]
+    selected_key = _readout_key(selected)
+    selection_rows = results.loc[results["split_value"].astype(str) == selection_value].copy()
+    selection_rows["delta"] = selection_rows["score"] - selection_rows["baseline_score"]
+    ranks = {
+        _readout_key(row): rank
+        for rank, (_, row) in enumerate(
+            selection_rows.sort_values("delta", ascending=False).iterrows(), start=1
+        )
+    }
+    for _, row in results.iterrows():
+        readout_key = _readout_key(row)
+        records.append(
+            {
+                "readout_id": _readout_id(readout_key),
+                "feature": str(row.get("feature")),
+                "sweep": _json_scalar(row.get("sweep")),
+                "sweep_value": _json_scalar(row.get("sweep_value")),
+                "model": str(row.get("model")),
+                "probe_type": str(row.get("probe_type")),
+                "target": str(row.get("target")),
+                "split": str(row.get("split_value")),
+                "primary_metric": str(row.get("primary_metric")),
+                "score": float(row.get("score")),
+                "baseline_name": str(row.get("metadata_baseline")),
+                "baseline_score": float(row.get("baseline_score")),
+                "delta": float(row.get("score") - row.get("baseline_score")),
+                "selection_rank": ranks.get(readout_key),
+                "selected": readout_key == selected_key,
+                "fitted_state_retained": readout_key == selected_key,
+            }
+        )
+    return pd.DataFrame.from_records(records)
+
+
+def _readout_key(row: Mapping[str, Any] | pd.Series) -> tuple[str, ...]:
+    return tuple(
+        str(_json_scalar(row.get(column)))
+        for column in ["feature", "sweep", "sweep_value", "model", "probe_type", "target"]
+    )
+
+
+def _readout_id(key: Sequence[str]) -> str:
+    digest = hashlib.sha256("|".join(key).encode("utf-8")).hexdigest()[:12]
+    return f"readout-{digest}"
+
+
 def _split_summary(rows: pd.DataFrame, split_column: str) -> dict[str, Any]:
     if split_column not in rows:
         return {}
@@ -516,6 +590,37 @@ def _grouped_bootstrap_intervals(
             )
             estimates = np.nanmean(recall, axis=1)
             metric = "balanced_accuracy"
+            baseline_point = None
+            baseline_estimates = None
+            if "baseline_prediction" in frame:
+                baseline_correct = np.asarray(
+                    [
+                        [
+                            int(
+                                (
+                                    (group["actual"].astype(str) == label)
+                                    & (group["baseline_prediction"].astype(str) == label)
+                                ).sum()
+                            )
+                            for label in classes
+                        ]
+                        for group in groups
+                    ],
+                    dtype=np.float64,
+                )
+                baseline_recall = np.divide(
+                    baseline_correct[chosen].sum(axis=1),
+                    actual_sum,
+                    out=np.full_like(correct_sum, np.nan),
+                    where=actual_sum > 0,
+                )
+                baseline_estimates = np.nanmean(baseline_recall, axis=1)
+                baseline_point = float(
+                    balanced_accuracy_score(
+                        frame["actual"].astype(str),
+                        frame["baseline_prediction"].astype(str),
+                    )
+                )
         else:
             sums = np.asarray(
                 [pd.to_numeric(group["error"], errors="coerce").abs().sum() for group in groups],
@@ -528,6 +633,33 @@ def _grouped_bootstrap_intervals(
             chosen = rng.integers(0, len(groups), size=(samples, len(groups)))
             estimates = -(sums[chosen].sum(axis=1) / counts[chosen].sum(axis=1))
             metric = "negative_mae"
+            baseline_point = None
+            baseline_estimates = None
+            if "baseline_error" in frame:
+                baseline_sums = np.asarray(
+                    [
+                        pd.to_numeric(group["baseline_error"], errors="coerce").abs().sum()
+                        for group in groups
+                    ],
+                    dtype=np.float64,
+                )
+                baseline_counts = np.asarray(
+                    [
+                        pd.to_numeric(group["baseline_error"], errors="coerce").notna().sum()
+                        for group in groups
+                    ],
+                    dtype=np.float64,
+                )
+                baseline_estimates = -(
+                    baseline_sums[chosen].sum(axis=1)
+                    / baseline_counts[chosen].sum(axis=1)
+                )
+                baseline_point = float(
+                    -pd.to_numeric(frame["baseline_error"], errors="coerce").abs().mean()
+                )
+        delta_estimates = (
+            estimates - baseline_estimates if baseline_estimates is not None else None
+        )
         records.append(
             {
                 "split": str(split),
@@ -535,6 +667,20 @@ def _grouped_bootstrap_intervals(
                 "estimate": point,
                 "low": float(np.quantile(estimates, 0.025)),
                 "high": float(np.quantile(estimates, 0.975)),
+                "baseline_estimate": baseline_point,
+                "delta_estimate": (
+                    point - baseline_point if baseline_point is not None else None
+                ),
+                "delta_low": (
+                    float(np.quantile(delta_estimates, 0.025))
+                    if delta_estimates is not None
+                    else None
+                ),
+                "delta_high": (
+                    float(np.quantile(delta_estimates, 0.975))
+                    if delta_estimates is not None
+                    else None
+                ),
                 "group_column": group_column,
                 "group_count": len(groups),
                 "bootstrap_samples": samples,
@@ -551,20 +697,33 @@ def _prediction_metric_record(group: pd.DataFrame) -> dict[str, Any]:
     if kind == "classification" and "correct" in group:
         actual = group["actual"].astype(str)
         predicted = group["predicted"].astype(str)
-        return {
+        record = {
             "row_count": int(len(group)),
             "score": float(balanced_accuracy_score(actual, predicted)),
             "accuracy": float(group["correct"].astype(bool).mean()),
             "macro_f1": float(f1_score(actual, predicted, average="macro", zero_division=0)),
             "metric": "balanced_accuracy",
         }
+        if "baseline_prediction" in group:
+            baseline_score = float(
+                balanced_accuracy_score(actual, group["baseline_prediction"].astype(str))
+            )
+            record["baseline_score"] = baseline_score
+            record["delta"] = float(record["score"] - baseline_score)
+        return record
     if "error" in group:
         error = pd.to_numeric(group["error"], errors="coerce")
-        return {
+        record = {
             "row_count": int(len(group)),
             "score": float(-error.abs().mean()),
             "metric": "negative_mae",
         }
+        if "baseline_error" in group:
+            baseline_error = pd.to_numeric(group["baseline_error"], errors="coerce")
+            baseline_score = float(-baseline_error.abs().mean())
+            record["baseline_score"] = baseline_score
+            record["delta"] = float(record["score"] - baseline_score)
+        return record
     return {"row_count": int(len(group)), "score": np.nan, "metric": kind}
 
 

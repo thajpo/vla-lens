@@ -14,6 +14,10 @@ import sklearn
 from vla_lens.artifacts import LensArtifact, make_artifact_id
 from vla_lens.dataset import build_dataset_index
 from vla_lens.probes.experiment_cards import experiment_card_from_artifact_fields
+from vla_lens.probes.representation_options import (
+    normalize_representation_spec,
+    require_generic_representation,
+)
 from vla_lens.probes.run_artifacts import (
     PROBE_RUN_CONTRACT_KEY,
     SOURCE_FEATURE_ROW_INDEX,
@@ -28,6 +32,7 @@ from vla_lens.probes.workflow_artifacts import (
     _best_model_arrays,
     _best_result_details,
     _best_result_index,
+    _candidate_results_table,
     _grouped_bootstrap_intervals,
     _json_scalar,
     _metric_definitions,
@@ -50,12 +55,18 @@ from vla_lens.probes.workflow_artifacts import (
     _split_summary,
     _value_counts,
 )
+from vla_lens.probes.workflow_models import (
+    _probe_model_contract,
+    _retained_readout_contracts,
+)
 from vla_lens.probes.workflow_prepare import (
     _apply_missing_policy,
     _apply_row_expansion,
     _apply_row_filters,
     _attach_episode_metadata,
+    _ensure_selection_split,
     _ensure_split,
+    _split_group_column,
 )
 from vla_lens.probes.workflow_spec import baseline_columns, normalize_probe_spec
 from vla_lens.probes.workflow_targets import (
@@ -116,6 +127,23 @@ def train_probe_artifact(
         test_value=test_value,
         split_kind=split_kind,
     )
+    resolved_selection_value = _resolve_selection_value(
+        rows,
+        split_column=split_column,
+        requested=selection_value,
+        test_value=test_value,
+    )
+    rows, validation_summary = _ensure_selection_split(
+        rows,
+        split_column,
+        train_value=train_value,
+        selection_value=resolved_selection_value,
+        test_value=test_value,
+        split_kind=split_kind,
+    )
+    resolved_eval_values = list(
+        dict.fromkeys([resolved_selection_value, *(eval_values or ()), test_value])
+    )
     if target_name not in rows:
         raise KeyError(f"Probe target '{target_name}' is not present in selected rows")
     if X.shape[0] != len(rows):
@@ -137,7 +165,7 @@ def train_probe_artifact(
         ],
         sweep=sweep,
         target_kind=str(_probe_target(target_name, rows, target_spec=target_spec)["kind"]),
-        eval_values=list(eval_values or [test_value]),
+        eval_values=resolved_eval_values,
         probe_models=list(probe_models),
     )
     if results.empty:
@@ -149,7 +177,7 @@ def train_probe_artifact(
     artifact_id = make_artifact_id(name, "probe_suite")
     selected_result_index = _best_result_index(
         results,
-        selection_value=selection_value or test_value,
+        selection_value=resolved_selection_value,
         prefer_model=None,
     )
     selected_results = results.loc[[selected_result_index]]
@@ -168,7 +196,7 @@ def train_probe_artifact(
     replay_features = np.asarray(X[prepared_indices])
     model_arrays, model_state_summary = _best_model_arrays(
         results,
-        selection_value=selection_value or test_value,
+        selection_value=resolved_selection_value,
     )
     output_dir = _dataset_output_dir(dataset, artifact_id)
     outputs = {
@@ -179,6 +207,7 @@ def train_probe_artifact(
         "per_group_metrics": str(output_dir / "per_group_metrics.parquet"),
         "null_metrics": str(output_dir / "null_metrics.parquet"),
         "confidence_intervals": str(output_dir / "confidence_intervals.parquet"),
+        "candidate_results": str(output_dir / "candidate_results.parquet"),
         "source_rows": str(output_dir / "source_rows.parquet"),
         "source_sites": str(output_dir / "source_sites.parquet"),
         "weights": str(output_dir / "weights.zarr")
@@ -194,9 +223,22 @@ def train_probe_artifact(
         if "feature_scale" in model_arrays
         else None,
     }
+    uncertainty_group_column = _split_group_column(split_kind, rows)
     research_framing = _probe_research_framing(research)
+    representation = normalize_representation_spec(
+        (research or {}).get("representation"),
+        reduction=selector.reduce_tokens,
+    )
     normalized_run_spec = (
-        dict(run_spec)
+        _resolved_run_spec(
+            run_spec,
+            split_column=split_column,
+            train_value=train_value,
+            test_value=test_value,
+            selection_value=resolved_selection_value,
+            eval_values=resolved_eval_values,
+            validation_summary=validation_summary,
+        )
         if run_spec is not None
         else _direct_probe_spec(
             name=name,
@@ -206,8 +248,8 @@ def train_probe_artifact(
             split_column=split_column,
             train_value=train_value,
             test_value=test_value,
-            eval_values=list(eval_values or [test_value]),
-            selection_value=selection_value or test_value,
+            eval_values=resolved_eval_values,
+            selection_value=resolved_selection_value,
             metadata_baseline_columns=metadata_baseline_columns,
             sweep=sweep,
             row_filter=row_filter,
@@ -220,6 +262,7 @@ def train_probe_artifact(
         "workflow": "train_probe_artifact",
         "probe_artifact_schema_version": PROBE_ARTIFACT_SCHEMA_VERSION,
         "research": research_framing,
+        "representation": representation,
         "lineage": _probe_lineage(random_seed=None),
         "source": _probe_source(dataset, rows),
         "input": _probe_input(selector, rows, X, feature_matrix.cache_key),
@@ -231,8 +274,8 @@ def train_probe_artifact(
             split_column=split_column,
             train_value=train_value,
             test_value=test_value,
-            eval_values=list(eval_values or [test_value]),
-            selection_value=selection_value or test_value,
+            eval_values=resolved_eval_values,
+            selection_value=resolved_selection_value,
         ),
         "normalization": {
             "method": "standardize",
@@ -254,19 +297,24 @@ def train_probe_artifact(
             "trained_on_split": train_value,
             "weights_space": "normalized_feature_space",
             "best_model_state": model_state_summary,
+            "candidate_retention": {
+                "metrics": "all_candidates",
+                "fitted_state": "validation_selected_only",
+            },
         },
         "evaluation": {
             "primary_split": test_value,
-            "selection_split": selection_value or test_value,
-            "eval_splits": list(eval_values or [test_value]),
+            "selection_split": resolved_selection_value,
+            "eval_splits": resolved_eval_values,
             "primary_metric": _primary_metric(results),
             "grain": "row",
             "aggregation": "over_rows",
+            "independent_group": uncertainty_group_column,
             "metric_definitions": _metric_definitions(results),
         },
         "prediction_retention": {
             "mode": "row_level_eval_plus_all_source_scoring",
-            "eval_splits": list(eval_values or [test_value]),
+            "eval_splits": resolved_eval_values,
             "eval_row_count": int(len(prediction_records)),
             "scored_split_values": sorted(
                 str(value)
@@ -283,8 +331,9 @@ def train_probe_artifact(
         "split_column": split_column,
         "train_value": train_value,
         "test_value": test_value,
-        "eval_values": list(eval_values or [test_value]),
-        "selection_value": selection_value or test_value,
+        "eval_values": resolved_eval_values,
+        "selection_value": resolved_selection_value,
+        "validation_split": validation_summary,
         "metadata_baseline_columns": [
             column for column in metadata_baseline_columns if column in rows.columns
         ],
@@ -297,13 +346,21 @@ def train_probe_artifact(
         results,
         rows,
         target=target_name,
-        selection_value=selection_value or test_value,
+        selection_value=resolved_selection_value,
     )
     metrics["probe_artifact_schema_version"] = PROBE_ARTIFACT_SCHEMA_VERSION
     metrics["prediction_row_count"] = int(len(prediction_records))
     metrics["scored_prediction_row_count"] = int(len(scored_prediction_records))
     metrics["feature_matrix_fingerprint"] = _array_fingerprint(X)
     per_split_metrics = _per_split_metrics(prediction_records)
+    candidate_results = _candidate_results_table(
+        results,
+        selection_value=resolved_selection_value,
+        selected_result_index=selected_result_index,
+    )
+    method["probe"]["candidate_retention"]["candidate_count"] = int(
+        candidate_results["readout_id"].nunique()
+    )
     _validate_selected_outputs(
         results,
         selected_result_index,
@@ -315,8 +372,11 @@ def train_probe_artifact(
         rows,
         group_columns=["benchmark", "task_id", "scene_family", "target_parse_status"],
     )
-    confidence_intervals = _grouped_bootstrap_intervals(prediction_records)
-    selection_split = selection_value or test_value
+    confidence_intervals = _grouped_bootstrap_intervals(
+        prediction_records,
+        group_column=uncertainty_group_column,
+    )
+    selection_split = resolved_selection_value
     null_metrics = trained_label_shuffle_metrics(
         source_rows,
         replay_features,
@@ -326,12 +386,14 @@ def train_probe_artifact(
         eval_value=str(selection_split),
         probe_type=str(selected_results.iloc[0]["probe_type"]),
         model_name=str(selected_results.iloc[0]["model"]),
+        group_column=uncertainty_group_column,
     )
     if not null_metrics.empty:
         null_metrics.insert(0, "cohort_split", str(selection_split))
     if not null_metrics.empty:
         metrics["null_score_mean"] = float(null_metrics["score"].mean())
         metrics["null_score_std"] = float(null_metrics["score"].std(ddof=0))
+        metrics["null_p_value_resolution"] = float(1 / (len(null_metrics) + 1))
         best_score = metrics.get("best_score")
         if best_score is not None:
             metrics["null_p_value"] = float(
@@ -343,6 +405,7 @@ def train_probe_artifact(
         metrics,
         confidence_intervals,
         cohort_split=str(selection_split),
+        group_column=uncertainty_group_column,
     )
     experiment_card = experiment_card_from_artifact_fields(
         name=name,
@@ -356,7 +419,34 @@ def train_probe_artifact(
         sweep=sweep,
         metrics=metrics,
         uncertainty=uncertainty,
+        representation=representation,
     )
+    selected_model_contract = _probe_model_contract(
+        model_arrays,
+        model_state_summary,
+        hyperparameters=method["probe"]["hyperparams"],
+        feature_matrix=replay_features,
+        predictions=scored_prediction_records["prediction_value"].to_numpy(),
+    )
+    retained_readouts, retained_arrays = _retained_readout_contracts(
+        results,
+        selection_value=resolved_selection_value,
+        feature_matrix=X,
+        hyperparameters=method["probe"]["hyperparams"],
+    )
+    model_arrays.update(retained_arrays)
+    retained_ids = {readout["readout_id"] for readout in retained_readouts}
+    candidate_results["fitted_state_retained"] = candidate_results["readout_id"].isin(
+        retained_ids
+    )
+    method["probe"]["candidate_retention"].update(
+        {
+            "fitted_state": "best_validation_candidate_per_model_family",
+            "retained_readout_count": len(retained_readouts),
+            "retained_readout_ids": sorted(retained_ids),
+        }
+    )
+    method["probe"]["retained_readouts"] = retained_readouts
     method[PROBE_RUN_CONTRACT_KEY] = make_probe_run_contract(
         experiment_card=experiment_card,
         run_spec=normalized_run_spec,
@@ -370,14 +460,9 @@ def train_probe_artifact(
         feature_matrix=replay_features,
         source_trace_fingerprints=source_trace_fingerprint_map(dataset, source_rows),
         label_sources=probe_label_sources(dataset),
-        model=_probe_model_contract(
-            model_arrays,
-            model_state_summary,
-            hyperparameters=method["probe"]["hyperparams"],
-            feature_matrix=replay_features,
-            predictions=scored_prediction_records["prediction_value"].to_numpy(),
-        ),
+        model=selected_model_contract,
         uncertainty=uncertainty,
+        readouts=retained_readouts,
     )
     artifact = LensArtifact(
         artifact_id=artifact_id,
@@ -391,10 +476,11 @@ def train_probe_artifact(
         display={
             "kind": "probe_suite",
             "research": research_framing,
+            "representation": representation,
             "results": _records(results),
             "best_result_details": _best_result_details(
                 results,
-                selection_value=selection_value or test_value,
+                selection_value=resolved_selection_value,
             ),
             "target": target_name,
             "split_summary": _split_summary(rows, split_column),
@@ -442,6 +528,7 @@ def train_probe_artifact(
         confidence_intervals.to_parquet(
             artifact_dir / "confidence_intervals.parquet", index=False
         )
+        candidate_results.to_parquet(artifact_dir / "candidate_results.parquet", index=False)
         (artifact_dir / "metrics.json").write_text(
             json.dumps(metrics, indent=2, sort_keys=True),
             encoding="utf-8",
@@ -515,6 +602,10 @@ def train_probe_artifact_from_spec(
     """Train a probe artifact from a YAML/JSON-compatible spec."""
     normalized = normalize_probe_spec(spec)
     features = normalized["features"]
+    require_generic_representation(
+        normalized["representation"],
+        reduction=str(features.get("reduction", "mean")),
+    )
     selector = ActivationQuery(
         episodes=dict(features.get("episodes") or {}),
         name=features.get("name"),
@@ -542,11 +633,14 @@ def train_probe_artifact_from_spec(
         sweep=normalized.get("sweep", "layer"),
         row_filter=normalized.get("row_filter"),
         row_expand=normalized.get("row_expand"),
-        eval_values=[
-            str(value)
-            for value in split.get("eval_values", [split.get("test_value", "test")])
-        ],
-        selection_value=str(split.get("selection_value", split.get("test_value", "test"))),
+        eval_values=(
+            [str(value) for value in split["eval_values"]]
+            if "eval_values" in split
+            else None
+        ),
+        selection_value=(
+            str(split["selection_value"]) if split.get("selection_value") is not None else None
+        ),
         probe_models=[
             str(value)
             for value in normalized.get("probe", {}).get("models", ["linear", "mlp"])
@@ -554,6 +648,33 @@ def train_probe_artifact_from_spec(
         research=normalized,
         run_spec=normalized,
     )
+
+
+def _resolve_selection_value(
+    rows: pd.DataFrame,
+    *,
+    split_column: str,
+    requested: str | None,
+    test_value: str,
+) -> str:
+    if requested is not None:
+        value = str(requested)
+        if value == test_value:
+            raise ValueError(
+                "Probe selection_value must differ from test_value; final test data cannot "
+                "choose a layer, model, or transform."
+            )
+        return value
+    values = (
+        set(rows[split_column].dropna().astype(str)) if split_column in rows else set()
+    )
+    for candidate in ["validation", "val"]:
+        if candidate in values:
+            return candidate
+    validation_like = sorted(
+        value for value in values if value.startswith("val_") or "validation" in value
+    )
+    return validation_like[0] if validation_like else "validation"
 
 
 def _probe_research_framing(spec: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -614,127 +735,30 @@ def _direct_probe_spec(
     return spec
 
 
-def _probe_model_contract(
-    model_arrays: Mapping[str, np.ndarray],
-    model_state: Mapping[str, Any],
+def _resolved_run_spec(
+    run_spec: Mapping[str, Any],
     *,
-    hyperparameters: Mapping[str, Any],
-    feature_matrix: np.ndarray,
-    predictions: np.ndarray,
+    split_column: str,
+    train_value: str,
+    test_value: str,
+    selection_value: str,
+    eval_values: Sequence[str],
+    validation_summary: Mapping[str, Any],
 ) -> dict[str, Any]:
-    model_name = str(model_state.get("model") or "")
-    probe_type = str(model_state.get("probe_type") or "unknown")
-    numeric_precision = {name: str(np.asarray(value).dtype) for name, value in model_arrays.items()}
-    common = {
-        "probe_type": probe_type,
-        "feature_dim": int(np.asarray(model_arrays["feature_mean"]).size),
-        "classes": list(model_state.get("classes") or []),
-        "array_fingerprints": {
-            name: _array_fingerprint(value) for name, value in model_arrays.items()
-        },
-        "hyperparameters": dict(hyperparameters.get(model_name) or {}),
-        "selected_readout": {
-            "feature": model_state.get("feature"),
-            "sweep_value": model_state.get("sweep_value"),
-            "model": model_name,
-            "selection_split": model_state.get("split_value"),
-            "primary_metric": model_state.get("primary_metric"),
-        },
-        "numeric_precision": numeric_precision,
-        "prediction_tolerance": (
-            _floating_replay_tolerance(
-                model_arrays,
-                feature_matrix=feature_matrix,
-                predictions=predictions,
-            )
-            if probe_type == "regression"
-            else None
-        ),
-    }
-    if model_name == "linear":
-        required = {"weights", "bias", "feature_mean", "feature_scale"}
-        missing = sorted(required - set(model_arrays))
-        if missing:
-            raise ValueError(f"Selected linear probe is missing fitted arrays: {missing}")
-        return {
-            **common,
-            "format": "standardized_linear_v1",
-            "array_names": {name: name for name in sorted(required)},
+    resolved = dict(run_spec)
+    split = dict(resolved.get("split") or {})
+    split.update(
+        {
+            "column": split_column,
+            "train_value": train_value,
+            "test_value": test_value,
+            "selection_value": selection_value,
+            "eval_values": list(eval_values),
+            "automatic_validation": dict(validation_summary),
         }
-    if model_name == "mlp":
-        weight_names = sorted(
-            (name for name in model_arrays if name.startswith("layer_weights_")),
-            key=lambda value: int(value.rsplit("_", 1)[1]),
-        )
-        bias_names = sorted(
-            (name for name in model_arrays if name.startswith("layer_biases_")),
-            key=lambda value: int(value.rsplit("_", 1)[1]),
-        )
-        if not weight_names or len(weight_names) != len(bias_names):
-            raise ValueError("Selected MLP probe is missing fitted layer arrays")
-        return {
-            **common,
-            "format": "standardized_mlp_v1",
-            "activation": model_state.get("activation"),
-            "out_activation": model_state.get("out_activation"),
-            "array_names": {
-                "feature_mean": "feature_mean",
-                "feature_scale": "feature_scale",
-                "layer_weights": weight_names,
-                "layer_biases": bias_names,
-            },
-        }
-    raise ValueError(f"Selected probe model {model_name!r} cannot be saved for reuse")
-
-
-def _floating_replay_tolerance(
-    model_arrays: Mapping[str, np.ndarray],
-    *,
-    feature_matrix: np.ndarray,
-    predictions: np.ndarray,
-) -> dict[str, Any]:
-    arrays = [np.asarray(value) for value in model_arrays.values()]
-    arrays.append(np.asarray(feature_matrix))
-    floating_dtypes = [value.dtype for value in arrays if np.issubdtype(value.dtype, np.floating)]
-    if not floating_dtypes:
-        return {
-            "absolute": 0.0,
-            "relative": 0.0,
-            "least_precise_dtype": None,
-            "operation_count": 0,
-            "prediction_scale": 0.0,
-            "estimated_relative_error": 0.0,
-            "maximum_relative_error": 0.0,
-        }
-    least_precise_dtype = max(floating_dtypes, key=lambda dtype: float(np.finfo(dtype).eps))
-    epsilon = float(np.finfo(least_precise_dtype).eps)
-    feature_dim = int(feature_matrix.shape[1]) if feature_matrix.ndim == 2 else 0
-    layer_operation_count = sum(
-        int(np.asarray(value).shape[0])
-        for name, value in model_arrays.items()
-        if name.startswith("layer_weights_") and np.asarray(value).ndim > 1
     )
-    operation_count = max(1, layer_operation_count or feature_dim)
-    estimated_relative_error = epsilon * operation_count * 4.0
-    maximum_relative_error = 1e-4
-    total_relative_error = min(estimated_relative_error, maximum_relative_error)
-    component_tolerance = total_relative_error / 2.0
-    numeric_predictions = pd.to_numeric(pd.Series(predictions), errors="coerce").to_numpy(
-        dtype=np.float64
-    )
-    finite_predictions = numeric_predictions[np.isfinite(numeric_predictions)]
-    prediction_scale = (
-        float(np.max(np.abs(finite_predictions))) if len(finite_predictions) else 0.0
-    )
-    return {
-        "absolute": component_tolerance * max(1.0, prediction_scale),
-        "relative": component_tolerance,
-        "least_precise_dtype": str(least_precise_dtype),
-        "operation_count": operation_count,
-        "prediction_scale": prediction_scale,
-        "estimated_relative_error": estimated_relative_error,
-        "maximum_relative_error": maximum_relative_error,
-    }
+    resolved["split"] = split
+    return resolved
 
 
 def _probe_uncertainty(
@@ -743,6 +767,7 @@ def _probe_uncertainty(
     confidence_intervals: pd.DataFrame,
     *,
     cohort_split: str,
+    group_column: str,
 ) -> dict[str, Any]:
     null_test: dict[str, Any]
     if null_metrics.empty:
@@ -760,21 +785,31 @@ def _probe_uncertainty(
             "prediction_row_count": int(null_metrics["row_count"].iloc[0]),
             "permutation_count": int(len(null_metrics)),
             "random_seed": 0,
-            "unit": "training row shuffled; validation rows held fixed",
+            "unit": f"training labels shuffled within or across {group_column} groups",
+            "group_column": group_column,
+            "shuffle_strategy": str(null_metrics["shuffle_strategy"].iloc[0]),
             "p_value": metrics.get("null_p_value"),
+            "p_value_resolution": metrics.get("null_p_value_resolution"),
+            "interpretation": (
+                "Exploratory trained-null comparison; use the effect and grouped interval "
+                "as the main evidence, not a thresholded p-value."
+            ),
         }
     return {
         "confidence_intervals": (
             {
                 "status": "computed",
-                "method": "bootstrap whole episodes with replacement",
-                "unit": "trace_id",
+                "method": f"bootstrap whole {group_column} groups with replacement",
+                "unit": group_column,
                 "intervals": confidence_intervals.to_dict(orient="records"),
             }
             if not confidence_intervals.empty
             else {
                 "status": "not_computed",
-                "reason": "Fewer than two episodes were available in each evaluation split.",
+                "reason": (
+                    f"Fewer than two {group_column} groups were available in each "
+                    "evaluation split."
+                ),
             }
         ),
         "null_test": null_test,
