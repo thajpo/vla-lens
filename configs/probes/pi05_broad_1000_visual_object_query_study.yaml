@@ -1,0 +1,39 @@
+name: PI0.5 broad 1000 initial visual object-query identity and location study
+question: Do main-camera visual tokens encode the initial scene roster and each named object's XYZ position?
+hypothesis_family: object-conditioned visual scene geometry
+intended_claim: >-
+  Exploratory held-out-task evidence for object identity and location in captured
+  visual representations, with validation-only layer/model selection and direct
+  comparison against scene priors and initial/previous-position baselines.
+feature:
+  module: pi05.vlm.layers.*
+  tensor_type: hidden_tokens
+  site_token_kind: prefix
+  token_kind: image
+  token_filters:
+    camera_id: main
+  layers: [0, 4, 8, 12, 17]
+  policy_calls: [0]
+  dtype: float32
+split:
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+probe:
+  models: [linear, mlp]
+  readout_dims: [32, 64]
+  ridge_alphas: [0.01, 1.0]
+  mlp_hidden_layer_sizes: [64]
+  mlp_max_iter: 300
+  mlp_workers: 8
+  token_channel_dim: 16
+  channel_sample_count: 50000
+  projection_fit_rows: 10000
+  io_workers: 8
+  min_train_episodes: 5
+  mixture_iterations: 5
+  mixture_regularization: 0.001
+  bootstrap_samples: 2000
+  cache: true

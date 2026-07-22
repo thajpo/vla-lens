@@ -1,4 +1,4 @@
-"""Matched pooled, tokenwise, and learned-layer scene-object probe study."""
+"""Matched pooled, tokenwise, layer, and model-capacity scene-object study."""
 
 from __future__ import annotations
 
@@ -15,7 +15,10 @@ from sklearn.metrics import average_precision_score
 from vla_lens.artifacts import LensArtifact, make_artifact_id
 from vla_lens.probes.scene_map_study import SceneMapTargets, scene_map_target_table
 from vla_lens.probes.structured_scene_models import (
+    FittedMLP,
     FittedSceneRepresentation,
+    SceneLinearDecoder,
+    SceneMLPDecoder,
     fit_structured_scene_representations,
 )
 from vla_lens.probes.token_representations import (
@@ -51,7 +54,7 @@ def run_token_scene_probe_study(
     *,
     save: bool = True,
 ) -> TokenSceneStudyResult:
-    """Compare pooled and token-preserving scene decoders on identical rows."""
+    """Compare pooled/token-preserving linear and MLP decoders on identical rows."""
 
     normalized = _normalize_spec(spec)
     started = time.perf_counter()
@@ -84,6 +87,12 @@ def run_token_scene_probe_study(
         min_train_episodes=int(normalized["probe"]["min_train_episodes"]),
         mixture_iterations=int(normalized["probe"]["mixture_iterations"]),
         mixture_regularization=float(normalized["probe"]["mixture_regularization"]),
+        models=[str(value) for value in normalized["probe"]["models"]],
+        mlp_hidden_layer_sizes=[
+            int(value) for value in normalized["probe"]["mlp_hidden_layer_sizes"]
+        ],
+        mlp_max_iter=int(normalized["probe"]["mlp_max_iter"]),
+        mlp_workers=int(normalized["probe"]["mlp_workers"]),
     )
     timings["fit_seconds"] = time.perf_counter() - step_started
 
@@ -313,55 +322,60 @@ def _paired_comparison_table(
         ("tokenwise__learned_layer_mix", "tokenwise__single_layer"),
         ("tokenwise__learned_layer_mix", "pooled__single_layer"),
     ]
+    models = sorted({str(fitted.record["model"]) for fitted in selected})
     test_mask = rows[str(split["column"])].astype(str).to_numpy() == str(
         split["test_value"]
     )
     records: list[dict[str, Any]] = []
     for comparison_index, (candidate_name, reference_name) in enumerate(comparisons):
-        for target in ["scene_identity", "object_position"]:
-            candidate = by_key.get((candidate_name, target))
-            reference = by_key.get((reference_name, target))
-            if candidate is None or reference is None:
-                continue
-            candidate_score = _row_score(candidate, targets)
-            reference_score = _row_score(reference, targets)
-            improvement = (
-                candidate_score - reference_score
-                if target == "scene_identity"
-                else reference_score - candidate_score
-            )
-            for unit_index, (unit, groups) in enumerate(
-                [
-                    ("episode", rows["trace_id"].astype(str).to_numpy()),
-                    (
-                        "task",
-                        rows.get("task_id", rows["trace_id"])
-                        .fillna("")
-                        .astype(str)
-                        .to_numpy(),
-                    ),
-                ]
-            ):
-                summary = _paired_bootstrap_summary(
-                    improvement[test_mask],
-                    groups[test_mask],
-                    bootstrap_samples=bootstrap_samples,
-                    seed=20260719 + comparison_index * 10 + unit_index,
+        for model in models:
+            candidate_variant = f"{candidate_name}__{model}"
+            reference_variant = f"{reference_name}__{model}"
+            for target in ["scene_identity", "object_position"]:
+                candidate = by_key.get((candidate_variant, target))
+                reference = by_key.get((reference_variant, target))
+                if candidate is None or reference is None:
+                    continue
+                candidate_score = _row_score(candidate, targets)
+                reference_score = _row_score(reference, targets)
+                improvement = (
+                    candidate_score - reference_score
+                    if target == "scene_identity"
+                    else reference_score - candidate_score
                 )
-                records.append(
-                    {
-                        "candidate": candidate_name,
-                        "reference": reference_name,
-                        "target": target,
-                        "unit": unit,
-                        "metric": (
-                            "scene_jaccard_improvement"
-                            if target == "scene_identity"
-                            else "error_reduction_m"
+                for unit_index, (unit, groups) in enumerate(
+                    [
+                        ("episode", rows["trace_id"].astype(str).to_numpy()),
+                        (
+                            "task",
+                            rows.get("task_id", rows["trace_id"])
+                            .fillna("")
+                            .astype(str)
+                            .to_numpy(),
                         ),
-                        **summary,
-                    }
-                )
+                    ]
+                ):
+                    summary = _paired_bootstrap_summary(
+                        improvement[test_mask],
+                        groups[test_mask],
+                        bootstrap_samples=bootstrap_samples,
+                        seed=20260719 + comparison_index * 100 + unit_index,
+                    )
+                    records.append(
+                        {
+                            "candidate": candidate_variant,
+                            "reference": reference_variant,
+                            "model": model,
+                            "target": target,
+                            "unit": unit,
+                            "metric": (
+                                "scene_jaccard_improvement"
+                                if target == "scene_identity"
+                                else "error_reduction_m"
+                            ),
+                            **summary,
+                        }
+                    )
     return pd.DataFrame.from_records(records)
 
 
@@ -586,30 +600,82 @@ def _example_table(
 def _decoder_parameter_table(
     selected: Sequence[FittedSceneRepresentation],
 ) -> pd.DataFrame:
-    return pd.DataFrame.from_records(
-        [
+    records: list[dict[str, Any]] = []
+    for fitted in selected:
+        decoder = fitted.decoder
+        common = {
+            "variant": _variant(fitted),
+            "target": fitted.record["target"],
+            "model": fitted.record["model"],
+            "supported": decoder.supported.astype(np.uint8).tolist(),
+        }
+        if isinstance(decoder, SceneLinearDecoder):
+            records.append(
+                {
+                    **common,
+                    "object_index": None,
+                    "parameter_kind": "linear",
+                    "coefficient_shape": json.dumps(list(decoder.coefficients.shape)),
+                    "coefficients": np.asarray(decoder.coefficients)
+                    .reshape(-1)
+                    .tolist(),
+                    "intercept_shape": json.dumps(list(decoder.intercepts.shape)),
+                    "intercepts": np.asarray(decoder.intercepts)
+                    .reshape(-1)
+                    .tolist(),
+                }
+            )
+            continue
+        if not isinstance(decoder, SceneMLPDecoder):
+            raise TypeError(f"Unknown scene decoder {type(decoder)!r}")
+        for object_index, network in enumerate(decoder.networks):
+            if network is None:
+                continue
+            records.extend(
+                _mlp_parameter_records(
+                    common,
+                    network,
+                    object_index=(
+                        object_index if decoder.target == "object_position" else None
+                    ),
+                )
+            )
+    return pd.DataFrame.from_records(records)
+
+
+def _mlp_parameter_records(
+    common: Mapping[str, Any],
+    network: FittedMLP,
+    *,
+    object_index: int | None,
+) -> list[dict[str, Any]]:
+    records = [
+        {
+            **dict(common),
+            "object_index": object_index,
+            "parameter_kind": "standardizer",
+            "feature_mean": network.feature_mean.tolist(),
+            "feature_scale": network.feature_scale.tolist(),
+            "out_activation": network.out_activation,
+        }
+    ]
+    for layer, (weights, biases) in enumerate(
+        zip(network.weights, network.biases, strict=True)
+    ):
+        records.append(
             {
-                "variant": _variant(fitted),
-                "target": fitted.record["target"],
-                "coefficient_shape": json.dumps(
-                    list(fitted.decoder.coefficients.shape)
-                ),
-                "coefficients": np.asarray(
-                    fitted.decoder.coefficients, dtype=np.float32
-                )
-                .reshape(-1)
-                .tolist(),
-                "intercept_shape": json.dumps(list(fitted.decoder.intercepts.shape)),
-                "intercepts": np.asarray(
-                    fitted.decoder.intercepts, dtype=np.float32
-                )
-                .reshape(-1)
-                .tolist(),
-                "supported": fitted.decoder.supported.astype(np.uint8).tolist(),
+                **dict(common),
+                "object_index": object_index,
+                "parameter_kind": "mlp_layer",
+                "mlp_layer": layer,
+                "coefficient_shape": json.dumps(list(weights.shape)),
+                "coefficients": weights.reshape(-1).tolist(),
+                "intercept_shape": json.dumps(list(biases.shape)),
+                "intercepts": biases.reshape(-1).tolist(),
+                "out_activation": network.out_activation,
             }
-            for fitted in selected
-        ]
-    )
+        )
+    return records
 
 
 def _save_study(
@@ -678,6 +744,15 @@ def _save_study(
                 "learned_layer_mix": (
                     "non-negative layer weights summing to one; weights and other "
                     "hyperparameters selected on validation, decoder fit on train"
+                ),
+                "object_query": (
+                    "identity presence is decoded as a whole roster; XYZ uses one "
+                    "separately fitted head per named object, so each location can be "
+                    "queried and inspected rather than scored only as one flattened map"
+                ),
+                "model_capacity": (
+                    "linear and small one-hidden-layer MLP readouts are selected only "
+                    "on validation and reported separately"
                 ),
             },
             "storage_contract": {
@@ -764,6 +839,10 @@ def _normalize_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
     probe = dict(normalized.get("probe") or {})
     probe.setdefault("readout_dims", [64, 128])
     probe.setdefault("ridge_alphas", [1.0, 10.0])
+    probe.setdefault("models", ["linear", "mlp"])
+    probe.setdefault("mlp_hidden_layer_sizes", [64])
+    probe.setdefault("mlp_max_iter", 300)
+    probe.setdefault("mlp_workers", 4)
     probe.setdefault("token_channel_dim", 16)
     probe.setdefault("channel_sample_count", 50_000)
     probe.setdefault("projection_fit_rows", 10_000)
@@ -778,7 +857,10 @@ def _normalize_spec(spec: Mapping[str, Any]) -> dict[str, Any]:
 
 
 def _variant(fitted: FittedSceneRepresentation) -> str:
-    return f"{fitted.record['representation']}__{fitted.record['structure']}"
+    return (
+        f"{fitted.record['representation']}__{fitted.record['structure']}__"
+        f"{fitted.record['model']}"
+    )
 
 
 def _episode_mean(values: np.ndarray, episodes: np.ndarray, mask: np.ndarray) -> float:

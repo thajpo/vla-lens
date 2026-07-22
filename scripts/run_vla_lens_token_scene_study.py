@@ -49,6 +49,7 @@ def main() -> None:
     columns = [
         "representation",
         "structure",
+        "model",
         "target",
         "selected_layer",
         "readout_dim",

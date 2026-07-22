@@ -1,8 +1,9 @@
-"""Linear decoders for matched pooled, tokenwise, and layer-mixture studies."""
+"""Linear and nonlinear decoders for pooled, tokenwise, and layer studies."""
 
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from typing import Any, Mapping, Sequence
 
@@ -10,6 +11,8 @@ import numpy as np
 import pandas as pd
 from scipy.optimize import minimize
 from sklearn.linear_model import Ridge
+from sklearn.neural_network import MLPRegressor
+from sklearn.preprocessing import StandardScaler
 
 from vla_lens.probes.scene_map_study import (
     SceneMapTargets,
@@ -50,11 +53,60 @@ class SceneLinearDecoder:
 
 
 @dataclass(frozen=True, slots=True)
+class FittedMLP:
+    """Small NumPy-replayable MLP with its fitted input standardizer."""
+
+    feature_mean: np.ndarray
+    feature_scale: np.ndarray
+    weights: tuple[np.ndarray, ...]
+    biases: tuple[np.ndarray, ...]
+    out_activation: str
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        values = (np.asarray(X, dtype=np.float64) - self.feature_mean) / self.feature_scale
+        for index, (weights, bias) in enumerate(zip(self.weights, self.biases, strict=True)):
+            values = values @ weights + bias
+            if index < len(self.weights) - 1:
+                values = np.maximum(values, 0.0)
+        if self.out_activation == "logistic":
+            values = 1.0 / (1.0 + np.exp(-values))
+        return np.asarray(values, dtype=np.float64)
+
+
+@dataclass(frozen=True, slots=True)
+class SceneMLPDecoder:
+    """Nonlinear whole-roster or identity-conditioned object-location decoder."""
+
+    target: str
+    networks: tuple[FittedMLP | None, ...]
+    supported: np.ndarray
+
+    def predict(self, X: np.ndarray) -> np.ndarray:
+        values = np.asarray(X, dtype=np.float64)
+        if self.target == "scene_identity":
+            network = next((value for value in self.networks if value is not None), None)
+            prediction = np.zeros((len(values), len(self.supported)), dtype=np.float64)
+            if network is not None and self.supported.any():
+                output = np.asarray(network.predict(values))
+                prediction[:, self.supported] = np.atleast_2d(output).reshape(
+                    len(values), int(self.supported.sum())
+                )
+            return prediction
+        prediction = np.full(
+            (len(values), len(self.supported), 3), np.nan, dtype=np.float64
+        )
+        for object_index, network in enumerate(self.networks):
+            if network is not None:
+                prediction[:, object_index] = np.asarray(network.predict(values)).reshape(-1, 3)
+        return prediction
+
+
+@dataclass(frozen=True, slots=True)
 class FittedSceneRepresentation:
     """One validation-selected representation and its final predictions."""
 
     record: Mapping[str, Any]
-    decoder: SceneLinearDecoder
+    decoder: SceneLinearDecoder | SceneMLPDecoder
     prediction: np.ndarray
     layer_weights: np.ndarray
 
@@ -71,6 +123,10 @@ def fit_structured_scene_representations(
     min_train_episodes: int,
     mixture_iterations: int = 5,
     mixture_regularization: float = 1e-3,
+    models: Sequence[str] = ("linear",),
+    mlp_hidden_layer_sizes: Sequence[int] = (64,),
+    mlp_max_iter: int = 300,
+    mlp_workers: int = 4,
 ) -> tuple[pd.DataFrame, list[FittedSceneRepresentation]]:
     """Fit matched single-layer and learned-mixture models for two scene targets."""
 
@@ -110,45 +166,55 @@ def fit_structured_scene_representations(
                 )
                 for alpha in ridge_alphas:
                     for layer_index, layer in enumerate(layers):
-                        decoder = fit_scene_decoder(
-                            X[:, layer_index],
-                            truth,
-                            rows,
-                            masks["train"],
-                            supported,
-                            target=target_name,
-                            alpha=float(alpha),
-                            min_train_episodes=min_train_episodes,
-                        )
-                        prediction = decoder.predict(X[:, layer_index])
-                        metrics = scene_metrics(
-                            targets,
-                            target_name,
-                            prediction,
-                            rows,
-                            masks,
-                            decoder.supported,
-                        )
-                        weights = np.zeros(len(layers), dtype=np.float64)
-                        weights[layer_index] = 1.0
-                        record = _candidate_record(
-                            representation,
-                            "single_layer",
-                            target_name,
-                            dim,
-                            alpha,
-                            layers,
-                            weights,
-                            metrics,
-                            selected_layer=int(layer),
-                            mixture_iterations=0,
-                        )
-                        candidate_records.append(record)
-                        _consider_best(
-                            best,
-                            FittedSceneRepresentation(record, decoder, prediction, weights),
-                        )
+                        for model_name in models:
+                            decoder = fit_scene_decoder(
+                                X[:, layer_index],
+                                truth,
+                                rows,
+                                masks["train"],
+                                supported,
+                                target=target_name,
+                                alpha=float(alpha),
+                                min_train_episodes=min_train_episodes,
+                                model=str(model_name),
+                                mlp_hidden_layer_sizes=mlp_hidden_layer_sizes,
+                                mlp_max_iter=mlp_max_iter,
+                                mlp_workers=mlp_workers,
+                            )
+                            prediction = decoder.predict(X[:, layer_index])
+                            metrics = scene_metrics(
+                                targets,
+                                target_name,
+                                prediction,
+                                rows,
+                                masks,
+                                decoder.supported,
+                            )
+                            weights = np.zeros(len(layers), dtype=np.float64)
+                            weights[layer_index] = 1.0
+                            record = _candidate_record(
+                                representation,
+                                "single_layer",
+                                target_name,
+                                dim,
+                                alpha,
+                                layers,
+                                weights,
+                                metrics,
+                                model=str(model_name),
+                                selected_layer=int(layer),
+                                mixture_iterations=0,
+                            )
+                            candidate_records.append(record)
+                            _consider_best(
+                                best,
+                                FittedSceneRepresentation(
+                                    record, decoder, prediction, weights
+                                ),
+                            )
 
+                    if "linear" not in models:
+                        continue
                     decoder, prediction, weights, iterations = fit_layer_mixture(
                         X,
                         truth,
@@ -178,6 +244,7 @@ def fit_structured_scene_representations(
                         layers,
                         weights,
                         metrics,
+                        model="linear",
                         selected_layer=None,
                         mixture_iterations=iterations,
                     )
@@ -207,8 +274,29 @@ def fit_scene_decoder(
     target: str,
     alpha: float,
     min_train_episodes: int,
-) -> SceneLinearDecoder:
-    """Fit one linear scene decoder while preserving missing-position masks."""
+    model: str = "linear",
+    mlp_hidden_layer_sizes: Sequence[int] = (64,),
+    mlp_max_iter: int = 300,
+    mlp_workers: int = 4,
+) -> SceneLinearDecoder | SceneMLPDecoder:
+    """Fit one scene decoder while preserving missing-position masks."""
+
+    if model == "mlp":
+        return _fit_mlp_scene_decoder(
+            X,
+            truth,
+            rows,
+            train_mask,
+            supported,
+            target=target,
+            alpha=alpha,
+            min_train_episodes=min_train_episodes,
+            hidden_layer_sizes=mlp_hidden_layer_sizes,
+            max_iter=mlp_max_iter,
+            workers=mlp_workers,
+        )
+    if model != "linear":
+        raise ValueError(f"Unknown structured scene model {model!r}")
 
     values = np.asarray(X, dtype=np.float64)
     feature_dim = values.shape[1]
@@ -237,6 +325,83 @@ def fit_scene_decoder(
         coefficients[object_index] = np.atleast_2d(model.coef_)
         intercepts[object_index] = np.atleast_1d(model.intercept_)
     return SceneLinearDecoder(target, coefficients, intercepts, position_supported)
+
+
+def _fit_mlp_scene_decoder(
+    X: np.ndarray,
+    truth: np.ndarray,
+    rows: pd.DataFrame,
+    train_mask: np.ndarray,
+    supported: np.ndarray,
+    *,
+    target: str,
+    alpha: float,
+    min_train_episodes: int,
+    hidden_layer_sizes: Sequence[int],
+    max_iter: int,
+    workers: int,
+) -> SceneMLPDecoder:
+    values = np.asarray(X, dtype=np.float64)
+    if target == "scene_identity":
+        network = _fit_mlp(
+            values[train_mask],
+            truth[train_mask][:, supported],
+            alpha=alpha,
+            hidden_layer_sizes=hidden_layer_sizes,
+            max_iter=max_iter,
+        ) if supported.any() else None
+        return SceneMLPDecoder(target, (network,), supported.copy())
+    if target != "object_position":
+        raise ValueError(f"Unknown structured scene target {target!r}")
+    networks: list[FittedMLP | None] = [None] * truth.shape[1]
+    position_supported = supported.copy()
+    eligible: list[tuple[int, np.ndarray]] = []
+    for object_index in np.flatnonzero(supported):
+        available = train_mask & np.isfinite(truth[:, object_index]).all(axis=1)
+        episode_count = rows.loc[available, "trace_id"].astype(str).nunique()
+        if episode_count < int(min_train_episodes):
+            position_supported[object_index] = False
+            continue
+        eligible.append((int(object_index), available))
+
+    def fit_object(item: tuple[int, np.ndarray]) -> tuple[int, FittedMLP]:
+        object_index, available = item
+        return object_index, _fit_mlp(
+            values[available],
+            truth[available, object_index],
+            alpha=alpha,
+            hidden_layer_sizes=hidden_layer_sizes,
+            max_iter=max_iter,
+        )
+
+    with ThreadPoolExecutor(max_workers=max(1, min(int(workers), len(eligible)))) as executor:
+        for object_index, network in executor.map(fit_object, eligible):
+            networks[object_index] = network
+    return SceneMLPDecoder(target, tuple(networks), position_supported)
+
+
+def _fit_mlp(
+    X: np.ndarray,
+    y: np.ndarray,
+    *,
+    alpha: float,
+    hidden_layer_sizes: Sequence[int],
+    max_iter: int,
+) -> FittedMLP:
+    scaler = StandardScaler().fit(X)
+    model = MLPRegressor(
+        hidden_layer_sizes=tuple(int(value) for value in hidden_layer_sizes),
+        alpha=float(alpha),
+        max_iter=int(max_iter),
+        random_state=0,
+    ).fit(scaler.transform(X), y)
+    return FittedMLP(
+        feature_mean=np.asarray(scaler.mean_, dtype=np.float64),
+        feature_scale=np.asarray(scaler.scale_, dtype=np.float64),
+        weights=tuple(np.asarray(value, dtype=np.float64) for value in model.coefs_),
+        biases=tuple(np.asarray(value, dtype=np.float64) for value in model.intercepts_),
+        out_activation=str(model.out_activation_),
+    )
 
 
 def fit_layer_mixture(
@@ -374,6 +539,7 @@ def _candidate_record(
     weights: np.ndarray,
     metrics: Mapping[str, Any],
     *,
+    model: str,
     selected_layer: int | None,
     mixture_iterations: int,
 ) -> dict[str, Any]:
@@ -381,6 +547,7 @@ def _candidate_record(
         "representation": representation,
         "structure": structure,
         "target": target,
+        "model": model,
         "readout_dim": int(readout_dim),
         "ridge_alpha": float(alpha),
         "selected_layer": selected_layer,
@@ -404,7 +571,7 @@ def _consider_best(
 
 
 def _variant_name(record: Mapping[str, Any]) -> str:
-    return f"{record['representation']}__{record['structure']}"
+    return f"{record['representation']}__{record['structure']}__{record['model']}"
 
 
 def _selection_score(record: Mapping[str, Any]) -> float:

@@ -574,28 +574,38 @@ def _cache_activation_records(index: pd.DataFrame) -> list[dict[str, Any]]:
 
 
 def _path_signature(path: Path) -> dict[str, int | str]:
+    """Return a cheap change detector for an immutable capture array.
+
+    Capture arrays are written once.  Walking every Zarr chunk made a cache
+    lookup scale with the amount of captured tensor data, even though Zarr's
+    root metadata already describes the stored array.  Use the directory and
+    root metadata timestamps instead, so checking a cache is proportional to
+    the number of selected arrays rather than their number of chunks.
+
+    If someone edits chunk bytes in place without rewriting the Zarr array,
+    they must remove ``.vla_cache`` themselves.  That is outside the supported
+    immutable-capture workflow.
+    """
     if not path.exists():
         return {"exists": 0}
     if path.is_file():
         stat = path.stat()
         return {"exists": 1, "size": int(stat.st_size), "mtime_ns": int(stat.st_mtime_ns)}
-    file_count = 0
-    total_size = 0
-    latest_mtime = int(path.stat().st_mtime_ns)
-    for child in path.rglob("*"):
-        if not child.is_file():
-            continue
-        file_count += 1
-        stat = child.stat()
-        total_size += int(stat.st_size)
-        latest_mtime = max(latest_mtime, int(stat.st_mtime_ns))
-    return {
+    stat = path.stat()
+    signature: dict[str, int | str] = {
         "exists": 1,
         "kind": "dir",
-        "files": file_count,
-        "size": total_size,
-        "mtime_ns": latest_mtime,
+        "size": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
     }
+    for metadata_name in ("zarr.json", ".zarray", ".zattrs", ".zgroup"):
+        metadata_path = path / metadata_name
+        if not metadata_path.is_file():
+            continue
+        metadata_stat = metadata_path.stat()
+        signature[f"{metadata_name}_size"] = int(metadata_stat.st_size)
+        signature[f"{metadata_name}_mtime_ns"] = int(metadata_stat.st_mtime_ns)
+    return signature
 
 
 __all__ = ["ActivationQuery", "FeatureMatrix", "FeatureView"]

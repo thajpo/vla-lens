@@ -100,7 +100,11 @@ def build_layer_token_readouts(
 
     if readout_dim < 1 or token_channel_dim < 1:
         raise ValueError("Projection dimensions must be positive")
-    query = _activation_query({**dict(feature_spec), "reduction": "mean"})
+    query_spec = {**dict(feature_spec), "reduction": "mean"}
+    query_spec["token_kind"] = feature_spec.get(
+        "site_token_kind", feature_spec.get("token_kind")
+    )
+    query = _activation_query(query_spec)
     view = dataset.select_model_sites(query)
     sites = view._matching_model_sites()  # noqa: SLF001 - shared selector contract
     required_split_values = _required_split_values(split)
@@ -140,10 +144,13 @@ def build_layer_token_readouts(
         dataset,
         rows,
         source_sites,
-        query.token_kind,
+        feature_spec.get("token_kind"),
+        token_filters=dict(feature_spec.get("token_filters") or {}),
     )
     if len(token_indices) == 0:
-        raise ValueError(f"No tokens matched token kind {query.token_kind!r}")
+        raise ValueError(
+            f"No tokens matched token kind {feature_spec.get('token_kind')!r}"
+        )
 
     cache_key = _cache_key(
         view.cache_key(),
@@ -334,6 +341,7 @@ def _selected_token_metadata(
     bundle: TraceBundle,
     token_kind: str | None,
     token_space_id: str | None = None,
+    token_filters: Mapping[str, Any] | None = None,
 ) -> pd.DataFrame:
     metadata = bundle.tokens.copy()
     if token_space_id is not None and "token_space_id" in metadata:
@@ -342,6 +350,11 @@ def _selected_token_metadata(
         ].copy()
     if token_kind is not None and "token_kind" in metadata:
         metadata = metadata.loc[metadata["token_kind"].astype(str) == token_kind].copy()
+    for column, value in dict(token_filters or {}).items():
+        if column not in metadata:
+            raise KeyError(f"Token metadata has no filter column {column!r}")
+        allowed = value if isinstance(value, Sequence) and not isinstance(value, str) else [value]
+        metadata = metadata.loc[metadata[column].isin(list(allowed))].copy()
     if "token_index" in metadata:
         metadata = (
             metadata.sort_values("token_index")
@@ -356,6 +369,7 @@ def _common_token_topology(
     rows: pd.DataFrame,
     source_sites: pd.DataFrame,
     token_kind: str | None,
+    token_filters: Mapping[str, Any] | None = None,
 ) -> tuple[pd.DataFrame, np.ndarray, str]:
     reference_metadata: pd.DataFrame | None = None
     reference_indices: np.ndarray | None = None
@@ -386,17 +400,25 @@ def _common_token_topology(
             )
         token_count = int(next(iter(token_counts)))
         token_space = next(iter(token_spaces), None)
-        indices = _token_indices(bundle, token_kind)
-        if indices is None:
-            indices = np.arange(token_count, dtype=np.int64)
+        metadata = _selected_token_metadata(
+            bundle,
+            token_kind,
+            token_space,
+            token_filters=token_filters,
+        )
+        if "token_index" in metadata:
+            indices = np.unique(metadata["token_index"].astype(np.int64).to_numpy())
         else:
-            indices = np.unique(np.asarray(indices, dtype=np.int64))
+            indices = _token_indices(bundle, token_kind)
+            if indices is None:
+                indices = np.arange(token_count, dtype=np.int64)
+            else:
+                indices = np.unique(np.asarray(indices, dtype=np.int64))
         if len(indices) and (int(indices.min()) < 0 or int(indices.max()) >= token_count):
             raise ValueError(
                 f"Token indices for trace {trace_id!r} exceed its token axis of "
                 f"length {token_count}"
             )
-        metadata = _selected_token_metadata(bundle, token_kind, token_space)
         if "token_index" in metadata:
             metadata_indices = metadata["token_index"].astype(np.int64).to_numpy()
             if not np.array_equal(metadata_indices, indices):

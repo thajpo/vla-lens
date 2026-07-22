@@ -6,7 +6,10 @@ import pandas as pd
 from vla_lens import create_synthetic_trace_dataset
 from vla_lens.probes.scene_map_study import SceneMapTargets
 from vla_lens.probes.structured_scene_models import (
+    FittedSceneRepresentation,
+    SceneMLPDecoder,
     fit_layer_mixture,
+    fit_scene_decoder,
     fit_structured_scene_representations,
 )
 from vla_lens.probes.token_representations import (
@@ -14,7 +17,9 @@ from vla_lens.probes.token_representations import (
     build_layer_token_readouts,
 )
 from vla_lens.probes.token_scene_study import (
+    _decoder_parameter_table,
     _paired_bootstrap_summary,
+    _paired_comparison_table,
     _weighted_token_importance,
 )
 
@@ -101,6 +106,47 @@ def test_dynamic_token_metadata_does_not_duplicate_model_token_positions(tmp_pat
 
     assert metadata["token_index"].tolist() == list(range(8))
     assert readouts.token_count == 8
+
+
+def test_token_readouts_can_select_one_metadata_stream(tmp_path):
+    dataset = create_synthetic_trace_dataset(
+        tmp_path / "dataset", num_episodes=2, timesteps=4, layers=2
+    )
+    for bundle in dataset.bundles:
+        tokens = bundle.tokens.copy()
+        tokens["camera_id"] = "wrist"
+        action_indices = tokens.index[tokens["token_kind"].astype(str) == "action"]
+        tokens.loc[action_indices[:4], "camera_id"] = "main"
+        bundle.__dict__["tokens"] = tokens
+
+    readouts = build_layer_token_readouts(
+        dataset,
+        {
+            "module": "action_head.layers.*.resid",
+            "tensor_type": "resid",
+            "token_kind": "action",
+            "token_filters": {"camera_id": "main"},
+            "layers": [0, 1],
+            "timesteps": "all",
+            "dtype": "float32",
+        },
+        {
+            "kind": "existing",
+            "column": "split",
+            "train_value": "train",
+            "selection_value": "test",
+            "test_value": "test",
+        },
+        readout_dim=2,
+        token_channel_dim=2,
+        channel_sample_count=32,
+        projection_fit_rows=16,
+        io_workers=1,
+        cache=False,
+    )
+
+    assert readouts.token_count == 4
+    assert set(readouts.token_metadata["camera_id"]) == {"main"}
 
 
 def test_learned_layer_mixture_favors_the_layer_with_position_signal():
@@ -259,3 +305,68 @@ def test_matched_study_selects_all_four_representation_variants():
         ("tokenwise", "learned_layer_mix"),
     }
     assert len(selected) == 8
+    comparisons = _paired_comparison_table(
+        selected,
+        rows,
+        targets,
+        {
+            "column": "split",
+            "train_value": "train",
+            "selection_value": "selection",
+            "test_value": "test",
+        },
+        bootstrap_samples=100,
+    )
+    assert len(comparisons) == 16
+    assert set(comparisons["model"]) == {"linear"}
+    assert comparisons["candidate"].str.endswith("__linear").all()
+
+
+def test_object_conditioned_mlp_position_heads_replay_without_sklearn(tmp_path):
+    rng = np.random.default_rng(11)
+    X = rng.normal(size=(90, 4))
+    position = np.full((90, 2, 3), np.nan, dtype=np.float64)
+    position[:, 0, 0] = X[:, 0] * X[:, 1]
+    position[:, 0, 1] = X[:, 2] ** 2
+    position[:, 0, 2] = X[:, 3]
+    position[:, 1] = position[:, 0] * 0.5
+    rows = pd.DataFrame(
+        {"trace_id": [f"episode_{index}" for index in range(len(X))]}
+    )
+
+    decoder = fit_scene_decoder(
+        X,
+        position,
+        rows,
+        np.arange(len(X)) < 70,
+        np.array([True, True]),
+        target="object_position",
+        alpha=1e-4,
+        min_train_episodes=1,
+        model="mlp",
+        mlp_hidden_layer_sizes=(16,),
+        mlp_max_iter=500,
+    )
+
+    assert isinstance(decoder, SceneMLPDecoder)
+    prediction = decoder.predict(X[70:])
+    assert prediction.shape == (20, 2, 3)
+    assert np.isfinite(prediction).all()
+    probe_error = float(np.mean(np.abs(prediction - position[70:])))
+    train_mean = np.nanmean(position[:70], axis=0)
+    baseline_error = float(np.mean(np.abs(position[70:] - train_mean)))
+    assert probe_error < baseline_error
+    fitted = FittedSceneRepresentation(
+        record={
+            "representation": "tokenwise",
+            "structure": "single_layer",
+            "model": "mlp",
+            "target": "object_position",
+        },
+        decoder=decoder,
+        prediction=decoder.predict(X),
+        layer_weights=np.array([1.0]),
+    )
+    parameters = _decoder_parameter_table([fitted])
+    parameters.to_parquet(tmp_path / "decoder_parameters.parquet", index=False)
+    assert set(parameters["parameter_kind"]) == {"standardizer", "mlp_layer"}
