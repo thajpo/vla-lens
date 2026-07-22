@@ -17,7 +17,7 @@ from vla_lens.probes.experiment_cards import (
     experiment_card_from_preflight,
     format_experiment_card_markdown,
 )
-from vla_lens.probes.representation_options import representation_options
+from vla_lens.probes.representation_options import probe_representation_options
 from vla_lens.probes.workflow_artifacts import _probe_target, _value_counts
 from vla_lens.probes.workflow_prepare import (
     _apply_missing_policy,
@@ -57,9 +57,11 @@ def probe_preflight_report(
         raise ValueError(f"Probe selector matched no activation rows: {selector.to_dict()}")
 
     selected_row_count = int(len(rows))
-    representation = representation_options(
+    representation = probe_representation_options(
+        dataset,
         rows,
-        selected=normalized["representation"],
+        selected=normalized.get("representation"),
+        selector=selector,
     )
     rows = _attach_episode_metadata(rows, dataset)
     X, rows, expansion_summary = _apply_row_expansion(
@@ -121,6 +123,7 @@ def probe_preflight_report(
         min_class_support=min_class_support,
         large_sweep_readouts=large_sweep_readouts,
     )
+    warnings.extend(_representation_warnings(representation))
 
     payload = _jsonable(
         {
@@ -212,6 +215,7 @@ def format_probe_preflight_markdown(report: Mapping[str, Any], *, details: bool 
     sweep = dict(report.get("sweep") or {})
     probe = dict(report.get("probe") or {})
     row_expansion = dict(report.get("row_expansion") or {})
+    representation = dict(report.get("representation") or {})
     lines.extend(
         [
             "## Training Surface",
@@ -228,6 +232,32 @@ def format_probe_preflight_markdown(report: Mapping[str, Any], *, details: bool 
             f"select=`{split.get('selection_value')}` test=`{split.get('test_value')}`",
             f"- Probe models: {', '.join(probe.get('models') or [])}",
             f"- Planned readouts: {sweep.get('planned_readout_count')}",
+            "",
+        ]
+    )
+
+    lines.extend(["## Representation Options", ""])
+    option_rows = [
+        (
+            str(option.get("label") or option.get("kind")),
+            str(option.get("status") or "unknown"),
+            str(option.get("question") or "-"),
+            str(option.get("reason") or "-"),
+        )
+        for option in representation.get("options") or []
+    ]
+    lines.extend(
+        _markdown_table(
+            ["Input structure", "Status", "Research question", "What is needed"],
+            option_rows,
+        )
+        or ["_No representation options available._"]
+    )
+    selected_representation = dict(representation.get("selected") or {})
+    lines.extend(
+        [
+            "",
+            f"Selected: `{selected_representation.get('kind', 'mean_pool')}`",
             "",
         ]
     )
@@ -516,6 +546,36 @@ def _preflight_warnings(
     if target_name == "task_phase":
         warnings.append("`task_phase` is behavior-derived; treat high scores as sanity checks.")
     return warnings
+
+
+def _representation_warnings(representation: Mapping[str, Any]) -> list[str]:
+    selected = str(dict(representation.get("selected") or {}).get("kind") or "mean_pool")
+    option = next(
+        (
+            dict(value)
+            for value in representation.get("options") or []
+            if str(dict(value).get("kind")) == selected
+        ),
+        {},
+    )
+    status = str(option.get("status") or "unknown")
+    if status == "ready":
+        runner = str(option.get("runner") or "generic_probe")
+        if runner == "generic_probe":
+            return []
+        return [
+            f"Selected representation `{selected}` is runnable for "
+            f"{option.get('runnable_scope')}; use the specialized `{runner}` runner."
+        ]
+    if status == "data_ready":
+        return [
+            f"Selected representation `{selected}` has the required captured data, "
+            f"but needs the specialized `{option.get('runner')}` runner before training."
+        ]
+    return [
+        f"Selected representation `{selected}` is not ready: "
+        f"{option.get('reason') or 'requirements are unknown.'}"
+    ]
 
 
 def _sweep_group_support_warnings(

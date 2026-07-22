@@ -16,6 +16,10 @@ def object_flow_dataset(root) -> TraceDataset:
     positions[4:, 0, 2] += 0.06
     eef = np.repeat(np.array([[0.4, 0.4, 0.1]], dtype=np.float32), timesteps, axis=0)
     eef[1:3] = np.array([0.0, 0.0, 0.04], dtype=np.float32)
+    object_quaternions = np.zeros((timesteps, 2, 4), dtype=np.float32)
+    object_quaternions[..., 3] = 1.0
+    eef_quaternions = np.zeros((timesteps, 4), dtype=np.float32)
+    eef_quaternions[..., 3] = 1.0
     manifest = TraceManifest(
         trace_id="flow_trace",
         episode_id="flow_trace",
@@ -68,7 +72,11 @@ def object_flow_dataset(root) -> TraceDataset:
         ),
         episode_arrays={
             "scene_object_pos": ArraySpec(positions, ["timestep", "object", "xyz"]),
+            "scene_object_quat": ArraySpec(
+                object_quaternions, ["timestep", "object", "xyzw"]
+            ),
             "eef_pos": ArraySpec(eef, ["timestep", "xyz"]),
+            "eef_quat": ArraySpec(eef_quaternions, ["timestep", "xyzw"]),
             "executed_actions": ArraySpec(
                 np.zeros((timesteps, 1), dtype=np.float32),
                 ["timestep", "action_dim"],

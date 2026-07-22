@@ -1,0 +1,35 @@
+name: PI0.5 broad 1000 object geometry study
+question: How well do PI0.5 representations encode the instructed object's position and orientation, and where?
+hypothesis_family: object-centered scene geometry
+intended_claim: Exploratory localization of object pose information beyond task, scene, object, timing, and pose-persistence baselines.
+object_column: primary_target_object
+features:
+  - id: expert_action_hidden
+    module: pi05.expert.layers.*
+    tensor_type: hidden_tokens
+    token_kind: action
+    layers: [0, 4, 8, 12, 17]
+    timesteps: all
+    policy_calls: all
+    generation_step: final
+    reduction: mean
+    dtype: float32
+    sweep: [layer]
+split:
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+baseline:
+  - benchmark
+  - task_id
+  - scene_family
+  - primary_target_object
+  - task_phase
+  - policy_call_index
+probe:
+  # One randomized PCA fit at max dimension is reused for every smaller prefix.
+  pca_dims: [64, 128, 256]
+  # Each solve jointly fits all XYZ and rotation targets.
+  ridge_alphas: [0.1, 1.0, 10.0, 100.0]

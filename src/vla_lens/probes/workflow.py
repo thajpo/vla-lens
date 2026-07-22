@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from vla_lens.probes.representation_options import (
+    normalize_representation_spec,
+    probe_representation_options,
+)
 from vla_lens.probes.workflow_spec import (
     baseline_columns,
     dump_probe_spec,
@@ -32,6 +36,8 @@ __all__ = [
     "dump_probe_spec",
     "load_probe_spec",
     "normalize_probe_spec",
+    "normalize_representation_spec",
+    "probe_representation_options",
     "train_probe_artifact",
     "train_probe_artifact_from_spec",
 ]
