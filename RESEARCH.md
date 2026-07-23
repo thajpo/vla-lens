@@ -92,6 +92,8 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-012 | Do main-camera visual tokens encode the initial object roster and each object's XYZ? | Probe | Identity yes; XYZ mostly scene prior | Yes, localize identity and improve geometry target |
 | RQ-013 | Does the identity probe's evidence spatially cover the named object? | Probe diagnostic | Modestly for some objects; not movement-sensitive | Yes, inspect examples and intervene carefully |
 | RQ-014 | Do visual tokens explicitly encode every visible object's image location? | Probe | Run; local probe negative, scene decoder confounded | Revisit with matched scenes or object-centric decoder |
+| RQ-015 | Does a known object region identify the object occupying it? | Probe | Planned; runner ready | Run on shared compact-token cache |
+| RQ-016 | Can an explicit object query locate that object? | Probe | Planned; runner ready | Run after shared-cache preparation |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -653,9 +655,67 @@ task/scene context, so a general explicit object-location claim is not
 supported. A matched-scene position decoder or an object-centric set/query
 decoder is the most informative revisit.
 
+## RQ-015: Known-Region Object Identity
+
+**Question.** When an object's image region is supplied, do the visual tokens
+inside that region identify which object occupies it?
+
+**Hypothesis.** Object identity will be more cleanly accessible from the
+object's own region than from the entire image or another region in the same
+scene, even though scene and box geometry remain predictive.
+
+**Planned method.** Use every initial, visible object instance with adequate
+training support. Mean the existing 16-channel compact visual-token vectors
+only over patches intersecting its simulator box at layers 0, 4, 8, 12, and
+17. Fit multinomial linear and fixed 64-unit MLP identity readouts. Select
+layer, model, and regularization on held-out validation tasks only.
+
+**Baselines and controls.** Whole-image token mean; task, scene, prompt, and box
+geometry; another visible object's region; background patches; and probes
+trained after shuffling training identities. Report macro balanced accuracy,
+macro average precision, per-object recall, and paired task-, instruction-,
+and object-grouped intervals.
+
+**Allowed conclusion.** A positive result establishes object-local identity
+decodability under a known-region contract. It does not show that the model can
+find the object without the box or that it uses the identity causally. The
+existing final test has already been inspected by earlier work, so any positive
+result remains exploratory until fresh confirmation.
+
+## RQ-016: Explicit Object-Query Localization
+
+**Question.** Given a named object query, can one shared decoder identify the
+image patches occupied by that object?
+
+**Hypothesis.** Conditioning a local visual-token readout on object identity
+will recover episode-specific location that the independent named-object heads
+in RQ-014 missed.
+
+**Planned method.** Construct `(episode, object query, image patch)` examples
+from initial visible objects. Keep every positive and deterministically sample
+one near-box, one wrong-object, and one background negative per positive, with
+at most 400,000 training examples. Concatenate each patch's 16 compact
+activation channels, normalized patch coordinates, and a query one-hot vector.
+Fit linear and fixed 64-unit MLP readouts at layers 0, 4, 8, 12, and 17, with
+validation-only selection. Apply the frozen decoder to all supported queries
+on test episodes and to accepted matched-scene pairs.
+
+**Baselines and controls.** Fixed per-object spatial maps; query and coordinates
+without activations; prompt and scene context; wrong-object queries;
+within-task shuffled episode activations; and a fixed patch-position
+permutation. Report patch average precision, peak-center error, predicted-box
+IoU, scene Jaccard, grouped intervals, and whether matched-scene predicted
+displacement improves over zero displacement.
+
+**Allowed conclusion.** A positive result requires improvement over the fixed
+spatial and context controls plus displacement evidence in matched scenes. It
+would establish an accessible object-conditioned visual location signal, not
+an unordered scene graph or causal mechanism. As with RQ-015, fresh locked data
+is required before treating a positive test result as confirmation.
+
 ## Not Yet Run
 
-- Feature-level sparse or nonlinear object-location probes
+- Feature-level sparse object-location probes beyond the fixed MLP battery
 - Set decoder for unordered scene objects
 - MLP target pose and rotation probes
 - Filtered first-moved/first-lifted target probes

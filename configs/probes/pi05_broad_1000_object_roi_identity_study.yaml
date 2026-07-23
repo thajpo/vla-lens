@@ -1,0 +1,22 @@
+name: PI0.5 broad 1000 known-region visible-object identity study
+question: When the image region is known, do its visual tokens identify which object occupies it?
+hypothesis_family: object-local visual identity
+intended_claim: >-
+  Exploratory held-out-task evidence that an object's own visual-token region
+  identifies it beyond whole-image, task/scene/box, wrong-object-region,
+  background-region, and shuffled-label controls.
+source_probe_artifact_id: token_scene_probe_study-pi0.5-broad-1000-initial-visual-object-query-identity-and-location-study-ed33f5bd37
+camera_name: agentview
+context_columns: [benchmark, scene_family, task_phase, prompt]
+probe:
+  layers: [0, 4, 8, 12, 17]
+  models: [linear, mlp]
+  alphas: [0.0001]
+  mlp_hidden_units: 64
+  max_iter: 300
+  min_train_episodes: 5
+  random_state: 20260810
+analysis:
+  io_workers: 8
+  bootstrap_samples: 2000
+  shuffle_repeats: 10
