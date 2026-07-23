@@ -44,6 +44,7 @@ from vla_lens.selectors import (
 from vla_lens.traces import TraceBundle, TraceDataset
 
 TOKEN_REPRESENTATION_CACHE_SCHEMA_VERSION = 5
+COMPRESSED_TOKEN_LAYER_CACHE_SCHEMA_VERSION = 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +84,84 @@ class LayerTokenReadouts:
     cache_key: str
 
 
+@dataclass(frozen=True, slots=True)
+class CompressedTokenLayers:
+    """Compact per-token values reused by patch-level probe studies."""
+
+    values: np.ndarray
+    layers: tuple[int, ...]
+    cache_key: str
+    cache_hit: bool
+
+
+def read_compressed_token_layers(
+    dataset: TraceDataset,
+    rows: pd.DataFrame,
+    source_sites: pd.DataFrame,
+    token_metadata: pd.DataFrame,
+    *,
+    layers: Sequence[int],
+    channel_projection: ProjectionState,
+    generation_step: int | str | None = None,
+    io_workers: int = 8,
+    cache: bool = True,
+) -> CompressedTokenLayers:
+    """Read or reuse compact row/layer/token/channel values.
+
+    Raw activations remain owned by the capture. The optional cache is small
+    enough for repeated patch-level studies and can be deleted without losing
+    any experiment artifact.
+    """
+
+    selected_layers = tuple(int(value) for value in layers)
+    if not selected_layers:
+        raise ValueError("At least one compressed token layer is required")
+    if "token_index" not in token_metadata:
+        raise KeyError("Token metadata must include token_index")
+    numeric_layers = pd.to_numeric(source_sites["layer"], errors="coerce")
+    selected_sites = source_sites.loc[numeric_layers.isin(selected_layers)].copy()
+    missing_layers = sorted(
+        set(selected_layers)
+        - set(pd.to_numeric(selected_sites["layer"], errors="coerce").dropna().astype(int))
+    )
+    if missing_layers:
+        raise ValueError(f"Source sites are missing selected layers {missing_layers}")
+    missing_traces = sorted(
+        set(rows["trace_id"].astype(str)) - set(selected_sites["trace_id"].astype(str))
+    )
+    if missing_traces:
+        preview = ", ".join(repr(value) for value in missing_traces[:5])
+        raise ValueError(f"Selected layers are missing traces: {preview}")
+    token_indices = token_metadata["token_index"].astype(np.int64).drop_duplicates().to_numpy()
+    cache_key = _compressed_token_cache_key(
+        rows,
+        selected_sites,
+        selected_layers,
+        token_indices,
+        channel_projection,
+        generation_step,
+    )
+    cache_path = dataset.cache_dir() / "compressed_token_layers" / cache_key
+    if cache:
+        cached = _load_compressed_token_cache(cache_path, cache_key, selected_layers)
+        if cached is not None:
+            return CompressedTokenLayers(cached, selected_layers, cache_key, True)
+
+    _, compressed = _read_and_compress(
+        dataset,
+        rows,
+        selected_sites,
+        selected_layers,
+        token_indices,
+        generation_step=generation_step,
+        channel_projection=channel_projection,
+        io_workers=io_workers,
+    )
+    if cache:
+        _save_compressed_token_cache(cache_path, cache_key, selected_layers, compressed)
+    return CompressedTokenLayers(compressed, selected_layers, cache_key, False)
+
+
 def read_compressed_token_layer(
     dataset: TraceDataset,
     rows: pd.DataFrame,
@@ -101,32 +180,18 @@ def read_compressed_token_layer(
     the compact token/channel result in memory.
     """
 
-    if "token_index" not in token_metadata:
-        raise KeyError("Token metadata must include token_index")
-    selected_sites = source_sites.loc[
-        pd.to_numeric(source_sites["layer"], errors="coerce") == int(layer)
-    ].copy()
-    missing_traces = sorted(
-        set(rows["trace_id"].astype(str))
-        - set(selected_sites["trace_id"].astype(str))
-    )
-    if missing_traces:
-        preview = ", ".join(repr(value) for value in missing_traces[:5])
-        raise ValueError(f"Selected layer {layer} is missing traces: {preview}")
-    token_indices = (
-        token_metadata["token_index"].astype(np.int64).drop_duplicates().to_numpy()
-    )
-    _, compressed = _read_and_compress(
+    result = read_compressed_token_layers(
         dataset,
         rows,
-        selected_sites,
-        (int(layer),),
-        token_indices,
-        generation_step=generation_step,
+        source_sites,
+        token_metadata,
+        layers=(int(layer),),
         channel_projection=channel_projection,
+        generation_step=generation_step,
         io_workers=io_workers,
+        cache=False,
     )
-    return compressed[:, 0]
+    return result.values[:, 0]
 
 
 def build_layer_token_readouts(
@@ -754,6 +819,104 @@ def _cache_key(
         **settings,
     }
     return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:20]
+
+
+def _compressed_token_cache_key(
+    rows: pd.DataFrame,
+    source_sites: pd.DataFrame,
+    layers: Sequence[int],
+    token_indices: np.ndarray,
+    channel_projection: ProjectionState,
+    generation_step: int | str | None,
+) -> str:
+    row_columns = [
+        column
+        for column in ["trace_id", "timestep", "policy_call_index", "sample_index"]
+        if column in rows
+    ]
+    row_hash = pd.util.hash_pandas_object(rows[row_columns], index=False).to_numpy(dtype=np.uint64)
+    site_columns = [
+        column for column in ["trace_id", "layer", "name", "shape"] if column in source_sites
+    ]
+    site_hash = pd.util.hash_pandas_object(
+        source_sites[site_columns].sort_values(site_columns).reset_index(drop=True),
+        index=False,
+    ).to_numpy(dtype=np.uint64)
+    projection_hash = hashlib.sha256()
+    for value in [
+        channel_projection.input_center,
+        channel_projection.input_scale,
+        channel_projection.pca_center,
+        channel_projection.components,
+    ]:
+        projection_hash.update(np.asarray(value).tobytes())
+    payload = {
+        "schema": COMPRESSED_TOKEN_LAYER_CACHE_SCHEMA_VERSION,
+        "rows": hashlib.sha256(row_hash.tobytes()).hexdigest(),
+        "sites": hashlib.sha256(site_hash.tobytes()).hexdigest(),
+        "layers": list(layers),
+        "tokens": hashlib.sha256(np.asarray(token_indices).tobytes()).hexdigest(),
+        "projection": projection_hash.hexdigest(),
+        "generation_step": generation_step,
+    }
+    return hashlib.sha256(json.dumps(payload, sort_keys=True).encode()).hexdigest()[:20]
+
+
+def _save_compressed_token_cache(
+    path: Path,
+    cache_key: str,
+    layers: Sequence[int],
+    values: np.ndarray,
+) -> None:
+    path.mkdir(parents=True, exist_ok=True)
+    committed_metadata = path / "metadata.json"
+    if committed_metadata.exists():
+        committed_metadata.unlink()
+    array = zarr.open_array(
+        str(path / "tokens.zarr"),
+        mode="w",
+        shape=values.shape,
+        chunks=(min(64, len(values)), 1, values.shape[2], values.shape[3]),
+        dtype="float32",
+    )
+    array[:] = values
+    metadata_path = path / "metadata.tmp.json"
+    metadata_path.write_text(
+        json.dumps(
+            {
+                "schema_version": COMPRESSED_TOKEN_LAYER_CACHE_SCHEMA_VERSION,
+                "cache_key": cache_key,
+                "layers": [int(value) for value in layers],
+                "shape": [int(value) for value in values.shape],
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    os.replace(metadata_path, committed_metadata)
+
+
+def _load_compressed_token_cache(
+    path: Path,
+    cache_key: str,
+    layers: Sequence[int],
+) -> np.ndarray | None:
+    metadata_path = path / "metadata.json"
+    array_path = path / "tokens.zarr"
+    if not metadata_path.exists() or not array_path.exists():
+        return None
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if (
+        metadata.get("schema_version") != COMPRESSED_TOKEN_LAYER_CACHE_SCHEMA_VERSION
+        or metadata.get("cache_key") != cache_key
+        or metadata.get("layers") != [int(value) for value in layers]
+    ):
+        return None
+    values = np.asarray(zarr.open_array(str(array_path), mode="r"))
+    if list(values.shape) != metadata.get("shape"):
+        return None
+    return values
 
 
 def _save_cache(path: Path, result: LayerTokenReadouts) -> None:
