@@ -30,6 +30,16 @@ from vla_lens.probes.motion_study import (
     MotionStudyResult,
     run_motion_probe_study,
 )
+from vla_lens.probes.object_query_localization_study import (
+    OBJECT_QUERY_LOCALIZATION_SCHEMA_VERSION,
+    ObjectQueryLocalizationStudyResult,
+    run_object_query_localization_study,
+)
+from vla_lens.probes.object_roi_identity_study import (
+    OBJECT_ROI_IDENTITY_SCHEMA_VERSION,
+    ObjectROIIdentityStudyResult,
+    run_object_roi_identity_study,
+)
 from vla_lens.probes.preflight import (
     format_probe_preflight_markdown,
     probe_experiment_card,
@@ -89,6 +99,10 @@ __all__ = [
     "ImageLocationStudyResult",
     "MOTION_STUDY_SCHEMA_VERSION",
     "MotionStudyResult",
+    "OBJECT_QUERY_LOCALIZATION_SCHEMA_VERSION",
+    "ObjectQueryLocalizationStudyResult",
+    "OBJECT_ROI_IDENTITY_SCHEMA_VERSION",
+    "ObjectROIIdentityStudyResult",
     "MATCHED_SCENE_STUDY_SCHEMA_VERSION",
     "MatchedSceneStudyResult",
     "DEFAULT_REPRESENTATION_KIND",
@@ -118,6 +132,8 @@ __all__ = [
     "normalize_representation_spec",
     "probe_experiment_card",
     "probe_preflight_report",
+    "run_object_query_localization_study",
+    "run_object_roi_identity_study",
     "probe_representation_options",
     "refresh_all_probe_score_caches",
     "refresh_probe_score_cache",
