@@ -62,6 +62,7 @@ def main() -> None:
         columns = [
             "feature_id",
             "feature_group",
+            "model",
             "target",
             "pca_dim",
             "ridge_alpha",
@@ -69,6 +70,10 @@ def main() -> None:
             "selection_baseline_error",
             "test_error",
             "test_baseline_error",
+            "validation_gate_passed",
+            "test_reported",
+            "promoted",
+            "converged",
             "error_unit",
         ]
         print(result.selections[columns].to_string(index=False))

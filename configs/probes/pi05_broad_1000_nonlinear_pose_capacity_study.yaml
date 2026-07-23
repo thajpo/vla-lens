@@ -1,0 +1,68 @@
+name: PI0.5 broad 1000 nonlinear pose capacity study
+question: Can a small nonlinear readout recover object pose information that pooled linear readouts missed?
+hypothesis_family: nonlinear object-centered scene geometry
+intended_claim: Exploratory nonlinear pose capacity beyond task, scene, timing, and physical pose-persistence baselines.
+object_column: primary_target_object
+targets:
+  - position_world
+  - position_previous_delta
+  - orientation_world_rotation_6d
+  - orientation_previous_relative_rotation_6d
+features:
+  - id: expert_action_hidden
+    module: pi05.expert.layers.*
+    tensor_type: hidden_tokens
+    token_kind: action
+    layers: [0, 4, 8, 12, 17]
+    policy_calls: all
+    generation_step: final
+    reduction: mean
+    dtype: float32
+    sweep: [layer]
+  - id: action_head_input
+    name: pi05.action_head.input
+    tensor_type: action_head
+    token_kind: action
+    policy_calls: all
+    generation_step: final
+    reduction: mean
+    dtype: float32
+    sweep: []
+  - id: image_prefix_hidden
+    name: pi05.vlm.prefix.image_hidden_tokens
+    tensor_type: hidden_tokens
+    policy_calls: all
+    reduction: mean
+    dtype: float32
+    sweep: []
+  - id: vlm_prefix_endpoints
+    module: pi05.vlm.layers.*
+    tensor_type: hidden_tokens
+    layers: [0, 17]
+    policy_calls: all
+    reduction: mean
+    dtype: float32
+    sweep: [layer]
+split:
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+baseline:
+  - benchmark
+  - task_id
+  - scene_family
+  - primary_target_object
+  - task_phase
+  - policy_call_index
+probe:
+  models: [ridge, mlp]
+  pca_dims: [64, 128, 256]
+  ridge_alphas: [0.1, 1.0, 10.0, 100.0]
+  mlp_hidden_units: 64
+  mlp_alpha: 0.0001
+  mlp_max_iter: 300
+  mlp_random_state: 0
+  bootstrap_group_column: task_id
+  bootstrap_samples: 2000
