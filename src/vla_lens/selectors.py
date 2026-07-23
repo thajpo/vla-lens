@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import fnmatch
-import hashlib
 import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -13,6 +12,7 @@ import numpy as np
 import pandas as pd
 import zarr
 
+from vla_lens.cache import CacheBuildMetadata, CacheManager, fingerprint_payload
 from vla_lens.traces import TraceBundle, TraceDataset
 
 TokenReduction = Literal["mean", "flat", "none"]
@@ -58,6 +58,7 @@ class FeatureMatrix:
     rows: pd.DataFrame
     selector: ActivationQuery
     cache_key: str
+    cache_built: bool = False
 
 
 class FeatureView:
@@ -77,22 +78,19 @@ class FeatureView:
         return matrix.X, matrix.rows
 
     def materialize(self, *, cache: bool = True, mmap: bool = False) -> FeatureMatrix:
-        key = self.cache_key()
-        cache_path = self._cache_path(key)
-        rows_path = cache_path / "rows.parquet"
-        x_path = cache_path / "X.zarr"
-        if cache and rows_path.exists() and x_path.exists():
-            del mmap
-            return FeatureMatrix(
-                X=np.asarray(zarr.open_array(str(x_path), mode="r")),
-                rows=pd.read_parquet(rows_path),
-                selector=self.selector,
-                cache_key=key,
-            )
+        del mmap
+        model_sites = self._matching_model_sites()
+        recipe = self._cache_recipe(model_sites)
+        key = fingerprint_payload(recipe).removeprefix("sha256:")[:20]
+        if not cache:
+            X, rows = self._compute(model_sites=model_sites)
+            return FeatureMatrix(X=X, rows=rows, selector=self.selector, cache_key=key)
 
-        X, rows = self._compute()
-        if cache:
-            cache_path.mkdir(parents=True, exist_ok=True)
+        manager = CacheManager(self.dataset.cache_dir())
+
+        def build(cache_path: Path) -> CacheBuildMetadata:
+            X, rows = self._compute(model_sites=model_sites)
+            x_path = cache_path / "X.zarr"
             store = zarr.open_array(
                 str(x_path),
                 mode="w",
@@ -101,24 +99,65 @@ class FeatureView:
                 chunks=_cache_chunks(X.shape),
             )
             store[...] = X
-            rows.to_parquet(rows_path, index=False)
-        return FeatureMatrix(X=X, rows=rows, selector=self.selector, cache_key=key)
+            rows.to_parquet(cache_path / "rows.parquet", index=False)
+            return CacheBuildMetadata(
+                shape=tuple(int(item) for item in X.shape),
+                dtype=str(X.dtype),
+                axes=("sample", "feature"),
+                row_count=int(len(rows)),
+                rebuild={"kind": "feature_view", "selector": self.selector.to_dict()},
+            )
+
+        built_any = False
+        for _attempt in range(2):
+            cache_path, _, built = manager.get_or_build(
+                namespace="features",
+                key=key,
+                recipe=recipe,
+                source_fingerprint=self._source_fingerprint(model_sites),
+                builder=build,
+                validator=_valid_feature_cache,
+            )
+            built_any = built_any or built
+            # Keep prune or a stale-data rebuild from replacing the directory
+            # between validation and the two file reads.
+            with manager.lock_for("features", key):
+                if not _valid_feature_cache(cache_path):
+                    continue
+                return FeatureMatrix(
+                    X=np.asarray(zarr.open_array(str(cache_path / "X.zarr"), mode="r")),
+                    rows=pd.read_parquet(cache_path / "rows.parquet"),
+                    selector=self.selector,
+                    cache_key=key,
+                    cache_built=built_any,
+                )
+        raise RuntimeError(f"Feature cache {key} disappeared while it was being read")
 
     def cache_key(self) -> str:
         model_sites = self._matching_model_sites()
-        payload = {
+        return fingerprint_payload(self._cache_recipe(model_sites)).removeprefix("sha256:")[:20]
+
+    def _cache_recipe(self, model_sites: pd.DataFrame) -> dict[str, Any]:
+        return {
+            "schema_version": 2,
+            "kind": "feature_view",
             "selector": self.selector.to_dict(),
-            "episodes": self.dataset.episode_index[["trace_id", "length"]].to_dict("records"),
-            "model_sites": _cache_activation_records(model_sites),
+            "episodes": _scientific_episode_records(self.dataset),
+            "model_sites": _scientific_activation_records(model_sites),
         }
-        encoded = json.dumps(payload, sort_keys=True, default=str).encode("utf-8")
-        return hashlib.sha256(encoded).hexdigest()[:20]
 
-    def _cache_path(self, key: str) -> Path:
-        return self.dataset.cache_dir() / "features" / key
+    def _source_fingerprint(self, model_sites: pd.DataFrame) -> str:
+        return fingerprint_payload(
+            {
+                "episodes": _source_episode_records(self.dataset),
+                "model_sites": _cache_activation_records(model_sites),
+            }
+        )
 
-    def _compute(self) -> tuple[np.ndarray, pd.DataFrame]:
-        model_sites = self._matching_model_sites()
+    def _compute(
+        self, *, model_sites: pd.DataFrame | None = None
+    ) -> tuple[np.ndarray, pd.DataFrame]:
+        model_sites = self._matching_model_sites() if model_sites is None else model_sites
         vectors: list[np.ndarray] = []
         records: list[dict[str, Any]] = []
         expected_shape: tuple[int, ...] | None = None
@@ -570,7 +609,74 @@ def _cache_activation_records(index: pd.DataFrame) -> list[dict[str, Any]]:
         if bundle_path and relative_path:
             path = Path(str(bundle_path)) / str(relative_path)
             record["storage_signature"] = _path_signature(path)
+        record.pop("bundle_path", None)
     return records
+
+
+def _scientific_activation_records(index: pd.DataFrame) -> list[dict[str, Any]]:
+    if index.empty:
+        return []
+    columns = [
+        column
+        for column in [
+            "trace_id",
+            "name",
+            "module",
+            "layer",
+            "tensor_type",
+            "token_kind",
+            "token_space_id",
+            "shape",
+            "dtype",
+            "axes",
+            "relative_path",
+            "storage_format",
+        ]
+        if column in index
+    ]
+    return index[columns].to_dict("records")
+
+
+def _scientific_episode_records(dataset: TraceDataset) -> list[dict[str, Any]]:
+    records: list[dict[str, Any]] = []
+    for bundle in sorted(dataset.bundles, key=lambda item: item.manifest.trace_id):
+        records.append(
+            {
+                "trace_id": bundle.manifest.trace_id,
+                "length": int(bundle.manifest.length),
+                "trace_fingerprint": bundle.fingerprints.get("trace_fingerprint"),
+            }
+        )
+    return records
+
+
+def _source_episode_records(dataset: TraceDataset) -> list[dict[str, Any]]:
+    records = _scientific_episode_records(dataset)
+    by_trace = {item.manifest.trace_id: item for item in dataset.bundles}
+    for record in records:
+        bundle = by_trace[str(record["trace_id"])]
+        overlay = getattr(bundle, "overlay_bundle", bundle)
+        if overlay is not None:
+            record["timesteps_signature"] = _path_signature(
+                overlay.path / TraceBundle.TIMESTEPS
+            )
+            record["policy_calls_signature"] = _path_signature(
+                overlay.path / TraceBundle.POLICY_CALLS
+            )
+    return records
+
+
+def _valid_feature_cache(path: Path) -> bool:
+    rows_path = path / "rows.parquet"
+    x_path = path / "X.zarr"
+    if not rows_path.is_file() or not x_path.is_dir():
+        return False
+    try:
+        rows = pd.read_parquet(rows_path)
+        array = zarr.open_array(str(x_path), mode="r")
+    except (OSError, ValueError, KeyError):
+        return False
+    return int(array.shape[0]) == len(rows)
 
 
 def _path_signature(path: Path) -> dict[str, int | str]:

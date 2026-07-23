@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 
 from vla_lens.artifacts import LensArtifact, slugify
+from vla_lens.cache import InterProcessFileLock, atomic_replace_file
 from vla_lens.traces.bundle import TraceBundle
 from vla_lens.traces.io import (
     _bundle_index_by_trace_id,
@@ -141,7 +142,20 @@ class TraceDataset:
         suites and reports do not appear to belong to an arbitrary episode.
         """
         _validate_artifact_id(artifact.artifact_id)
+        artifact_root = self._dataset_artifact_root()
+        lock_path = artifact_root / ".locks" / "dataset-artifacts.lock"
+        with InterProcessFileLock(lock_path):
+            saved = self._save_artifact_locked(artifact, arrays=arrays)
+        self.__dict__.pop("dataset_artifact_index", None)
+        self.__dict__.pop("artifact_index", None)
+        return saved
 
+    def _save_artifact_locked(
+        self,
+        artifact: LensArtifact,
+        *,
+        arrays: Mapping[str, np.ndarray] | None,
+    ) -> LensArtifact:
         artifact_root = self._dataset_artifact_root()
         artifact_dir = artifact_root / "artifacts" / artifact.artifact_id
         artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -169,9 +183,11 @@ class TraceDataset:
             or tuple(bundle.manifest.trace_id for bundle in self.bundles),
             path=str(Path("artifacts") / artifact.artifact_id / "artifact.json"),
         )
-        (artifact_dir / "artifact.json").write_text(
-            json.dumps(saved.to_dict(), indent=2, sort_keys=True),
-            encoding="utf-8",
+        atomic_replace_file(
+            artifact_dir / "artifact.json",
+            lambda temporary: temporary.write_text(
+                json.dumps(saved.to_dict(), indent=2, sort_keys=True), encoding="utf-8"
+            ),
         )
 
         existing = _read_table(artifact_root / TraceBundle.ARTIFACT_INDEX)
@@ -180,9 +196,10 @@ class TraceDataset:
             ignore_index=True,
         )
         updated = updated.drop_duplicates(subset=["artifact_id"], keep="last")
-        _write_table(artifact_root / TraceBundle.ARTIFACT_INDEX, updated)
-        self.__dict__.pop("dataset_artifact_index", None)
-        self.__dict__.pop("artifact_index", None)
+        atomic_replace_file(
+            artifact_root / TraceBundle.ARTIFACT_INDEX,
+            lambda temporary: _write_table(temporary, updated),
+        )
         return saved
 
     def load_artifact(self, artifact_id: str) -> LensArtifact:
