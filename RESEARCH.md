@@ -92,8 +92,9 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-012 | Do main-camera visual tokens encode the initial object roster and each object's XYZ? | Probe | Identity yes; XYZ mostly scene prior | Yes, localize identity and improve geometry target |
 | RQ-013 | Does the identity probe's evidence spatially cover the named object? | Probe diagnostic | Modestly for some objects; not movement-sensitive | Yes, inspect examples and intervene carefully |
 | RQ-014 | Do visual tokens explicitly encode every visible object's image location? | Probe | Run; local probe negative, scene decoder confounded | Revisit with matched scenes or object-centric decoder |
-| RQ-015 | Does a known object region identify the object occupying it? | Probe | Planned; runner ready | Run on shared compact-token cache |
-| RQ-016 | Can an explicit object query locate that object? | Probe | Planned; runner ready | Run after shared-cache preparation |
+| RQ-015 | Does a known object region identify the object occupying it? | Probe | Running | Await held-out controls |
+| RQ-016 | Can an explicit object query locate that object? | Probe | Running | Await validation gate |
+| RQ-017 | Are pose changes nonlinearly decodable from pooled representations? | Probe | Planned; runner ready, not run | Run held-out-task first |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -713,11 +714,57 @@ would establish an accessible object-conditioned visual location signal, not
 an unordered scene graph or causal mechanism. As with RQ-015, fresh locked data
 is required before treating a positive test result as confirmation.
 
+## RQ-017: Nonlinear Pose Capacity Beyond Physical Baselines
+
+**Question.** Can a small nonlinear readout recover object position or rotation
+information that the pooled ridge studies in RQ-007 missed?
+
+**Hypothesis.** Pose may be present in the same global representations but not
+linearly accessible. A fixed one-hidden-layer MLP should improve on the matching
+physical and metadata baselines on held-out tasks if that is true.
+
+**Planned method.** Compare the existing multi-output ridge readout with one
+fixed `MLPRegressor`: 64 hidden units, `alpha=1e-4`, at most 300 iterations, and
+random seed 0. Fit the feature scaler and one maximum PCA on training rows only;
+reuse PCA prefixes at 64, 128, and 256 dimensions. Sweep expert layers, action
+head input, image-prefix hidden states, and VLM endpoints. Restrict this capacity
+check to world XYZ, XYZ change since the previous policy call, world rotation in
+6D form, and relative rotation since the previous call in 6D form.
+
+**Splits.** Held-out-task validation and test are primary. A separately named
+within-task episode split is secondary. Layer, site, PCA width, model family,
+and ridge strength are selected using validation only.
+
+**Baselines and controls.** Train mean; task, scene, object, phase, and timing
+metadata; previous or initial pose for absolute targets; zero update for
+position change; and identity rotation for relative rotation.
+
+**Confounds.** The MLP can exploit task and scene priors, global mean pooling
+can erase object-local structure, and repeated policy-call rows are correlated.
+An MLP-only result is a nonlinear capacity result, not evidence that the model
+uses a clean pose representation.
+
+**Metrics and uncertainty.** Episode-weighted Euclidean position error and
+SO(3) geodesic rotation error. Report paired probe-minus-baseline intervals by
+resampling whole benchmark-task groups for the primary split and whole episodes
+for the within-task secondary split.
+
+**Stopping rule.** Choose the best MLP only on validation. If it does not beat
+its strongest matching physical or metadata baseline there, do not report its
+test result and do not promote it. A positive held-out result remains
+exploratory until a fresh locked confirmation split or capture.
+
+**Status.** Runner and specs are ready; the broad-1000 study has not been run.
+The generic probe preflight currently rejects this specialized multi-feature
+geometry spec because it assumes one `features` mapping. The geometry runner
+still validates model names, target names, splits, and fixed MLP settings before
+fitting; generic preflight support remains a workflow follow-up.
+
 ## Not Yet Run
 
 - Feature-level sparse object-location probes beyond the fixed MLP battery
 - Set decoder for unordered scene objects
-- MLP target pose and rotation probes
+- RQ-017 nonlinear target pose and rotation probes
 - Filtered first-moved/first-lifted target probes
 - Target-parse VLM probe (the existing selector matched no rows)
 - Representation interventions based on these probe results

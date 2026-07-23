@@ -5,9 +5,11 @@ from __future__ import annotations
 from vla_lens.probes.experiment_cards import format_experiment_card_markdown
 from vla_lens.probes.geometry_study import (
     GEOMETRY_STUDY_SCHEMA_VERSION,
+    GeometryReadoutState,
     GeometryStudyResult,
     GeometryTarget,
     geometry_target_table,
+    predict_geometry_readout,
     run_geometry_probe_study,
 )
 from vla_lens.probes.identity_localization_study import (
@@ -91,6 +93,7 @@ from vla_lens.probes.workflow import (
 
 __all__ = [
     "GEOMETRY_STUDY_SCHEMA_VERSION",
+    "GeometryReadoutState",
     "GeometryStudyResult",
     "GeometryTarget",
     "IDENTITY_LOCALIZATION_STUDY_SCHEMA_VERSION",
@@ -135,6 +138,7 @@ __all__ = [
     "run_object_query_localization_study",
     "run_object_roi_identity_study",
     "probe_representation_options",
+    "predict_geometry_readout",
     "refresh_all_probe_score_caches",
     "refresh_probe_score_cache",
     "representation_options",
