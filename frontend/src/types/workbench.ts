@@ -1,3 +1,5 @@
+import type { ResearchRunRecord } from "./researchRuns";
+
 export type JsonValue =
   | string
   | number
@@ -183,6 +185,7 @@ export type WorkbenchManifest = {
   cohorts: CohortSpec[];
   analysis_runs: AnalysisRunSpec[];
   intervention_runs: Record<string, unknown>[];
+  research_runs: ResearchRunRecord[];
   saved_workspaces: SavedWorkspace[];
   contract_validation: {
     valid: boolean;

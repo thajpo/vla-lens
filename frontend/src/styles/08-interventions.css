@@ -536,6 +536,102 @@
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.intervention-action-comparison {
+  display: grid;
+  gap: 8px;
+}
+
+.intervention-action-comparison > header {
+  align-items: baseline;
+  display: flex;
+  justify-content: space-between;
+}
+
+.intervention-action-comparison h2 {
+  font-size: 14px;
+  margin: 0;
+}
+
+.intervention-action-comparison > header span {
+  color: #64748b;
+  font-size: 11px;
+}
+
+.intervention-action-comparison > div {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.action-condition {
+  border-top: 3px solid #94a3b8;
+  background: #ffffff;
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 9px 10px;
+}
+
+.action-condition.noop {
+  border-color: #0f766e;
+}
+
+.action-condition.intervention {
+  border-color: #d97706;
+}
+
+.action-condition.control {
+  border-color: #64748b;
+}
+
+.action-condition > span {
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.action-condition > strong,
+.action-condition > small {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.action-condition > strong {
+  font-size: 11px;
+}
+
+.action-condition > small {
+  color: #64748b;
+  font-size: 10px;
+}
+
+.action-condition dl {
+  border-top: 1px solid #e2e8f0;
+  display: grid;
+  gap: 4px;
+  margin: 4px 0 0;
+  padding-top: 6px;
+}
+
+.action-condition dl div {
+  display: flex;
+  gap: 6px;
+  justify-content: space-between;
+}
+
+.action-condition dt,
+.action-condition dd {
+  font-size: 10px;
+  margin: 0;
+}
+
+.action-condition dt {
+  color: #64748b;
+}
+
+.action-condition dd {
+  font-weight: 800;
+}
+
 .intervention-summary-block {
   background: #ffffff;
   border: 1px solid #dbe3ed;
@@ -601,6 +697,10 @@
 
   .intervention-detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .intervention-action-comparison > div {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .intervention-lab-header {

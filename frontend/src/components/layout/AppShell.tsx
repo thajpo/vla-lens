@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
-import { Database, FileText, LayoutDashboard, Microscope } from "lucide-react";
+import { Database, FileText, FlaskConical, LayoutDashboard, Microscope } from "lucide-react";
 
-export type AppPage = "dataset" | "episode" | "interventions" | "probes";
+export type AppPage = "dataset" | "episode" | "interventions" | "probes" | "research";
 
 type AppShellProps = {
   activePage: AppPage;
@@ -27,6 +27,14 @@ export function AppShell({ activePage, onPageChange, children }: AppShellProps) 
           >
             <Database size={16} />
             Dataset
+          </button>
+          <button
+            className={activePage === "research" ? "active" : ""}
+            type="button"
+            onClick={() => onPageChange("research")}
+          >
+            <FlaskConical size={16} />
+            Research
           </button>
           <button
             className={activePage === "probes" ? "active" : ""}
