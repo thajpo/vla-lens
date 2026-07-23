@@ -41,7 +41,7 @@ GPU unless the analysis is explicitly doing new model execution.
 
 | Workflow | Supported | Notes |
 | --- | --- | --- |
-| Capture on rented NVIDIA CUDA host, copy home, analyze locally | Yes | Use the CUDA Docker capture wrapper. |
+| Capture on rented NVIDIA CUDA host, copy home, analyze locally | Implemented; hardware smoke not recorded | Use the CUDA Docker capture wrapper, then validate it on the target host before a large run. |
 | Capture on rented AMD ROCm host, copy home, analyze locally | Yes | Use the ROCm Docker capture wrapper where the host has ROCm device support. |
 | Capture on cloud block/NVMe storage, then sync to S3/GCS/rclone remote | Yes | Sync completed roots after capture. |
 | Serve dashboard from a VM or local machine that has the dataset mounted | Yes | Use the dashboard container or local dashboard script. |

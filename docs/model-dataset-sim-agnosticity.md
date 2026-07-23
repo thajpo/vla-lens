@@ -1,312 +1,100 @@
 # Model, Dataset, And Simulator Agnosticism
 
-Status: active, living
-
-Last updated: May 27, 2026.
-
-This document defines the goal for making VLA Lens agnostic to model family,
-robot dataset source, and robot simulator while preserving rich model-specific
-interpretability views.
+Status: active architecture rule.
 
 ## Goal
 
-VLA Lens should be usable with more than one VLA model, more than one robotics
-dataset source, and more than one robot environment. PI0.5 + LIBERO/robosuite is
-the first concrete implementation, not the permanent shape of the whole stack.
-
-The target architecture is:
-
-```text
-any supported robot data source
-  -> LeRobot v3 robot layer
-  -> optional VLA Lens interpretability overlay
-  -> dashboard, probes, reports, and artifacts
-```
+VLA Lens should support multiple VLA models and robot environments without
+turning PI0.5 or LIBERO names into the core data model.
 
-For live capture, the target architecture is:
-
-```text
-EnvironmentAdapter + ModelCaptureAdapter
-  -> CaptureRunner
-  -> LeRobot v3 robot data + vla_lens/ overlay
-```
-
-The LeRobot v3 layer owns robot episode semantics: episodes, frames, timestamps,
-tasks, observations, actions, and camera media. The VLA Lens overlay owns
-interpretability semantics: policy calls, model sites, activations, token
-spaces, attention maps, action-generation traces, probes, and derived artifacts.
-
-Local research checks should use the same boundary. The read-only dataset trust
-gate:
-
-```bash
-uv run python scripts/validate_vla_lens_dataset_trust.py /path/to/dataset-root
-```
-
-opens an existing LeRobot root or nested batch output and checks
-schema/overlay validity, split sidecars, activation coverage, outcome balance,
-and artifact freshness without invoking capture, replay, model loading, or a
-simulator.
-
-## Why This Matters
-
-A researcher should not need to use PI0.5 or LIBERO to benefit from VLA Lens.
-They should be able to point the dashboard at a LeRobot v3 dataset and inspect
-episodes immediately. If they also capture model internals, the same dataset
-root should gain richer interpretability views through the `vla_lens/` overlay.
+This does not mean every model must expose the same internals. It means generic
+code depends on stable dataset contracts and declared capabilities, while
+model-specific execution stays behind adapters.
 
-This also makes the repo stronger as a software artifact:
+## Stable Boundary
 
-- The storage contract is explicit instead of hidden inside one capture script.
-- New models can be added as adapters instead of forks of the whole stack.
-- New simulators can be added as environment adapters instead of new dataset
-  formats.
-- The frontend can render capabilities declared by a dataset rather than
-  guessing from PI0.5-specific names.
+LeRobotDataset v3 owns robot data:
 
-## What Agnostic Means
+- episodes and frames;
+- observations, state, and actions;
+- timestamps, tasks, and camera media;
+- dataset metadata and statistics.
 
-"Agnostic" does not mean every model or simulator works automatically. It means
-the core repo has stable boundaries where new support can be added without
-rewriting storage, validation, analysis, or the dashboard.
+The VLA Lens overlay owns interpretability data:
 
-The intended boundaries are:
+- policy-call alignment;
+- model descriptions and model sites;
+- tokens, activations, attention, and generation traces;
+- probes, interventions, evidence, and provenance;
+- links back to the canonical robot data.
 
-```text
-DatasetEpisodeAdapter
-  converts existing robot logs/datasets into episode records
+The dashboard reads this combined dataset. It should not need the original model
+runtime merely to inspect saved evidence.
 
-EnvironmentAdapter
-  describes or controls live robot/simulator environments
+## Generic Core
 
-ModelCaptureAdapter
-  loads a model, declares hookable sites, captures internals, and emits overlay data
+Generic code should understand concepts such as:
 
-CaptureRunner
-  orchestrates env reset/step, model calls, alignment, and writing
+- dataset, episode, frame, and policy call;
+- model site and tensor geometry;
+- array reference and artifact;
+- capability and unavailable reason;
+- selection, evidence, target, trial, outcome, and provenance.
 
-Dashboard capability manifest
-  tells the frontend which views are valid for the current dataset
-```
+It should not assume a PI0.5 module path, LIBERO task type, fixed token layout,
+or a particular action representation.
 
-PI0.5-specific concepts should remain available, but they should be optional
-capabilities rather than assumptions in the core path.
+## Adapter Responsibilities
 
-## Capability Model
+A model adapter owns model loading, observation preprocessing, action
+postprocessing, runtime hooks, and model-specific site resolution.
 
-The frontend should not need to understand every VLA architecture. The backend
-should expose a dataset/model capability manifest describing what is present.
+An environment or importer owns reset/step behavior, task metadata, observations,
+actions, timestamps, and outcome labels.
 
-Examples:
+A capture profile declares which optional internals are saved. Missing
+capabilities are valid and must produce clear unavailable states rather than
+broken panels.
 
-```text
-robot_episodes
-cameras
-policy_calls
-model_sites
-token_spaces
-image_token_maps
-attention_maps
-action_chunks
-action_generation
-architecture_graph
-probe_artifacts
-intervention_artifacts
-```
+## Capability-Driven UI
 
-The dashboard should show generic panels for generic capabilities and specialized
-panels only when the dataset declares the required capability.
+The dataset API reports available capabilities derived from the saved robot
+data and overlay. The frontend uses those capabilities to decide whether to
+query or show model sites, policy calls, probes, token spaces, attention,
+image-token maps, and action-generation views.
 
-For example:
+Generic episode browsing must still work when no model internals exist. Rich
+PI0.5 pipeline views remain useful optional specializations.
 
-```text
-PI0.5:
-  action_generation: yes
-  vlm_expert_pipeline: yes
-  prefix_to_expert_attention: yes
+## Current Proof
 
-OpenVLA:
-  transformer_layers: yes
-  image_tokens: likely
-  language_tokens: likely
-  action_generation: model-dependent
+The repo includes tiny fake dataset, environment, and model adapters. Normal
+tests write their output through the generic LeRobot v3 plus overlay path, open
+it through `TraceDataset`, summarize non-PI0.5 model sites, and verify capability
+gating without importing PI0.5, Torch, LeRobot runtime code, LIBERO, or GPU
+dependencies.
 
-LeRobot-only dataset:
-  robot_episodes: yes
-  cameras: maybe
-  model_sites: no
-  probes: no
-```
+This proves the storage and server boundary. It does not yet prove a complete
+frontend workflow over a real second model or environment.
 
-## Frontend Direction
+## Remaining Expansion
 
-The frontend is the riskiest part of this transition because the richest current
-views assume PI0.5 concepts such as VLM prefix tokens, expert layers, action
-denoising, generation steps, and PI0.5 token spaces.
+Future integrations should add:
 
-The desired frontend model is:
+- frontend end-to-end coverage over the synthetic non-PI0.5 dataset;
+- one real second model adapter, likely OpenVLA;
+- one real non-LIBERO environment or importer.
 
-```text
-Episode browser:
-  generic LeRobot view
+These are deferred directions, not active implementation specs. Create a GitHub
+issue when one is selected for work.
 
-Activation site browser:
-  generic model_sites table and tensor slices
+## Rules For New Code
 
-Token-space browser:
-  generic token streams, image patches, language tokens, action tokens
-
-Attention/attribution panels:
-  shown only when token-space and attention/score metadata exist
-
-Action trajectory panels:
-  shown for action chunks and generation traces when present
-
-Architecture graph:
-  generated from adapter metadata, not hardcoded PI0.5 names
-
-Model-specific panels:
-  optional specializations registered by capability
-```
-
-The dashboard should degrade gracefully:
-
-```text
-LeRobot only:
-  episodes, frames, actions, state, metadata
-
-LeRobot + generic activations:
-  plus model sites, tensor slices, probes
-
-LeRobot + rich model overlay:
-  plus tokens, attention, action-generation, architecture, interventions
-```
-
-## Phases
-
-### Phase 1: Contract And Documentation
-
-Define the agnostic target clearly.
-
-Acceptance criteria:
-
-- This document exists and is linked from the docs index.
-- The existing adapter protocols are treated as the direction of travel.
-- PI0.5 is documented as the first implementation, not the core assumption.
-- New work can point to this document when deciding whether code belongs in
-  core, PI0.5, frontend generic UI, or a future adapter.
-- Local dataset trust checks exist outside PI0.5 capture and can validate a
-  saved root before probe or claim work.
-
-### Phase 2: Adapter Compliance Tests
-
-Prove the core can run without PI0.5.
-
-Initial support exists: `vla_lens.capture.fake_adapters` provides tiny
-dataset, environment, and model adapters that emit normal capture records. The
-contract test writes them through the LeRobot v3 writer and opens the result
-through `TraceDataset` without PI0.5, Torch, LeRobot runtime imports, LIBERO, or
-GPU access.
-
-Acceptance criteria:
-
-- Add tiny fake dataset, environment, and model adapters. Initial support exists.
-- Add tests that write a minimal LeRobot v3 + `vla_lens/` overlay through the
-  generic path. Initial support exists.
-- Add tests that the dashboard/server can summarize the fake model's sites
-  without `pi05.*` names. Initial support exists.
-- Keep PI0.5 capture tests separate from normal `uv run pytest`.
-
-### Phase 3: Capability Manifest
-
-Make available views explicit.
-
-Initial backend support exists: `/api/dataset` now includes a `capabilities`
-manifest with available capability names, boolean flags, camera names,
-model-family names, and model-site prefixes. The first contract test uses the
-synthetic non-PI0.5 dataset to verify that the server can summarize generic
-`backbone.*` and `action_head.*` sites without PI0.5 names.
-
-Acceptance criteria:
-
-- The backend exposes a capability manifest for each opened dataset. Initial
-  support exists in `/api/dataset`.
-- Capabilities are derived from LeRobot metadata, overlay tables, arrays, and
-  model-site metadata. Initial support derives from opened bundles, arrays,
-  policy-call tables, token-space tables, model-site tables, and artifact
-  counts.
-- Frontend panels key off capabilities instead of PI0.5 name prefixes wherever
-  possible. Initial support gates model-site, policy-call, probe, token-space,
-  attention, image-token-map, and action-generation queries/panels from
-  `/api/dataset` capability flags.
-
-### Phase 4: Frontend Generalization
-
-Separate generic views from PI0.5-specific views.
-
-Acceptance criteria:
-
-- Generic LeRobot episode browsing works without model internals.
-- Generic model-site browsing works for a non-PI0.5 fake adapter.
-- PI0.5 pipeline views still work, but are clearly optional specializations.
-- Empty/missing capabilities produce clear empty states rather than broken
-  panels.
-
-### Phase 5: First Non-PI0.5 Model
-
-Add one real non-PI0.5 model adapter, likely OpenVLA.
-
-Acceptance criteria:
-
-- OpenVLA can emit policy calls, model metadata, model sites, and activations
-  into the existing overlay format.
-- The dashboard can inspect the resulting dataset without PI0.5-specific code
-  paths being required.
-- OpenVLA-specific capture dependencies remain isolated from the normal
-  dashboard/dev environment.
-
-### Phase 6: First Non-LIBERO Environment
-
-Add one real non-LIBERO environment source or importer.
-
-Acceptance criteria:
-
-- A second simulator or dataset family can produce LeRobot v3-compatible robot
-  data.
-- The capture/import path preserves actions, state, camera frames, timestamps,
-  task metadata, and success/outcome labels when available.
-- The same dashboard path opens the output.
-
-## Non-Goals
-
-- Do not make every model share the same interpretability views.
-- Do not flatten PI0.5-specific research affordances into a lowest common
-  denominator UI.
-- Do not add heavyweight model or simulator dependencies to the normal
-  dashboard/test environment.
-- Do not create parallel dataset formats for each model family.
-- Do not preserve standalone overlay bundles as dataset inputs.
-
-## Design Rule
-
-Core code should depend on declared contracts and capabilities. Model-specific
-code should live behind adapters or optional capability-specific helpers.
-
-When adding a new feature, ask:
-
-```text
-Is this true for all LeRobot datasets?
-  Put it in the generic dataset/dashboard layer.
-
-Is this true for all model overlays?
-  Put it in the generic overlay/model-site layer.
-
-Is this true for one model family?
-  Put it in that model adapter or optional specialization.
-
-Is this true for one simulator?
-  Put it in that environment adapter or importer.
-```
-
-That boundary is what lets VLA Lens become broadly useful without losing the
-depth that makes model-specific interpretability valuable.
+- Put robot-data facts in the LeRobot-compatible layer.
+- Put cross-model interpretability contracts in the generic VLA Lens layer.
+- Put model or environment execution behind an adapter.
+- Isolate heavyweight runtime dependencies from the normal development and
+  dashboard environment.
+- Declare optional capabilities instead of pretending every model supports
+  every visualization.
+- Do not create a parallel dataset format for each model family.

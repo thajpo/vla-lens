@@ -229,6 +229,5 @@ Future cleanup should consider one of:
 ```text
 dedicated capture lock file
 uv dependency group with ROCm torch sources and explicit conflicts
-container image for capture
 small environment bootstrap tool with checksums for the OpenPI patch
 ```
