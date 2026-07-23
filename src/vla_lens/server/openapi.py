@@ -168,6 +168,14 @@ API_ROUTE_DOCS: dict[tuple[str, str], dict[str, Any]] = {
         "summary": "Saved analysis runs",
         "description": "Lists saved analysis run records.",
     },
+    ("get", "/api/research-runs"): {
+        "summary": "Research runs",
+        "description": "Lists experiment and campaign lifecycle records, newest update first.",
+    },
+    ("get", "/api/research-runs/{run_id}"): {
+        "summary": "Research run detail",
+        "description": "Returns one experiment or campaign lifecycle record by run id.",
+    },
     ("get", "/api/workspaces"): {
         "summary": "Saved workspaces",
         "description": "Lists saved dashboard/workbench layouts and selections.",

@@ -1,6 +1,11 @@
 import { AlertTriangle, CheckCircle2, CircleDot, XCircle } from "lucide-react";
 import type { InterventionRunRecord } from "../../types/interventions";
-import { statusClass, summarizeInterventionRun } from "./interventionDisplay";
+import {
+  interventionActionComparison,
+  statusClass,
+  summarizeInterventionRun,
+  type InterventionActionCondition,
+} from "./interventionDisplay";
 
 type InterventionRunDetailProps = {
   run?: InterventionRunRecord;
@@ -19,6 +24,7 @@ export function InterventionRunDetail({ run }: InterventionRunDetailProps) {
   const trials = arrayValue(readouts.trials);
   const outcomes = arrayValue(readouts.outcomes);
   const controls = arrayValue(readouts.controls);
+  const actionComparison = interventionActionComparison(run);
   return (
     <section className="intervention-detail">
       <header className="intervention-detail-header">
@@ -47,6 +53,8 @@ export function InterventionRunDetail({ run }: InterventionRunDetailProps) {
         <SummaryBlock label="Controls" value={String(controls.length)} />
       </div>
 
+      {actionComparison.length ? <ActionComparison conditions={actionComparison} /> : null}
+
       <PayloadSection title="Context" payload={summary.context} />
       <PayloadSection title="Target" payload={run.target} />
       <PayloadSection title="Intervention" payload={run.intervention} />
@@ -57,6 +65,54 @@ export function InterventionRunDetail({ run }: InterventionRunDetailProps) {
       <PayloadSection title="Provenance" payload={run.provenance} />
     </section>
   );
+}
+
+function ActionComparison({ conditions }: { conditions: InterventionActionCondition[] }) {
+  return (
+    <section className="intervention-action-comparison">
+      <header>
+        <h2>Action comparison</h2>
+        <span>Same policy call</span>
+      </header>
+      <div>
+        {conditions.map((condition) => (
+          <article className={`action-condition ${condition.kind}`} key={`${condition.kind}-${condition.actionRef}`}>
+            <span>{condition.label}</span>
+            <strong>{condition.actionRef}</strong>
+            <small>{condition.status}</small>
+            <MetricSummary metrics={condition.metrics} />
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function MetricSummary({ metrics }: { metrics: Record<string, unknown> }) {
+  const entries = Object.entries(metrics)
+    .filter(([, value]) => typeof value === "number")
+    .slice(0, 3);
+  if (!entries.length) {
+    return <small>No action delta saved</small>;
+  }
+  return (
+    <dl>
+      {entries.map(([key, value]) => (
+        <div key={key}>
+          <dt>{humanizeMetric(key)}</dt>
+          <dd>{formatMetric(value as number)}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function humanizeMetric(value: string): string {
+  return value.replace(/[_-]+/g, " ");
+}
+
+function formatMetric(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(3);
 }
 
 function SummaryBlock({ label, value }: { label: string; value: string }) {

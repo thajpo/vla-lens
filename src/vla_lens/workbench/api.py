@@ -28,6 +28,7 @@ from vla_lens.workbench.schema import (
     GraphNodeRef,
     InterventionRunSpec,
     LensArraySpec,
+    ResearchRunSpec,
     SavedWorkspace,
     SelectionState,
     normalize_axis_values,
@@ -53,6 +54,7 @@ from vla_lens.workbench.utils import (
     _slice_payload,
     _workbench_dir,
     _write_json,
+    _write_json_atomic,
 )
 from vla_lens.workbench.validation import (
     _cohort_delta_table,
@@ -91,6 +93,7 @@ def workbench_manifest(dataset: TraceDataset) -> dict[str, Any]:
         "graph_edge_types": graph_edge_types(),
         "cohorts": [cohort.to_dict() for cohort in list_cohorts(dataset)],
         "analysis_runs": [run.to_dict() for run in list_analysis_runs(dataset)],
+        "research_runs": [run.to_dict() for run in list_research_runs(dataset)],
         "intervention_runs": [run.to_dict() for run in list_intervention_runs(dataset)],
         "saved_workspaces": [workspace.to_dict() for workspace in list_workspaces(dataset)],
         "contract_validation": validate_workbench_contracts(dataset),
@@ -122,6 +125,30 @@ def save_analysis_run(dataset: TraceDataset, run: AnalysisRunSpec) -> AnalysisRu
     """Persist computation provenance outside the artifact-browser UX."""
     path = _workbench_dir(dataset, "analysis_runs", create=True) / f"{_safe_id(run.run_id)}.json"
     _write_json(path, run.to_dict())
+    return run
+
+def list_research_runs(dataset: TraceDataset) -> tuple[ResearchRunSpec, ...]:
+    """Return human-facing research lifecycle records, newest update first."""
+    root = _workbench_dir(dataset, "research_runs", create=False)
+    if not root.exists():
+        return ()
+    runs = [ResearchRunSpec.from_dict(_read_json(path)) for path in root.glob("*.json")]
+    return tuple(sorted(runs, key=lambda run: (run.updated_utc, run.run_id), reverse=True))
+
+def get_research_run(dataset: TraceDataset, run_id: str) -> ResearchRunSpec:
+    """Return one research lifecycle record by its stable run id."""
+    path = _workbench_dir(dataset, "research_runs", create=False) / f"{_safe_id(run_id)}.json"
+    if not path.exists():
+        raise KeyError(f"Unknown research run '{run_id}'")
+    run = ResearchRunSpec.from_dict(_read_json(path))
+    if run.run_id != run_id:
+        raise KeyError(f"Unknown research run '{run_id}'")
+    return run
+
+def save_research_run(dataset: TraceDataset, run: ResearchRunSpec) -> ResearchRunSpec:
+    """Atomically persist one lifecycle record independently of result artifacts."""
+    path = _workbench_dir(dataset, "research_runs", create=True) / f"{_safe_id(run.run_id)}.json"
+    _write_json_atomic(path, run.to_dict())
     return run
 
 def list_intervention_runs(dataset: TraceDataset) -> tuple[InterventionRunSpec, ...]:

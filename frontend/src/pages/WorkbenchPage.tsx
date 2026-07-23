@@ -3,6 +3,7 @@ import { AppShell, type AppPage } from "../components/layout/AppShell";
 import { ProbeSuitePreset } from "../components/workflows/ProbeSuitePreset";
 import { InterventionsPage } from "./EvidencePage";
 import { EpisodesPage } from "./EpisodesPage";
+import { ResearchRunsPage } from "./ResearchRunsPage";
 import { DatasetBrowser } from "./workbench/DatasetBrowser";
 import { useWorkbenchStore } from "../store/workbenchStore";
 import type { InterventionLabSeed } from "../types/interventions";
@@ -16,6 +17,8 @@ import {
 } from "./workbench/episodeRouteModel";
 import {
   buildInterventionsHash,
+  buildProbeHash,
+  buildResearchHash,
   parseWorkbenchHash,
 } from "./workbench/workbenchRouteModel";
 
@@ -23,6 +26,7 @@ export function WorkbenchPage() {
   const initialRoute = initialPage();
   const [activePage, setActivePage] = useState<AppPage>(initialRoute.page);
   const [interventionRunId, setInterventionRunId] = useState(initialRoute.interventionRunId);
+  const [researchRunId, setResearchRunId] = useState(initialRoute.researchRunId);
   const [interventionSeed, setInterventionSeed] = useState<InterventionLabSeed | undefined>(undefined);
   const [episodeTraceId, setEpisodeTraceId] = useState(initialRoute.traceId);
   const [episodeRouteState, setEpisodeRouteState] = useState<EpisodeRouteState>(initialRoute.episodeState);
@@ -36,12 +40,22 @@ export function WorkbenchPage() {
       const route = initialPage();
       setActivePage(route.page);
       setInterventionRunId(route.interventionRunId);
+      setResearchRunId(route.researchRunId);
+      if (route.probeRunId) {
+        setActiveRunId(route.probeRunId);
+      }
       setEpisodeTraceId(route.traceId);
       setEpisodeRouteState(route.episodeState);
     }
     window.addEventListener("hashchange", syncRoute);
     return () => window.removeEventListener("hashchange", syncRoute);
-  }, []);
+  }, [setActiveRunId]);
+
+  useEffect(() => {
+    if (initialRoute.probeRunId) {
+      setActiveRunId(initialRoute.probeRunId);
+    }
+  }, [initialRoute.probeRunId, setActiveRunId]);
 
   const handleEvidenceRunChange = useCallback((runId: string) => {
     setActivePage("interventions");
@@ -81,6 +95,14 @@ export function WorkbenchPage() {
           onRunChange={setActiveRunId}
         />
       ) : null}
+      {activePage === "research" ? (
+        <ResearchRunsPage
+          selectedRunId={researchRunId}
+          onOpenIntervention={handleOpenResearchIntervention}
+          onOpenProbe={handleOpenResearchProbe}
+          onRunChange={handleResearchRunChange}
+        />
+      ) : null}
       {activePage === "interventions" ? (
         <InterventionsPage
           interventionSeed={interventionSeed}
@@ -101,7 +123,14 @@ export function WorkbenchPage() {
       setInterventionRunId("");
       setInterventionSeed(undefined);
     }
-    window.history.replaceState(null, "", page === "interventions" ? buildInterventionsHash() : `#${page}`);
+    if (page === "research") {
+      setResearchRunId("");
+    }
+    window.history.replaceState(null, "", page === "interventions"
+      ? buildInterventionsHash()
+      : page === "research"
+        ? buildResearchHash()
+        : `#${page}`);
   }
 
   function handleOpenDatasetEpisode(traceId: string, context: EpisodeOpenContext = {}) {
@@ -157,12 +186,31 @@ export function WorkbenchPage() {
     window.history.replaceState(null, "", buildInterventionsHash());
   }
 
+  function handleResearchRunChange(runId: string) {
+    setResearchRunId(runId);
+    window.history.replaceState(null, "", buildResearchHash(runId));
+  }
+
+  function handleOpenResearchProbe(artifactId: string) {
+    setActiveRunId(artifactId);
+    setActivePage("probes");
+    window.history.replaceState(null, "", buildProbeHash(artifactId));
+  }
+
+  function handleOpenResearchIntervention(runId: string) {
+    setInterventionRunId(runId);
+    setActivePage("interventions");
+    window.history.replaceState(null, "", buildInterventionsHash(runId));
+  }
+
 }
 
 function initialPage(): {
   episodeState: EpisodeRouteState;
   interventionRunId: string;
   page: AppPage;
+  probeRunId: string;
+  researchRunId: string;
   traceId: string;
 } {
   return parseWorkbenchHash(window.location.hash);

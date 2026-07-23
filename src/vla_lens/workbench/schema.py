@@ -3,11 +3,27 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass, field
+from datetime import datetime, timezone
 from typing import Any, Literal, Mapping
 
 from vla_lens.traces import TraceBundle
 
 LensDataKind = Literal["tensor", "table", "image_sequence", "video", "artifact_array"]
+
+RESEARCH_RUN_STATUSES = frozenset({"queued", "running", "completed", "failed", "cancelled"})
+RESEARCH_RUN_STAGES = frozenset(
+    {
+        "queued",
+        "preflight",
+        "preparing_data",
+        "training",
+        "evaluating",
+        "saving",
+        "completed",
+        "failed",
+        "cancelled",
+    }
+)
 
 MAX_JSON_SLICE_VALUES = 4096
 
@@ -69,6 +85,16 @@ def _optional_str(value: Any) -> str | None:
         return None
     text = str(value)
     return None if text == "nan" else text
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _optional_float(value: Any) -> float | None:
+    if value is None:
+        return None
+    return float(value)
 
 
 @dataclass(frozen=True, slots=True)
@@ -443,6 +469,141 @@ class AnalysisRunSpec:
             workflow=str(payload["workflow"]),
             inputs=dict(payload.get("inputs") or {}),
             outputs=tuple(str(item) for item in payload.get("outputs", ())),
+            provenance=dict(payload.get("provenance") or {}),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchProgress:
+    """Reconstructable progress for a research run or campaign."""
+
+    completed: int = 0
+    total: int = 0
+    unit: str = "steps"
+
+    def __post_init__(self) -> None:
+        if self.completed < 0 or self.total < 0:
+            raise ValueError("Research progress counts cannot be negative")
+        if self.total and self.completed > self.total:
+            raise ValueError("Research progress completed count cannot exceed total")
+
+    @property
+    def fraction(self) -> float | None:
+        return self.completed / self.total if self.total else None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "completed": self.completed,
+            "total": self.total,
+            "unit": self.unit,
+            "fraction": self.fraction,
+        }
+
+    @classmethod
+    def from_value(cls, value: Any) -> "ResearchProgress":
+        if isinstance(value, Mapping):
+            return cls(
+                completed=int(value.get("completed") or 0),
+                total=int(value.get("total") or 0),
+                unit=str(value.get("unit") or "steps"),
+            )
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            fraction = max(0.0, min(1.0, float(value)))
+            return cls(completed=round(fraction * 100), total=100, unit="percent")
+        return cls()
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchResultSummary:
+    """Compact result used to compare a run with its stated baseline."""
+
+    metric: str = ""
+    score: float | None = None
+    baseline: float | None = None
+    delta: float | None = None
+    verdict: str = ""
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any] | None) -> "ResearchResultSummary":
+        value = payload or {}
+        return cls(
+            metric=str(value.get("metric") or ""),
+            score=_optional_float(value.get("score")),
+            baseline=_optional_float(value.get("baseline")),
+            delta=_optional_float(value.get("delta")),
+            verdict=str(value.get("verdict") or ""),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class ResearchRunSpec:
+    """Human-facing lifecycle record for one experiment or parent campaign."""
+
+    run_id: str
+    kind: str
+    name: str
+    question: str
+    status: str = "queued"
+    stage: str = "queued"
+    parent_run_id: str | None = None
+    progress: ResearchProgress = field(default_factory=ResearchProgress)
+    artifact_ids: tuple[str, ...] = ()
+    result: ResearchResultSummary = field(default_factory=ResearchResultSummary)
+    error: str | None = None
+    created_utc: str = field(default_factory=_utc_now_iso)
+    updated_utc: str = field(default_factory=_utc_now_iso)
+    started_utc: str | None = None
+    completed_utc: str | None = None
+    provenance: Mapping[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not self.run_id.strip():
+            raise ValueError("Research run_id is required")
+        if not self.kind.strip():
+            raise ValueError("Research run kind is required")
+        if not self.name.strip():
+            raise ValueError("Research run name is required")
+        if not self.question.strip():
+            raise ValueError("Research run question is required")
+        if self.status not in RESEARCH_RUN_STATUSES:
+            raise ValueError(f"Unsupported research run status '{self.status}'")
+        if self.stage not in RESEARCH_RUN_STAGES:
+            raise ValueError(f"Unsupported research run stage '{self.stage}'")
+        if self.parent_run_id == self.run_id:
+            raise ValueError("Research run cannot be its own parent")
+
+    def to_dict(self) -> dict[str, Any]:
+        payload = asdict(self)
+        payload["progress"] = self.progress.to_dict()
+        payload["artifact_ids"] = list(self.artifact_ids)
+        payload["result"] = self.result.to_dict()
+        return payload
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> "ResearchRunSpec":
+        return cls(
+            run_id=str(payload["run_id"]),
+            parent_run_id=_optional_str(payload.get("parent_run_id")),
+            kind=str(payload.get("kind") or "experiment"),
+            name=str(payload.get("name") or payload.get("run_id") or ""),
+            question=str(payload.get("question") or payload.get("name") or ""),
+            status=str(payload.get("status") or "queued"),
+            stage=str(payload.get("stage") or payload.get("status") or "queued"),
+            progress=ResearchProgress.from_value(payload.get("progress")),
+            artifact_ids=tuple(str(item) for item in payload.get("artifact_ids", ())),
+            result=ResearchResultSummary.from_dict(
+                payload.get("result") if isinstance(payload.get("result"), Mapping) else None
+            ),
+            error=_optional_str(payload.get("error")),
+            created_utc=str(payload.get("created_utc") or _utc_now_iso()),
+            updated_utc=str(
+                payload.get("updated_utc") or payload.get("created_utc") or _utc_now_iso()
+            ),
+            started_utc=_optional_str(payload.get("started_utc")),
+            completed_utc=_optional_str(payload.get("completed_utc")),
             provenance=dict(payload.get("provenance") or {}),
         )
 

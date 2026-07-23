@@ -29,6 +29,8 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/lens-arrays/{array_id}", "get"),
     ("/api/cohorts", "get"),
     ("/api/analysis-runs", "get"),
+    ("/api/research-runs", "get"),
+    ("/api/research-runs/{run_id}", "get"),
     ("/api/workspaces", "get"),
     ("/api/workspaces/{workspace_id}/resolve", "get"),
     ("/api/intervention-runs", "get"),

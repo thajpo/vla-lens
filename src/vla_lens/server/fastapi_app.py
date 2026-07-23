@@ -20,6 +20,7 @@ import vla_lens.server.interventions as interventions_api
 import vla_lens.server.metrics as metrics_api
 import vla_lens.server.probe_studies as probe_studies_api
 import vla_lens.server.probes as probes_api
+import vla_lens.server.research_runs as research_runs_api
 import vla_lens.server.spatial as spatial_api
 from vla_lens.probe_evidence_adapter import indexed_probe_evidence_bundle_payload
 from vla_lens.server.http import (
@@ -62,6 +63,7 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
     app.router.redirect_slashes = False
     app.state.dashboard = DashboardState(root)
     app.openapi = lambda: _openapi_schema(app)  # type: ignore[method-assign]
+    research_runs_api.register_research_run_routes(app)
 
     @app.get("/")
     async def root_endpoint(request: Request) -> Response:

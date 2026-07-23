@@ -1,5 +1,13 @@
 import type { InterventionRunRecord, InterventionSummary } from "../../types/interventions";
 
+export type InterventionActionCondition = {
+  actionRef: string;
+  kind: "original" | "noop" | "intervention" | "control";
+  label: string;
+  metrics: Record<string, unknown>;
+  status: string;
+};
+
 export function summarizeInterventionRun(run: InterventionRunRecord): InterventionSummary {
   const readouts = record(run.readouts);
   const provenance = record(run.provenance);
@@ -55,6 +63,50 @@ export function interventionsForSource(
   return runs.filter((run) => sourceArtifactIdForRun(run) === artifactId);
 }
 
+export function interventionActionComparison(
+  run: InterventionRunRecord,
+): InterventionActionCondition[] {
+  const readouts = record(run.readouts);
+  const trials = arrayRecords(readouts.trials);
+  const outcomes = arrayRecords(readouts.outcomes);
+  const controls = arrayRecords(readouts.controls);
+  const controlMetrics = new Map<string, Record<string, unknown>>();
+  for (const control of controls) {
+    const metrics = record(control.metrics);
+    for (const trialId of arrayStrings(control.trial_ids)) {
+      controlMetrics.set(trialId, metrics);
+    }
+  }
+  return trials.flatMap((trial) => {
+    const outputs = record(trial.outputs);
+    const actionRef = stringValue(outputs.action_ref);
+    if (!actionRef) {
+      return [];
+    }
+    const trialId = stringValue(trial.trial_id);
+    const trialKind = stringValue(trial.trial_kind);
+    const controlKind = stringValue(trial.control_kind);
+    const kind = actionConditionKind(trialKind, controlKind);
+    if (!kind) {
+      return [];
+    }
+    const outcomeMetrics = outcomes
+      .filter((outcome) => stringValue(outcome.intervention_trial_id) === trialId)
+      .reduce((combined, outcome) => ({ ...combined, ...record(outcome.metrics) }), {});
+    return [{
+      actionRef,
+      kind,
+      label: actionConditionLabel(kind, controlKind || trialKind),
+      metrics: {
+        ...record(trial.metrics),
+        ...controlMetrics.get(trialId),
+        ...outcomeMetrics,
+      },
+      status: stringValue(trial.status) || "unknown",
+    }];
+  });
+}
+
 function targetSummary(target: Record<string, unknown>): string {
   const kind = stringValue(target.kind) || "target";
   const site = stringValue(target.model_site) || stringValue(target.site_id);
@@ -107,10 +159,58 @@ function claimLabels(
   return [];
 }
 
+function actionConditionKind(
+  trialKind: string,
+  controlKind: string,
+): InterventionActionCondition["kind"] | null {
+  if (trialKind === "stored_original") {
+    return "original";
+  }
+  if (trialKind === "noop" || trialKind === "noop_rerun") {
+    return "noop";
+  }
+  if (trialKind === "intervention") {
+    return "intervention";
+  }
+  if (controlKind || trialKind.includes("control")) {
+    return "control";
+  }
+  return null;
+}
+
+function actionConditionLabel(
+  kind: InterventionActionCondition["kind"],
+  detail: string,
+): string {
+  if (kind === "original") {
+    return "Original";
+  }
+  if (kind === "noop") {
+    return "No-op";
+  }
+  if (kind === "intervention") {
+    return "Intervention";
+  }
+  const label = detail.replace(/[_-]+/g, " ").replace(/^./, (value) => value.toUpperCase());
+  return label.includes("control") ? label : `${label} control`;
+}
+
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : {};
+}
+
+function arrayRecords(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? value.filter(isRecord) : [];
+}
+
+function arrayStrings(value: unknown): string[] {
+  return Array.isArray(value) ? value.map(String) : [];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function stringValue(value: unknown): string {

@@ -7,7 +7,11 @@ import {
   buildInterventionRequest,
   liveRunAvailable,
 } from "./interventionLabModel.ts";
-import { sourceArtifactIdForRun, summarizeInterventionRun } from "./interventionDisplay.ts";
+import {
+  interventionActionComparison,
+  sourceArtifactIdForRun,
+  summarizeInterventionRun,
+} from "./interventionDisplay.ts";
 
 const draft = {
   artifactId: "probe-a",
@@ -228,4 +232,51 @@ test("live run gate requires preflight ok and runtime capability", () => {
     }),
     true,
   );
+});
+
+test("typed intervention trials become a human action comparison", () => {
+  const run = {
+    run_id: "run-action-compare",
+    intervention_type: "intervention_record",
+    target: {},
+    baseline: {},
+    intervention: {},
+    outputs: [],
+    provenance: {},
+    readouts: {
+      trials: [
+        { trial_id: "stored", trial_kind: "stored_original", status: "ok", outputs: { action_ref: "stored_original" } },
+        { trial_id: "noop", trial_kind: "noop_rerun", status: "ok", outputs: { action_ref: "noop" } },
+        { trial_id: "changed", trial_kind: "intervention", status: "ok", outputs: { action_ref: "intervened" } },
+        {
+          trial_id: "random",
+          trial_kind: "random_direction_control",
+          control_kind: "random_direction",
+          status: "ok",
+          outputs: { action_ref: "control_random_direction" },
+        },
+      ],
+      outcomes: [
+        {
+          baseline_trial_id: "noop",
+          intervention_trial_id: "changed",
+          metrics: { raw_delta_norm: 0.2 },
+        },
+      ],
+      controls: [
+        { control_kind: "random_direction", status: "ok", trial_ids: ["random"], metrics: { delta_from_noop: 0.05 } },
+      ],
+    },
+  };
+
+  const comparison = interventionActionComparison(run);
+
+  assert.deepEqual(comparison.map((condition) => condition.label), [
+    "Original",
+    "No-op",
+    "Intervention",
+    "Random direction control",
+  ]);
+  assert.equal(comparison[2].metrics.raw_delta_norm, 0.2);
+  assert.equal(comparison[3].metrics.delta_from_noop, 0.05);
 });

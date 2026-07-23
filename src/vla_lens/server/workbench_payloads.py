@@ -13,12 +13,14 @@ from vla_lens.workbench import (
     UnitRef,
     cohort_from_selection,
     compare_cohorts,
+    get_research_run,
     graph_from_selection,
     lens_array_catalog,
     lens_array_meta,
     list_analysis_runs,
     list_cohorts,
     list_intervention_runs,
+    list_research_runs,
     list_workspaces,
     projection_points,
     query_table,
@@ -93,6 +95,15 @@ def _save_cohort_from_selection_payload(
 def _analysis_runs_payload(dataset: TraceDataset) -> dict[str, Any]:
     runs = [run.to_dict() for run in list_analysis_runs(dataset)]
     return {"analysis_runs": runs, "total": len(runs)}
+
+
+def _research_runs_payload(dataset: TraceDataset) -> dict[str, Any]:
+    runs = [run.to_dict() for run in list_research_runs(dataset)]
+    return {"research_runs": runs, "total": len(runs)}
+
+
+def _research_run_payload(dataset: TraceDataset, run_id: str) -> dict[str, Any]:
+    return {"research_run": get_research_run(dataset, run_id).to_dict()}
 
 
 def _intervention_runs_payload(dataset: TraceDataset) -> dict[str, Any]:
