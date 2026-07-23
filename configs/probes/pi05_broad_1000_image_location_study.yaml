@@ -1,0 +1,33 @@
+name: PI0.5 broad 1000 explicit image-plane object location study v2
+question: Do visual tokens directly encode where every named scene object appears in the camera image?
+hypothesis_family: named-object image-plane representation
+intended_claim: >-
+  Exploratory held-out-task evidence about whether a shared local patch head and
+  a whole-scene box decoder can recover each visible object's image location
+  from captured visual activations beyond spatial, prompt, and scene baselines.
+source_probe_artifact_id: token_scene_probe_study-pi0.5-broad-1000-initial-visual-object-query-identity-and-location-study-ed33f5bd37
+camera_name: agentview
+context_columns:
+  - benchmark
+  - scene_family
+  - task_phase
+probe:
+  readout_dims: [32, 64]
+  ridge_alphas: [0.01, 1.0, 10.0]
+  baseline_ridge_alphas: [0.01, 1.0]
+  min_train_episodes: 5
+nonlinear:
+  enabled: true
+  hidden_units: 32
+  patch_max_train_tokens: 100000
+  patch_batch_size: 1024
+  patch_max_iter: 80
+  box_max_iter: 200
+  learning_rate_init: 0.001
+  n_iter_no_change: 5
+  random_state: 20260801
+analysis:
+  io_workers: 8
+  bootstrap_samples: 2000
+  shuffle_repeats: 10
+  example_count: 12

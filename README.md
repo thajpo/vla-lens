@@ -14,6 +14,10 @@ model + environment + capture profile
 -> local workbench and reproducible analysis artifacts
 ```
 
+Current docs entrypoint: [docs/README.md](docs/README.md). Current operational
+state and known-good commands: [docs/current-state.md](docs/current-state.md).
+Current research questions and findings: [RESEARCH.md](RESEARCH.md).
+
 ## Try It Without Hardware
 
 Run the normal checks:

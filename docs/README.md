@@ -51,6 +51,8 @@ These are short durable explanations, not implementation plans:
 
 These files preserve scientific evidence. They are not required onboarding:
 
+- [Research log](../RESEARCH.md): canonical questions, methods, controls,
+  findings, and revisit decisions.
 - [PI0.5 broad-1000 probe experiments](pi05_broad_1000_probe_experiments.md):
   campaign results, including negative findings and replication guidance.
 - [Probe workflow feedback](probe_evidence_workflow_feedback.md): what worked and

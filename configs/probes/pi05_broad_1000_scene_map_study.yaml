@@ -1,0 +1,64 @@
+name: PI0.5 broad 1000 joint object identity and location study
+question: Can one PI0.5 activation jointly identify and locate every object in the current scene, including objects that are not the instructed target?
+hypothesis_family: structured whole-scene object representation
+intended_claim: Exploratory evidence about whether globally averaged PI0.5 representations support a complete scene-sized object map beyond prompt, scene, and unchanged-position explanations.
+features:
+  - id: expert_action_hidden
+    module: pi05.expert.layers.*
+    tensor_type: hidden_tokens
+    token_kind: action
+    layers: [0, 4, 8, 12, 17]
+    timesteps: all
+    policy_calls: all
+    generation_step: final
+    reduction: mean
+    dtype: float32
+    sweep: [layer]
+  - id: action_head_input
+    name: pi05.action_head.input
+    tensor_type: action_head
+    token_kind: action
+    timesteps: all
+    policy_calls: all
+    generation_step: final
+    reduction: mean
+    dtype: float32
+    sweep: []
+  - id: image_prefix_hidden
+    name: pi05.vlm.prefix.image_hidden_tokens
+    tensor_type: hidden_tokens
+    timesteps: all
+    policy_calls: all
+    reduction: mean
+    dtype: float32
+    sweep: []
+  - id: vlm_prefix_endpoints
+    module: pi05.vlm.layers.*
+    tensor_type: hidden_tokens
+    layers: [0, 17]
+    timesteps: all
+    policy_calls: all
+    reduction: mean
+    dtype: float32
+    sweep: [layer]
+split:
+  kind: heldout_task
+  column: split
+  train_value: train
+  selection_value: val_heldout_task
+  test_value: test_heldout_task
+context_columns:
+  - benchmark
+  - scene_family
+  - task_phase
+baseline:
+  - benchmark
+  - scene_family
+  - task_phase
+  - prompt
+  - initial_position
+  - previous_position
+probe:
+  pca_dims: [64, 128]
+  ridge_alphas: [1.0, 10.0]
+  min_train_episodes: 5

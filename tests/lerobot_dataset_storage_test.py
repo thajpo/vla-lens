@@ -372,18 +372,27 @@ def test_lerobot_probe_outputs_are_dataset_root_relative(tmp_path):
         _minimal_record_with_model_value("trace-b", 1.0),
         _minimal_record_with_model_value("trace-c", 0.2),
         _minimal_record_with_model_value("trace-d", 1.2),
+        _minimal_record_with_model_value("trace-e", 0.4),
+        _minimal_record_with_model_value("trace-f", 1.4),
     ]
-    outcomes = ["failure", "success", "failure", "success"]
+    outcomes = ["failure", "success", "failure", "success", "failure", "success"]
     for record, outcome in zip(records, outcomes, strict=False):
         write_lerobot_trace_record(
             replace(record, manifest=replace(record.manifest, outcome=outcome)),
             tmp_path,
         )
-    pd.DataFrame(
-        {
-            "trace_id": ["trace-a", "trace-b", "trace-c", "trace-d"],
-            "split": ["train", "train", "test", "test"],
-        }
+        pd.DataFrame(
+            {
+                "trace_id": [
+                    "trace-a",
+                    "trace-b",
+                    "trace-c",
+                    "trace-d",
+                    "trace-e",
+                    "trace-f",
+                ],
+                "split": ["train", "train", "train", "train", "test", "test"],
+            }
     ).to_csv(tmp_path / "probe_splits.csv", index=False)
 
     dataset = TraceDataset.open(tmp_path)

@@ -12,6 +12,32 @@ repo-local taste contract: prefer screen-level coherence, human-readable
 research/ML language, fewer redundant panels, and semantic color over reactive
 one-widget fixes.
 
+## Probe Training Rule
+
+When asked to train a probe, read `docs/probe_hypothesis_guidance.md` and run
+probe preflight before spending compute. Do not silently assume global mean
+pooling. Show the relevant representation choices: learned layer mixing,
+tokenwise analysis, object-conditioned decoding, and set decoding, along with
+whether each is ready, data-ready but missing a specialized runner, or blocked
+by missing capture data.
+
+Use `RESEARCH.md` as the canonical question and findings log. Add or update the
+relevant entry whenever an experiment is planned, completed, corrected, or
+superseded. Campaign wrappers and implementation retries are history, not new
+research questions.
+
+## Research Product Loop
+
+Let concrete research drive VLA Lens development. While running experiments,
+remove repeated friction and add the smallest reusable analysis, artifact, or
+orchestration tool that makes the next investigation faster.
+
+Do not invent broad UI from hypothetical needs. Once an experiment reveals a
+specific inspection, comparison, or intervention job, wire the supported data
+into the existing lens-conditioned episode workflow when the design is clear.
+Otherwise create a focused GitHub issue that records the research evidence,
+screen job, required backend fields, and acceptance criteria.
+
 ## Critical Environment Rule
 
 Do not run PI0.5/LeRobot/LIBERO capture through the normal repo `uv run` environment.

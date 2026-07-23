@@ -16,6 +16,7 @@ import zarr
 from vla_lens.traces import TraceBundle, TraceDataset
 
 TokenReduction = Literal["mean", "flat", "none"]
+VECTORIZED_READ_TARGET_BYTES = 64 * 1024 * 1024
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +41,13 @@ class ActivationQuery:
         payload["timesteps"] = _jsonable_timesteps(self.timesteps)
         payload["policy_calls"] = _jsonable_timesteps(self.policy_calls)
         return payload
+
+    @classmethod
+    def from_dict(cls, payload: Mapping[str, Any]) -> ActivationQuery:
+        values = dict(payload)
+        values["timesteps"] = _selector_axis_from_json(values.get("timesteps", "all"))
+        values["policy_calls"] = _selector_axis_from_json(values.get("policy_calls", "all"))
+        return cls(**values)
 
 
 @dataclass(frozen=True, slots=True)
@@ -130,16 +138,36 @@ class FeatureView:
             if token_indices is not None and len(token_indices) == 0:
                 continue
 
-            for sample_axis, sample_index in samples:
-                value, remaining_axes = _select_value(
-                    array=array,
-                    axes=axes,
-                    sample_axis=sample_axis,
-                    sample_index=sample_index,
-                    token_indices=token_indices,
-                    generation_step=self.selector.generation_step,
+            vectorized = _vectorized_mean_samples(
+                array=array,
+                axes=axes,
+                samples=samples,
+                token_indices=token_indices,
+                generation_step=self.selector.generation_step,
+                reduction=self.selector.reduce_tokens,
+            )
+            if vectorized is not None:
+                sample_vectors = zip(samples, vectorized, strict=True)
+            else:
+                sample_vectors = (
+                    (
+                        sample,
+                        _reduce_value(
+                            *_select_value(
+                                array=array,
+                                axes=axes,
+                                sample_axis=sample[0],
+                                sample_index=sample[1],
+                                token_indices=token_indices,
+                                generation_step=self.selector.generation_step,
+                            ),
+                            self.selector.reduce_tokens,
+                        ),
+                    )
+                    for sample in samples
                 )
-                vector = _reduce_value(value, remaining_axes, self.selector.reduce_tokens)
+
+            for (sample_axis, sample_index), vector in sample_vectors:
                 vector = vector.astype(self.selector.dtype, copy=False).reshape(-1)
                 if vector.size and not np.isfinite(vector).any():
                     continue
@@ -216,6 +244,93 @@ class FeatureView:
                 | index["generation_step"].map(_matches_value(self.selector.generation_step))
             ]
         return index.reset_index(drop=True)
+
+
+def _vectorized_mean_samples(
+    *,
+    array: Any,
+    axes: Sequence[str],
+    samples: Sequence[tuple[str | None, int | None]],
+    token_indices: np.ndarray | None,
+    generation_step: int | str | None,
+    reduction: TokenReduction,
+) -> list[np.ndarray] | None:
+    """Read a site's requested sample slices in bounded orthogonal selections."""
+
+    if reduction != "mean" or not samples or not hasattr(array, "oindex"):
+        return None
+    sample_axes = {axis for axis, _ in samples}
+    if len(sample_axes) != 1:
+        return None
+    sample_axis = next(iter(sample_axes))
+    if sample_axis is None or sample_axis not in axes:
+        return None
+    sample_indices = [index for _, index in samples]
+    if any(index is None for index in sample_indices):
+        return None
+
+    sample_position = axes.index(sample_axis)
+    selection: list[Any] = [slice(None)] * len(axes)
+    if generation_step is not None and "generation_step" in axes:
+        axis = axes.index("generation_step")
+        selection[axis] = _generation_step_index(int(array.shape[axis]), generation_step)
+    if token_indices is not None and "token" in axes:
+        selection[axes.index("token")] = _compact_indices(token_indices)
+
+    remaining_axes = [
+        axis_name
+        for axis_name, indexer in zip(axes, selection, strict=True)
+        if not isinstance(indexer, (int, np.integer))
+    ]
+    batch_size = _vectorized_sample_batch_size(
+        array,
+        axes,
+        selection,
+        sample_axis=sample_axis,
+    )
+    vectors: list[np.ndarray] = []
+    for start in range(0, len(sample_indices), batch_size):
+        batch_selection = list(selection)
+        batch_selection[sample_position] = np.asarray(
+            sample_indices[start : start + batch_size], dtype=np.int64
+        )
+        selected = np.asarray(array.oindex[tuple(batch_selection)])
+        batch_axes = list(remaining_axes)
+        if "token" in batch_axes:
+            token_axis = batch_axes.index("token")
+            selected = selected.mean(axis=token_axis)
+            batch_axes.pop(token_axis)
+        batch_sample_position = batch_axes.index(sample_axis)
+        selected = np.moveaxis(selected, batch_sample_position, 0)
+        vectors.extend(np.asarray(value).reshape(-1) for value in selected)
+    return vectors
+
+
+def _vectorized_sample_batch_size(
+    array: Any,
+    axes: Sequence[str],
+    selection: Sequence[Any],
+    *,
+    sample_axis: str,
+) -> int:
+    values_per_sample = 1
+    for axis_name, axis_size, indexer in zip(axes, array.shape, selection, strict=True):
+        if axis_name == sample_axis or isinstance(indexer, (int, np.integer)):
+            continue
+        if isinstance(indexer, slice):
+            selected_size = len(range(*indexer.indices(int(axis_size))))
+        else:
+            selected_size = len(indexer)
+        values_per_sample *= max(1, int(selected_size))
+    bytes_per_sample = values_per_sample * np.dtype(array.dtype).itemsize
+    return max(1, VECTORIZED_READ_TARGET_BYTES // max(1, bytes_per_sample))
+
+
+def _compact_indices(indices: np.ndarray) -> slice | np.ndarray:
+    values = np.asarray(indices, dtype=np.int64)
+    if values.size and np.array_equal(values, np.arange(values[0], values[-1] + 1)):
+        return slice(int(values[0]), int(values[-1]) + 1)
+    return values
 
 
 def _select_value(
@@ -408,6 +523,15 @@ def _jsonable_timesteps(value: Any) -> Any:
     return value
 
 
+def _selector_axis_from_json(value: Any) -> Any:
+    if not isinstance(value, Mapping) or set(value) != {"slice"}:
+        return value
+    parts = value["slice"]
+    if not isinstance(parts, (list, tuple)) or len(parts) != 3:
+        raise ValueError("Serialized selector slices must contain start, stop, and step")
+    return slice(*parts)
+
+
 def _cache_chunks(shape: Sequence[int]) -> tuple[int, ...]:
     if not shape:
         return (1,)
@@ -450,28 +574,38 @@ def _cache_activation_records(index: pd.DataFrame) -> list[dict[str, Any]]:
 
 
 def _path_signature(path: Path) -> dict[str, int | str]:
+    """Return a cheap change detector for an immutable capture array.
+
+    Capture arrays are written once.  Walking every Zarr chunk made a cache
+    lookup scale with the amount of captured tensor data, even though Zarr's
+    root metadata already describes the stored array.  Use the directory and
+    root metadata timestamps instead, so checking a cache is proportional to
+    the number of selected arrays rather than their number of chunks.
+
+    If someone edits chunk bytes in place without rewriting the Zarr array,
+    they must remove ``.vla_cache`` themselves.  That is outside the supported
+    immutable-capture workflow.
+    """
     if not path.exists():
         return {"exists": 0}
     if path.is_file():
         stat = path.stat()
         return {"exists": 1, "size": int(stat.st_size), "mtime_ns": int(stat.st_mtime_ns)}
-    file_count = 0
-    total_size = 0
-    latest_mtime = int(path.stat().st_mtime_ns)
-    for child in path.rglob("*"):
-        if not child.is_file():
-            continue
-        file_count += 1
-        stat = child.stat()
-        total_size += int(stat.st_size)
-        latest_mtime = max(latest_mtime, int(stat.st_mtime_ns))
-    return {
+    stat = path.stat()
+    signature: dict[str, int | str] = {
         "exists": 1,
         "kind": "dir",
-        "files": file_count,
-        "size": total_size,
-        "mtime_ns": latest_mtime,
+        "size": int(stat.st_size),
+        "mtime_ns": int(stat.st_mtime_ns),
     }
+    for metadata_name in ("zarr.json", ".zarray", ".zattrs", ".zgroup"):
+        metadata_path = path / metadata_name
+        if not metadata_path.is_file():
+            continue
+        metadata_stat = metadata_path.stat()
+        signature[f"{metadata_name}_size"] = int(metadata_stat.st_size)
+        signature[f"{metadata_name}_mtime_ns"] = int(metadata_stat.st_mtime_ns)
+    return signature
 
 
 __all__ = ["ActivationQuery", "FeatureMatrix", "FeatureView"]

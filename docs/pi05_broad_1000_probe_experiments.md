@@ -2,7 +2,7 @@
 
 Status: active experiment registry.
 
-Last updated: July 15, 2026.
+Last updated: July 22, 2026.
 
 This document is the review surface for the PI0.5 broad 1000 probe campaign.
 The probes are not new capture. They train on the existing mech-light activation
@@ -41,9 +41,9 @@ features plus post-processed interaction labels.
   `uv run python scripts/validate_vla_lens_dataset_trust.py "/mnt/new-volume/vla-lens/pi05-broad-1000-mech-light-lerobot-v3"`.
   The gate is local and read-only; it checks schema/overlay validity, split
   sidecars, activation coverage, outcome balance, and artifact freshness.
-- Latest local gate: passed on 2026-06-17 with 1000 episodes, 34000 activation
+- Latest local gate: passed on 2026-07-18 with 1000 episodes, 34000 activation
   site rows, 1.0 activation coverage, train/val/test split counts of
-  600/200/200 episodes, and 11 checked artifacts.
+  600/200/200 episodes, and 42 checked artifacts at the start of this round.
 
 ## Artifact Contract
 
@@ -305,6 +305,454 @@ Overall readout:
   a strong validation gain, but its final-test baseline loss and numerical
   conditioning warning mean it should be rerun with PCA/regularization and a
   locked confirmation plan before interpretation.
+
+## July 18, 2026 Vector Geometry Robustness Round
+
+Purpose: replace the scalar, ill-conditioned first pass with a vector-aware
+test of whether PI0.5 globally pooled states linearly expose the instructed
+target object's pose, and especially whether they expose pose updates beyond
+temporal persistence.
+
+Method:
+
+- Use exactly one uniquely referable object per episode: the primary instructed
+  target. The earlier all-object row expansion duplicated one global activation
+  across several incompatible object labels and is not valid for this question.
+- Fit joint multi-output ridge readouts after train-only PCA. Select PCA
+  dimension from 64/128/256 and ridge alpha from 0.1/1/10/100 on validation,
+  then lock the readout for final test.
+- Measure position with episode-weighted Euclidean error in meters and rotation
+  with episode-weighted SO(3) geodesic error in degrees.
+- Test world, initial-relative, previous-call-relative, and end-effector-relative
+  position. Test quaternion, 6D rotation, rotation-vector, Euler sine/cosine,
+  initial-relative 6D, previous-call-relative 6D, and end-effector-relative 6D
+  orientation targets.
+- Compare every readout with train-mean/metadata controls and the matching
+  physical baseline. For previous-call-relative targets, zero translation and
+  identity rotation are the persistence baseline.
+- Run both held-out-task splits and a deterministic within-task episode split.
+  Episodes remain intact in every split.
+
+Completed artifacts:
+
+- Expert hidden, held-out task:
+  `geometry_probe_study-pi0.5-broad-1000-object-geometry-study-b40227ee15`
+- Expert hidden, within-task episode:
+  `geometry_probe_study-pi0.5-broad-1000-object-geometry-within-task-study-7667296721`
+- Action-head input, held-out task:
+  `geometry_probe_study-pi0.5-broad-1000-action-head-object-geometry-study-93398f6bdf`
+- Image tokens and VLM prefix endpoints, held-out task:
+  `geometry_probe_study-pi0.5-broad-1000-vlm-object-geometry-study-e156f65fdf`
+
+The previous-call-relative targets are the cleanest summary because they ask
+whether a state predicts the update missed by simply carrying the last pose
+forward:
+
+| Features / split | Position val | Baseline val | Position test | Baseline test | Rotation val | Baseline val | Rotation test | Baseline test |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| Expert / held-out task | 0.0688 m | 0.0541 m | 0.0826 m | 0.0542 m | 5.11 deg | 3.74 deg | 11.23 deg | 9.25 deg |
+| Expert / within-task episode | 0.0581 m | 0.0485 m | 0.0571 m | 0.0464 m | 6.41 deg | 5.29 deg | 6.44 deg | 5.11 deg |
+| Action head / held-out task | 0.0727 m | 0.0541 m | 0.0778 m | 0.0542 m | 5.22 deg | 3.74 deg | 11.99 deg | 9.25 deg |
+| Image prefix / held-out task | 0.0727 m | 0.0541 m | 0.0788 m | 0.0542 m | 6.14 deg | 3.74 deg | 11.59 deg | 9.25 deg |
+| VLM endpoint / held-out task | 0.0741 m | 0.0541 m | 0.0742 m | 0.0542 m | 5.18 deg | 3.74 deg | 10.59 deg | 9.25 deg |
+
+Interpretation:
+
+- No selected globally mean-pooled linear readout beats its physical baseline
+  on validation or final test. The easier within-task split does not rescue the
+  result, and the conclusion is consistent across expert, action-head, image,
+  and VLM endpoint features.
+- This does not show that PI0.5 lacks object geometry. It shows that primary
+  target pose and pose updates are not linearly accessible from these global
+  reductions beyond strong temporal persistence controls.
+- Do not run an MLP capacity sweep or intervention from these readouts. The
+  predeclared stopping rule was to try nonlinear capacity only after a linear
+  readout approached or beat its controls.
+- The next scientifically distinct measurement is object-conditioned or
+  spatial/token-local decoding. It needs an object query, pixel/token region,
+  or contrastive object-local feature; more global layer fishing would repeat
+  the same failed measurement.
+
+Runtime and storage observations:
+
+- The first cold expert feature materialization took about 404 seconds. Cached
+  follow-up feature materialization took 8-23 seconds for expert/action-head
+  families; the two VLM families took 194 seconds total from reduced cached
+  data rather than rereading raw token tensors.
+- The study caches aligned target tables and reduced feature matrices under
+  `.vla_cache`; those are derived and evictable. Durable artifacts retain specs,
+  fingerprints, selected hyperparameters, metrics, and row-level predictions,
+  but do not duplicate feature tensors.
+- Managed cache budgets, pinning, pruning, and capture-time reusable feature
+  packs are tracked in GitHub issue #21.
+
+## July 18, 2026 Motion-Aware Geometry Follow-Up
+
+Purpose: resolve the incomplete part of the vector geometry round. The earlier
+average mixed many stationary calls with a smaller number of large movements
+and compared them mainly with a no-change guess. This follow-up asks whether
+activations add information beyond ordinary task context, the robot hand's
+movement, and the actions that were actually executed.
+
+- Artifact:
+  `pi0.5-broad-1000-object-motion-follow-up-study-geometry_motion_study-8fd6fa322e`
+- Fixed movement ranges: position over 1 cm and over 10 cm; rotation over 1
+  degree and over 15 degrees. These final held-out tasks had already been viewed
+  during exploration, so this is saved as exploratory evidence rather than a
+  new confirmation result.
+- The first policy call is excluded because it has no previous interval.
+- Comparisons include no movement, average train-set movement, task/scene/object/
+  phase/call information, robot hand plus executed-action information, and the
+  combination of task context and robot movement.
+- Saved tables include all candidates, selected models, row-level predictions
+  for every comparison, movement amount, direction and magnitude errors,
+  task-level paired uncertainty, best/worst source examples, all scene-object
+  movements, and matched target-versus-other-object scenes. A report can be
+  regenerated from these tables without making a separate report the source of
+  truth.
+
+Large position movement results:
+
+| Information used | Validation error | Final-test error | Final-test direction error |
+| --- | ---: | ---: | ---: |
+| Expert activation, selected layer 12 | 0.169 m | 0.185 m | 40.3 deg |
+| Image-token global average | 0.200 m | 0.201 m | 53.7 deg |
+| VLM endpoint, selected layer 17 | 0.190 m | 0.207 m | 46.7 deg |
+| Robot movement and executed actions | 0.078 m | 0.076 m | 20.1 deg |
+| Task context plus robot movement | 0.082 m | 0.068 m | 15.3 deg |
+| No movement | 0.325 m | 0.271 m | not defined |
+
+The activation probes do beat the no-movement and average-movement guesses on
+large translations. They do not beat robot movement. The task-level final-test
+gap between expert activations and the robot comparison is 10.1 cm against the
+activation probe, with a 95% interval from 7.2 to 13.4 cm.
+
+Movement detection tells the same story. For translations over 10 cm, expert
+features reach 0.798 balanced accuracy and globally averaged image tokens reach
+0.821 on final test. Task context reaches 0.791, while task context plus robot
+movement reaches 0.837. Activation features do not show a stable advantage over
+the ordinary comparisons across validation and final test.
+
+Large rotation results are also negative against stronger comparisons. Expert
+features have 36.8-degree final-test error, compared with 31.8 degrees from
+robot movement and 39.8 degrees from guessing no rotation. The expert advantage
+over no rotation is small and uncertain across tasks; it loses to robot
+movement.
+
+Matched-scene evidence:
+
+- There are 636 later policy steps across 411 episodes and 81 tasks where the
+  primary target moves more than 10 cm.
+- In 95.8% of those scenes, every other object remains within 1 cm.
+- Ordinary distractors almost never move after the initial interval: 0.05% of
+  distractor rows exceed 1 cm.
+- Other task-manipulated objects do move, which is expected in multi-object
+  instructions and is retained explicitly in the saved object table.
+
+Revised interpretation:
+
+- The earlier large-movement improvement was real relative to the weak
+  no-change guess, but it is not evidence that the model visually tracks the
+  moving object specially.
+- The current global activations largely reveal that the robot is in a movement
+  event. The robot's measured movement predicts the object's direction and
+  distance much more accurately.
+- Token-level localization is not run in this round. The declared stopping rule
+  required activations to add information beyond task and robot movement first.
+  Object-local visual analysis remains appropriate for the controlled
+  whole-scene experiment in GitHub issue #22, where object position can vary
+  independently of the robot action.
+
+## July 18, 2026 Joint Whole-Scene Object Study
+
+Purpose: test the more direct whole-scene question from GitHub issue #22. Given
+one saved PI0.5 activation at one policy call, can a linear decoder return every
+object identity and every current XYZ position at once?
+
+- Final artifact:
+  `pi0.5-broad-1000-joint-object-identity-and-location-study-scene_map_probe_study-d2e23e2740`
+- The output has one fixed slot per exact object instance, including separate
+  slots such as `akita_black_bowl_1` and `akita_black_bowl_2`.
+- The 39-slot vocabulary includes all objects in the 1,000 episodes. Thirty-five
+  occur during training. Two `yellow_book` instances occur only in final-test
+  tasks and therefore remain explicit unseen-identity failures.
+- One decoder predicts the full scene roster and current visibility. One XYZ
+  head per object uses only episodes where that object exists, avoiding fake
+  zero-coordinate labels for missing objects.
+- Model choices use validation tasks. Final-test tasks remain separate.
+- Comparisons include instruction text plus ordinary scene information, the
+  episode's initial object positions, and the previous policy call's positions.
+- Globally averaged image tokens, VLM endpoints, expert layers, and action-head
+  input are all tested. No token or pixel region is selected in this round.
+
+Object identity results over identities seen during training:
+
+| Information used | Scene overlap | Average precision | Entire roster exactly right |
+| --- | ---: | ---: | ---: |
+| Expert layer 12 activation | 0.408 | 0.703 | 10.7% |
+| Instruction and scene information | 0.414 | 0.934 | 37.0% |
+| Expert activation plus instruction/scene | 0.537 | 0.894 | 34.6% |
+| Training frequency | 0.083 | 0.127 | 0.0% |
+
+The combined model retrieves more true objects at its validation-chosen cutoff,
+which raises scene overlap by 0.123 on average. The episode-level 95% range is
+0.092 to 0.155. This is not clean evidence that the activation contains extra
+visual identity information: the instruction/scene comparison ranks identities
+better and gets more complete rosters exactly right. The combined model mainly
+changes the precision-versus-recall tradeoff.
+
+The visibility target does not fix the problem. Across final-test policy calls,
+99.7% of present object rows are marked visible in at least one captured camera.
+It is therefore almost the same label as the fixed scene roster, not an
+independent test of recognizing what has entered or left view. A stronger
+identity experiment needs object sets to vary within the same instruction and
+scene family.
+
+XYZ location results:
+
+| Information used | All present objects | Objects moved over 10 cm |
+| --- | ---: | ---: |
+| Action-head activation | 0.223 m | 0.216 m |
+| Instruction and scene information | 0.214 m | 0.249 m |
+| Action-head activation plus instruction/scene | 0.208 m | 0.211 m |
+| Episode's initial position | 0.038 m | 0.330 m |
+| Previous policy-call position | 0.016 m | 0.183 m |
+
+Adding action-head activations improves on instruction/scene information by
+0.6 cm over all objects, with an episode-level 95% range of 0.3 to 0.9 cm. On
+objects moved more than 10 cm, the improvement is 3.8 cm, with a range of 2.9
+to 4.8 cm. That is real information about the current state, but it is not an
+accurate whole-scene map: carrying forward the previous position is still 19.1
+cm better overall and 2.8 cm better on the large-movement subset.
+
+The combined decoder's coordinate errors are 7.6 cm on x, 13.1 cm on y, and
+8.7 cm on z. Its gains are uneven across objects. It improves notably for the
+porcelain mug, white/yellow mug, moka pot, and black book, while worsening for
+cream cheese, orange juice, chocolate pudding, and several fixed scene objects.
+This looks more like selective task/movement information than a stable geometric
+record of every object.
+
+Interpretation:
+
+- This experiment does not support a globally averaged, linearly accessible
+  full scene graph in PI0.5.
+- It does support a narrower finding: later action-path activations add some
+  information about which familiar scene objects matter and where substantially
+  moved objects are now.
+- The identity part is limited by task confounding. In these episodes, the
+  instruction and scene family already determine most of the object roster.
+- The location part is limited by global averaging. A fixed object slot cannot
+  ask the representation where one particular object is, and averaging all
+  tokens can erase spatial structure even if individual tokens contain it.
+- The next experiment should use an explicit object query or a spatial/token
+  decoder, and it should vary object presence and placement within otherwise
+  matched scenes. That is a new measurement, not another global layer sweep.
+
+Runtime and storage:
+
+- The final artifact is 26 MB and contains 128,596 compact scene-level
+  prediction rows, full comparison metrics, vocabulary/support counts, and
+  source examples. The large source activation tensors remain in the capture
+  and are not copied.
+- The corrected full rerun took about eight minutes. Roughly half was repeated
+  feature reduction and probe fitting. The runner now caches the train-fitted
+  reduced feature projections under `.vla_cache`, so later reruns can skip PCA.
+  These files are derived and evictable rather than permanent experiment data.
+  Target tables already load in under a second after the first run.
+
+## July 19, 2026 Token-Preserving And Layer-Mixture Study
+
+Purpose: test whether the negative whole-scene result above was caused by
+averaging the action tokens or by choosing one expert layer at a time.
+
+- Primary artifact:
+  `token_scene_probe_study-pi0.5-broad-1000-token-preserving-scene-object-study-channel-64-fa4f5edb8d`
+- Lower-capacity check:
+  `token_scene_probe_study-pi0.5-broad-1000-token-preserving-scene-object-study-6b02da1589`
+- The study uses 6,184 policy-call scenes: 3,711 rows from 600 training
+  episodes, 1,137 rows from 200 validation episodes, and 1,336 rows from 200
+  final-test episodes. The final-test set has 20 held-out tasks.
+- Every method sees the same rows, 39-object vocabulary, labels, and split.
+- The source is the 50-token action suffix at the final generation step from
+  expert layers 0, 4, 8, 12, and 17.
+- `pooled` averages the 50 raw token vectors, then applies a training-only PCA.
+- `tokenwise` applies a training-only 64-dimensional channel PCA inside each
+  token, keeps all 50 token positions separate, then applies a second
+  training-only PCA. Both paths give the final decoder 64 or 128 features, so
+  the tokenwise decoder does not receive a larger final feature vector merely
+  because it retains token positions.
+- `single_layer` chooses one layer on validation. `learned_layer_mix` learns
+  non-negative layer weights summing to one on validation and fits the shared
+  linear decoder on training scenes.
+
+The 64-channel projection retains 77.7% of sampled channel variance. The final
+128-dimensional tokenwise projection retains 69.6% of the resulting flattened
+token variance; the pooled projection retains 93.6% of pooled variance. A
+16-channel run retained only 51.5% at the first step and was therefore kept as
+a lower-capacity check rather than the primary result.
+
+Final-test results:
+
+| Representation | Layer treatment | Scene identity overlap | Identity average precision | XYZ error | XYZ error, moved over 10 cm |
+| --- | --- | ---: | ---: | ---: | ---: |
+| Pooled | Best single layer | 0.392 | 0.703 | 0.215 m | 0.207 m |
+| Pooled | Learned layer mix | 0.392 | 0.699 | 0.218 m | 0.212 m |
+| Tokenwise | Best single layer | 0.202 | 0.458 | 0.227 m | 0.224 m |
+| Tokenwise | Learned layer mix | 0.163 | 0.457 | 0.227 m | 0.218 m |
+
+Paired uncertainty uses equal-weight final-test episodes and separately
+equal-weight final-test tasks. Positive values mean the candidate is better.
+
+- The tokenwise single layer loses 0.190 scene-overlap points to the pooled
+  single layer across episodes. Its 95% bootstrap interval is -0.211 to -0.170;
+  across tasks it is -0.242 to -0.151.
+- The tokenwise single layer adds 1.16 cm of XYZ error. Expressed as error
+  reduction, the episode-level interval is -1.45 to -0.89 cm and the task-level
+  interval is -1.33 to -0.37 cm.
+- Mixing pooled layers changes scene overlap by less than 0.001, with an
+  episode-level interval of -0.006 to 0.006. It makes XYZ error
+  0.32 cm worse, with an episode-level interval of 0.19 to 0.44 cm worse.
+- Mixing tokenwise layers does not reliably change XYZ error relative to the
+  best tokenwise layer: the interval for error reduction is -0.21 to 0.27 cm.
+  It lowers identity overlap by 0.038, with an interval of -0.048 to -0.028.
+
+The best pooled identity layer is 12 and the best pooled XYZ layer is 8. The
+learned mixtures use several layers, but that does not improve held-out
+performance. For pooled XYZ, the largest mixture weight is 0.55 on layer 4;
+for pooled identity, the largest weight is 0.47 on layer 0. This is a useful
+warning: non-zero learned layer weights do not by themselves show that combining
+depths produces a better representation.
+
+The tokenwise coefficient summaries concentrate on later action-horizon tokens,
+especially positions 43-49 for identity and roughly 32-46 for XYZ. These are
+correlated linear coefficient norms after PCA, not causal importance. Because
+the tokenwise models perform worse, this pattern should be used only to form a
+future intervention or ablation question, not as evidence that those tokens
+store the scene map.
+
+Interpretation:
+
+- This study does not support the idea that global token averaging was hiding
+  a more accurate linearly decodable whole-scene map in the expert action
+  suffix. Keeping token positions separate makes both tasks worse under the
+  matched 64/128-feature comparison.
+- The negative result is stable across held-out episodes and tasks, and it
+  persists when the per-token channel width increases from 16 to 64. Only 8 of
+  39 objects have lower XYZ error in the best tokenwise model.
+- This does not show that no token-local object representation exists anywhere
+  in PI0.5. The experiment tests expert action tokens, a linear decoder, and a
+  variance-based compression. It does not yet test visual patch tokens, an
+  explicit object query, or a nonlinear set decoder.
+- The simple state comparisons remain stronger. The previous policy-call
+  position has 1.6 cm error over all objects and 18.3 cm over objects moved more
+  than 10 cm, compared with 21.5 cm and 20.7 cm for the best pooled expert
+  decoder. Instruction and scene information also has much higher identity
+  average precision (0.934) than the pooled expert representation (0.703).
+- The next justified step is an explicit object-conditioned decoder on matched
+  scenes, followed by visual-token localization. A higher-capacity set decoder
+  should remain an exploratory upper bound because it can learn scene templates
+  without exposing a clean representation.
+
+Runtime and storage:
+
+- The corrected full run took 14.5 minutes after the stricter token-topology
+  check invalidated the earlier compact cache: 9.4 minutes to rebuild the
+  reduced features and 5.1 minutes to fit and save the probe grid. Later runs
+  can reuse the corrected reduced-feature cache, but still refit the probes.
+- The final artifact is 14 MB. It contains source rows/sites, the exact token
+  table, all projection transforms, selected decoder parameters, layer weights,
+  per-scene predictions, per-object results, token coefficients, examples, and
+  paired uncertainty.
+- The reusable 64-channel cache is 34 MB. Raw captured activations are never
+  copied. The 50-by-64 intermediate token tensor exists only in memory and can
+  be reconstructed from the capture and saved projection.
+
+One preliminary full run exposed a token-metadata bug: dynamic action-token rows
+were repeated once per policy call, which selected the same 50 tensor positions
+multiple times. That artifact was rejected, the loader now deduplicates exact
+token indices, and a regression test covers this case. The accepted artifacts
+contain exactly token positions 0 through 49.
+
+## July 21, 2026 Matched-Scene Visual Localization Study
+
+Purpose: test a narrower question than whole-scene decoding. If one object is
+moved between two otherwise similar initial scenes, do the visual patch tokens
+that cover the object's old and new locations change more than the other visual
+patch tokens?
+
+- Accepted artifact:
+  `matched_scene_localization_study-pi0.5-broad-1000-matched-initial-scene-visual-localization-study-random-ranking-v2-e71204f77e`
+- This is a matched-scene comparison, not a trained probe. It directly compares
+  the saved token vectors for the two scenes.
+- Scenes are matched by benchmark environment, task, prompt, and split. A pair
+  is kept when exactly one object moves more than 1 cm, every other object moves
+  at most 1 cm, and the initial end-effector position changes by at most 1 cm.
+- The target image region is the union of the moved object's old and new
+  simulator-derived bounding boxes in the main camera.
+- The score for a visual patch is the size of the change in its token vector,
+  divided by the average size of that vector in the two scenes.
+- Sources are the image features entering the language model and visual prefix
+  layers 0, 4, 8, 12, and 17. Raw pixel change is a positive control. A visible
+  stationary object's image region is a negative control.
+- The final set contains 34 pairs from 22 scene groups: 15 train pairs from 11
+  scene groups, 10 validation pairs from 3 scene groups, and 9 final-test pairs
+  from 8 scene groups. Layer 17 was selected using validation only.
+
+Final-test results:
+
+| Source | Target-region average precision | Expected random-ranking AP | Improvement over random | 95% scene interval | ROC AUC | Top-region recall |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Raw pixels | 0.483 | 0.105 | +0.379 | +0.235 to +0.529 | 0.854 | 0.443 |
+| Image features entering the language model | 0.103 | 0.105 | -0.002 | -0.036 to +0.035 | 0.419 | 0.061 |
+| Visual prefix layer 17, selected on validation | 0.102 | 0.105 | -0.003 | -0.022 to +0.017 | 0.453 | 0.061 |
+
+Each scene group receives equal weight in the averages and confidence
+intervals, so scenes that happen to produce more matched pairs do not dominate
+the result. The confidence interval describes the range supported by resampling
+the available scene groups; an interval crossing zero does not establish an
+improvement over random patch ranking.
+
+Interpretation:
+
+- The positive control is strong. Raw image change reliably points to the moved
+  object, so the scene matching, camera alignment, patch grid, and object boxes
+  are usable for this question.
+- The selected model layer is 0.003 average-precision points below the exact
+  random-ranking expectation on held-out tasks, and its interval crosses zero.
+  Its ROC AUC is below 0.5,
+  and it ranks the moved-object region slightly worse than the stationary-object
+  control region. This study therefore does not show reliable spatial
+  localization from simple token-change magnitude.
+- The conclusion is deliberately narrow. It does not show that PI0.5 lacks
+  object identity or position information. The captured image features have
+  already passed through a vision encoder that can mix information across
+  patches, and the VLM layers can mix it again. Object information may therefore
+  be distributed across tokens, available only after an object-specific query,
+  or encoded as a relation rather than as a locally large change.
+- Validation is small and dominated by one moved object (`basket_1`), so layer
+  selection is uncertain. The held-out result covers eight scene groups and
+  seven moved-object identities, but it is still an exploratory sample rather
+  than a definitive negative result.
+
+Runtime and storage:
+
+- The accepted run took about 30 seconds. It reused the saved captures and did
+  not load PI0.5 or run the simulator.
+- The artifact saves the exact matched trace pairs, source tensor descriptions,
+  camera patch boxes, all per-patch scores, per-pair metrics, scene-weighted
+  summaries, split rules, and source-trace fingerprints. It references the
+  original activation tensors instead of copying them.
+- Two earlier artifacts are retained for audit history and marked superseded.
+  One mixed pair-weighted headline averages with scene-weighted intervals. The
+  next used target-patch prevalence as if it were expected average precision
+  under a random ranking. Regression tests now cover equal scene weighting and
+  the exact finite-ranking expectation.
+
+The next useful experiment is an object-conditioned visual readout: provide an
+object identity or object query and test whether a low-capacity decoder can
+select that object's patch region or recover its XYZ position. That tests
+distributed object information without assuming the patch that changes most
+must be the patch containing the object.
 
 ## June 17, 2026 Stronger-Baseline Round
 
