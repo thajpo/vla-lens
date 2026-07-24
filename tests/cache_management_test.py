@@ -6,7 +6,9 @@ import os
 import time
 from pathlib import Path
 
+import pandas as pd
 import pytest
+import zarr
 
 from vla_lens.artifacts import LensArtifact
 from vla_lens.cache import CacheBuildMetadata, CacheManager
@@ -210,6 +212,56 @@ def test_feature_scientific_key_ignores_source_timestamps_but_freshness_does_not
     assert first.cache_built
     assert second.cache_built
     assert len(list((dataset.cache_dir() / "features").glob(key))) == 1
+
+
+def test_feature_selector_fails_before_caching_when_no_model_sites_match(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "dataset", num_episodes=1, timesteps=4)
+    query = ActivationQuery(module="model.site.that.does.not.exist")
+
+    with pytest.raises(ValueError, match="matched no model sites"):
+        dataset.select_model_sites(query).materialize(cache=True)
+
+    assert not (dataset.root / ".vla_cache" / "features").exists()
+
+
+def test_feature_selector_rejects_an_existing_empty_cache(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "dataset", num_episodes=1, timesteps=4)
+    query = ActivationQuery(
+        module="backbone.layers.*.resid",
+        layers=[0],
+        token_kind="image_patch",
+    )
+    view = dataset.select_model_sites(query)
+    sites = view._matching_model_sites()
+    manager = CacheManager(dataset.cache_dir())
+    key = view.cache_key()
+
+    def build_empty(path: Path) -> CacheBuildMetadata:
+        zarr.open_array(
+            str(path / "X.zarr"),
+            mode="w",
+            shape=(0, 0),
+            chunks=(1, 1),
+            dtype="float32",
+        )
+        pd.DataFrame().to_parquet(path / "rows.parquet", index=False)
+        return CacheBuildMetadata(shape=(0, 0), dtype="float32", row_count=0)
+
+    manager.get_or_build(
+        namespace="features",
+        key=key,
+        recipe=view._cache_recipe(sites),
+        source_fingerprint=view._source_fingerprint(sites),
+        builder=build_empty,
+    )
+    for bundle in dataset.bundles:
+        bundle.__dict__["tokens"] = bundle.tokens.assign(token_kind="not_image_patch")
+
+    with pytest.raises(ValueError, match="produced no feature rows"):
+        view.materialize(cache=True)
+
+    empty = zarr.open_array(str(manager.entry_path("features", key) / "X.zarr"), mode="r")
+    assert empty.shape == (0, 0)
 
 
 def test_cache_status_does_not_open_or_scan_dataset(tmp_path, monkeypatch, capsys):
