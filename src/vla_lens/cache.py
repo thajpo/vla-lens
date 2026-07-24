@@ -39,6 +39,7 @@ class CacheBuildMetadata:
     axes: tuple[str, ...] = ()
     row_count: int | None = None
     rebuild: Mapping[str, Any] = field(default_factory=dict)
+    content_fingerprint: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -148,6 +149,7 @@ class CacheManager:
         source_fingerprint: str,
         builder: Callable[[Path], CacheBuildMetadata | None],
         validator: Callable[[Path], bool] | None = None,
+        legacy_metadata: Callable[[Path], CacheBuildMetadata] | None = None,
         timeout_s: float = 300.0,
     ) -> tuple[Path, CacheEntryManifest, bool]:
         """Return a valid entry, building it exactly once across processes.
@@ -171,6 +173,37 @@ class CacheManager:
                 touched = self._touch(entry, manifest)
                 return entry, touched, False
 
+            # Older cache writers used the same namespace/key directories but
+            # did not write a CacheManager manifest. Adopt a complete legacy
+            # entry under the shared lock instead of rebuilding expensive data.
+            if (
+                previous_manifest is None
+                and legacy_metadata is not None
+                and entry.exists()
+                and (validator is None or validator(entry))
+            ):
+                metadata = legacy_metadata(entry)
+                now = _utc_now()
+                manifest = CacheEntryManifest(
+                    namespace=namespace,
+                    key=key,
+                    scientific_fingerprint=scientific_fingerprint,
+                    source_fingerprint=source_fingerprint,
+                    content_fingerprint=metadata.content_fingerprint
+                    or _directory_fingerprint(entry),
+                    recipe=dict(recipe),
+                    size_bytes=_directory_size(entry),
+                    created_utc=now,
+                    last_accessed_utc=now,
+                    shape=metadata.shape,
+                    dtype=metadata.dtype,
+                    axes=metadata.axes,
+                    row_count=metadata.row_count,
+                    rebuild=dict(metadata.rebuild),
+                )
+                _atomic_write_json(entry / CACHE_MANIFEST, manifest.to_dict())
+                return entry, manifest, False
+
             entry.parent.mkdir(parents=True, exist_ok=True)
             temporary = entry.parent / f".{entry.name}.tmp-{os.getpid()}-{uuid.uuid4().hex}"
             temporary.mkdir()
@@ -186,7 +219,8 @@ class CacheManager:
                     key=key,
                     scientific_fingerprint=scientific_fingerprint,
                     source_fingerprint=source_fingerprint,
-                    content_fingerprint=_directory_fingerprint(temporary),
+                    content_fingerprint=metadata.content_fingerprint
+                    or _directory_fingerprint(temporary),
                     recipe=dict(recipe),
                     size_bytes=_directory_size(temporary),
                     created_utc=now,

@@ -1,9 +1,15 @@
 from __future__ import annotations
 
+import multiprocessing
+import os
+import time
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 
 from vla_lens import create_synthetic_trace_dataset
+from vla_lens.cache import CACHE_MANIFEST
 from vla_lens.probes.scene_map_study import SceneMapTargets
 from vla_lens.probes.structured_scene_models import (
     FittedSceneRepresentation,
@@ -13,6 +19,7 @@ from vla_lens.probes.structured_scene_models import (
     fit_structured_scene_representations,
 )
 from vla_lens.probes.token_representations import (
+    _save_compressed_token_cache,
     _selected_token_metadata,
     build_layer_token_readouts,
     read_compressed_token_layers,
@@ -26,6 +33,211 @@ from vla_lens.probes.token_scene_study import (
     _task_keys,
     _weighted_token_importance,
 )
+from vla_lens.traces import TraceDataset
+
+_SHARED_CACHE_FEATURE = {
+    "module": "action_head.layers.*.resid",
+    "tensor_type": "resid",
+    "token_kind": "action",
+    "layers": [0, 1],
+    "timesteps": "all",
+    "dtype": "float32",
+}
+_SHARED_CACHE_SPLIT = {
+    "kind": "existing",
+    "column": "split",
+    "train_value": "train",
+    "selection_value": "test",
+    "test_value": "test",
+}
+_SHARED_CACHE_SETTINGS = {
+    "readout_dim": 2,
+    "token_channel_dim": 2,
+    "channel_sample_count": 32,
+    "projection_fit_rows": 16,
+    "io_workers": 1,
+    "cache": True,
+}
+
+
+def _token_representation_cache_worker(
+    dataset_root: str,
+    marker_root: str,
+    start: multiprocessing.synchronize.Event,
+    results: multiprocessing.queues.Queue,
+) -> None:
+    import vla_lens.probes.token_representations as token_representations
+
+    original = token_representations._sample_channel_vectors
+
+    def record_build(*args, **kwargs):
+        Path(marker_root, str(os.getpid())).write_text("built", encoding="utf-8")
+        time.sleep(0.15)
+        return original(*args, **kwargs)
+
+    token_representations._sample_channel_vectors = record_build
+    dataset = TraceDataset.open(dataset_root)
+    start.wait()
+    readouts = build_layer_token_readouts(
+        dataset,
+        _SHARED_CACHE_FEATURE,
+        _SHARED_CACHE_SPLIT,
+        **_SHARED_CACHE_SETTINGS,
+    )
+    results.put(readouts.cache_key)
+
+
+def _compressed_token_cache_worker(
+    dataset_root: str,
+    marker_root: str,
+    start: multiprocessing.synchronize.Event,
+    results: multiprocessing.queues.Queue,
+) -> None:
+    import vla_lens.probes.token_representations as token_representations
+
+    dataset = TraceDataset.open(dataset_root)
+    readouts = build_layer_token_readouts(
+        dataset,
+        _SHARED_CACHE_FEATURE,
+        _SHARED_CACHE_SPLIT,
+        **_SHARED_CACHE_SETTINGS,
+    )
+    original = token_representations._read_and_compress
+
+    def record_build(*args, **kwargs):
+        Path(marker_root, str(os.getpid())).write_text("built", encoding="utf-8")
+        time.sleep(0.15)
+        return original(*args, **kwargs)
+
+    token_representations._read_and_compress = record_build
+    start.wait()
+    compact = read_compressed_token_layers(
+        dataset,
+        readouts.rows,
+        readouts.source_sites,
+        readouts.token_metadata,
+        layers=readouts.layers,
+        channel_projection=readouts.channel_projection,
+        io_workers=1,
+    )
+    results.put((compact.cache_key, compact.cache_hit))
+
+
+def _join_processes(processes: list[multiprocessing.Process]) -> None:
+    for process in processes:
+        process.join(timeout=20)
+        assert process.exitcode == 0
+
+
+def test_token_representation_cache_builds_once_across_processes(tmp_path):
+    dataset = create_synthetic_trace_dataset(
+        tmp_path / "dataset", num_episodes=4, timesteps=8, layers=2
+    )
+    markers = tmp_path / "markers"
+    markers.mkdir()
+    context = multiprocessing.get_context("fork")
+    start = context.Event()
+    results = context.Queue()
+    processes = [
+        context.Process(
+            target=_token_representation_cache_worker,
+            args=(str(dataset.root), str(markers), start, results),
+        )
+        for _ in range(2)
+    ]
+
+    for process in processes:
+        process.start()
+    start.set()
+    _join_processes(processes)
+
+    keys = [results.get(timeout=1) for _ in processes]
+    assert len(set(keys)) == 1
+    assert len(list(markers.iterdir())) == 1
+    manifest = dataset.cache_dir() / "token_representations" / keys[0] / CACHE_MANIFEST
+    assert manifest.is_file()
+
+
+def test_compressed_token_cache_builds_once_across_processes(tmp_path):
+    dataset = create_synthetic_trace_dataset(
+        tmp_path / "dataset", num_episodes=4, timesteps=8, layers=2
+    )
+    build_layer_token_readouts(
+        dataset,
+        _SHARED_CACHE_FEATURE,
+        _SHARED_CACHE_SPLIT,
+        **_SHARED_CACHE_SETTINGS,
+    )
+    markers = tmp_path / "markers"
+    markers.mkdir()
+    context = multiprocessing.get_context("fork")
+    start = context.Event()
+    results = context.Queue()
+    processes = [
+        context.Process(
+            target=_compressed_token_cache_worker,
+            args=(str(dataset.root), str(markers), start, results),
+        )
+        for _ in range(2)
+    ]
+
+    for process in processes:
+        process.start()
+    start.set()
+    _join_processes(processes)
+
+    outcomes = [results.get(timeout=1) for _ in processes]
+    assert len({key for key, _ in outcomes}) == 1
+    assert sorted(hit for _, hit in outcomes) == [False, True]
+    assert len(list(markers.iterdir())) == 1
+    key = outcomes[0][0]
+    manifest = dataset.cache_dir() / "compressed_token_layers" / key / CACHE_MANIFEST
+    assert manifest.is_file()
+
+
+def test_compressed_token_cache_adopts_a_valid_legacy_entry(tmp_path):
+    dataset = create_synthetic_trace_dataset(
+        tmp_path / "dataset", num_episodes=4, timesteps=8, layers=2
+    )
+    readouts = build_layer_token_readouts(
+        dataset,
+        _SHARED_CACHE_FEATURE,
+        _SHARED_CACHE_SPLIT,
+        **_SHARED_CACHE_SETTINGS,
+    )
+    uncached = read_compressed_token_layers(
+        dataset,
+        readouts.rows,
+        readouts.source_sites,
+        readouts.token_metadata,
+        layers=readouts.layers,
+        channel_projection=readouts.channel_projection,
+        io_workers=1,
+        cache=False,
+    )
+    legacy_path = dataset.cache_dir() / "compressed_token_layers" / uncached.cache_key
+    _save_compressed_token_cache(
+        legacy_path,
+        uncached.cache_key,
+        readouts.layers,
+        uncached.values,
+    )
+    assert not (legacy_path / CACHE_MANIFEST).exists()
+
+    adopted = read_compressed_token_layers(
+        dataset,
+        readouts.rows,
+        readouts.source_sites,
+        readouts.token_metadata,
+        layers=readouts.layers,
+        channel_projection=readouts.channel_projection,
+        io_workers=1,
+        cache=True,
+    )
+
+    assert adopted.cache_hit
+    np.testing.assert_array_equal(adopted.values, uncached.values)
+    assert (legacy_path / CACHE_MANIFEST).is_file()
 
 
 def test_task_keys_do_not_merge_same_numeric_id_across_benchmarks():

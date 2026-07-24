@@ -80,16 +80,23 @@ class FeatureView:
     def materialize(self, *, cache: bool = True, mmap: bool = False) -> FeatureMatrix:
         del mmap
         model_sites = self._matching_model_sites()
+        if model_sites.empty:
+            raise ValueError(
+                "Activation selector matched no model sites. Check its episode, module, "
+                f"layer, tensor, and token filters. Selector: {self.selector.to_dict()}"
+            )
         recipe = self._cache_recipe(model_sites)
         key = fingerprint_payload(recipe).removeprefix("sha256:")[:20]
         if not cache:
             X, rows = self._compute(model_sites=model_sites)
+            self._require_feature_rows(rows)
             return FeatureMatrix(X=X, rows=rows, selector=self.selector, cache_key=key)
 
         manager = CacheManager(self.dataset.cache_dir())
 
         def build(cache_path: Path) -> CacheBuildMetadata:
             X, rows = self._compute(model_sites=model_sites)
+            self._require_feature_rows(rows)
             x_path = cache_path / "X.zarr"
             store = zarr.open_array(
                 str(x_path),
@@ -132,6 +139,14 @@ class FeatureView:
                     cache_built=built_any,
                 )
         raise RuntimeError(f"Feature cache {key} disappeared while it was being read")
+
+    def _require_feature_rows(self, rows: pd.DataFrame) -> None:
+        if rows.empty:
+            raise ValueError(
+                "Activation selector matched model sites but produced no feature rows. "
+                "Check its timestep, policy-call, generation-step, and token filters. "
+                f"Selector: {self.selector.to_dict()}"
+            )
 
     def cache_key(self) -> str:
         model_sites = self._matching_model_sites()
@@ -676,7 +691,7 @@ def _valid_feature_cache(path: Path) -> bool:
         array = zarr.open_array(str(x_path), mode="r")
     except (OSError, ValueError, KeyError):
         return False
-    return int(array.shape[0]) == len(rows)
+    return len(array.shape) == 2 and int(array.shape[0]) == len(rows) and len(rows) > 0
 
 
 def _path_signature(path: Path) -> dict[str, int | str]:

@@ -14,7 +14,7 @@ import time
 import warnings
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 import numpy as np
 import pandas as pd
@@ -25,11 +25,13 @@ from sklearn.neural_network import MLPRegressor
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 from vla_lens.artifacts import LensArtifact, make_artifact_id
+from vla_lens.cache import CacheBuildMetadata, CacheManager, fingerprint_payload
 from vla_lens.probes.workflow_prepare import _attach_episode_metadata
 from vla_lens.selectors import ActivationQuery
 from vla_lens.traces import TraceDataset
 
 GEOMETRY_STUDY_SCHEMA_VERSION = 4
+LONG_CACHE_BUILD_TIMEOUT_S = 2 * 60 * 60
 GEOMETRY_TARGET_NAMES = (
     "position_world",
     "position_initial_delta",
@@ -239,9 +241,19 @@ def geometry_target_table(
     keys[object_column] = keys[object_column].astype(str)
     keys = keys.drop_duplicates().sort_values(["trace_id", "timestep", object_column])
     key = _target_cache_key(keys, object_column)
-    cache_path = dataset.cache_dir() / "geometry_targets" / key / "targets.parquet"
-    if cache and cache_path.exists():
-        return pd.read_parquet(cache_path)
+    if cache:
+        return _managed_parquet_cache(
+            dataset,
+            namespace="geometry_targets",
+            key=key,
+            filename="targets.parquet",
+            builder=lambda: geometry_target_table(
+                dataset,
+                rows,
+                object_column=object_column,
+                cache=False,
+            ),
+        )
 
     records: list[dict[str, Any]] = []
     for trace_id, trace_rows in keys.groupby("trace_id", sort=False):
@@ -344,9 +356,6 @@ def geometry_target_table(
                 }
             )
     frame = pd.DataFrame.from_records(records)
-    if cache:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        frame.to_parquet(cache_path, index=False)
     return frame
 
 
@@ -363,20 +372,80 @@ def _geometry_metadata_rows(
     ]
     source_keys = rows[key_columns].drop_duplicates().reset_index(drop=True)
     key = _metadata_cache_key(dataset, source_keys)
-    cache_path = dataset.cache_dir() / "geometry_base_metadata" / key / "rows.parquet"
-    if cache and cache_path.exists():
-        attached = pd.read_parquet(cache_path)
+    if cache:
+        attached = _managed_parquet_cache(
+            dataset,
+            namespace="geometry_base_metadata",
+            key=key,
+            filename="rows.parquet",
+            builder=lambda: _attach_episode_metadata(source_keys, dataset),
+        )
     else:
         attached = _attach_episode_metadata(source_keys, dataset)
-        if cache:
-            cache_path.parent.mkdir(parents=True, exist_ok=True)
-            attached.to_parquet(cache_path, index=False)
     overlap = [
         column for column in attached if column in rows and column not in set(key_columns)
     ]
     if overlap:
         attached = attached.drop(columns=overlap)
     return rows.merge(attached, on=key_columns, how="left", validate="many_to_one")
+
+
+def _managed_parquet_cache(
+    dataset: TraceDataset,
+    *,
+    namespace: str,
+    key: str,
+    filename: str,
+    builder: Callable[[], pd.DataFrame],
+) -> pd.DataFrame:
+    """Build one small derived table once and adopt valid pre-manager entries."""
+
+    manager = CacheManager(dataset.cache_dir())
+    recipe = {
+        "schema_version": GEOMETRY_STUDY_SCHEMA_VERSION,
+        "kind": namespace,
+        "cache_key": key,
+        "filename": filename,
+    }
+
+    def valid(path: Path) -> bool:
+        try:
+            pd.read_parquet(path / filename)
+        except (OSError, ValueError, KeyError):
+            return False
+        return True
+
+    def metadata(path: Path) -> CacheBuildMetadata:
+        frame = pd.read_parquet(path / filename)
+        return CacheBuildMetadata(
+            shape=tuple(int(value) for value in frame.shape),
+            axes=("row", "column"),
+            row_count=int(len(frame)),
+            rebuild={"kind": namespace, "cache_key": key},
+        )
+
+    def build(path: Path) -> CacheBuildMetadata:
+        frame = builder()
+        frame.to_parquet(path / filename, index=False)
+        return CacheBuildMetadata(
+            shape=tuple(int(value) for value in frame.shape),
+            axes=("row", "column"),
+            row_count=int(len(frame)),
+            rebuild={"kind": namespace, "cache_key": key},
+        )
+
+    cache_path, _, _ = manager.get_or_build(
+        namespace=namespace,
+        key=key,
+        recipe=recipe,
+        source_fingerprint=fingerprint_payload({"cache_key": key}),
+        builder=build,
+        validator=valid,
+        legacy_metadata=metadata,
+        timeout_s=LONG_CACHE_BUILD_TIMEOUT_S,
+    )
+    with manager.lock_for(namespace, key):
+        return pd.read_parquet(cache_path / filename)
 
 
 def _apply_split_contract(rows: pd.DataFrame, split: Mapping[str, Any]) -> pd.DataFrame:

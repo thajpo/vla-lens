@@ -24,6 +24,7 @@ import zarr
 from sklearn.decomposition import PCA
 from sklearn.preprocessing import StandardScaler
 
+from vla_lens.cache import CacheBuildMetadata, CacheManager, fingerprint_payload
 from vla_lens.probes.geometry_study import (
     _activation_query,
     _apply_split_contract,
@@ -45,6 +46,7 @@ from vla_lens.traces import TraceBundle, TraceDataset
 
 TOKEN_REPRESENTATION_CACHE_SCHEMA_VERSION = 5
 COMPRESSED_TOKEN_LAYER_CACHE_SCHEMA_VERSION = 1
+LONG_CACHE_BUILD_TIMEOUT_S = 2 * 60 * 60
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,25 +143,69 @@ def read_compressed_token_layers(
         channel_projection,
         generation_step,
     )
-    cache_path = dataset.cache_dir() / "compressed_token_layers" / cache_key
-    if cache:
-        cached = _load_compressed_token_cache(cache_path, cache_key, selected_layers)
-        if cached is not None:
-            return CompressedTokenLayers(cached, selected_layers, cache_key, True)
+    if not cache:
+        _, compressed = _read_and_compress(
+            dataset,
+            rows,
+            selected_sites,
+            selected_layers,
+            token_indices,
+            generation_step=generation_step,
+            channel_projection=channel_projection,
+            io_workers=io_workers,
+        )
+        return CompressedTokenLayers(compressed, selected_layers, cache_key, False)
 
-    _, compressed = _read_and_compress(
-        dataset,
-        rows,
-        selected_sites,
-        selected_layers,
-        token_indices,
-        generation_step=generation_step,
-        channel_projection=channel_projection,
-        io_workers=io_workers,
-    )
-    if cache:
+    manager = CacheManager(dataset.cache_dir())
+    recipe = {
+        "schema_version": COMPRESSED_TOKEN_LAYER_CACHE_SCHEMA_VERSION,
+        "kind": "compressed_token_layers",
+        "cache_key": cache_key,
+        "layers": list(selected_layers),
+    }
+    built_values: list[np.ndarray] = []
+
+    def build(cache_path: Path) -> CacheBuildMetadata:
+        _, compressed = _read_and_compress(
+            dataset,
+            rows,
+            selected_sites,
+            selected_layers,
+            token_indices,
+            generation_step=generation_step,
+            channel_projection=channel_projection,
+            io_workers=io_workers,
+        )
         _save_compressed_token_cache(cache_path, cache_key, selected_layers, compressed)
-    return CompressedTokenLayers(compressed, selected_layers, cache_key, False)
+        built_values.append(compressed)
+        return _compressed_token_cache_metadata(cache_path, cache_key, selected_layers)
+
+    for _attempt in range(2):
+        cache_path, _, built = manager.get_or_build(
+            namespace="compressed_token_layers",
+            key=cache_key,
+            recipe=recipe,
+            source_fingerprint=fingerprint_payload({"cache_key": cache_key}),
+            builder=build,
+            validator=lambda path: _valid_compressed_token_cache(
+                path, cache_key, selected_layers
+            ),
+            legacy_metadata=lambda path: _compressed_token_cache_metadata(
+                path, cache_key, selected_layers
+            ),
+            timeout_s=LONG_CACHE_BUILD_TIMEOUT_S,
+        )
+        if built:
+            return CompressedTokenLayers(
+                built_values[0], selected_layers, cache_key, False
+            )
+        with manager.lock_for("compressed_token_layers", cache_key):
+            cached = _load_compressed_token_cache(
+                cache_path, cache_key, selected_layers
+            )
+            if cached is not None:
+                return CompressedTokenLayers(cached, selected_layers, cache_key, True)
+    raise RuntimeError(f"Compressed token cache {cache_key} disappeared while being read")
 
 
 def read_compressed_token_layer(
@@ -274,70 +320,101 @@ def build_layer_token_readouts(
         io_workers=io_workers,
         token_topology=topology_key,
     )
-    cache_path = dataset.cache_dir() / "token_representations" / cache_key
-    if cache:
-        cached = _load_cache(cache_path, cache_key)
-        if cached is not None:
-            return cached
+    def compute() -> LayerTokenReadouts:
+        channel_samples = _sample_channel_vectors(
+            dataset,
+            rows,
+            source_sites,
+            layers,
+            token_indices,
+            generation_step=query.generation_step,
+            train_mask=train_mask,
+            sample_count=channel_sample_count,
+            io_workers=io_workers,
+        )
+        channel_projection = _fit_projection(
+            channel_samples,
+            min(token_channel_dim, channel_samples.shape[1]),
+            random_state=0,
+        )
+        pooled_raw, compressed_tokens = _read_and_compress(
+            dataset,
+            rows,
+            source_sites,
+            layers,
+            token_indices,
+            generation_step=query.generation_step,
+            channel_projection=channel_projection,
+            io_workers=io_workers,
+        )
+        token_count = int(compressed_tokens.shape[2])
+        pooled_projection, pooled = _fit_layer_projection(
+            pooled_raw,
+            train_mask,
+            readout_dim,
+            projection_fit_rows,
+            random_state=1,
+        )
+        tokenwise_projection, tokenwise = _fit_layer_projection(
+            compressed_tokens.reshape(len(rows), len(layers), -1),
+            train_mask,
+            readout_dim,
+            projection_fit_rows,
+            random_state=2,
+        )
+        return LayerTokenReadouts(
+            rows=rows,
+            source_sites=source_sites,
+            token_metadata=token_metadata,
+            layers=layers,
+            pooled=pooled,
+            tokenwise=tokenwise,
+            channel_projection=channel_projection,
+            pooled_projection=pooled_projection,
+            tokenwise_projection=tokenwise_projection,
+            token_count=token_count,
+            channel_dim=channel_projection.output_dim,
+            cache_key=cache_key,
+        )
 
-    channel_samples = _sample_channel_vectors(
-        dataset,
-        rows,
-        source_sites,
-        layers,
-        token_indices,
-        generation_step=query.generation_step,
-        train_mask=train_mask,
-        sample_count=channel_sample_count,
-        io_workers=io_workers,
-    )
-    channel_projection = _fit_projection(
-        channel_samples,
-        min(token_channel_dim, channel_samples.shape[1]),
-        random_state=0,
-    )
-    pooled_raw, compressed_tokens = _read_and_compress(
-        dataset,
-        rows,
-        source_sites,
-        layers,
-        token_indices,
-        generation_step=query.generation_step,
-        channel_projection=channel_projection,
-        io_workers=io_workers,
-    )
-    token_count = int(compressed_tokens.shape[2])
-    pooled_projection, pooled = _fit_layer_projection(
-        pooled_raw,
-        train_mask,
-        readout_dim,
-        projection_fit_rows,
-        random_state=1,
-    )
-    tokenwise_projection, tokenwise = _fit_layer_projection(
-        compressed_tokens.reshape(len(rows), len(layers), -1),
-        train_mask,
-        readout_dim,
-        projection_fit_rows,
-        random_state=2,
-    )
-    result = LayerTokenReadouts(
-        rows=rows,
-        source_sites=source_sites,
-        token_metadata=token_metadata,
-        layers=layers,
-        pooled=pooled,
-        tokenwise=tokenwise,
-        channel_projection=channel_projection,
-        pooled_projection=pooled_projection,
-        tokenwise_projection=tokenwise_projection,
-        token_count=token_count,
-        channel_dim=channel_projection.output_dim,
-        cache_key=cache_key,
-    )
-    if cache:
+    if not cache:
+        return compute()
+
+    manager = CacheManager(dataset.cache_dir())
+    recipe = {
+        "schema_version": TOKEN_REPRESENTATION_CACHE_SCHEMA_VERSION,
+        "kind": "token_representations",
+        "cache_key": cache_key,
+        "layers": list(layers),
+    }
+    built_results: list[LayerTokenReadouts] = []
+
+    def build(cache_path: Path) -> CacheBuildMetadata:
+        result = compute()
         _save_cache(cache_path, result)
-    return result
+        built_results.append(result)
+        return _token_representation_cache_metadata(cache_path, cache_key)
+
+    for _attempt in range(2):
+        cache_path, _, built = manager.get_or_build(
+            namespace="token_representations",
+            key=cache_key,
+            recipe=recipe,
+            source_fingerprint=fingerprint_payload({"cache_key": cache_key}),
+            builder=build,
+            validator=lambda path: _valid_token_representation_cache(path, cache_key),
+            legacy_metadata=lambda path: _token_representation_cache_metadata(
+                path, cache_key
+            ),
+            timeout_s=LONG_CACHE_BUILD_TIMEOUT_S,
+        )
+        if built:
+            return built_results[0]
+        with manager.lock_for("token_representations", cache_key):
+            cached = _load_cache(cache_path, cache_key)
+            if cached is not None:
+                return cached
+    raise RuntimeError(f"Token representation cache {cache_key} disappeared while being read")
 
 
 def _token_site_rows(sites: pd.DataFrame) -> pd.DataFrame:
@@ -902,21 +979,65 @@ def _load_compressed_token_cache(
     cache_key: str,
     layers: Sequence[int],
 ) -> np.ndarray | None:
+    if not _valid_compressed_token_cache(path, cache_key, layers):
+        return None
+    try:
+        return np.asarray(zarr.open_array(str(path / "tokens.zarr"), mode="r"))
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return None
+
+
+def _valid_compressed_token_cache(
+    path: Path,
+    cache_key: str,
+    layers: Sequence[int],
+) -> bool:
     metadata_path = path / "metadata.json"
     array_path = path / "tokens.zarr"
     if not metadata_path.exists() or not array_path.exists():
-        return None
-    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        return False
+    try:
+        metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+        array = zarr.open_array(str(array_path), mode="r")
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return False
     if (
         metadata.get("schema_version") != COMPRESSED_TOKEN_LAYER_CACHE_SCHEMA_VERSION
         or metadata.get("cache_key") != cache_key
         or metadata.get("layers") != [int(value) for value in layers]
     ):
-        return None
-    values = np.asarray(zarr.open_array(str(array_path), mode="r"))
-    if list(values.shape) != metadata.get("shape"):
-        return None
-    return values
+        return False
+    shape = tuple(int(value) for value in array.shape)
+    return (
+        len(shape) == 4
+        and all(value > 0 for value in shape)
+        and list(shape) == metadata.get("shape")
+        and shape[1] == len(layers)
+    )
+
+
+def _compressed_token_cache_metadata(
+    path: Path,
+    cache_key: str,
+    layers: Sequence[int],
+) -> CacheBuildMetadata:
+    metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
+    shape = tuple(int(value) for value in metadata["shape"])
+    return CacheBuildMetadata(
+        shape=shape,
+        dtype="float32",
+        axes=("sample", "layer", "token", "channel"),
+        row_count=shape[0],
+        rebuild={"kind": "compressed_token_layers", "cache_key": cache_key},
+        content_fingerprint=fingerprint_payload(
+            {
+                "kind": "compressed_token_layers",
+                "cache_key": cache_key,
+                "layers": [int(value) for value in layers],
+                "shape": list(shape),
+            }
+        ),
+    )
 
 
 def _save_cache(path: Path, result: LayerTokenReadouts) -> None:
@@ -958,28 +1079,24 @@ def _save_cache(path: Path, result: LayerTokenReadouts) -> None:
 
 
 def _load_cache(path: Path, cache_key: str) -> LayerTokenReadouts | None:
-    required = [
-        path / "metadata.json",
-        path / "rows.parquet",
-        path / "source_sites.parquet",
-        path / "token_metadata.parquet",
-        path / "readouts.zarr",
-        path / "projections.npz",
-    ]
-    if not all(value.exists() for value in required):
+    if not _valid_token_representation_cache(path, cache_key):
         return None
-    metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
-    if metadata.get("cache_key") != cache_key:
+    try:
+        metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
+        readouts = np.asarray(zarr.open_array(str(path / "readouts.zarr"), mode="r"))
+        with np.load(path / "projections.npz") as arrays:
+            channel = _projection_from_arrays(arrays, "channel")
+            pooled = _projection_from_arrays(arrays, "pooled")
+            tokenwise = _projection_from_arrays(arrays, "tokenwise")
+        rows = pd.read_parquet(path / "rows.parquet")
+        source_sites = pd.read_parquet(path / "source_sites.parquet")
+        token_metadata = pd.read_parquet(path / "token_metadata.parquet")
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
         return None
-    readouts = np.asarray(zarr.open_array(str(path / "readouts.zarr"), mode="r"))
-    with np.load(path / "projections.npz") as arrays:
-        channel = _projection_from_arrays(arrays, "channel")
-        pooled = _projection_from_arrays(arrays, "pooled")
-        tokenwise = _projection_from_arrays(arrays, "tokenwise")
     return LayerTokenReadouts(
-        rows=pd.read_parquet(path / "rows.parquet"),
-        source_sites=pd.read_parquet(path / "source_sites.parquet"),
-        token_metadata=pd.read_parquet(path / "token_metadata.parquet"),
+        rows=rows,
+        source_sites=source_sites,
+        token_metadata=token_metadata,
         layers=tuple(int(value) for value in metadata["layers"]),
         pooled=readouts[0],
         tokenwise=readouts[1],
@@ -989,6 +1106,80 @@ def _load_cache(path: Path, cache_key: str) -> LayerTokenReadouts | None:
         token_count=int(metadata["token_count"]),
         channel_dim=int(metadata["channel_dim"]),
         cache_key=cache_key,
+    )
+
+
+def _valid_token_representation_cache(path: Path, cache_key: str) -> bool:
+    required = [
+        path / "metadata.json",
+        path / "rows.parquet",
+        path / "source_sites.parquet",
+        path / "token_metadata.parquet",
+        path / "readouts.zarr",
+        path / "projections.npz",
+    ]
+    if not all(value.exists() for value in required):
+        return False
+    try:
+        metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
+        readouts = zarr.open_array(str(path / "readouts.zarr"), mode="r")
+        rows = pd.read_parquet(path / "rows.parquet", columns=["trace_id"])
+        source_sites = pd.read_parquet(path / "source_sites.parquet", columns=["trace_id"])
+        token_metadata = pd.read_parquet(
+            path / "token_metadata.parquet", columns=["token_index"]
+        )
+        with np.load(path / "projections.npz") as arrays:
+            required_arrays = {
+                f"{prefix}_{suffix}"
+                for prefix in ("channel", "pooled", "tokenwise")
+                for suffix in (
+                    "input_center",
+                    "input_scale",
+                    "pca_center",
+                    "components",
+                    "explained_variance_ratio",
+                )
+            }
+            if not required_arrays.issubset(arrays.files):
+                return False
+    except (OSError, ValueError, KeyError, json.JSONDecodeError):
+        return False
+    shape = tuple(int(value) for value in readouts.shape)
+    layers = tuple(int(value) for value in metadata.get("layers") or ())
+    return (
+        metadata.get("schema_version") == TOKEN_REPRESENTATION_CACHE_SCHEMA_VERSION
+        and metadata.get("cache_key") == cache_key
+        and len(shape) == 4
+        and shape[0] == 2
+        and shape[1] == len(rows) > 0
+        and shape[2] == len(layers) > 0
+        and shape[3] > 0
+        and len(source_sites) > 0
+        and len(token_metadata) == int(metadata.get("token_count", -1)) > 0
+        and int(metadata.get("channel_dim", 0)) > 0
+    )
+
+
+def _token_representation_cache_metadata(
+    path: Path, cache_key: str
+) -> CacheBuildMetadata:
+    metadata = json.loads((path / "metadata.json").read_text(encoding="utf-8"))
+    array = zarr.open_array(str(path / "readouts.zarr"), mode="r")
+    shape = tuple(int(value) for value in array.shape)
+    return CacheBuildMetadata(
+        shape=shape,
+        dtype=str(array.dtype),
+        axes=("readout", "sample", "layer", "feature"),
+        row_count=shape[1],
+        rebuild={"kind": "token_representations", "cache_key": cache_key},
+        content_fingerprint=fingerprint_payload(
+            {
+                "kind": "token_representations",
+                "cache_key": cache_key,
+                "layers": metadata["layers"],
+                "shape": list(shape),
+            }
+        ),
     )
 
 
