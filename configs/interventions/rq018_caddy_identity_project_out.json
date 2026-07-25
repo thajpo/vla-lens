@@ -1,0 +1,136 @@
+{
+  "run_id": "rq018-caddy-identity-project-out-call0",
+  "runtime_adapter": "pi05",
+  "title": "RQ-018 caddy identity direction at layer 8",
+  "target": {
+    "kind": "contrast_direction",
+    "source_artifact_id": "object_roi_identity_study-pi0.5-broad-1000-known-region-object-identity-converged-linear-check-4f24179aef",
+    "source_artifact_type": "object_roi_identity_study",
+    "model_id": "lerobot/pi05_libero_finetuned",
+    "model_family": "pi05",
+    "model_site": "pi05.vlm.layers.8.prefix.hidden_tokens",
+    "layer": 8,
+    "tensor_type": "hidden_tokens",
+    "token_space": "pi05.prefix",
+    "token_selector": {
+      "indices": [
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        113,
+        114,
+        115,
+        116,
+        117,
+        118,
+        119,
+        120,
+        121,
+        129,
+        130,
+        131,
+        132,
+        133,
+        134,
+        135,
+        136,
+        137,
+        145,
+        146,
+        147,
+        148,
+        149,
+        150,
+        151,
+        152,
+        153,
+        161,
+        162,
+        163,
+        164,
+        165,
+        166,
+        167,
+        168,
+        169
+      ]
+    },
+    "reduction": "roi_mean",
+    "representation": {
+      "method": "object_roi",
+      "instance_index": 2648,
+      "target_class": 13,
+      "target_name": "desk_caddy_1",
+      "contrast_class": "class_mean",
+      "contrast_name": "class_mean"
+    },
+    "metadata": {
+      "research_question_id": "RQ-018",
+      "recipient_selection": "correct held-out RQ-015 object ROI prediction"
+    }
+  },
+  "baseline": {
+    "context": {
+      "trace_id": "pi05_mechanistic_sampled_libero_90_task73_seed2000",
+      "policy_call_index": 0,
+      "timestep": 0,
+      "instruction": "pick up the book and place it in the front compartment of the caddy",
+      "task": "libero_90:73"
+    }
+  },
+  "intervention": {
+    "request": {
+      "operator": {
+        "operator": "project_out_direction",
+        "strength": 1.0,
+        "parameters": {
+          "mode": "artifact_probe_direction",
+          "strength_units": "standardized_probe_feature_l2"
+        }
+      },
+      "schedule": {
+        "policy_calls": [0],
+        "generation_steps": "all",
+        "tokens": "target_tokens"
+      },
+      "outcome": {
+        "kind": "action",
+        "basis": ["raw"],
+        "horizon": "full_chunk",
+        "metrics": ["raw_delta"]
+      },
+      "controls": [
+        {
+          "kind": "random_direction",
+          "parameters": {
+            "seed": 20260724,
+            "matching": "orthogonal standardized direction, realized raw L2"
+          }
+        },
+        {
+          "kind": "wrong_feature",
+          "parameters": {
+            "role": "wrong_identity",
+            "target_class": 26,
+            "target_name": "red_coffee_mug_1",
+            "contrast_class": "class_mean",
+            "matching": "realized raw L2"
+          }
+        },
+        {
+          "kind": "wrong_token",
+          "parameters": {
+            "role": "wrong_roi",
+            "source": "artifact_instance.wrong_roi_patch_indices"
+          }
+        }
+      ]
+    }
+  }
+}

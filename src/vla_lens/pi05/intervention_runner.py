@@ -12,10 +12,11 @@ from typing import Any, Mapping
 
 import numpy as np
 
-from vla_lens.interventions import ActionInterventionExecutor
+from vla_lens.interventions import ActionInterventionExecutor, TargetSpec
 from vla_lens.pi05.intervention_executor import build_pi05_action_intervention_executor
 from vla_lens.pi05.intervention_preflight import pi05_intervention_preflight
 from vla_lens.pi05.intervention_runtime import run_pi05_intervention
+from vla_lens.pi05.probe_direction import resolve_object_roi_probe_direction
 from vla_lens.pi05.replay import policy_call_replay_inputs
 from vla_lens.traces import TraceDataset
 
@@ -59,7 +60,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--run-intervention",
         action="store_true",
-        help="Run the non-claiming synthetic hook smoke only after replay passes tolerances",
+        help="Run the requested synthetic or artifact-derived hook after replay passes",
     )
     parser.add_argument("--max-noop-l2", type=float)
     parser.add_argument("--max-noop-max-abs", type=float)
@@ -98,6 +99,15 @@ def run_job(
         payload,
         runtime_available=not bool(args.dry_run),
     )
+    direction_resolution = None
+    if _execution_mode(payload) == "artifact_probe_direction":
+        target = TargetSpec.from_dict(_mapping(payload.get("target")))
+        direction_resolution = resolve_object_roi_probe_direction(
+            dataset,
+            target,
+            trace_id=trace_id,
+            policy_call_index=policy_call_index,
+        ).provenance
     report: dict[str, Any] = {
         "schema_kind": "vla_lens.pi05_intervention_report",
         "schema_version": 1,
@@ -117,6 +127,8 @@ def run_job(
             "model_id_override": args.model_id,
         },
     }
+    if direction_resolution is not None:
+        report["probe_direction_resolution"] = dict(direction_resolution)
     report_path = args.output or _default_report_path(dataset, request_sha256)
     report["report_path"] = str(report_path)
     if args.dry_run:
@@ -167,10 +179,15 @@ def run_job(
             payload,
             executor=executor,
             save=not bool(args.no_save),
+            claim_gate=gate,
         )
         report["status"] = "completed"
-        report["mode"] = "synthetic_hook_smoke"
-        report["claim_eligible"] = False
+        claim = dict(result.run.claim)
+        report["mode"] = _execution_mode(payload)
+        report["claim_eligible"] = bool(claim.get("method_eligible", False))
+        report["scientific_verdict"] = claim.get(
+            "scientific_verdict", "not_eligible"
+        )
         report["intervention_result"] = result.to_dict()
         _write_report(report_path, report)
         return report, 0
@@ -282,6 +299,14 @@ def _context_selection(payload: Mapping[str, Any]) -> tuple[str, int]:
     if not trace_id:
         raise ValueError("PI0.5 intervention requires context.trace_id")
     return trace_id, int(context.get("policy_call_index") or 0)
+
+
+def _execution_mode(payload: Mapping[str, Any]) -> str:
+    intervention = _mapping(payload.get("intervention"))
+    request = _mapping(payload.get("request")) or _mapping(intervention.get("request"))
+    operator = _mapping(request.get("operator"))
+    parameters = _mapping(operator.get("parameters"))
+    return str(parameters.get("mode") or "unspecified")
 
 
 def _default_report_path(dataset: TraceDataset, request_sha256: str) -> Path:
