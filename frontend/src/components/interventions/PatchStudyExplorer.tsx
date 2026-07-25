@@ -15,7 +15,9 @@ export function PatchStudyExplorer() {
   });
   const studies = query.data?.patch_studies ?? [];
   const [selectedStudyId, setSelectedStudyId] = useState("");
-  const study = studies.find((item) => item.study_id === selectedStudyId) ?? studies[0];
+  const study = studies.find((item) => item.study_id === selectedStudyId)
+    ?? studies.find((item) => item.stream === "expert_action" && item.specificity.length)
+    ?? studies[0];
 
   if (query.isLoading) {
     return <p className="app-message">Loading patch studies.</p>;
@@ -44,6 +46,8 @@ export function PatchStudyExplorer() {
       </header>
       <p className="patch-study-lede">{studySummary(study)}</p>
       <div className="patch-study-meta">
+        <span>{streamLabel(study)}</span>
+        {study.stream === "expert_action" && <span>{generationStepLabel(study)}</span>}
         <span>{study.pair_count} matched scenes</span>
         <span>{study.planned_trial_count} patches</span>
         <span>{study.controls.length ? `${study.controls.length} controls` : "localization pass"}</span>
@@ -64,7 +68,7 @@ function PatchTransferMatrix({ study }: { study: PatchStudyAnalysis }) {
       <table className="patch-transfer-table">
         <thead>
           <tr>
-            <th>Layer</th>
+            <th>{study.stream === "expert_action" ? "Action layer" : "VLM layer"}</th>
             {study.token_regions.map((region) => <th key={region}>{regionLabel(region)}</th>)}
           </tr>
         </thead>
@@ -145,13 +149,54 @@ function studySummary(study: PatchStudyAnalysis): string {
 }
 
 function studyLabel(study: PatchStudyAnalysis): string {
-  const scope = study.token_regions.includes("full_prefix") ? "broad scopes" : "object regions";
-  return `${study.phase || "study"} · ${scope}`;
+  const phase = study.specificity.length
+    ? "Controls"
+    : study.token_regions.some((region) => region !== "action_all")
+      && study.stream === "expert_action"
+      ? "Action positions"
+      : "Layer sweep";
+  const steps = study.stream === "expert_action" ? ` · ${shortGenerationStepLabel(study)}` : "";
+  const scenes = `${study.pair_count} ${study.pair_count === 1 ? "scene" : "scenes"}`;
+  return `${phase} · ${studyScopeLabel(study)}${steps} · ${scenes}`;
+}
+
+function streamLabel(study: PatchStudyAnalysis): string {
+  return study.stream === "expert_action" ? "Action expert" : "Visual prefix";
+}
+
+function generationStepLabel(study: PatchStudyAnalysis): string {
+  const steps = study.generation_steps;
+  if (!steps || steps === "all") return "All 10 denoising steps";
+  if (steps.indices?.length) {
+    const joined = steps.indices.join(", ");
+    return `Denoising steps ${joined}`;
+  }
+  if (steps.start != null && steps.end != null) {
+    return `Denoising steps ${steps.start}–${steps.end - 1}`;
+  }
+  return "Selected denoising steps";
+}
+
+function shortGenerationStepLabel(study: PatchStudyAnalysis): string {
+  const label = generationStepLabel(study);
+  return label === "All 10 denoising steps"
+    ? "all denoising steps"
+    : label.toLowerCase();
+}
+
+function studyScopeLabel(study: PatchStudyAnalysis): string {
+  if (study.stream === "expert_action") return "action expert";
+  if (study.token_regions.includes("full_prefix")) return "broad visual scopes";
+  return "object regions";
 }
 
 function regionLabel(region: string): string {
   return ({
     active_images: "Both cameras",
+    action_all: "All 50 action positions",
+    action_first_10: "First 10 actions",
+    action_last_10: "Last 10 actions",
+    action_middle_10: "Middle 10 actions",
     both: "Both objects",
     complement: "Background",
     distractor: "Mug",

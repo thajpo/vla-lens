@@ -541,6 +541,7 @@ def _source_patch_evidence(
     negative_controls = []
     for control in controls:
         if control.control_kind not in {
+            "alpha_zero",
             "shuffled_donor",
             "random_matched_norm",
             "wrong_region",
@@ -573,7 +574,12 @@ def _source_patch_evidence(
         main,
         pair_valid=pair_valid,
         replay_valid=bool(_mapping(claim_gate).get("passed")),
-        hook_valid=int(intervention.runtime.get("hook_calls") or 0) == 1,
+        hook_valid=bool(
+            intervention.runtime.get(
+                "hook_valid",
+                int(intervention.runtime.get("hook_calls") or 0) == 1,
+            )
+        ),
         controls=tuple(negative_controls),
         thresholds=thresholds,
     )

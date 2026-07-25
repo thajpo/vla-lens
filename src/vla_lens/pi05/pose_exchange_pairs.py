@@ -293,6 +293,7 @@ def _pair_token_regions(
         count=BACKGROUND_TOKEN_COUNT,
     )
     broad_regions = _broad_prefix_regions(recipient.tokens, donor.tokens)
+    action_regions = _action_suffix_regions(recipient.tokens, donor.tokens)
     return {
         "target": {"recipient": recipient_target, "donor": donor_target},
         "distractor": {
@@ -305,6 +306,7 @@ def _pair_token_regions(
             "donor": donor_background,
         },
         **broad_regions,
+        **action_regions,
     }
 
 
@@ -328,6 +330,37 @@ def _broad_prefix_regions(
             raise ValueError(f"broad token region {name!r} differs between pair traces")
         regions[name] = {"recipient": recipient, "donor": donor}
     return regions
+
+
+def _action_suffix_regions(
+    recipient_tokens: pd.DataFrame,
+    donor_tokens: pd.DataFrame,
+) -> dict[str, dict[str, list[int]]]:
+    """Expose reusable full and temporal scopes over the 50 action positions."""
+
+    def action_indices(tokens: pd.DataFrame) -> list[int]:
+        selected = tokens.loc[
+            (tokens["policy_call_index"].astype(int) == 0)
+            & (tokens["token_space_id"].astype(str) == "pi05.action_suffix")
+        ].sort_values(["action_horizon_index", "token_index"])
+        return selected["token_index"].astype(int).tolist()
+
+    recipient = action_indices(recipient_tokens)
+    donor = action_indices(donor_tokens)
+    if not recipient or len(recipient) != len(donor):
+        raise ValueError("action suffix differs between pair traces")
+    window = min(10, len(recipient))
+    middle_start = max(0, (len(recipient) - window) // 2)
+    slices = {
+        "action_all": slice(None),
+        "action_first_10": slice(0, window),
+        "action_middle_10": slice(middle_start, middle_start + window),
+        "action_last_10": slice(len(recipient) - window, None),
+    }
+    return {
+        name: {"recipient": recipient[selection], "donor": donor[selection]}
+        for name, selection in slices.items()
+    }
 
 
 def _selected_token_indices(

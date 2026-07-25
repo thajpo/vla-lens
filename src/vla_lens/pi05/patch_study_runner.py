@@ -243,10 +243,16 @@ def run_patch_study_job(
                 pair_gates[pair_id] = gate
                 if not gate["passed"]:
                     raise ReplayGateError("; ".join(gate["reasons"]))
-                prime_cache = getattr(executor, "prime_donor_cache", None)
-                if not callable(prime_cache):
-                    raise TypeError("patch-study executor must support prime_donor_cache")
-                prime_cache(sorted({trial.layer for trial in pending}))
+                prime_sites = getattr(executor, "prime_donor_sites", None)
+                if callable(prime_sites):
+                    prime_sites(list(dict.fromkeys(trial.model_site for trial in pending)))
+                else:
+                    prime_cache = getattr(executor, "prime_donor_cache", None)
+                    if not callable(prime_cache):
+                        raise TypeError(
+                            "patch-study executor must support named donor sites or layer cache"
+                        )
+                    prime_cache(sorted({trial.layer for trial in pending}))
                 for trial in pending:
                     try:
                         result = run_pi05_intervention(

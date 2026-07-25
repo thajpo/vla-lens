@@ -52,6 +52,7 @@ def save_patch_study_analysis(
     )
     specificity = _specificity_summary(summaries, control_summaries)
     study = _mapping(artifact.get("study"))
+    axes = _mapping(study.get("axes"))
     pairs = [
         {
             "pair_id": pair.get("pair_id"),
@@ -70,7 +71,9 @@ def save_patch_study_analysis(
         "study_id": study.get("study_id") or study_root.name,
         "question": study.get("question"),
         "hypothesis": study.get("hypothesis"),
-        "phase": _mapping(study.get("axes")).get("phase"),
+        "phase": axes.get("phase"),
+        "stream": axes.get("stream"),
+        "generation_steps": axes.get("generation_steps"),
         "status": "completed",
         "pair_count": len(pairs),
         "planned_trial_count": len(records),
@@ -88,7 +91,10 @@ def save_patch_study_analysis(
             "samples": bootstrap_samples,
             "confidence": 0.95,
             "seed": seed,
-            "note": "Five-pair intervals are exploratory, not population guarantees.",
+            "note": (
+                "Intervals from small matched cohorts are exploratory, "
+                "not population guarantees."
+            ),
         },
         "headline": _headline(summaries),
         "files": {
@@ -149,7 +155,9 @@ def summarize_patch_records(
                     group["natural_delta_norm"].astype(float).mean()
                 ),
                 "localized_pair_count": int(
-                    (group.get("verdict", pd.Series(dtype=str)) == "localized_transfer").sum()
+                    group.get("verdict", pd.Series(dtype=str)).isin(
+                        {"localized_transfer", "specific_action_transfer"}
+                    ).sum()
                 ),
             }
         )

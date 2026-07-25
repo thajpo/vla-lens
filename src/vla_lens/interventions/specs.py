@@ -70,6 +70,7 @@ CONTROL_KINDS = {
     "shuffled_donor",
     "recipient_self_patch",
     "donor_self_patch",
+    "alpha_zero",
     "random_matched_norm",
     "wrong_region",
     "matched_cohort",

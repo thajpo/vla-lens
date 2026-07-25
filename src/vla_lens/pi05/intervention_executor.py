@@ -26,6 +26,11 @@ from vla_lens.pi05.capture_runner import (
     namespace_for_capture_args,
 )
 from vla_lens.pi05.capture_schema import PI05CaptureRuntime
+from vla_lens.pi05.patch_sites import (
+    PI05PatchSite,
+    parse_pi05_patch_site,
+    pi05_patch_module,
+)
 from vla_lens.pi05.probe_direction import (
     ResolvedProbeDirection,
     resolve_object_roi_probe_direction,
@@ -56,6 +61,8 @@ class PI05ActionInterventionExecutor:
     donor_observation: Mapping[str, Any] | None = None
     pair_compatibility: Mapping[str, Any] = field(default_factory=dict)
     donor_hidden_cache: dict[int, Any] = field(default_factory=dict)
+    donor_site_cache: dict[str, tuple[Any, ...]] = field(default_factory=dict)
+    recipient_site_cache: dict[str, tuple[Any, ...]] = field(default_factory=dict)
     donor_action: np.ndarray | None = None
 
     def run_noop(self, request: Mapping[str, Any]) -> RuntimeTrialOutput:
@@ -298,21 +305,38 @@ class PI05ActionInterventionExecutor:
         """Match resource-owning executor interfaces; replay setup closes its environment."""
 
     def prime_donor_cache(self, layers: tuple[int, ...] | list[int]) -> np.ndarray:
-        """Capture several donor layers in one model call for a later layer sweep."""
+        """Compatibility wrapper for VLM-prefix studies created before named sites."""
         requested = tuple(dict.fromkeys(int(layer) for layer in layers))
         if not requested:
             raise ValueError("prime_donor_cache requires at least one layer")
-        missing = tuple(layer for layer in requested if layer not in self.donor_hidden_cache)
+        sites = tuple(
+            f"pi05.vlm.layers.{layer}.prefix.hidden_tokens" for layer in requested
+        )
+        action = self.prime_donor_sites(sites)
+        for layer, site in zip(requested, sites, strict=True):
+            self.donor_hidden_cache[layer] = self.donor_site_cache[site][0]
+        return action
+
+    def prime_donor_sites(self, model_sites: tuple[str, ...] | list[str]) -> np.ndarray:
+        """Capture many VLM or expert sites in one donor action generation."""
+
+        sites = tuple(
+            dict.fromkeys(parse_pi05_patch_site(value).model_site for value in model_sites)
+        )
+        if not sites:
+            raise ValueError("prime_donor_sites requires at least one model site")
+        missing = tuple(site for site in sites if site not in self.donor_site_cache)
         if missing:
             if self.donor_observation is None or self.donor_replay_inputs is None:
                 raise ValueError(
                     "Donor source patching requires a compatible donor trace and policy call"
                 )
-            action, captured = self._capture_layer_hiddens(
-                self.donor_observation,
-                missing,
-            )
-            self.donor_hidden_cache.update(captured)
+            action, captured = self._capture_site_hiddens(self.donor_observation, missing)
+            self.donor_site_cache.update(captured)
+            for name, values in captured.items():
+                parsed = parse_pi05_patch_site(name)
+                if parsed.stack == "vlm_prefix":
+                    self.donor_hidden_cache[parsed.layer] = values[0]
             if self.donor_action is None:
                 self.donor_action = action
             elif not np.array_equal(self.donor_action, action):
@@ -476,11 +500,12 @@ class PI05ActionInterventionExecutor:
         control_kind: str | None = None,
         control_parameters: Mapping[str, Any] | None = None,
     ) -> tuple[np.ndarray, dict[str, Any]]:
-        """Patch donor prefix values into a recipient and restore the hook afterward."""
-        if target.layer is None:
-            raise ValueError("Donor source patching requires target.layer")
-        layer_index = int(target.layer)
-        donor_hidden = self._donor_hidden(layer_index)
+        """Patch one named donor site, aligned over tokens and denoising steps."""
+        site = parse_pi05_patch_site(
+            target.model_site or "",
+            declared_layer=target.layer,
+        )
+        donor_sequence = self._donor_site_values(site)
         recipient_indices = _source_patch_token_indices(target, schedule)
         intended_recipient_indices = recipient_indices
         intended_token_count = len(recipient_indices)
@@ -508,34 +533,56 @@ class PI05ActionInterventionExecutor:
 
         target_observation = self.observation
         if control_kind == "recipient_self_patch":
-            _action, recipient_hidden = self._capture_layer_hidden(
-                self.observation,
-                layer_index,
-            )
-            source_hidden = recipient_hidden
+            if site.model_site not in self.recipient_site_cache:
+                _action, captured = self._capture_site_hiddens(
+                    self.observation,
+                    (site.model_site,),
+                )
+                self.recipient_site_cache.update(captured)
+            source_sequence = self.recipient_site_cache[site.model_site]
             donor_indices = recipient_indices
         elif control_kind == "donor_self_patch":
             if self.donor_observation is None:
                 raise ValueError("Donor self-patch requires a donor observation")
             target_observation = self.donor_observation
-            source_hidden = donor_hidden
+            source_sequence = donor_sequence
             donor_indices = recipient_indices
         else:
-            source_hidden = donor_hidden
+            source_sequence = donor_sequence
 
         torch = self.runtime.torch
         policy = self.runtime.policy
-        layer = _pi05_vlm_layer(policy, layer_index)
+        layer = pi05_patch_module(policy, site)
         original_forward = layer.forward
         strength = float(operator.strength or 0.0)
+        if control_kind == "alpha_zero":
+            strength = 0.0
+        selected_steps = (
+            _generation_step_indices(schedule.generation_steps)
+            if site.repeated_by_generation_step
+            else None
+        )
         hook_calls = 0
         realized: list[dict[str, float]] = []
         runtime_details: dict[str, Any] = {}
+        recipient_hashes: list[str] = []
+        donor_hashes: list[str] = []
+        applied_steps: list[int] = []
 
         def forward_with_source_patch(*args: Any, **kwargs: Any) -> Any:
             nonlocal hook_calls
             output = original_forward(*args, **kwargs)
             hidden, rebuild = _layer_hidden_output(output)
+            step_index = hook_calls
+            hook_calls += 1
+            if step_index >= len(source_sequence) or step_index >= len(donor_sequence):
+                raise RuntimeError(
+                    f"Runtime called {site.model_site!r} more often than the donor capture"
+                )
+            if selected_steps is not None and step_index not in selected_steps:
+                return output
+            source_hidden = source_sequence[step_index]
+            donor_hidden = donor_sequence[step_index]
             shape = tuple(int(value) for value in hidden.shape)
             source_shape = tuple(int(value) for value in source_hidden.shape)
             if shape != source_shape:
@@ -570,7 +617,7 @@ class PI05ActionInterventionExecutor:
                     intended_delta,
                 )
             elif control_kind == "random_matched_norm":
-                seed = int(parameters.get("seed", 0))
+                seed = int(parameters.get("seed", 0)) + step_index
                 raw_delta = _random_matched_delta(
                     torch,
                     recipient_values,
@@ -610,21 +657,11 @@ class PI05ActionInterventionExecutor:
                     "control_kind": resolved_control,
                     "norm_matched_to_intended": control_kind
                     in {"shuffled_donor", "random_matched_norm", "wrong_region"},
-                    "token_mapping_sha256": _mapping_sha256(
-                        {
-                            "recipient": recipient_indices,
-                            "donor": donor_indices,
-                        }
-                    ),
-                    "recipient_values_before_sha256": _array_sha256(
-                        _tensor_numpy(recipient_values)
-                    ),
-                    "donor_values_sha256": _array_sha256(
-                        _tensor_numpy(source_values)
-                    ),
                 }
             )
-            hook_calls += 1
+            recipient_hashes.append(_array_sha256(_tensor_numpy(recipient_values)))
+            donor_hashes.append(_array_sha256(_tensor_numpy(source_values)))
+            applied_steps.append(step_index)
             return rebuild(modified)
 
         policy.reset()
@@ -637,16 +674,22 @@ class PI05ActionInterventionExecutor:
                 )
         finally:
             layer.forward = original_forward
-        if hook_calls != 1 or len(realized) != 1:
+        expected_hook_calls = len(source_sequence)
+        if hook_calls != expected_hook_calls or not realized:
             raise RuntimeError(
-                "Expected the selected PI0.5 donor patch hook exactly once, "
-                f"observed {hook_calls} calls"
+                f"Expected {site.model_site!r} once per captured call "
+                f"({expected_hook_calls}), observed {hook_calls} with "
+                f"{len(realized)} applied step(s)"
             )
         return _action_numpy(action), {
-            "metrics": realized[0],
+            "metrics": _aggregate_patch_measurements(realized),
             "runtime": {
                 "hook_calls": hook_calls,
-                "layer": layer_index,
+                "expected_hook_calls": expected_hook_calls,
+                "hook_valid": hook_calls == expected_hook_calls,
+                "applied_generation_steps": applied_steps,
+                "layer": site.layer,
+                "patch_site": site.to_runtime_record(),
                 "recipient_token_indices": list(recipient_indices),
                 "donor_token_indices": list(donor_indices),
                 "donor_trace_id": (
@@ -664,6 +707,14 @@ class PI05ActionInterventionExecutor:
                     _tensor_numpy(self.initial_noise)
                 ),
                 "donor_cache_layers": sorted(self.donor_hidden_cache),
+                "donor_cache_sites": sorted(self.donor_site_cache),
+                "token_mapping_sha256": _mapping_sha256(
+                    {"recipient": recipient_indices, "donor": donor_indices}
+                ),
+                "recipient_values_before_sha256": _mapping_sha256(
+                    {"by_call": recipient_hashes}
+                ),
+                "donor_values_sha256": _mapping_sha256({"by_call": donor_hashes}),
                 **runtime_details,
             },
         }
@@ -671,6 +722,10 @@ class PI05ActionInterventionExecutor:
     def _donor_hidden(self, layer_index: int) -> Any:
         self.prime_donor_cache((layer_index,))
         return self.donor_hidden_cache[layer_index]
+
+    def _donor_site_values(self, site: PI05PatchSite) -> tuple[Any, ...]:
+        self.prime_donor_sites((site.model_site,))
+        return self.donor_site_cache[site.model_site]
 
     def _capture_layer_hidden(
         self,
@@ -685,26 +740,43 @@ class PI05ActionInterventionExecutor:
         observation: Mapping[str, Any],
         layer_indices: tuple[int, ...],
     ) -> tuple[np.ndarray, dict[int, Any]]:
+        sites = tuple(
+            f"pi05.vlm.layers.{index}.prefix.hidden_tokens" for index in layer_indices
+        )
+        action, captured = self._capture_site_hiddens(observation, sites)
+        return action, {
+            index: captured[site][0]
+            for index, site in zip(layer_indices, sites, strict=True)
+        }
+
+    def _capture_site_hiddens(
+        self,
+        observation: Mapping[str, Any],
+        model_sites: tuple[str, ...],
+    ) -> tuple[np.ndarray, dict[str, tuple[Any, ...]]]:
+        """Capture mixed VLM/expert sites in one action generation."""
+
         torch = self.runtime.torch
         policy = self.runtime.policy
-        layers = {index: _pi05_vlm_layer(policy, index) for index in layer_indices}
-        original_forwards = {index: layer.forward for index, layer in layers.items()}
-        captures: dict[int, list[Any]] = {index: [] for index in layer_indices}
+        sites = {value: parse_pi05_patch_site(value) for value in model_sites}
+        modules = {name: pi05_patch_module(policy, site) for name, site in sites.items()}
+        original_forwards = {name: module.forward for name, module in modules.items()}
+        captures: dict[str, list[Any]] = {name: [] for name in sites}
 
-        def wrapper_for(index: int):
-            original_forward = original_forwards[index]
+        def wrapper_for(name: str):
+            original_forward = original_forwards[name]
 
             def forward_and_capture(*args: Any, **kwargs: Any) -> Any:
                 output = original_forward(*args, **kwargs)
                 hidden, _rebuild = _layer_hidden_output(output)
-                captures[index].append(hidden.detach().clone())
+                captures[name].append(hidden.detach().clone())
                 return output
 
             return forward_and_capture
 
         policy.reset()
-        for index, layer in layers.items():
-            layer.forward = wrapper_for(index)
+        for name, module in modules.items():
+            module.forward = wrapper_for(name)
         try:
             with torch.no_grad():
                 action = policy.predict_action_chunk(
@@ -712,16 +784,18 @@ class PI05ActionInterventionExecutor:
                     noise=self.initial_noise.clone(),
                 )
         finally:
-            for index, layer in layers.items():
-                layer.forward = original_forwards[index]
-        invalid = {index: len(values) for index, values in captures.items() if len(values) != 1}
+            for name, module in modules.items():
+                module.forward = original_forwards[name]
+        invalid = {
+            name: len(values)
+            for name, values in captures.items()
+            if not values
+            or (not sites[name].repeated_by_generation_step and len(values) != 1)
+        }
         if invalid:
-            raise RuntimeError(
-                "Expected every selected PI0.5 donor capture hook exactly once, "
-                f"observed {invalid}"
-            )
+            raise RuntimeError(f"PI0.5 source capture hook counts are invalid: {invalid}")
         return _action_numpy(action), {
-            index: values[0] for index, values in captures.items()
+            name: tuple(values) for name, values in captures.items()
         }
 
     def _predict_with_direction(
@@ -1036,21 +1110,27 @@ def _validate_source_patch_request(
         raise ValueError("Donor source patch strength must be between 0 and 1")
     if target.layer is None:
         raise ValueError("Donor source patch requires target.layer")
-    expected_site = f"pi05.vlm.layers.{int(target.layer)}.prefix.hidden_tokens"
-    if target.model_site != expected_site:
+    site = parse_pi05_patch_site(
+        target.model_site or "",
+        declared_layer=target.layer,
+    )
+    if target.token_space and target.token_space != site.token_space:
         raise ValueError(
-            f"Donor source patch layer {target.layer} requires model_site={expected_site!r}"
+            f"Target token space {target.token_space!r} disagrees with "
+            f"{site.model_site!r} ({site.token_space!r})"
         )
     if isinstance(schedule.policy_calls, tuple) and policy_call_index not in schedule.policy_calls:
         raise ValueError(
             f"Schedule does not include selected policy call {policy_call_index}: "
             f"{schedule.policy_calls}"
         )
-    if schedule.generation_steps != "all":
+    if not site.repeated_by_generation_step and schedule.generation_steps != "all":
         raise ValueError(
             "VLM prefix source patching runs once before denoising; "
             "generation_steps must be 'all'"
         )
+    if site.repeated_by_generation_step:
+        _generation_step_indices(schedule.generation_steps)
     _source_patch_token_indices(target, schedule)
 
 
@@ -1080,6 +1160,7 @@ def _source_patch_control_kind(
     aliases = {
         "recipient_self_patch": "recipient_self_patch",
         "donor_self_patch": "donor_self_patch",
+        "alpha_zero": "alpha_zero",
         "shuffled_donor": "shuffled_donor",
         "random_direction": "random_matched_norm",
         "random_direction_control": "random_matched_norm",
@@ -1168,6 +1249,33 @@ def _tensor_numpy(value: Any) -> np.ndarray:
     tensor = tensor.cpu() if hasattr(tensor, "cpu") else tensor
     tensor = tensor.numpy() if hasattr(tensor, "numpy") else tensor
     return np.asarray(tensor, dtype=np.float64)
+
+
+def _aggregate_patch_measurements(
+    values: list[dict[str, float]],
+) -> dict[str, float]:
+    """Combine per-denoising-step norms without treating steps as samples."""
+
+    if not values:
+        raise ValueError("Source patch did not produce any measurements")
+    combined: dict[str, float] = {}
+    for key in (
+        "source_delta_l2",
+        "source_delta_l2_before_norm_match",
+        "realized_perturbation_l2",
+    ):
+        combined[key] = float(
+            np.sqrt(sum(float(value[key]) ** 2 for value in values))
+        )
+    realized_l2 = combined["realized_perturbation_l2"]
+    per_step_rms = [float(value["realized_perturbation_rms"]) for value in values]
+    combined["realized_perturbation_rms"] = float(
+        np.sqrt(np.mean(np.square(per_step_rms)))
+    )
+    combined["measured_generation_step_count"] = float(len(values))
+    if realized_l2 == 0.0:
+        combined["realized_perturbation_rms"] = 0.0
+    return combined
 
 
 def _match_nonzero_norm(candidate: np.ndarray, reference: np.ndarray) -> np.ndarray:

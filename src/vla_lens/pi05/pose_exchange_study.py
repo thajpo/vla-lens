@@ -9,8 +9,9 @@ from pathlib import Path
 from typing import Any, Mapping, Sequence
 
 DEFAULT_LAYERS = (0, 4, 8, 12, 16)
+DEFAULT_EXPERT_LAYERS = (*DEFAULT_LAYERS, 17)
 DEFAULT_REGIONS = ("target", "distractor", "both", "complement")
-SUPPORTED_REGIONS = (
+VLM_REGIONS = (
     *DEFAULT_REGIONS,
     "main_camera",
     "wrist_camera",
@@ -18,12 +19,25 @@ SUPPORTED_REGIONS = (
     "language_active",
     "full_prefix",
 )
-CONFIRMATION_CONTROLS = (
+EXPERT_REGIONS = (
+    "action_all",
+    "action_first_10",
+    "action_middle_10",
+    "action_last_10",
+)
+VLM_CONFIRMATION_CONTROLS = (
     "recipient_self_patch",
     "donor_self_patch",
     "shuffled_donor",
     "random_matched_norm",
     "wrong_region",
+)
+EXPERT_CONFIRMATION_CONTROLS = (
+    "recipient_self_patch",
+    "donor_self_patch",
+    "alpha_zero",
+    "shuffled_donor",
+    "random_matched_norm",
 )
 WRONG_REGION_BY_REGION = {
     "target": "distractor",
@@ -40,9 +54,11 @@ def main(argv: list[str] | None = None) -> None:
         collection,
         study_id=args.study_id,
         phase=args.phase,
+        stream=args.stream,
         pair_ids=_csv_strings(args.pair_ids) or None,
-        layers=_csv_ints(args.layers),
-        token_regions=_csv_strings(args.token_regions),
+        layers=_csv_ints(args.layers) or None,
+        token_regions=_csv_strings(args.token_regions) or None,
+        generation_steps=_generation_step_selector(args.generation_steps),
         control_seed=int(args.control_seed),
     )
     _write_json_atomic(args.output, job)
@@ -59,12 +75,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         choices=("localization", "confirmation"),
         default="localization",
     )
-    parser.add_argument("--pair-ids", help="Comma-separated subset; default is all valid pairs")
     parser.add_argument(
-        "--layers",
-        default=",".join(str(layer) for layer in DEFAULT_LAYERS),
+        "--stream",
+        choices=("vlm_prefix", "expert_action"),
+        default="vlm_prefix",
     )
-    parser.add_argument("--token-regions", default=",".join(DEFAULT_REGIONS))
+    parser.add_argument("--pair-ids", help="Comma-separated subset; default is all valid pairs")
+    parser.add_argument("--layers", help="Comma-separated layers; defaults depend on stream")
+    parser.add_argument(
+        "--token-regions",
+        help="Comma-separated scopes; defaults to object regions or action_all by stream",
+    )
+    parser.add_argument(
+        "--generation-steps",
+        default="all",
+        help="all, comma-separated denoising steps, or a half-open range such as 0:5",
+    )
     parser.add_argument("--control-seed", type=int, default=20260725)
     return parser.parse_args(argv)
 
@@ -74,14 +100,18 @@ def build_pose_exchange_study_job(
     *,
     study_id: str,
     phase: str,
+    stream: str = "vlm_prefix",
     pair_ids: Sequence[str] | None = None,
-    layers: Sequence[int] = DEFAULT_LAYERS,
-    token_regions: Sequence[str] = DEFAULT_REGIONS,
+    layers: Sequence[int] | None = None,
+    token_regions: Sequence[str] | None = None,
+    generation_steps: str | Mapping[str, Any] = "all",
     control_seed: int = 20260725,
 ) -> dict[str, Any]:
     """Turn saved pair evidence into a deterministic localization/confirmation job."""
     if phase not in {"localization", "confirmation"}:
         raise ValueError("phase must be localization or confirmation")
+    if stream not in {"vlm_prefix", "expert_action"}:
+        raise ValueError("stream must be vlm_prefix or expert_action")
     raw_pairs = collection.get("pairs")
     if not isinstance(raw_pairs, Sequence) or isinstance(raw_pairs, str):
         raise ValueError("pair collection requires pairs")
@@ -99,23 +129,39 @@ def build_pose_exchange_study_job(
         raise ValueError(f"requested pair IDs are missing or invalid: {missing}")
     selected_pairs = [available[pair_id] for pair_id in selected_ids]
 
-    selected_layers = tuple(dict.fromkeys(int(layer) for layer in layers))
+    default_layers = DEFAULT_LAYERS if stream == "vlm_prefix" else DEFAULT_EXPERT_LAYERS
+    selected_layers = tuple(
+        dict.fromkeys(int(layer) for layer in (layers or default_layers))
+    )
     if not selected_layers or any(layer < 0 for layer in selected_layers):
         raise ValueError("study layers must be unique non-negative integers")
-    regions = tuple(dict.fromkeys(str(region) for region in token_regions))
-    if not regions or any(region not in SUPPORTED_REGIONS for region in regions):
-        raise ValueError(f"token regions must come from {SUPPORTED_REGIONS}")
+    default_regions = DEFAULT_REGIONS if stream == "vlm_prefix" else ("action_all",)
+    regions = tuple(
+        dict.fromkeys(str(region) for region in (token_regions or default_regions))
+    )
+    supported_regions = VLM_REGIONS if stream == "vlm_prefix" else EXPERT_REGIONS
+    if not regions or any(region not in supported_regions for region in regions):
+        raise ValueError(f"{stream} token regions must come from {supported_regions}")
 
-    controls = CONFIRMATION_CONTROLS if phase == "confirmation" else ()
+    if phase == "confirmation":
+        controls = (
+            VLM_CONFIRMATION_CONTROLS
+            if stream == "vlm_prefix"
+            else EXPERT_CONFIRMATION_CONTROLS
+        )
+    else:
+        controls = ()
     shared_noise_refs = [
         f"{_recipient_trace_id(pair)}.flow_initial_noise[0]"
         for pair in selected_pairs
     ]
     axes: dict[str, Any] = {
         "phase": phase,
+        "stream": stream,
         "token_regions": list(regions),
+        "generation_steps": _normalize_generation_steps(generation_steps),
     }
-    if controls:
+    if controls and stream == "vlm_prefix":
         unsupported = [region for region in regions if region not in WRONG_REGION_BY_REGION]
         if unsupported:
             raise ValueError(
@@ -129,16 +175,10 @@ def build_pose_exchange_study_job(
     return {
         "study": {
             "study_id": study_id,
-            "question": (
-                "Where do PI0.5 prefix states causally carry the action-relevant "
-                "difference produced by exchanging the book and mug poses?"
-            ),
-            "hypothesis": (
-                "Patching object-aligned donor tokens should move the recipient action "
-                "toward the donor action more than background or matched controls."
-            ),
+            "question": _question(stream),
+            "hypothesis": _hypothesis(stream),
             "pair_ids": list(selected_ids),
-            "sites": [{"layer": layer} for layer in selected_layers],
+            "sites": [_site_record(stream, layer) for layer in selected_layers],
             "controls": list(controls),
             "shared_noise_refs": shared_noise_refs,
             "thresholds": {
@@ -151,7 +191,11 @@ def build_pose_exchange_study_job(
             "axes": axes,
             "confounds": [
                 "The intervention changes object identity at two poses at once.",
-                "Image-patch regions approximate object pixels and include nearby context.",
+                (
+                    "Image-patch regions approximate object pixels and include nearby context."
+                    if stream == "vlm_prefix"
+                    else "Action positions are horizon slots, not independent semantic tokens."
+                ),
                 "This measures open-loop action chunks, not closed-loop task success.",
             ],
             "stopping_rule": (
@@ -164,11 +208,14 @@ def build_pose_exchange_study_job(
                 "pair_collection_schema": collection.get("schema_kind"),
                 "pair_collection_version": collection.get("schema_version"),
                 "phase": phase,
+                "stream": stream,
             },
         },
         "pairs": selected_pairs,
         "request_template": _request_template(
             phase=phase,
+            stream=stream,
+            generation_steps=_normalize_generation_steps(generation_steps),
             control_seed=control_seed,
         ),
     }
@@ -183,6 +230,7 @@ def study_job_summary(job: Mapping[str, Any]) -> dict[str, Any]:
     return {
         "study_id": study.get("study_id"),
         "phase": _mapping(study.get("axes")).get("phase"),
+        "stream": _mapping(study.get("axes")).get("stream"),
         "pair_count": pair_count,
         "site_count": site_count,
         "region_count": region_count,
@@ -191,26 +239,44 @@ def study_job_summary(job: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _request_template(*, phase: str, control_seed: int) -> dict[str, Any]:
+def _request_template(
+    *,
+    phase: str,
+    stream: str,
+    generation_steps: str | Mapping[str, Any],
+    control_seed: int,
+) -> dict[str, Any]:
     controls = []
     if phase == "confirmation":
         controls = [
             {"kind": "recipient_self_patch"},
             {"kind": "donor_self_patch"},
-            {"kind": "shuffled_donor", "parameters": {"seed": control_seed}},
-            {"kind": "random_matched_norm", "parameters": {"seed": control_seed}},
-            {"kind": "wrong_region"},
         ]
+        if stream == "expert_action":
+            controls.append({"kind": "alpha_zero"})
+        controls.extend(
+            [
+                {"kind": "shuffled_donor", "parameters": {"seed": control_seed}},
+                {"kind": "random_matched_norm", "parameters": {"seed": control_seed}},
+            ]
+        )
+        if stream == "vlm_prefix":
+            controls.append({"kind": "wrong_region"})
+    token_space = "pi05.prefix" if stream == "vlm_prefix" else "pi05.action_suffix"
     return {
         "runtime_adapter": "pi05",
         "target": {
             "kind": "activation_slice",
             "model_id": "lerobot/pi05_libero_finetuned",
             "model_family": "pi05",
-            "model_site": "pi05.vlm.layers.{layer}.prefix.hidden_tokens",
+            "model_site": "placeholder",
             "tensor_type": "hidden_tokens",
-            "token_space": "pi05.prefix",
-            "metadata": {"research_question_id": "RQ-020", "phase": phase},
+            "token_space": token_space,
+            "metadata": {
+                "research_question_id": "RQ-020" if stream == "vlm_prefix" else "RQ-022",
+                "phase": phase,
+                "stream": stream,
+            },
         },
         "intervention": {
             "request": {
@@ -221,7 +287,7 @@ def _request_template(*, phase: str, control_seed: int) -> dict[str, Any]:
                 },
                 "schedule": {
                     "policy_calls": [0],
-                    "generation_steps": "all",
+                    "generation_steps": generation_steps,
                     "tokens": "target_tokens",
                 },
                 "outcome": {"kind": "action", "basis": ["raw"], "horizon": "full_chunk"},
@@ -229,6 +295,38 @@ def _request_template(*, phase: str, control_seed: int) -> dict[str, Any]:
             }
         },
     }
+
+
+def _site_record(stream: str, layer: int) -> dict[str, Any]:
+    if stream == "vlm_prefix":
+        model_site = f"pi05.vlm.layers.{layer}.prefix.hidden_tokens"
+    else:
+        model_site = f"pi05.expert.layers.{layer}.by_step.hidden_tokens"
+    return {"layer": layer, "model_site": model_site}
+
+
+def _question(stream: str) -> str:
+    if stream == "expert_action":
+        return (
+            "Where does PI0.5's action expert carry the scene-driven action difference "
+            "after it leaves the VLM prefix?"
+        )
+    return (
+        "Where do PI0.5 prefix states causally carry the action-relevant difference "
+        "produced by exchanging the book and mug poses?"
+    )
+
+
+def _hypothesis(stream: str) -> str:
+    if stream == "expert_action":
+        return (
+            "Later expert layers should increasingly transfer the donor action when all "
+            "50 action positions are patched at matching denoising steps."
+        )
+    return (
+        "Patching object-aligned donor tokens should move the recipient action toward "
+        "the donor action more than background or matched controls."
+    )
 
 
 def _recipient_trace_id(pair: Mapping[str, Any]) -> str:
@@ -251,6 +349,40 @@ def _csv_strings(value: str | None) -> tuple[str, ...]:
 
 def _csv_ints(value: str | None) -> tuple[int, ...]:
     return tuple(int(item) for item in _csv_strings(value))
+
+
+def _generation_step_selector(value: str) -> str | dict[str, Any]:
+    text = str(value).strip().lower()
+    if text == "all":
+        return "all"
+    if ":" in text:
+        parts = text.split(":")
+        if len(parts) != 2 or not all(part.strip() for part in parts):
+            raise ValueError("generation-step range must be start:end")
+        return _normalize_generation_steps(
+            {"start": int(parts[0]), "end": int(parts[1])}
+        )
+    return _normalize_generation_steps({"indices": list(_csv_ints(text))})
+
+
+def _normalize_generation_steps(
+    value: str | Mapping[str, Any],
+) -> str | dict[str, Any]:
+    if value == "all":
+        return "all"
+    selector = dict(_mapping(value))
+    if "indices" in selector:
+        indices = tuple(dict.fromkeys(int(item) for item in selector["indices"]))
+        if not indices or any(item < 0 for item in indices):
+            raise ValueError("generation-step indices must be unique non-negative integers")
+        return {"indices": list(indices)}
+    if "start" in selector or "end" in selector:
+        start = int(selector.get("start", 0))
+        end = int(selector.get("end", start))
+        if start < 0 or end <= start:
+            raise ValueError("generation-step range must satisfy 0 <= start < end")
+        return {"start": start, "end": end}
+    raise ValueError("generation steps must be all, indices, or a start:end range")
 
 
 def _read_json(path: Path) -> dict[str, Any]:

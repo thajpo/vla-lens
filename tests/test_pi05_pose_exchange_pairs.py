@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 
 from vla_lens.pi05.pose_exchange_pairs import (
+    _action_suffix_regions,
     _background_tokens,
     _broad_prefix_regions,
     _disjoint_tokens_for_bboxes,
@@ -125,3 +126,24 @@ def test_broad_prefix_regions_separate_cameras_language_and_full_prefix():
     assert regions["active_images"]["recipient"] == [0, 1]
     assert regions["language_active"]["recipient"] == [3]
     assert regions["full_prefix"]["recipient"] == [0, 1, 2, 3, 4]
+
+
+def test_action_suffix_regions_preserve_horizon_order_and_temporal_windows():
+    tokens = pd.DataFrame(
+        [
+            {
+                "policy_call_index": 0,
+                "token_index": index,
+                "token_space_id": "pi05.action_suffix",
+                "action_horizon_index": index,
+            }
+            for index in range(50)
+        ]
+    )
+
+    regions = _action_suffix_regions(tokens, tokens)
+
+    assert regions["action_all"]["recipient"] == list(range(50))
+    assert regions["action_first_10"]["recipient"] == list(range(10))
+    assert regions["action_middle_10"]["recipient"] == list(range(20, 30))
+    assert regions["action_last_10"]["recipient"] == list(range(40, 50))

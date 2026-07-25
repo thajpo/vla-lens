@@ -144,6 +144,8 @@ export type PatchStudyAnalysis = {
   question?: string | null;
   hypothesis?: string | null;
   phase?: string | null;
+  stream?: "vlm_prefix" | "expert_action" | string | null;
+  generation_steps?: "all" | { indices?: number[]; start?: number; end?: number } | null;
   status: string;
   pair_count: number;
   planned_trial_count: number;

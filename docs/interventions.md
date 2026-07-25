@@ -56,6 +56,10 @@ VLA Lens can:
   explicit retry;
 - keep full action chunks, compact tables, decisions, hashes, and the exact
   plan permanently while keeping large donor hidden states only in memory.
+- address PI0.5 action-expert hidden states by layer, denoising step, and action
+  position, capturing several requested expert layers in one donor generation;
+- build full or sliced expert-action studies without hand-editing JSON. See
+  [pi05-action-stream-patching.md](pi05-action-stream-patching.md).
 
 The synthetic one-hot action-head hook remains an engineering smoke and records
 `claim_eligible = false`. The artifact-derived layer-8 hook can become eligible
@@ -135,7 +139,7 @@ The active work is tracked in GitHub rather than another planning document:
 
 - [#19: live Intervention Lab execution and action comparison](https://github.com/thajpo/vla-lens/issues/19)
 - [#20: sweep and cohort execution](https://github.com/thajpo/vla-lens/issues/20)
-- [#34: pose-exchange capture and patching pilot](https://github.com/thajpo/vla-lens/issues/34)
+- [#35: follow the scene signal into the PI0.5 action stream](https://github.com/thajpo/vla-lens/issues/35)
 
 There is no active temporary implementation spec. When one of these issues is
 selected, its issue body becomes the plan by default.
