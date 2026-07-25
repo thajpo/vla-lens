@@ -13,6 +13,11 @@ from vla_lens.probes.workflow_types import DEFAULT_PROBE_SPEC
 
 def normalize_probe_spec(spec: Mapping[str, Any] | None = None) -> dict[str, Any]:
     """Return a complete probe spec with conservative defaults."""
+    if specialized_probe_family(spec):
+        # Specialized studies own a different schema (including feature lists or
+        # artifact-backed inputs).  Applying generic defaults here would silently
+        # turn them into an expert-hidden mean-pooling probe.
+        return dict(spec or {})
     merged = _deep_merge(DEFAULT_PROBE_SPEC, dict(spec or {}))
     target = merged.get("target")
     if isinstance(target, str):
@@ -44,6 +49,37 @@ def normalize_probe_spec(spec: Mapping[str, Any] | None = None) -> dict[str, Any
             probe["models"] = [probe["models"]]
     merged.setdefault("baseline", [])
     return merged
+
+
+def specialized_probe_family(spec: Mapping[str, Any] | None) -> str | None:
+    """Identify the small set of study specs handled by dedicated runners."""
+    if not isinstance(spec, Mapping):
+        return None
+    features = spec.get("features")
+    if (
+        isinstance(features, Sequence)
+        and not isinstance(features, (str, bytes))
+        and "targets" in spec
+    ):
+        return "geometry_study"
+    if spec.get("source_probe_artifact_id"):
+        sampling = spec.get("sampling")
+        if isinstance(sampling, Mapping) and {
+            "max_train_examples",
+            "max_selection_examples",
+            "negative_ratio",
+        }.issubset(sampling):
+            return "object_query_localization_study"
+        probe = spec.get("probe")
+        if isinstance(probe, Mapping) and {
+            "layers",
+            "models",
+            "alphas",
+            "mlp_hidden_units",
+            "min_train_episodes",
+        }.issubset(probe):
+            return "object_roi_identity_study"
+    return None
 
 
 def load_probe_spec(path: str | Path) -> dict[str, Any]:

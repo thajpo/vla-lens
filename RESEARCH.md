@@ -754,11 +754,12 @@ its strongest matching physical or metadata baseline there, do not report its
 test result and do not promote it. A positive held-out result remains
 exploratory until a fresh locked confirmation split or capture.
 
-**Status.** Runner and specs are ready; the broad-1000 study has not been run.
-The generic probe preflight currently rejects this specialized multi-feature
-geometry spec because it assumes one `features` mapping. The geometry runner
-still validates model names, target names, splits, and fixed MLP settings before
-fitting; generic preflight support remains a workflow follow-up.
+**Status.** Runner, specs, and review-only specialized preflight are ready; the
+broad-1000 study has not been run. Preflight now identifies the multi-feature
+geometry family before generic defaults and reports target, cohort,
+representation availability, split, controls, and model/PCA sweep without
+fitting or materializing features. The geometry runner still performs its full
+data-aware validation immediately before fitting.
 
 ## Not Yet Run
 
