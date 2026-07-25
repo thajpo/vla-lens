@@ -2,7 +2,7 @@
 
 Status: active source of truth for research questions and findings.
 
-Last updated: July 22, 2026.
+Last updated: July 24, 2026.
 
 This file answers three questions:
 
@@ -92,9 +92,9 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-012 | Do main-camera visual tokens encode the initial object roster and each object's XYZ? | Probe | Identity yes; XYZ mostly scene prior | Yes, localize identity and improve geometry target |
 | RQ-013 | Does the identity probe's evidence spatially cover the named object? | Probe diagnostic | Modestly for some objects; not movement-sensitive | Yes, inspect examples and intervene carefully |
 | RQ-014 | Do visual tokens explicitly encode every visible object's image location? | Probe | Run; local probe negative, scene decoder confounded | Revisit with matched scenes or object-centric decoder |
-| RQ-015 | Does a known object region identify the object occupying it? | Probe | Running | Await held-out controls |
-| RQ-016 | Can an explicit object query locate that object? | Probe | Running | Await validation gate |
-| RQ-017 | Are pose changes nonlinearly decodable from pooled representations? | Probe | Planned; runner ready, not run | Run held-out-task first |
+| RQ-015 | Does a known object region identify the object occupying it? | Probe | Positive exploratory result | Confirm on fresh locked data |
+| RQ-016 | Can an explicit object query locate that object? | Probe | Negative for episode-specific location | Revisit with matched scenes or object-centric features |
+| RQ-017 | Are pose changes nonlinearly decodable from pooled representations? | Probe | Negative on validation | No larger global pooled probe sweep |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -665,8 +665,8 @@ inside that region identify which object occupies it?
 object's own region than from the entire image or another region in the same
 scene, even though scene and box geometry remain predictive.
 
-**Planned method.** Use every initial, visible object instance with adequate
-training support. Mean the existing 16-channel compact visual-token vectors
+**Method.** Used every initial, visible object instance with adequate training
+support. Averaged the existing 16-channel compact visual-token vectors
 only over patches intersecting its simulator box at layers 0, 4, 8, 12, and
 17. Fit multinomial linear and fixed 64-unit MLP identity readouts. Select
 layer, model, and regularization on held-out validation tasks only.
@@ -683,6 +683,41 @@ find the object without the box or that it uses the identity causally. The
 existing final test has already been inspected by earlier work, so any positive
 result remains exploratory until fresh confirmation.
 
+**Result.** The known object region contains a strong identity signal. The
+validation-selected layer-4 MLP reached 0.466 balanced accuracy and 0.526
+average precision on held-out test tasks. The same metrics were 0.193 and
+0.134 for the whole-image token mean, 0.226 and 0.226 for a different object's
+region, 0.180 and 0.133 for background patches, and 0.290 and 0.362 for task,
+scene, prompt, and box metadata. Ten shuffled-label probes averaged only 0.029
+balanced accuracy and 0.061 average precision.
+
+The selected MLP hit its 300-iteration limit, so a separate robustness run fit
+the same question with a converged linear probe. The layer-8 linear probe
+reached 0.410 balanced accuracy and 0.448 average precision, versus 0.286
+balanced accuracy for the strongest task/scene/box control. Its correct-rate
+advantage over a wrong object region remained positive when whole objects were
+the resampling unit: +0.201, 95% CI [0.054, 0.355]. This confirms that the core
+finding does not depend on an unfinished nonlinear optimizer.
+
+Performance still varied sharply by object identity: some objects were decoded
+almost perfectly and many had zero recall. The result therefore says that
+identity is accessible when the correct region is supplied, not that PI0.5 has
+a uniformly clean object code or can locate the region itself.
+
+**Decision.** Accept as a positive exploratory result and use its saved
+episode/object predictions for inspection. Confirm on fresh locked data before
+making a broad claim. For interventions, choose identities that decode reliably
+and keep poorly decoded identities as negative controls.
+
+**Accepted artifacts.**
+
+- Primary battery: `object_roi_identity_study-pi0.5-broad-1000-known-region-visible-object-identity-study-c8c63c09c5`
+- Converged linear check: `object_roi_identity_study-pi0.5-broad-1000-known-region-object-identity-converged-linear-check-4f24179aef`
+
+Both artifacts save the fitted readouts, exact evaluated instances,
+predictions, confidence intervals, and enough numeric parameters to replay the
+probe outside scikit-learn.
+
 ## RQ-016: Explicit Object-Query Localization
 
 **Question.** Given a named object query, can one shared decoder identify the
@@ -692,8 +727,8 @@ image patches occupied by that object?
 will recover episode-specific location that the independent named-object heads
 in RQ-014 missed.
 
-**Planned method.** Construct `(episode, object query, image patch)` examples
-from initial visible objects. Keep every positive and deterministically sample
+**Method.** Constructed `(episode, object query, image patch)` examples
+from initial visible objects. Kept every positive and deterministically sampled
 one near-box, one wrong-object, and one background negative per positive, with
 at most 400,000 training examples. Concatenate each patch's 16 compact
 activation channels, normalized patch coordinates, and a query one-hot vector.
@@ -714,6 +749,29 @@ would establish an accessible object-conditioned visual location signal, not
 an unordered scene graph or causal mechanism. As with RQ-015, fresh locked data
 is required before treating a positive test result as confirmation.
 
+**Result.** The validation gate passed, and the selected layer-4 MLP reached
+0.515 patch average precision on held-out test tasks, compared with 0.458 for
+the fixed per-object spatial map. Query identity mattered: supplying the wrong
+object query reduced average precision to 0.184.
+
+However, shuffling activation maps between episodes of the same task did not
+hurt. It slightly improved average precision to 0.524. In the matched-scene
+test, the activation query was also 4.52 pixels worse than predicting no
+movement at all. Thus the decoder can combine an object name with familiar
+task/scene layout, but the tested activation map does not tell it where that
+object is in the current episode.
+
+**Decision.** Treat this as a negative result for episode-specific localization
+or object tracking. Do not intervene on this readout as though it were a moving
+object handle. Its most useful inspection view is a side-by-side comparison of
+the real activation query, within-task shuffled activation, fixed spatial map,
+and true object box so researchers can see the shortcut directly.
+
+**Artifact.**
+`object_query_localization_study-pi0.5-broad-1000-explicit-visual-object-query-localization-study-2c530d8218`.
+It saves the selected model, test predictions, query and shuffle controls,
+matched-scene results, and grouped confidence intervals.
+
 ## RQ-017: Nonlinear Pose Capacity Beyond Physical Baselines
 
 **Question.** Can a small nonlinear readout recover object position or rotation
@@ -723,7 +781,7 @@ information that the pooled ridge studies in RQ-007 missed?
 linearly accessible. A fixed one-hidden-layer MLP should improve on the matching
 physical and metadata baselines on held-out tasks if that is true.
 
-**Planned method.** Compare the existing multi-output ridge readout with one
+**Method.** Compared the existing multi-output ridge readout with one
 fixed `MLPRegressor`: 64 hidden units, `alpha=1e-4`, at most 300 iterations, and
 random seed 0. Fit the feature scaler and one maximum PCA on training rows only;
 reuse PCA prefixes at 64, 128, and 256 dimensions. Sweep expert layers, action
@@ -754,28 +812,58 @@ its strongest matching physical or metadata baseline there, do not report its
 test result and do not promote it. A positive held-out result remains
 exploratory until a fresh locked confirmation split or capture.
 
-**Status.** Runner, specs, and review-only specialized preflight are ready; the
-broad-1000 study has not been run. Preflight now identifies the multi-feature
-geometry family before generic defaults and reports target, cohort,
-representation availability, split, controls, and model/PCA sweep without
-fitting or materializing features. The geometry runner still performs its full
-data-aware validation immediately before fitting.
+**Result.** None of the 16 validation-selected MLP readouts beat its matching
+physical control on held-out tasks, even though all 16 optimizers converged.
+The closest was previous-call-relative rotation from expert layer 0: 10.05
+degrees of validation error versus 3.74 degrees from predicting no rotation
+change, or 2.69 times worse. The selected MLP was also worse than the selected
+ridge readout for all four targets. In accordance with the stopping rule, no
+MLP test-set result was computed or reported.
+
+The failure was broad: the sweep covered 540 candidate combinations and 32
+final selections across expert action hidden states, action-head input,
+image-prefix hidden states, and VLM endpoints. It tested absolute XYZ, XYZ
+change, absolute 6D rotation, and relative 6D rotation with 64-, 128-, and
+256-dimensional training-only PCA inputs. This makes “a little more nonlinear
+capacity fixes the global pooled pose probe” a poor next bet.
+
+**Decision.** Accept the validation result as negative and stop expanding the
+same global pooled architecture. It does not rule out object-local or
+token-to-object geometry, because pooling may discard the correspondence we
+need. A future geometry study should change the representation contract, not
+just enlarge the readout.
+
+**Artifact.**
+`geometry_probe_study-pi0.5-broad-1000-nonlinear-pose-capacity-study-59aa1ec2e9`.
+It contains 540 candidates, 32 validation selections, fitted parameters,
+predictions for allowed linear controls, grouped confidence intervals, and
+explicit records showing that all nonlinear test results were withheld.
+
+**Workflow result.** Shared managed caches allowed the four feature families to
+run safely in parallel with other studies and remain reusable. Specialized
+review-only preflight now recognizes this geometry-study spec and reports its
+targets, splits, controls, representation families, and model/PCA sweep without
+training or materializing features.
 
 ## Not Yet Run
 
 - Feature-level sparse object-location probes beyond the fixed MLP battery
 - Set decoder for unordered scene objects
-- RQ-017 nonlinear target pose and rotation probes
 - Filtered first-moved/first-lifted target probes
 - Target-parse VLM probe (the existing selector matched no rows)
 - Representation interventions based on these probe results
 
 ## Current Priority
 
-1. Add the episode-level identity map review job to the UI contract.
-2. Train an explicit object-localization or camera-frame geometry probe rather
-   than expecting a scene-identity probe to track position.
-3. Choose one well-localized and one poorly localized object identity for a
-   controlled representation intervention.
-4. Compare intervention effects with the probe score, policy output, and
-   episode behavior before broad sweeps.
+1. Expose the RQ-015 episode/object predictions in the existing episode lens so
+   a researcher can move from aggregate accuracy to the images the probe got
+   right, got wrong, or was uncertain about.
+2. Run a small controlled identity intervention on one reliably decoded object
+   and one poorly decoded control. Change only tokens inside the supplied
+   object region; do not use the failed RQ-016 location map as an intervention
+   handle.
+3. Compare the intervention's effect on the identity probe score, policy action
+   output, and episode behavior before attempting a broad sweep.
+4. For geometry, next test must preserve object-token correspondence, such as
+   an object-centric query or set decoder. Do not add capacity to another
+   globally pooled pose readout.
