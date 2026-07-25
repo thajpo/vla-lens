@@ -1,0 +1,190 @@
+{
+  "run_id": "rq020-existing-moved-mug-pair-layer8-smoke",
+  "runtime_adapter": "pi05",
+  "title": "RQ-020 source-patch machinery smoke on an existing moved-object pair",
+  "target": {
+    "kind": "activation_slice",
+    "model_id": "lerobot/pi05_libero_finetuned",
+    "model_family": "pi05",
+    "model_site": "pi05.vlm.layers.8.prefix.hidden_tokens",
+    "layer": 8,
+    "tensor_type": "hidden_tokens",
+    "token_space": "pi05.prefix",
+    "token_selector": {
+      "indices": [
+        38,
+        39,
+        40,
+        41,
+        42,
+        54,
+        55,
+        56,
+        57,
+        58,
+        70,
+        71,
+        72,
+        73,
+        74,
+        86,
+        87,
+        88,
+        89,
+        90
+      ]
+    },
+    "metadata": {
+      "research_question_id": "RQ-020",
+      "pair_id": "506357b9a6fb733db638",
+      "moved_object": "white_yellow_mug_1",
+      "scope": "runtime machinery smoke, not the planned pose-exchange experiment"
+    }
+  },
+  "baseline": {
+    "context": {
+      "trace_id": "pi05_mechanistic_sampled_libero_90_task73_seed2000",
+      "policy_call_index": 0,
+      "instruction": "pick up the book and place it in the front compartment of the caddy",
+      "task": "libero_90:73"
+    }
+  },
+  "donor": {
+    "trace": {
+      "trace_id": "pi05_mechanistic_sampled_libero_90_task73_seed2004"
+    },
+    "policy_call": {
+      "trace_id": "pi05_mechanistic_sampled_libero_90_task73_seed2004",
+      "policy_call_index": 0
+    },
+    "metadata": {
+      "pair_id": "506357b9a6fb733db638",
+      "shared_noise_source": "recipient"
+    }
+  },
+  "intervention": {
+    "request": {
+      "operator": {
+        "operator": "source_patch",
+        "strength": 1.0,
+        "parameters": {
+          "mode": "donor_source_patch",
+          "donor_token_indices": [
+            38,
+            39,
+            40,
+            41,
+            42,
+            54,
+            55,
+            56,
+            57,
+            58,
+            70,
+            71,
+            72,
+            73,
+            74,
+            86,
+            87,
+            88,
+            89,
+            90
+          ]
+        }
+      },
+      "schedule": {
+        "policy_calls": [
+          0
+        ],
+        "generation_steps": "all",
+        "tokens": "target_tokens"
+      },
+      "outcome": {
+        "kind": "action",
+        "basis": [
+          "raw"
+        ],
+        "horizon": "full_chunk",
+        "parameters": {
+          "patch_decision_thresholds": {
+            "minimum_natural_delta_norm": 0.000001,
+            "minimum_direction_agreement": 0.5,
+            "minimum_transfer_fraction": 0.1,
+            "maximum_donor_gap_remaining": 0.95,
+            "minimum_control_margin": 0.05
+          }
+        }
+      },
+      "controls": [
+        {
+          "kind": "recipient_self_patch"
+        },
+        {
+          "kind": "donor_self_patch"
+        },
+        {
+          "kind": "shuffled_donor",
+          "parameters": {
+            "seed": 20260725
+          }
+        },
+        {
+          "kind": "random_matched_norm",
+          "parameters": {
+            "seed": 20260725
+          }
+        },
+        {
+          "kind": "wrong_region",
+          "parameters": {
+            "recipient_indices": [
+              97,
+              98,
+              99,
+              100,
+              101,
+              102,
+              103,
+              104,
+              105,
+              113,
+              114,
+              115,
+              116,
+              117,
+              118,
+              119,
+              120,
+              121,
+              129,
+              130
+            ],
+            "donor_indices": [
+              97,
+              98,
+              99,
+              100,
+              101,
+              102,
+              103,
+              104,
+              105,
+              113,
+              114,
+              115,
+              116,
+              117,
+              118,
+              119,
+              120,
+              121,
+              129,
+              130
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

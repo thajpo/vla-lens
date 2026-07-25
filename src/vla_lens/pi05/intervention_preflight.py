@@ -22,7 +22,15 @@ def pi05_intervention_preflight(
     """Run generic preflight and resolve PI0.5 runtime availability."""
 
     base = intervention_preflight(dataset, payload)
-    checks = tuple(_replace_model_runtime_check(base.checks, runtime_available=runtime_available))
+    checks = tuple(
+        [
+            *_replace_model_runtime_check(
+                base.checks,
+                runtime_available=runtime_available,
+            ),
+            *_source_patch_checks(dataset, payload),
+        ]
+    )
     runtime_resolution = {
         **dict(base.runtime_resolution),
         "adapter": "pi05",
@@ -95,6 +103,7 @@ def _status_from_checks(checks: tuple[PreflightCheck, ...]) -> str:
         "source_artifact_exists",
         "target_site_declared_in_model_site_index",
         "token_space_declared",
+        "counterfactual_pair_compatible",
     }
     failed = {check.name for check in checks if check.status == "failed"}
     if failed & fatal_names:
@@ -141,6 +150,92 @@ def _dedupe(values: tuple[str, ...]) -> tuple[str, ...]:
             seen.add(value)
             out.append(value)
     return tuple(out)
+
+
+def _source_patch_checks(
+    dataset: TraceDataset,
+    payload: Mapping[str, Any],
+) -> tuple[PreflightCheck, ...]:
+    if _execution_mode(payload) != "donor_source_patch":
+        return ()
+    donor = _mapping(payload.get("donor"))
+    donor_trace = _mapping(donor.get("trace"))
+    donor_call = _mapping(donor.get("policy_call"))
+    donor_trace_id = str(donor_trace.get("trace_id") or "").strip()
+    context = _mapping(payload.get("context"))
+    if not context:
+        context = _mapping(_mapping(payload.get("baseline")).get("context"))
+    recipient_trace_id = str(context.get("trace_id") or "").strip()
+    failures: list[str] = []
+    if not donor_trace_id:
+        failures.append("donor.trace.trace_id is missing")
+    if donor_trace_id == recipient_trace_id and donor_trace_id:
+        failures.append("recipient and donor must be different traces")
+    try:
+        recipient_bundle = dataset.bundle(recipient_trace_id)
+    except Exception:
+        recipient_bundle = None
+        failures.append(f"recipient trace {recipient_trace_id!r} is unavailable")
+    try:
+        donor_bundle = dataset.bundle(donor_trace_id)
+    except Exception:
+        donor_bundle = None
+        failures.append(f"donor trace {donor_trace_id!r} is unavailable")
+    donor_call_index = int(donor_call.get("policy_call_index") or 0)
+    if recipient_bundle is not None and donor_bundle is not None:
+        if donor_call_index >= int(donor_bundle.action_chunks(mmap=True).shape[0]):
+            failures.append(f"donor policy call {donor_call_index} is unavailable")
+        comparisons = {
+            "model checkpoint": (
+                recipient_bundle.manifest.model_id == donor_bundle.manifest.model_id
+            ),
+            "prompt": recipient_bundle.manifest.prompt == donor_bundle.manifest.prompt,
+            "task": recipient_bundle.manifest.task_id == donor_bundle.manifest.task_id,
+            "action shape": (
+                tuple(recipient_bundle.action_chunks(mmap=True).shape[1:])
+                == tuple(donor_bundle.action_chunks(mmap=True).shape[1:])
+            ),
+        }
+        failures.extend(name for name, matches in comparisons.items() if not matches)
+    if failures:
+        return (
+            PreflightCheck(
+                name="counterfactual_pair_compatible",
+                status="failed",
+                ok=False,
+                message="Recipient and donor cannot be compared: " + ", ".join(failures),
+                errors=tuple(failures),
+                metadata={
+                    "recipient_trace_id": recipient_trace_id,
+                    "donor_trace_id": donor_trace_id,
+                    "donor_policy_call_index": donor_call_index,
+                },
+            ),
+        )
+    return (
+        PreflightCheck(
+            name="counterfactual_pair_compatible",
+            status="ok",
+            ok=True,
+            message="Recipient and donor trace metadata support source patching.",
+            metadata={
+                "recipient_trace_id": recipient_trace_id,
+                "donor_trace_id": donor_trace_id,
+                "donor_policy_call_index": donor_call_index,
+            },
+        ),
+    )
+
+
+def _execution_mode(payload: Mapping[str, Any]) -> str:
+    intervention = _mapping(payload.get("intervention"))
+    request = _mapping(payload.get("request")) or _mapping(intervention.get("request"))
+    operator = _mapping(request.get("operator"))
+    return str(_mapping(operator.get("parameters")).get("mode") or "")
+
+
+def _mapping(value: Any) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
 
 
 __all__ = ["pi05_intervention_preflight"]

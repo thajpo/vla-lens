@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from typing import Any, Mapping
@@ -115,6 +116,87 @@ def test_pi05_preflight_replaces_runtime_availability_without_heavy_imports(tmp_
     assert available["status"] == "ok"
     assert available["capability_status"]["model_runtime_available"] is True
     assert available["runtime_resolution"]["adapter"] == "pi05"
+
+
+def test_pi05_source_patch_preflight_checks_recipient_donor_compatibility(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2, timesteps=8)
+    manifest_paths = sorted(
+        (dataset.root / "vla_lens" / "episodes").glob("*/manifest.json")
+    )
+    recipient_manifest = json.loads(manifest_paths[0].read_text(encoding="utf-8"))
+    donor_manifest = json.loads(manifest_paths[1].read_text(encoding="utf-8"))
+    for field in ("model_id", "prompt", "task_id"):
+        donor_manifest[field] = recipient_manifest[field]
+    manifest_paths[1].write_text(json.dumps(donor_manifest), encoding="utf-8")
+    dataset = TraceDataset.open(dataset.root)
+    recipient, donor = dataset.bundles
+    request = {
+        "runtime_adapter": "pi05",
+        "target": {
+            "kind": "activation_slice",
+            "model_family": "pi05",
+            "model_site": "action_head.layers.0.resid",
+            "layer": 0,
+            "token_space": "synthetic.action_suffix",
+            "token_selector": {"indices": [0, 1]},
+        },
+        "baseline": {
+            "context": {
+                "trace_id": recipient.manifest.trace_id,
+                "policy_call_index": 0,
+            }
+        },
+        "donor": {
+            "trace": {"trace_id": donor.manifest.trace_id},
+            "policy_call": {
+                "trace_id": donor.manifest.trace_id,
+                "policy_call_index": 0,
+            },
+        },
+        "intervention": {
+            "request": {
+                "operator": {
+                    "operator": "source_patch",
+                    "strength": 1.0,
+                    "parameters": {"mode": "donor_source_patch"},
+                },
+                "schedule": {
+                    "policy_calls": [0],
+                    "generation_steps": "all",
+                    "tokens": "target_tokens",
+                },
+                "outcome": {"kind": "action", "basis": ["raw"]},
+            }
+        },
+    }
+
+    result = pi05_intervention_preflight(
+        dataset,
+        request,
+        runtime_available=True,
+    ).to_dict()
+    pair_check = next(
+        check for check in result["checks"] if check["name"] == "counterfactual_pair_compatible"
+    )
+
+    assert pair_check["status"] == "ok"
+    assert pair_check["metadata"]["recipient_trace_id"] == recipient.manifest.trace_id
+    assert pair_check["metadata"]["donor_trace_id"] == donor.manifest.trace_id
+
+    request["donor"]["trace"]["trace_id"] = recipient.manifest.trace_id
+    request["donor"]["policy_call"]["trace_id"] = recipient.manifest.trace_id
+    same_trace = pi05_intervention_preflight(
+        dataset,
+        request,
+        runtime_available=True,
+    ).to_dict()
+    same_trace_check = next(
+        check
+        for check in same_trace["checks"]
+        if check["name"] == "counterfactual_pair_compatible"
+    )
+    assert same_trace_check["status"] == "failed"
+    assert "recipient and donor must be different traces" in same_trace_check["errors"]
 
 
 def test_pi05_runtime_contract_writes_saved_intervention_run_and_artifact(tmp_path):
@@ -261,3 +343,64 @@ if loaded:
 """
 
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_source_patch_runtime_saves_donor_action_and_measured_specificity(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=8)
+    stored = np.asarray(dataset.bundles[0].action_chunks(mmap=True)[0], dtype=np.float32)
+    request = _request(dataset)
+    request["intervention"]["request"]["controls"] = [
+        {"kind": "random_matched_norm"}
+    ]
+
+    class SourcePatchExecutor(FakePI05Executor):
+        def run_intervention(self, payload):
+            del payload
+            return RuntimeTrialOutput(
+                trial_id="trial_source_patch",
+                trial_kind="intervention",
+                action_chunk=self.base_action + 0.6,
+                array_outputs={"donor_shared_noise": self.base_action + 1.0},
+                runtime={
+                    "purpose": "donor_source_patch",
+                    "claim_eligible": True,
+                    "hook_calls": 1,
+                    "pair_compatibility": {
+                        "different_trace": True,
+                        "model_id": True,
+                        "prompt": True,
+                        "benchmark": True,
+                        "task_id": True,
+                        "observation_shape": True,
+                        "stored_action_shape": True,
+                        "noise_shape": True,
+                    },
+                },
+            )
+
+        def run_control(self, payload, *, control_kind):
+            del payload, control_kind
+            return RuntimeTrialOutput(
+                trial_id="trial_random_matched_norm",
+                trial_kind="source_patch_control",
+                control_kind="random_matched_norm",
+                action_chunk=self.base_action + 0.1,
+                runtime={"claim_eligible": True},
+            )
+
+    result = run_pi05_intervention(
+        dataset,
+        request,
+        executor=SourcePatchExecutor(stored),
+        save=False,
+        claim_gate={"passed": True},
+    )
+
+    assert "donor_shared_noise" in result.arrays
+    transfer = result.run.display["counterfactual_transfer"]
+    assert np.isclose(transfer["metrics"]["transfer_fraction"], 0.6)
+    assert transfer["decision"]["verdict"] == "specific_action_transfer"
+    assert transfer["thresholds"]["minimum_transfer_fraction"] == 0.1
+    assert result.run.claim["supports_specificity"] is True
+    assert result.run.claim["scientific_verdict"] == "specific_action_transfer"
+    assert result.run.claim["claim_strength"] == ["causal_local", "action_level"]
