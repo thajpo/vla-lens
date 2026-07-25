@@ -314,7 +314,7 @@ def _claim_labels_for_runs(
         labels.add("action_level")
     if "rollout" in outcome_kinds:
         labels.add("behavioral")
-    if _has_successful_control(controls):
+    if _has_measured_specificity_evidence(controls):
         labels.add("specific")
     trace_count = len(_unique(run.context.trace_id for run in runs if run.context.trace_id))
     if cohort and trace_count > 1 and any(_has_claim(run, "causal_local") for run in runs):
@@ -333,8 +333,20 @@ def _claim_labels_from_summary(summaries: Iterable[Mapping[str, Any]]) -> list[s
     return sorted(labels)
 
 
-def _has_successful_control(controls: Sequence[Mapping[str, Any]]) -> bool:
-    return any(str(control.get("status")) in {"ok", "partial"} for control in controls)
+def _has_measured_specificity_evidence(controls: Sequence[Mapping[str, Any]]) -> bool:
+    """Require a measured comparison, not merely a control that finished running."""
+    for control in controls:
+        if control.get("supports_specificity") is True:
+            return True
+        if str(control.get("verdict")) in {
+            "specific_action_transfer",
+            "confirmation_passed",
+        }:
+            return True
+        metrics = control.get("metrics")
+        if isinstance(metrics, Mapping) and metrics.get("specificity_passed") is True:
+            return True
+    return False
 
 
 def _has_claim(run: InterventionRun, label: str) -> bool:
