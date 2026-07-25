@@ -12,6 +12,19 @@ from vla_lens.interventions.artifacts import (
     intervention_run_to_lens_artifact,
     intervention_sweep_to_lens_artifact,
 )
+from vla_lens.interventions.counterfactuals import (
+    ActionArrayRef,
+    CounterfactualMetrics,
+    CounterfactualPairManifest,
+    CounterfactualRecipe,
+    EvaluationDecision,
+    PatchDecisionThresholds,
+    PatchStudyArtifact,
+    PatchStudySpec,
+    PatchTrialManifest,
+    counterfactual_action_metrics,
+    evaluate_patch_trial,
+)
 from vla_lens.interventions.families import (
     ArtifactFamilyContract,
     artifact_family_for_type,
@@ -60,6 +73,7 @@ from vla_lens.interventions.sweeps import (
 )
 
 __all__ = [
+    "ActionArrayRef",
     "ActionBasisRequest",
     "ActionBasisResolution",
     "ActionBasisResult",
@@ -70,10 +84,14 @@ __all__ = [
     "AggregateOutcomeResult",
     "ActionOutcomeResult",
     "CohortInterventionRequest",
+    "CounterfactualMetrics",
+    "CounterfactualPairManifest",
+    "CounterfactualRecipe",
     "ContextSpec",
     "ControlResult",
     "ControlSpec",
     "DonorSpec",
+    "EvaluationDecision",
     "InterventionOperatorSpec",
     "InterventionRun",
     "InterventionScheduleSpec",
@@ -81,6 +99,10 @@ __all__ = [
     "InterventionSweep",
     "InterventionTrial",
     "OutcomeSpec",
+    "PatchDecisionThresholds",
+    "PatchStudyArtifact",
+    "PatchStudySpec",
+    "PatchTrialManifest",
     "PolicyCallRef",
     "PreflightCheck",
     "RecipientSpec",
@@ -98,6 +120,8 @@ __all__ = [
     "artifact_family_registry",
     "build_intervention_study",
     "build_intervention_sweep",
+    "counterfactual_action_metrics",
+    "evaluate_patch_trial",
     "intervention_preflight",
     "intervention_run_to_lens_artifact",
     "intervention_sweep_to_lens_artifact",

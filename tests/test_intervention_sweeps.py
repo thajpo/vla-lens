@@ -91,7 +91,13 @@ def test_sweep_aggregates_metrics_and_gates_claim_labels():
         _run("run-high", strength=1.0, trace_id="trace-3", metric=0.3),
     )
     cohort = {"cohort_id": "heldout", "members": {"trace_id": ["trace-1", "trace-2", "trace-3"]}}
-    controls = ({"control_kind": "random_direction", "status": "ok", "metrics": {}},)
+    controls = (
+        {
+            "control_kind": "random_direction",
+            "status": "ok",
+            "metrics": {"specificity_passed": True},
+        },
+    )
 
     sweep = build_intervention_sweep(
         sweep_id="sweep-strength",
@@ -124,6 +130,18 @@ def test_sweep_does_not_add_cohort_or_specific_claims_without_evidence():
 
     assert "action_level" in sweep.summary["claim_labels"]
     assert "causal_cohort" not in sweep.summary["claim_labels"]
+    assert "specific" not in sweep.summary["claim_labels"]
+
+
+def test_successful_control_execution_alone_is_not_specificity_evidence():
+    sweep = build_intervention_sweep(
+        sweep_id="sweep-control-executed",
+        runs=(_run("run-control", trace_id="trace-1"),),
+        controls=(
+            {"control_kind": "random_direction", "status": "ok", "metrics": {}},
+        ),
+    )
+
     assert "specific" not in sweep.summary["claim_labels"]
 
 

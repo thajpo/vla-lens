@@ -2,7 +2,7 @@
 
 Status: active source of truth for research questions and findings.
 
-Last updated: July 24, 2026.
+Last updated: July 25, 2026.
 
 This file answers three questions:
 
@@ -96,6 +96,11 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-016 | Can an explicit object query locate that object? | Probe | Negative for episode-specific location | Revisit with matched scenes or object-centric features |
 | RQ-017 | Are pose changes nonlinearly decodable from pooled representations? | Probe | Negative on validation | No larger global pooled probe sweep |
 | RQ-018 | Does the layer-8 object-identity direction causally affect PI0.5's action? | Intervention | Completed; negative semantic-specificity result | Calibrate region and dose controls |
+| RQ-019 | Does exchanging target and distractor poses naturally change PI0.5's action? | Counterfactual | Planned | Required gate for patching |
+| RQ-020 | Where can donor activations transfer that natural action change? | Activation patching | Planned | Yes, layer and token sweep |
+| RQ-021 | What object property does a successful patch carry? | Counterfactual intervention | Blocked on RQ-020 | Identity, appearance, role, or position |
+| RQ-022 | Which residual, key/value, or action-bridge path carries the effect? | Path intervention | Blocked on RQ-020 | Only after localization |
+| RQ-023 | Does a specific action-level transfer change closed-loop behavior? | Rollout intervention | Blocked on validation | Only after action specificity |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -942,6 +947,98 @@ effects yet.
 `vla_lens/intervention_reports/rq018_caddy_controlled.json`. Saved artifact:
 `intervention_run-rq-018-caddy-identity-direction-at-layer-8-d2f6e0d415`.
 
+## RQ-019: Natural Pose-Exchange Effect
+
+**Question.** When the instructed target and a visible distractor exchange
+poses while the instruction, robot, camera, checkpoint, and all other scene
+state remain fixed, does PI0.5 produce a meaningfully different action chunk?
+
+**Hypothesis.** If PI0.5 conditions its action on object identity and location,
+the same instruction should produce a reliable recipient-to-donor action change
+when the target and distractor exchange positions.
+
+**Method.** Build 3-5 pilot recipient/donor pairs. The recipient has target A
+and distractor B in their original poses; the donor exchanges only their poses.
+Validate the scene recipe before model execution. First replay each trace with
+its own saved noise. Then generate recipient and donor actions with the same
+new saved noise for the scientific comparison.
+
+**Baselines and controls.** Exact repeated no-op generation, a scene pair with
+no changed variables, and per-pair compatibility checks for model, checkpoint,
+prompt, camera, robot state, action shape, and token layout.
+
+**Confounds.** A pose exchange changes pixels, occlusion, and potentially
+collision geometry. A natural action difference does not by itself identify
+which object property or internal pathway caused it. Simulator scene mutation
+must not silently alter robot or camera state.
+
+**Metrics.** Saved-noise replay L2 and maximum element error; recipient-to-donor
+action L2; per-horizon and per-action-dimension deltas; pair validity and hook
+eligibility. Confidence intervals group by scene pair, not by action element.
+
+**Allowed conclusion and stopping rule.** A valid pair with a measurable action
+change defines a direction that an activation patch may try to transfer. It is
+not yet causal localization. Stop patching any pair whose scene checks, replay,
+or natural action-effect gate fails.
+
+## RQ-020: Donor Activation Patch Localization
+
+**Question.** At which layer and token region can donor activations move the
+recipient action toward the donor action produced under the same noise?
+
+**Hypothesis.** If an internal site carries object-conditioned information used
+by the action policy, patching that donor value into the recipient should move
+the action along the natural recipient-to-donor action change, not merely make
+the action different.
+
+**Method.** For each valid RQ-019 pair, capture donor prefix activations once.
+Patch selected recipient residual sites at layers 0, 4, 8, 12, and 16. Compare
+target-object tokens, distractor tokens, both regions, and their complement.
+Use one model load per study and deterministic trial IDs so interrupted studies
+resume without rerunning completed trials.
+
+**Baselines and controls.** Recipient self-patch, donor self-patch, alpha zero,
+shuffled tokens, same-identity donor where available, unrelated donor,
+stationary or wrong-region tokens with matched token count, and at least eight
+norm-matched random patches. Every runtime hook must fire exactly once and be
+removed after its trial.
+
+**Confounds.** Residual patch size can create generic sensitivity. Token regions
+may have different natural activation norms. A late residual hook may be a
+structural no-op because later VLM layers already produced their key/value
+cache. Cross-position key patching is invalid without rotary-position handling.
+
+**Metrics.** Let recipient, donor, and patched actions be r, d, and p. Save
+natural change d-r and patch change p-r. Report their cosine agreement, the
+fraction of natural change transferred, remaining distance from p to d,
+recovered donor distance, and movement perpendicular to d-r. Preserve the full
+50 by 7 action arrays and named axes; do not reduce the result to one number.
+
+**Allowed conclusion and stopping rule.** `localized_transfer` means a patch
+moved the action toward the donor but controls are incomplete. Call
+`specific_action_transfer` only when the intended patch passes the transfer
+gates and beats measured controls by the predeclared margin. Stop after a
+3-5-pair pilot if the natural effect is absent, hooks are unreliable, or no
+site shows donor-directed movement. Do not run rollouts from action difference
+alone.
+
+## RQ-021 Through RQ-023: Conditional Follow-Ups
+
+RQ-021 will split any successful RQ-020 effect into identity, appearance/shape,
+task role, and position by changing one factor at a time. RQ-022 will test
+residual, same-position value-cache, and action-bridge pathways only at sites
+localized by RQ-020; cross-position key patches require explicit positional
+correction. RQ-023 will run closed-loop rollouts only after a held-out cohort
+repeats a specific action-level transfer. These are separate questions, not
+automatic extensions of a positive pilot.
+
+**Validation plan.** A positive pilot advances to roughly 24 valid pairs across
+at least six scene groups. Thresholds and the best site/token rule are locked
+before a fresh confirmation set. Confirmation failure supersedes the exploratory
+positive result. Permanent artifacts keep pair/trial recipes, hashes, action
+arrays, mappings, decisions, and provenance. Full donor layers and key/value
+caches are disposable and may be rebuilt from the saved recipes.
+
 ## Not Yet Run
 
 - Feature-level sparse object-location probes beyond the fixed MLP battery
@@ -950,17 +1047,17 @@ effects yet.
 - Target-parse VLM probe (the existing selector matched no rows)
 - Raw-norm-matched wrong-ROI control for RQ-018
 - Small signed direction-dose comparison for the RQ-018 recipient
+- Valid target/distractor pose-exchange pairs for RQ-019
+- Donor activation source-patching pilot for RQ-020
 
 ## Current Priority
 
-1. Expose the RQ-015 episode/object predictions in the existing episode lens so
-   a researcher can move from aggregate accuracy to the images the probe got
-   right, got wrong, or was uncertain about.
-2. Extend RQ-018 with a raw-norm-matched wrong-ROI control and small signed
-   direction doses. The first controlled run found generic direction
-   sensitivity, not semantic specificity.
-3. Compare normalized and absolute action effects across those controls before
-   choosing rollouts or a broader recipient cohort.
-4. For geometry, next test must preserve object-token correspondence, such as
-   an object-centric query or set decoder. Do not add capacity to another
-   globally pooled pose readout.
+1. Build and validate the RQ-019 pose-exchange pilot pairs.
+2. Run RQ-020 donor source patches with shared noise and measured specificity
+   controls. Do not equate a large action difference with donor transfer.
+3. If the pilot localizes a transfer, validate it across scene groups before
+   decomposing semantics or running rollouts.
+4. Keep RQ-018 as a useful negative semantic result; its calibrated dose
+   controls are secondary to the cleaner natural counterfactual direction.
+5. For geometry probes, preserve object-token correspondence. Do not add
+   capacity to another globally pooled pose readout.

@@ -145,7 +145,13 @@ def test_intervention_sweep_creates_listable_lens_artifact(tmp_path):
     sweep = build_intervention_sweep(
         sweep_id="sweep-artifact-index",
         runs=(run,),
-        controls=({"control_kind": "random_direction", "status": "ok"},),
+        controls=(
+            {
+                "control_kind": "random_direction",
+                "status": "ok",
+                "metrics": {"specificity_passed": True},
+            },
+        ),
     )
     saved = dataset.save_artifact(intervention_sweep_to_lens_artifact(sweep))
     reopened = TraceDataset.open(dataset.root)
