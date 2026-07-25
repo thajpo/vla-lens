@@ -363,3 +363,104 @@ def test_pi05_source_patch_controls_are_explicit_and_norm_matched():
     assert random.runtime["donor_values_sha256"]
     assert random.runtime["shared_noise_sha256"]
     assert policy.layer.forward == original_forward
+
+
+class FakeExpertSourcePatchPolicy:
+    def __init__(self):
+        self.layer = FakeVLMLayer()
+        expert = SimpleNamespace(model=SimpleNamespace(layers=[self.layer]))
+        self.model = SimpleNamespace(
+            paligemma_with_expert=SimpleNamespace(gemma_expert=expert)
+        )
+        self.reset_calls = 0
+
+    def reset(self):
+        self.reset_calls += 1
+
+    def predict_action_chunk(self, observation, *, noise):
+        del noise
+        rows = []
+        for hidden_at_step in observation["hidden_by_step"]:
+            hidden, _cache = self.layer.forward(FakeTensor(hidden_at_step))
+            rows.append(hidden[:, 1, :2].value)
+        return FakeTensor(np.concatenate(rows, axis=0))
+
+
+def _expert_source_patch_request(*, generation_steps="all") -> dict:
+    request = _source_patch_request()
+    request["target"] = {
+        "kind": "activation_slice",
+        "model_family": "pi05",
+        "model_site": "pi05.expert.layers.0.by_step.hidden_tokens",
+        "layer": 0,
+        "token_space": "pi05.action_suffix",
+        "token_selector": {"indices": [0, 1, 2, 3]},
+    }
+    request["intervention"]["request"]["operator"]["parameters"][
+        "donor_token_indices"
+    ] = [0, 1, 2, 3]
+    request["intervention"]["request"]["schedule"][
+        "generation_steps"
+    ] = generation_steps
+    return request
+
+
+def test_pi05_executor_patches_expert_tokens_at_every_denoising_step():
+    policy = FakeExpertSourcePatchPolicy()
+    recipient = np.zeros((3, 1, 4, 3), dtype=np.float32)
+    donor = np.stack(
+        [np.full((1, 4, 3), step, dtype=np.float32) for step in (1, 2, 3)]
+    )
+    executor = PI05ActionInterventionExecutor(
+        runtime=SimpleNamespace(torch=FakeTorch(), policy=policy),
+        replay_inputs=_replay_inputs(trace_id="trace-a"),
+        observation={"hidden_by_step": recipient},
+        initial_noise=FakeTensor(np.zeros((1, 2, 2))),
+        donor_replay_inputs=_replay_inputs(trace_id="trace-b"),
+        donor_observation={"hidden_by_step": donor},
+        pair_compatibility={"model_id": True, "prompt": True},
+    )
+    original_forward = policy.layer.forward
+
+    patched = executor.run_intervention(_expert_source_patch_request())
+
+    np.testing.assert_array_equal(
+        patched.action_chunk,
+        np.asarray([[1, 1], [2, 2], [3, 3]], dtype=np.float32),
+    )
+    assert patched.runtime["hook_calls"] == 3
+    assert patched.runtime["expected_hook_calls"] == 3
+    assert patched.runtime["hook_valid"] is True
+    assert patched.runtime["applied_generation_steps"] == [0, 1, 2]
+    assert patched.runtime["patch_site"]["stack"] == "expert_action"
+    assert len(executor.donor_site_cache[patched.runtime["model_site"]]) == 3
+    assert policy.layer.forward == original_forward
+
+
+def test_pi05_expert_patch_supports_step_slices_and_alpha_zero_control():
+    policy = FakeExpertSourcePatchPolicy()
+    recipient = np.zeros((3, 1, 4, 3), dtype=np.float32)
+    donor = np.ones((3, 1, 4, 3), dtype=np.float32)
+    executor = PI05ActionInterventionExecutor(
+        runtime=SimpleNamespace(torch=FakeTorch(), policy=policy),
+        replay_inputs=_replay_inputs(trace_id="trace-a"),
+        observation={"hidden_by_step": recipient},
+        initial_noise=FakeTensor(np.zeros((1, 2, 2))),
+        donor_replay_inputs=_replay_inputs(trace_id="trace-b"),
+        donor_observation={"hidden_by_step": donor},
+        pair_compatibility={"model_id": True, "prompt": True},
+    )
+    request = _expert_source_patch_request(generation_steps={"indices": [0]})
+    request["intervention"]["request"]["controls"] = [{"kind": "alpha_zero"}]
+
+    patched = executor.run_intervention(request)
+    alpha_zero = executor.run_control(request, control_kind="alpha_zero")
+
+    np.testing.assert_array_equal(
+        patched.action_chunk,
+        np.asarray([[1, 1], [0, 0], [0, 0]], dtype=np.float32),
+    )
+    np.testing.assert_array_equal(alpha_zero.action_chunk, np.zeros((3, 2)))
+    assert patched.runtime["hook_calls"] == 3
+    assert patched.runtime["applied_generation_steps"] == [0]
+    assert alpha_zero.metrics["realized_perturbation_l2"] == 0.0

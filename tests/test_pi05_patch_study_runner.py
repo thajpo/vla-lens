@@ -23,6 +23,7 @@ class FakePatchExecutor:
         self.noop_calls = 0
         self.intervention_calls = 0
         self.primed_layers: list[int] = []
+        self.primed_sites: list[str] = []
 
     def run_noop(self, request: Mapping[str, Any]) -> RuntimeTrialOutput:
         del request
@@ -36,6 +37,10 @@ class FakePatchExecutor:
 
     def prime_donor_cache(self, layers):
         self.primed_layers = list(layers)
+        return self.base_action + 1.0
+
+    def prime_donor_sites(self, model_sites):
+        self.primed_sites = list(model_sites)
         return self.base_action + 1.0
 
     def run_intervention(self, request: Mapping[str, Any]) -> RuntimeTrialOutput:
@@ -238,7 +243,11 @@ def test_patch_study_runner_reuses_model_noop_and_donor_cache_then_resumes(
     assert factory_calls == [None]
     assert executors[0].noop_calls == 3
     assert executors[0].intervention_calls == 2
-    assert executors[0].primed_layers == [0, 4]
+    assert executors[0].primed_layers == []
+    assert executors[0].primed_sites == [
+        "pi05.vlm.layers.0.prefix.hidden_tokens",
+        "pi05.vlm.layers.4.prefix.hidden_tokens",
+    ]
     assert (output_dir / "actions.zarr").exists()
     assert (output_dir / "artifact.json").exists()
 

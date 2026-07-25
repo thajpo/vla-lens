@@ -6,12 +6,11 @@ Torch, LeRobot, LIBERO, or model checkpoints.
 
 from __future__ import annotations
 
-import re
 from typing import Any, Mapping
 
 from vla_lens.interventions.preflight import intervention_preflight
 from vla_lens.interventions.specs import PreflightCheck, RuntimePreflightResult
-from vla_lens.pi05.capture_schema import ALL_PI05_LAYERS
+from vla_lens.pi05.patch_sites import parse_pi05_patch_site
 from vla_lens.traces import TraceDataset
 
 
@@ -118,8 +117,12 @@ def _replace_source_patch_runtime_site_check(
         return checks, None
     target = _mapping(payload.get("target"))
     target_site = str(target.get("model_site") or target.get("site_id") or "").strip()
-    match = re.fullmatch(r"pi05\.vlm\.layers\.(\d+)\.prefix\.hidden_tokens", target_site)
-    if match is None or int(match.group(1)) not in ALL_PI05_LAYERS:
+    try:
+        site = parse_pi05_patch_site(
+            target_site,
+            declared_layer=(int(target["layer"]) if target.get("layer") is not None else None),
+        )
+    except (TypeError, ValueError):
         return checks, None
     context = _mapping(payload.get("context"))
     if not context:
@@ -144,13 +147,7 @@ def _replace_source_patch_runtime_site_check(
     if declaration_source is None:
         return checks, None
     record = {
-        "name": target_site,
-        "model_site": target_site,
-        "layer": int(match.group(1)),
-        "tensor_type": "hidden_tokens",
-        "token_space_id": str(target.get("token_space") or "pi05.prefix"),
-        "materialization": "runtime_only",
-        "saved_activation": False,
+        **site.to_runtime_record(),
         "declaration_source": declaration_source,
     }
     replacement = PreflightCheck(

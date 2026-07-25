@@ -176,10 +176,9 @@ class CapturePlan:
             [_past_key_values_collection_metadata(self)] if self.capture_bridge_sites else []
         )
         payload["axis_strategy"] = "policy_call"
-        payload["runtime_hook_sites"] = [
-            f"pi05.vlm.layers.{layer}.prefix.hidden_tokens"
-            for layer in ALL_PI05_LAYERS
-        ]
+        from vla_lens.pi05.patch_sites import pi05_runtime_patch_sites
+
+        payload["runtime_hook_sites"] = list(pi05_runtime_patch_sites())
         payload["runtime_hook_sites_materialized"] = False
         payload["attention_full_semantics"] = "head x query_token x key_token"
         payload["attention_key_mass_semantics"] = "head x key_token, mean over query_token"
