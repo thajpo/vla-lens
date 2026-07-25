@@ -37,7 +37,7 @@ metadata, and paired grouped confidence intervals. `fitted_readouts.json` and
 target blocks, and hyperparameters. `predict_geometry_readout` reconstructs a
 selected readout without fitting it again.
 
-The generic probe preflight currently accepts a single feature mapping, while
-this specialized study declares a list of representation families. The failed
-generic preflight attempt is recorded in `RESEARCH.md`; do not treat printing
-the normalized geometry request as equivalent to data-aware preflight.
+The probe preflight recognizes this as a specialized multi-feature geometry
+study before applying generic defaults. It reports the requested targets,
+object cohort, representation families and their availability, split, controls,
+and model/PCA sweep without fitting or materializing features.

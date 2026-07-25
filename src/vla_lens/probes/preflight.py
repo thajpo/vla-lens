@@ -27,7 +27,11 @@ from vla_lens.probes.workflow_prepare import (
     _ensure_selection_split,
     _ensure_split,
 )
-from vla_lens.probes.workflow_spec import baseline_columns, normalize_probe_spec
+from vla_lens.probes.workflow_spec import (
+    baseline_columns,
+    normalize_probe_spec,
+    specialized_probe_family,
+)
 from vla_lens.probes.workflow_targets import (
     _normalize_target_spec,
     _resolve_probe_target,
@@ -48,6 +52,9 @@ def probe_preflight_report(
     large_sweep_readouts: int = DEFAULT_LARGE_SWEEP_READOUTS,
 ) -> dict[str, Any]:
     """Return an auditable review packet for a probe spec before training."""
+    family = specialized_probe_family(spec)
+    if family is not None:
+        return _specialized_probe_preflight_report(dataset, spec, family=family)
     normalized = normalize_probe_spec(spec)
     features = dict(normalized["features"])
     selector = _selector_from_features(features)
@@ -189,6 +196,8 @@ def probe_experiment_card(
 
 def format_probe_preflight_markdown(report: Mapping[str, Any], *, details: bool = False) -> str:
     """Render the short experiment card, with diagnostic tables on request."""
+    if report.get("preflight_kind") == "specialized_review":
+        return _format_specialized_probe_preflight_markdown(report)
     if not details:
         card = report.get("experiment_card") or experiment_card_from_preflight(report)
         return format_experiment_card_markdown(card)
@@ -318,6 +327,329 @@ def format_probe_preflight_markdown(report: Mapping[str, Any], *, details: bool 
             "This report does not prove scientific usefulness. It checks that the planned probe "
             "has visible labels, splits, baselines, and sweep scope before training.",
         ]
+    )
+    return "\n".join(lines)
+
+
+def _specialized_probe_preflight_report(
+    dataset: TraceDataset,
+    spec: Mapping[str, Any],
+    *,
+    family: str,
+) -> dict[str, Any]:
+    """Describe a dedicated study without pretending to run generic selection."""
+    payload = dict(spec)
+    probe = dict(payload.get("probe") or {})
+    split = dict(payload.get("split") or {})
+    warnings: list[str] = []
+
+    if family == "geometry_study":
+        feature_specs = [dict(value) for value in payload.get("features") or []]
+        selectors = [_selector_from_features(value).to_dict() for value in feature_specs]
+        target = {
+            "name": "object_pose_targets",
+            "kind": "multi_output_regression",
+            "values": [str(value) for value in payload.get("targets") or []],
+            "source": "object-centered scene state and policy-call labels",
+        }
+        cohort = {
+            "row_unit": "object-policy-call row",
+            "object_column": str(payload.get("object_column") or "primary_target_object"),
+            "filters": ["resolved object", "finite pose target", "aligned feature row"],
+        }
+        controls = [str(value) for value in payload.get("baseline") or []] + [
+            "train_mean",
+            "previous_or_initial_pose",
+            "zero_position_update",
+            "identity_relative_rotation",
+        ]
+        models = [str(value) for value in probe.get("models") or ["ridge"]]
+        sweep_axes = ["feature_id", "layer", "pca_dim", "model"]
+        if "ridge" in models:
+            sweep_axes.append("ridge_alpha")
+        options = _geometry_representation_options(dataset, feature_specs)
+        selected = {
+            "kind": "declared_multi_feature_pooling",
+            "feature_ids": [
+                str(value.get("id") or f"feature_{i}") for i, value in enumerate(feature_specs)
+            ],
+        }
+        runner = "run_vla_lens_geometry_study.py"
+    else:
+        source_id = str(payload.get("source_probe_artifact_id") or "")
+        source = _source_artifact(dataset, source_id)
+        source_ready = source is not None
+        if not source_ready:
+            warnings.append(f"Required source probe artifact `{source_id}` is not available.")
+        inherited_split = dict((source or {}).get("method", {}).get("split") or {})
+        split = (
+            split
+            or inherited_split
+            or {
+                "kind": "inherited_from_source_artifact",
+                "column": "split",
+                "train_value": "train",
+                "selection_value": "val_heldout_task",
+                "test_value": "test_heldout_task",
+            }
+        )
+        layers = [int(value) for value in probe.get("layers") or [0, 4, 8, 12, 17]]
+        models = [str(value) for value in probe.get("models") or ["linear", "mlp"]]
+        sweep_axes = ["layer", "model"]
+        selectors = [
+            {
+                "source_probe_artifact_id": source_id,
+                "camera_name": str(payload.get("camera_name") or "agentview"),
+                "layers": layers,
+            }
+        ]
+        if family == "object_roi_identity_study":
+            target = {
+                "name": "visible_object_identity",
+                "kind": "classification",
+                "source": "source artifact object vocabulary and known image-region boxes",
+            }
+            cohort = {
+                "row_unit": "initial visible object instance",
+                "camera_name": str(payload.get("camera_name") or "agentview"),
+                "filters": ["supported object", "visible projected box", "available visual tokens"],
+            }
+            controls = [
+                "whole_image",
+                "task_scene_box",
+                "wrong_object_roi",
+                "background_roi",
+                "shuffled_training_labels",
+            ]
+            selected_kind = "object_roi"
+            runner = "run_vla_lens_object_roi_identity_study.py"
+        else:
+            target = {
+                "name": "queried_object_patch_overlap",
+                "kind": "classification_and_localization",
+                "source": "object query joined to source visual-token patches and object boxes",
+            }
+            cohort = {
+                "row_unit": "object-query patch example",
+                "camera_name": str(payload.get("camera_name") or "agentview"),
+                "negative_ratio": int(dict(payload.get("sampling") or {}).get("negative_ratio", 3)),
+                "filters": ["supported visible object", "available visual tokens"],
+            }
+            controls = [
+                "fixed_object_spatial_map",
+                "query_xy",
+                "prompt_scene_query_xy",
+                "wrong_object_query",
+                "within_task_shuffled_activation",
+                "fixed_patch_position_permutation",
+            ]
+            selected_kind = "object_conditioned"
+            runner = "run_vla_lens_object_query_localization_study.py"
+            matched_id = str(payload.get("matched_scene_artifact_id") or "")
+            if matched_id and _source_artifact(dataset, matched_id) is None:
+                warnings.append(
+                    f"Matched-scene artifact `{matched_id}` is unavailable; "
+                    "displacement control is blocked."
+                )
+        options = _artifact_backed_representation_options(
+            selected_kind=selected_kind,
+            source_ready=source_ready,
+            runner=runner,
+        )
+        selected = {"kind": selected_kind}
+
+    report = _jsonable(
+        {
+            "preflight_kind": "specialized_review",
+            "study_family": family,
+            "name": str(payload.get("name") or family),
+            "question": _optional_str(payload.get("question")),
+            "hypothesis_family": _optional_str(payload.get("hypothesis_family")),
+            "intended_claim": _optional_str(payload.get("intended_claim")),
+            "dataset_root": str(dataset.root),
+            "runner": {"name": runner, "status": _selected_option_status(options, selected)},
+            "target": target,
+            "cohort": cohort,
+            "selectors": selectors,
+            "representation": {"selected": selected, "options": options},
+            "split": split,
+            "baselines": {
+                "configured": list(dict.fromkeys(controls)),
+                "controls": list(dict.fromkeys(controls)),
+            },
+            "probe": {"models": models, "primary_model": models[0] if models else None, **probe},
+            "sweep": {"columns": sweep_axes},
+            "warnings": warnings,
+        }
+    )
+    return report
+
+
+def _source_artifact(dataset: TraceDataset, artifact_id: str) -> dict[str, Any] | None:
+    if not artifact_id:
+        return None
+    path = dataset._dataset_artifact_root() / "artifacts" / artifact_id / "artifact.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _geometry_representation_options(
+    dataset: TraceDataset, feature_specs: Sequence[Mapping[str, Any]]
+) -> list[dict[str, Any]]:
+    options: list[dict[str, Any]] = []
+    for index, feature in enumerate(feature_specs):
+        selector = _selector_from_features(feature)
+        matched = not dataset.select_model_sites(selector)._matching_model_sites().empty
+        options.append(
+            {
+                "kind": str(feature.get("id") or f"feature_{index}"),
+                "label": str(feature.get("id") or f"Feature family {index}"),
+                "status": "ready" if matched else "blocked",
+                "runner": "run_vla_lens_geometry_study.py",
+                "reason": "Matching captured model sites are available."
+                if matched
+                else "No captured model sites match this declared selector.",
+            }
+        )
+    token_data = any(
+        str(feature.get("tensor_type")) == "hidden_tokens"
+        and option.get("status") == "ready"
+        for feature, option in zip(feature_specs, options, strict=True)
+    )
+    options.extend(
+        [
+            {
+                "kind": "object_conditioned_pose",
+                "label": "Object-conditioned token decoding",
+                "status": "data_ready" if token_data else "blocked",
+                "runner": "specialized runner required",
+                "reason": (
+                    "Token-preserving object-pose decoding is not implemented "
+                    "by the pooled geometry runner."
+                ),
+            },
+            {
+                "kind": "set_decoder",
+                "label": "Object-set decoding",
+                "status": "blocked",
+                "runner": "specialized runner required",
+                "reason": "This spec does not declare complete unordered object-set labels.",
+            },
+        ]
+    )
+    return options
+
+
+def _artifact_backed_representation_options(
+    *, selected_kind: str, source_ready: bool, runner: str
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "kind": "mean_pool",
+            "label": "Whole-image mean baseline",
+            "status": "ready" if source_ready else "blocked",
+            "runner": runner,
+            "reason": "A low-capacity baseline only; it is not the requested study representation.",
+        },
+        {
+            "kind": selected_kind,
+            "label": "Known object region"
+            if selected_kind == "object_roi"
+            else "Explicit object query",
+            "status": "ready" if source_ready else "blocked",
+            "runner": runner,
+            "reason": "The dedicated runner and source token artifact are available."
+            if source_ready
+            else "The dedicated runner exists, but its source token artifact is missing.",
+        },
+        {
+            "kind": "set_decoder",
+            "label": "Unordered object-set decoder",
+            "status": "data_ready" if source_ready else "blocked",
+            "runner": "specialized runner required",
+            "reason": (
+                "The source contains token/object data, but this study does not "
+                "implement set decoding."
+                if source_ready
+                else "Source token/object data is unavailable."
+            ),
+        },
+    ]
+
+
+def _selected_option_status(
+    options: Sequence[Mapping[str, Any]], selected: Mapping[str, Any]
+) -> str:
+    selected_kinds = set(selected.get("feature_ids") or [selected.get("kind")])
+    statuses = [
+        str(option.get("status")) for option in options if option.get("kind") in selected_kinds
+    ]
+    return "ready" if statuses and all(value == "ready" for value in statuses) else "blocked"
+
+
+def _format_specialized_probe_preflight_markdown(report: Mapping[str, Any]) -> str:
+    target = dict(report.get("target") or {})
+    cohort = dict(report.get("cohort") or {})
+    split = dict(report.get("split") or {})
+    representation = dict(report.get("representation") or {})
+    probe = dict(report.get("probe") or {})
+    runner = dict(report.get("runner") or {})
+    split_values = (
+        f"`{split.get('train_value', '-')}` / "
+        f"`{split.get('selection_value', '-')}` / "
+        f"`{split.get('test_value', '-')}`"
+    )
+    lines = [
+        f"# Specialized Probe Preflight: {report.get('name', 'Probe')}",
+        "",
+        "## Question",
+        str(report.get("question") or "-"),
+        "",
+        "## Target and cohort",
+        f"- Target: `{target.get('name')}` ({target.get('kind')})",
+        f"- Construction: {target.get('source')}",
+        f"- Row unit: {cohort.get('row_unit')}",
+        f"- Cohort: `{json.dumps(cohort, sort_keys=True)}`",
+        "",
+        "## Representation choices",
+        "",
+    ]
+    rows = [
+        (
+            str(value.get("label")),
+            str(value.get("status")),
+            str(value.get("runner")),
+            str(value.get("reason")),
+        )
+        for value in representation.get("options") or []
+    ]
+    lines.extend(_markdown_table(["Representation", "Status", "Runner", "Reason"], rows))
+    lines.extend(
+        [
+            "",
+            f"Selected: `{json.dumps(representation.get('selected') or {}, sort_keys=True)}`",
+            "",
+            "## Split",
+            f"- Kind: `{split.get('kind', 'inherited')}`",
+            f"- Train / select / test: {split_values}",
+            "",
+            "## Baselines and controls",
+            "- " + ", ".join(dict(report.get("baselines") or {}).get("controls") or []),
+            "",
+            "## Model battery and sweep",
+            "- Models: " + ", ".join(str(value) for value in probe.get("models") or []),
+            "- Sweep: " + ", ".join(dict(report.get("sweep") or {}).get("columns") or []),
+            f"- Specialized runner: `{runner.get('name')}` ({runner.get('status')})",
+            "",
+            "## Warnings",
+        ]
+    )
+    lines.extend(
+        [f"- {value}" for value in report.get("warnings") or []] or ["- No automatic warnings."]
+    )
+    lines.extend(
+        ["", "This is a review-only preflight. It does not train or materialize probe features."]
     )
     return "\n".join(lines)
 
