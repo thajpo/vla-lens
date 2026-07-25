@@ -37,3 +37,28 @@ def test_patch_study_summary_groups_pairs_and_preserves_uncertainty():
     assert summary["transfer_mean"] == pytest.approx(0.9)
     assert summary["transfer_ci95_low"] < summary["transfer_mean"]
     assert summary["transfer_ci95_high"] > summary["transfer_mean"]
+
+
+def test_patch_study_summary_counts_confirmed_specific_transfers():
+    record = {
+        "pair_id": "pair-0",
+        "layer": 16,
+        "token_region": "action_all",
+        "verdict": "specific_action_transfer",
+        "natural_delta_norm": 8.0,
+        "patch_delta_norm": 7.9,
+        "direction_agreement": 0.99,
+        "transfer_fraction": 0.98,
+        "donor_gap_remaining": 0.02,
+        "donor_recovery": 0.97,
+        "off_direction_norm": 0.1,
+        "off_direction_fraction": 0.01,
+    }
+
+    summary = summarize_patch_records(
+        [record],
+        bootstrap_samples=100,
+        seed=7,
+    )[0]
+
+    assert summary["localized_pair_count"] == 1

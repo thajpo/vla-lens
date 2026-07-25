@@ -99,7 +99,7 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-019 | Does exchanging target and distractor poses naturally change PI0.5's action? | Counterfactual | Positive pilot | Yes, across tasks and object pairs |
 | RQ-020 | Where can donor activations transfer that natural action change? | Activation patching | Broad visual-prefix result; narrow object regions negative | Yes, follow the signal into the action stream |
 | RQ-021 | What object property does a successful patch carry? | Counterfactual intervention | Ready after pathway follow-up | Identity, appearance, role, or position |
-| RQ-022 | Which residual, key/value, or action-bridge path carries the effect? | Path intervention | VLM prefix localized; action-stream follow-up needed | Yes, patch expert/action states |
+| RQ-022 | Which residual, key/value, or action-bridge path carries the effect? | Path intervention | Positive late action-expert localization; exact VLM bridge layer unresolved | Yes, patch prefix key/value cache |
 | RQ-023 | Does a specific action-level transfer change closed-loop behavior? | Rollout intervention | Blocked on validation | Only after action specificity |
 
 ## RQ-001: Broad Target Events And Outcome
@@ -1139,15 +1139,98 @@ artifacts after every trial, resumes incomplete studies, and produces
 pair-bootstrap summaries automatically. The Intervention page reads those
 summaries and shows the layer-by-scope matrix beside the matched scene frames.
 
-## RQ-021 Through RQ-023: Conditional Follow-Ups
+## RQ-022: Action-Expert Path Localization
 
-RQ-021 will split any successful RQ-020 effect into identity, appearance/shape,
-task role, and position by changing one factor at a time. RQ-022 will test
-residual, same-position value-cache, and action-bridge pathways only at sites
-localized by RQ-020; cross-position key patches require explicit positional
-correction. RQ-023 will run closed-loop rollouts only after a held-out cohort
-repeats a specific action-level transfer. These are separate questions, not
-automatic extensions of a positive pilot.
+**Question.** After the broad visual-prefix patch stops transferring the
+pose-exchange action change, where and when does the corresponding difference
+appear in PI0.5's action expert?
+
+**Hypothesis.** Replacing donor action-expert hidden states at matching layer,
+denoising step, and action-horizon position will increasingly move the
+recipient toward the donor in late expert layers. The effect should beat
+same-sized shuffled and random perturbations.
+
+**Method.** Reused the five validated RQ-019 book/mug pose-exchange pairs and
+their shared initial noise. The localization pass patched all 50 action
+positions at expert layers 0, 4, 8, 12, 16, and 17 on every one of PI0.5's ten
+denoising steps. All six donor layers were collected in one donor generation
+per pair and kept only in memory. A confirmation pass at layers 16 and 17 added
+recipient-self, donor-self, zero-strength, shuffled-position, and
+norm-matched-random controls. Every expert hook fired the expected ten times,
+once per denoising step, and was removed after the action call.
+
+**Layer result.** Early donor expert states were not compatible replacements
+for the recipient state: mean transfer was `-93.48%` at layer 0, `-93.25%` at
+layer 4, `-86.01%` at layer 8, `-34.03%` at layer 12, `99.45%` at layer 16,
+and `99.9978%` at layer 17. The five-pair bootstrap interval was
+`98.30%-100.61%` at layer 16 and `99.9975%-99.9981%` at layer 17. All five
+layouts were positive at both late layers. A negative early-layer transplant
+does not show that the layer lacks scene information; replacing the whole
+state can put later computation off the recipient's trajectory.
+
+**Controls.** Recipient-self and zero-strength patches were exact no-ops.
+Donor-self reproduced the donor action exactly. At layer 16, shuffled action
+positions transferred `30.04%` and norm-matched random values transferred
+`2.77%`, versus `99.45%` for the aligned donor patch. At layer 17 the same
+controls transferred `37.87%` and `2.03%`, versus `99.9978%`. The aligned
+patch beat the strongest negative control by 69.41 percentage points at layer
+16 and 62.12 points at layer 17.
+
+**Action-horizon narrowing.** At layers 16 and 17, patching only the first ten
+future action positions transferred `5.87%` and `6.69%`; the middle ten
+transferred `33.16%` and `34.50%`; and the last ten transferred `19.59%` and
+`21.64%`. This mostly describes where the natural donor and recipient action
+chunks differ. At the final layer, replacing one horizon position nearly
+replaces that output position directly, so the larger middle value is not
+evidence for a better middle-horizon scene representation.
+
+**Denoising-step narrowing.** Patching all action positions only during early
+steps 0-2 transferred `4.13%` at layer 16 and `4.11%` at layer 17. Middle steps
+3-6 transferred `13.66%` and `13.58%`; late steps 7-9 transferred `29.58%`
+and `29.84%`. These isolated blocks do not add to the all-step result. The
+supported reading is that the donor action trajectory must be followed across
+the refinement process, while the scene-conditioned velocity difference is
+strongest late. It is not valid to assign a fixed independent percentage to
+each block.
+
+**Conclusion.** This is a positive causal localization at the whole-action
+level. By expert layer 16, the donor state contains nearly all information
+needed to produce the donor's open-loop action under shared noise. The result
+does not identify an object-specific representation: the intervention swaps
+all 50 high-dimensional action states, and the scene counterfactual changes
+two object poses and their pixels.
+
+**Architectural correction.** The visual-prefix layer-output hook used in
+RQ-020 runs after that same layer has already written its key/value tensors to
+the prefix cache. Therefore VLM layer 16 and expert layer 16 are not matched
+sides of one causal boundary. Their complementary transfer curves are real,
+but they do not yet prove that the handoff occurs specifically between VLM
+layers 12 and 16. The clean next path experiment is to patch the donor prefix
+key/value cache consumed by selected expert layers, preserving key and value,
+head, token, and rotary-position alignment.
+
+**Artifacts.** Under
+`/mnt/new-volume/vla-lens/rq019-pose-exchange-pilot/vla_lens/patch_studies/`:
+`rq022-expert-action-localization`, `rq022-expert-action-confirmation`,
+`rq022-expert-action-horizon`, and `rq022-expert-denoise-{early,middle,late}`.
+Together these saved studies use about 22 MB. They contain exact plans, full
+50-by-7 action arrays, hashes, hook counts, controls, pair tables, bootstrap
+intervals, and reconstruction metadata, but no permanent hidden tensors.
+
+**Workflow result.** Named PI0.5 patch sites now distinguish visual-prefix and
+action-expert streams. The runner can capture many expert layers in one donor
+generation, align repeated hooks by denoising step, select action positions or
+denoising ranges, checkpoint every trial, and expose the saved stream and step
+scope in the existing Intervention page. See
+`docs/pi05-action-stream-patching.md` for commands and artifact behavior.
+
+## RQ-021 and RQ-023: Conditional Follow-Ups
+
+RQ-021 will split the successful broad effect into identity, appearance/shape,
+task role, and position by changing one factor at a time. RQ-023 will run
+closed-loop rollouts only after a held-out cohort repeats a specific
+action-level transfer. These are separate questions, not automatic extensions
+of a positive pilot.
 
 **Validation plan.** A positive pilot advances to roughly 24 valid pairs across
 at least six scene groups. Thresholds and the best site/token rule are locked
@@ -1164,17 +1247,17 @@ caches are disposable and may be rebuilt from the saved recipes.
 - Target-parse VLM probe (the existing selector matched no rows)
 - Raw-norm-matched wrong-ROI control for RQ-018
 - Small signed direction-dose comparison for the RQ-018 recipient
-- PI0.5 expert/action-stream patching after the visual-prefix signal fades
+- PI0.5 prefix key/value-cache patching at matched expert layers
 - One-factor object counterfactuals separating identity, pose, and appearance
 
 ## Current Priority
 
-1. Follow the transferred visual signal into PI0.5's expert/action stream,
-   especially between layers 12 and 16.
-2. Repeat the broad visual-prefix result on fresh tasks and object pairs before
-   treating it as general.
-3. Build one-factor counterfactuals that separate identity, position,
+1. Patch the exact PI0.5 prefix key/value cache consumed by the action expert;
+   do not infer a same-layer handoff from the current residual-output hooks.
+2. Build one-factor counterfactuals that separate identity, position,
    appearance, and task role before claiming a semantic object representation.
+3. Repeat the broad visual-prefix and late-expert results on fresh tasks and
+   object pairs before treating them as general.
 4. Keep RQ-018 as a useful negative semantic result; its calibrated dose
    controls are secondary to the cleaner natural counterfactual direction.
 5. For geometry probes, preserve object-token correspondence. Do not add
