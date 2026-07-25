@@ -48,6 +48,7 @@ from vla_lens.pi05.context_capture import (
     capture_camera_snapshot,
     capture_scene_snapshot,
 )
+from vla_lens.pi05.scene_mutation import apply_scene_mutation, scene_mutation_from_json
 from vla_lens.traces import TraceDataset
 
 
@@ -160,6 +161,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--target-object-id")
     parser.add_argument("--counterfactual-target-object-id")
     parser.add_argument("--obs-size", type=int, default=256)
+    parser.add_argument(
+        "--layout-id",
+        type=int,
+        help="Explicit LIBERO init-state index used for capture and later replay.",
+    )
+    parser.add_argument(
+        "--scene-mutation-json",
+        help="Inline JSON or JSON path for a replayable scene mutation.",
+    )
     parser.add_argument("--max-steps", type=int)
     parser.add_argument("--device", default="cuda")
     parser.add_argument("--dtype", default="bfloat16")
@@ -261,7 +271,16 @@ def run_pi05_capture_task(
                 seed=seed,
             )
             policy.reset()
+            base_env = env.envs[0] if getattr(env, "envs", None) else None
+            if args.layout_id is not None and base_env is not None:
+                base_env.episode_index = int(args.layout_id)
+                base_env.init_state_id = int(args.layout_id)
             observation, _ = env.reset(seed=[seed])
+            scene_mutation = scene_mutation_from_json(args.scene_mutation_json)
+            if scene_mutation is not None:
+                observation, buffer.scene_mutation_report = apply_scene_mutation(
+                    env, scene_mutation
+                )
             done = np.array([False])
             step = 0
             max_steps = args.max_steps or int(env.call("_max_episode_steps")[0])
