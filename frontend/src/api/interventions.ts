@@ -4,10 +4,15 @@ import type {
   InterventionRunResponse,
   InterventionRunSaveResponse,
   InterventionRunsResponse,
+  PatchStudiesResponse,
 } from "../types/interventions";
 
 export function fetchInterventionRuns(): Promise<InterventionRunsResponse> {
   return getJson<InterventionRunsResponse>("/api/intervention-runs", noStore());
+}
+
+export function fetchPatchStudies(): Promise<PatchStudiesResponse> {
+  return getJson<PatchStudiesResponse>("/api/patch-studies", noStore());
 }
 
 export function fetchInterventionRun(runId: string): Promise<InterventionRunResponse> {

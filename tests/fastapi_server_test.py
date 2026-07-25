@@ -21,6 +21,7 @@ EXPECTED_DASHBOARD_ROUTE_METHODS = {
     ("/api/health", "get"),
     ("/api/dataset", "get"),
     ("/api/counterfactual-pairs", "get"),
+    ("/api/patch-studies", "get"),
     ("/api/observational-comparisons", "get"),
     ("/api/workbench", "get"),
     ("/api/workbench/validate", "get"),

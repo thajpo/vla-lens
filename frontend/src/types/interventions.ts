@@ -108,3 +108,60 @@ export type InterventionSummary = {
   title: string;
   traceId: string;
 };
+
+export type PatchStudyCell = {
+  layer: number;
+  token_region: string;
+  pair_count: number;
+  transfer_mean: number;
+  transfer_ci95_low: number;
+  transfer_ci95_high: number;
+  direction_agreement_mean: number;
+  donor_recovery_mean: number;
+  localized_pair_count: number;
+};
+
+export type PatchStudyPair = {
+  pair_id: string;
+  recipient_trace_id: string;
+  donor_trace_id: string;
+  target_object?: string | null;
+  distractor_object?: string | null;
+};
+
+export type PatchStudySpecificity = {
+  layer: number;
+  token_region: string;
+  main_transfer_mean: number;
+  strongest_control_kind: string;
+  strongest_control_transfer_mean: number;
+  specificity_margin: number;
+  main_beats_control: boolean;
+};
+
+export type PatchStudyAnalysis = {
+  study_id: string;
+  question?: string | null;
+  hypothesis?: string | null;
+  phase?: string | null;
+  status: string;
+  pair_count: number;
+  planned_trial_count: number;
+  controls: string[];
+  layers: number[];
+  token_regions: string[];
+  summary: PatchStudyCell[];
+  specificity: PatchStudySpecificity[];
+  pairs: PatchStudyPair[];
+  headline: {
+    best_layer?: number | null;
+    best_token_region?: string | null;
+    best_transfer_mean?: number | null;
+    best_transfer_ci95?: [number, number] | null;
+  };
+};
+
+export type PatchStudiesResponse = {
+  patch_studies: PatchStudyAnalysis[];
+  total: number;
+};
