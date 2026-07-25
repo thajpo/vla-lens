@@ -95,7 +95,7 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-015 | Does a known object region identify the object occupying it? | Probe | Positive exploratory result | Confirm on fresh locked data |
 | RQ-016 | Can an explicit object query locate that object? | Probe | Negative for episode-specific location | Revisit with matched scenes or object-centric features |
 | RQ-017 | Are pose changes nonlinearly decodable from pooled representations? | Probe | Negative on validation | No larger global pooled probe sweep |
-| RQ-018 | Does the layer-8 object-identity direction causally affect PI0.5's action? | Intervention | Planned; runner ready | Run dedicated-hardware smoke |
+| RQ-018 | Does the layer-8 object-identity direction causally affect PI0.5's action? | Intervention | Completed; negative semantic-specificity result | Calibrate region and dose controls |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -905,11 +905,42 @@ or no-op replay fails. Stop after the first full controlled action-level run and
 inspect effect sizes before choosing strengths or a cohort. Do not call a single
 eligible run behavioral evidence.
 
-**Status.** Planned under GitHub issue #18. The runtime-light resolver, exact
-layer hook, required controls, evidence fields, and request are implemented.
-Hardware execution remains pending through the dedicated PI0.5 capture
-environment. Request:
-`configs/interventions/rq018_caddy_identity_project_out.json`.
+**Result.** Completed on ROCm with exact saved generation noise. Three no-op
+reruns were bit-for-bit identical to one another. Each differed slightly from
+the older stored action chunk (L2 `0.01554`, maximum element `0.002537`), so the
+controlled run used measured replay gates of `0.02` L2 and `0.003` maximum
+absolute error.
+
+The main project-out changed the caddy direction coordinate from `1.1781` to
+`0.0008` and its target-versus-class-mean probe margin from `32.58` to `-4.12`.
+The resulting action change from the no-op was L2 `0.1172`. This establishes
+that the hook changed both the intended decoded quantity and the model's action
+output.
+
+It did not pass the semantic-specificity comparison. With the same raw hidden
+perturbation L2 (`14.882`), the orthogonal random control changed the action by
+`0.1855` and the red-mug direction changed it by `0.1671`, both more than the
+caddy direction. The wrong-ROI control changed the action by only `0.02037`,
+but its natural project-out perturbation was also only L2 `3.973`; that run
+cannot distinguish region specificity from perturbation size.
+
+**Conclusion.** Layer-8 caddy tokens are locally action-sensitive, and the
+saved probe can now be reconstructed and intervened on exactly. This recipient
+does not show that the decoded caddy identity direction is more causally
+important than generic or wrong-identity directions. Treat this as a negative
+semantic result, not as evidence that identity is unused everywhere.
+
+**Decision.** Before a broader recipient cohort, add a raw-norm-matched
+wrong-ROI comparison and a small signed dose curve for the main, random, and
+wrong-identity directions. This will separate region, direction, and nonlinear
+large-perturbation effects. Do not run rollouts or claim behavioral identity
+effects yet.
+
+**Artifacts.** Request:
+`configs/interventions/rq018_caddy_identity_project_out.json`. Replay report:
+`vla_lens/intervention_reports/rq018_caddy_replay.json`. Controlled report:
+`vla_lens/intervention_reports/rq018_caddy_controlled.json`. Saved artifact:
+`intervention_run-rq-018-caddy-identity-direction-at-layer-8-d2f6e0d415`.
 
 ## Not Yet Run
 
@@ -917,18 +948,19 @@ environment. Request:
 - Set decoder for unordered scene objects
 - Filtered first-moved/first-lifted target probes
 - Target-parse VLM probe (the existing selector matched no rows)
-- RQ-018 dedicated-hardware execution and evidence review
+- Raw-norm-matched wrong-ROI control for RQ-018
+- Small signed direction-dose comparison for the RQ-018 recipient
 
 ## Current Priority
 
 1. Expose the RQ-015 episode/object predictions in the existing episode lens so
    a researcher can move from aggregate accuracy to the images the probe got
    right, got wrong, or was uncertain about.
-2. Execute the prepared RQ-018 request through the dedicated PI0.5 environment,
-   first proving exact replay and then saving the main, matched-random,
-   wrong-identity, and wrong-ROI action trials.
-3. Compare probe-margin and action effects across those four trials before
-   choosing signed add strengths, rollouts, or a broader cohort.
+2. Extend RQ-018 with a raw-norm-matched wrong-ROI control and small signed
+   direction doses. The first controlled run found generic direction
+   sensitivity, not semantic specificity.
+3. Compare normalized and absolute action effects across those controls before
+   choosing rollouts or a broader recipient cohort.
 4. For geometry, next test must preserve object-token correspondence, such as
    an object-centric query or set decoder. Do not add capacity to another
    globally pooled pose readout.
