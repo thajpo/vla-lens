@@ -43,3 +43,24 @@ def test_pi05_patch_study_entrypoint_is_registered():
         'vla-pi05-patch-study = "vla_lens.pi05.patch_study_runner:main"'
         in pyproject
     )
+
+
+def test_pose_exchange_capture_wrapper_documents_inspection_gate():
+    result = subprocess.run(
+        ["bash", "scripts/pi05_pose_exchange_capture.sh", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "--backend rocm|cuda|mps|cpu" in result.stdout
+    assert "Without --run-capture" in result.stdout
+
+
+def test_pose_exchange_capture_entrypoint_is_registered():
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert (
+        'vla-pi05-pose-exchange-capture = "vla_lens.pi05.pose_exchange_capture:main"'
+        in pyproject
+    )
