@@ -1,0 +1,206 @@
+{
+  "study": {
+    "study_id": "rq020-existing-pair-runner-smoke",
+    "question": "Can the resumable study runner execute a donor-patch layer sweep correctly?",
+    "hypothesis": "The runner should reproduce trustworthy per-layer trials without reloading the model or saving hidden-state caches.",
+    "pair_ids": [
+      "506357b9a6fb733db638"
+    ],
+    "sites": [
+      {
+        "layer": 0
+      },
+      {
+        "layer": 8
+      }
+    ],
+    "controls": [
+      "recipient_self_patch",
+      "donor_self_patch",
+      "shuffled_donor",
+      "random_matched_norm",
+      "wrong_region"
+    ],
+    "shared_noise_refs": [
+      "pi05_mechanistic_sampled_libero_90_task73_seed2000.flow_initial_noise[0]"
+    ],
+    "thresholds": {
+      "minimum_natural_delta_norm": 0.000001,
+      "minimum_direction_agreement": 0.5,
+      "minimum_transfer_fraction": 0.1,
+      "maximum_donor_gap_remaining": 0.95,
+      "minimum_control_margin": 0.05
+    },
+    "axes": {
+      "token_regions": [
+        "moved_mug"
+      ],
+      "wrong_region": "caddy"
+    },
+    "confounds": [
+      "This existing pair moves one distractor; it is not the planned pose exchange.",
+      "This job validates orchestration and cannot select a scientific layer."
+    ],
+    "stopping_rule": "Stop after layers 0 and 8; do not treat this smoke as RQ-020 evidence."
+  },
+  "pairs": [
+    {
+      "pair_id": "506357b9a6fb733db638",
+      "recipe": {
+        "kind": "manual",
+        "target_object": "white_yellow_mug_1",
+        "changed_variables": [
+          "white_yellow_mug_1.pose"
+        ],
+        "held_fixed": {
+          "instruction": "pick up the book and place it in the front compartment of the caddy",
+          "task": "libero_90:73",
+          "model_id": "lerobot/pi05_libero_finetuned",
+          "policy_call_index": 0
+        },
+        "parameters": {
+          "scope": "runner machinery smoke, not pose-exchange science"
+        }
+      },
+      "recipient": {
+        "trace": {
+          "trace_id": "pi05_mechanistic_sampled_libero_90_task73_seed2000"
+        },
+        "policy_call": {
+          "trace_id": "pi05_mechanistic_sampled_libero_90_task73_seed2000",
+          "policy_call_index": 0
+        }
+      },
+      "donor": {
+        "trace": {
+          "trace_id": "pi05_mechanistic_sampled_libero_90_task73_seed2004"
+        },
+        "policy_call": {
+          "trace_id": "pi05_mechanistic_sampled_libero_90_task73_seed2004",
+          "policy_call_index": 0
+        },
+        "metadata": {
+          "shared_noise_source": "recipient"
+        }
+      },
+      "compatibility": {
+        "model": true,
+        "prompt": true,
+        "task": true,
+        "action_shape": true
+      },
+      "validation": {
+        "pair_valid": true,
+        "token_regions": {
+          "moved_mug": [
+            38,
+            39,
+            40,
+            41,
+            42,
+            54,
+            55,
+            56,
+            57,
+            58,
+            70,
+            71,
+            72,
+            73,
+            74,
+            86,
+            87,
+            88,
+            89,
+            90
+          ],
+          "caddy": [
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            113,
+            114,
+            115,
+            116,
+            117,
+            118,
+            119,
+            120,
+            121,
+            129,
+            130
+          ]
+        }
+      }
+    }
+  ],
+  "request_template": {
+    "runtime_adapter": "pi05",
+    "target": {
+      "kind": "activation_slice",
+      "model_id": "lerobot/pi05_libero_finetuned",
+      "model_family": "pi05",
+      "model_site": "pi05.vlm.layers.{layer}.prefix.hidden_tokens",
+      "tensor_type": "hidden_tokens",
+      "token_space": "pi05.prefix",
+      "metadata": {
+        "research_question_id": "RQ-020",
+        "scope": "resumable runner machinery smoke"
+      }
+    },
+    "intervention": {
+      "request": {
+        "operator": {
+          "operator": "source_patch",
+          "strength": 1.0,
+          "parameters": {
+            "mode": "donor_source_patch"
+          }
+        },
+        "schedule": {
+          "policy_calls": [
+            0
+          ],
+          "generation_steps": "all",
+          "tokens": "target_tokens"
+        },
+        "outcome": {
+          "kind": "action",
+          "basis": [
+            "raw"
+          ],
+          "horizon": "full_chunk"
+        },
+        "controls": [
+          {
+            "kind": "recipient_self_patch"
+          },
+          {
+            "kind": "donor_self_patch"
+          },
+          {
+            "kind": "shuffled_donor",
+            "parameters": {
+              "seed": 20260725
+            }
+          },
+          {
+            "kind": "random_matched_norm",
+            "parameters": {
+              "seed": 20260725
+            }
+          },
+          {
+            "kind": "wrong_region"
+          }
+        ]
+      }
+    }
+  }
+}

@@ -49,6 +49,13 @@ VLA Lens can:
   wrong-region source-patch controls;
 - save the donor action alongside recipient, patched, and control action chunks
   and report whether the patch moved the action toward the donor.
+- expand declared pair, layer, and token-region axes into stable trial IDs;
+- execute a study with one model load, one multi-layer donor cache fill per
+  pair, and one replay gate per recipient;
+- resume without repeating completed trials, while retaining failures for
+  explicit retry;
+- keep full action chunks, compact tables, decisions, hashes, and the exact
+  plan permanently while keeping large donor hidden states only in memory.
 
 The synthetic one-hot action-head hook remains an engineering smoke and records
 `claim_eligible = false`. The artifact-derived layer-8 hook can become eligible
@@ -109,6 +116,13 @@ environment:
 
 ```bash
 scripts/pi05_intervene.sh --backend rocm ...
+scripts/pi05_patch_study.sh --backend rocm DATASET_ROOT \
+  --study configs/interventions/STUDY.json
+
+# Execute only after inspection succeeds:
+scripts/pi05_patch_study.sh --backend rocm DATASET_ROOT \
+  --study configs/interventions/STUDY.json --run-study \
+  --max-noop-l2 0.02 --max-noop-max-abs 0.003
 ```
 
 Do not run live PI0.5 intervention work through the normal `uv run`
@@ -121,7 +135,6 @@ The active work is tracked in GitHub rather than another planning document:
 
 - [#19: live Intervention Lab execution and action comparison](https://github.com/thajpo/vla-lens/issues/19)
 - [#20: sweep and cohort execution](https://github.com/thajpo/vla-lens/issues/20)
-- [#33: donor-aware PI0.5 activation patching](https://github.com/thajpo/vla-lens/issues/33)
 - [#34: pose-exchange capture and patching pilot](https://github.com/thajpo/vla-lens/issues/34)
 
 There is no active temporary implementation spec. When one of these issues is
@@ -147,3 +160,6 @@ selected, its issue body becomes the plan by default.
 - `configs/interventions/rq020_existing_pair_layer8_smoke.json`: a real
   moved-distractor pair for runtime validation only. It is not the cleaner
   target/distractor pose-exchange experiment planned by RQ-019.
+- `configs/interventions/rq020_existing_pair_runner_smoke.json`: a bounded
+  two-layer job for validating the resumable study runner. It is also not the
+  RQ-020 pose-exchange pilot.

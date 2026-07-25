@@ -798,8 +798,9 @@ def build_pi05_action_intervention_executor(
     device: str,
     dtype: str,
     model_id: str | None = None,
+    runtime: PI05CaptureRuntime | None = None,
 ) -> PI05ActionInterventionExecutor:
-    """Load the dedicated PI0.5 runtime and reconstruct the selected raw observation."""
+    """Build an executor, optionally reusing an already loaded PI0.5 runtime."""
     trace_id, policy_call_index = _context_selection(payload)
     bundle = dataset.bundle(trace_id)
     inputs = policy_call_replay_inputs(bundle, policy_call_index)
@@ -843,7 +844,7 @@ def build_pi05_action_intervention_executor(
         device=device,
         dtype=dtype,
     )
-    runtime = load_pi05_capture_runtime(args)
+    runtime = runtime or load_pi05_capture_runtime(args)
     observation = replay_policy_call_observation(runtime, bundle.actions(mmap=True), inputs)
     donor_observation = (
         replay_policy_call_observation(

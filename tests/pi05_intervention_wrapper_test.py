@@ -21,3 +21,25 @@ def test_pi05_intervention_entrypoint_is_registered():
     pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
 
     assert 'vla-pi05-intervene = "vla_lens.pi05.intervention_runner:main"' in pyproject
+
+
+def test_pi05_patch_study_wrapper_documents_inspection_and_execution_gate():
+    result = subprocess.run(
+        ["bash", "scripts/pi05_patch_study.sh", "--help"],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    assert "--backend rocm|cuda|mps|cpu" in result.stdout
+    assert "Without --run-study" in result.stdout
+    assert "explicit replay tolerances" in result.stdout
+
+
+def test_pi05_patch_study_entrypoint_is_registered():
+    pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    assert (
+        'vla-pi05-patch-study = "vla_lens.pi05.patch_study_runner:main"'
+        in pyproject
+    )

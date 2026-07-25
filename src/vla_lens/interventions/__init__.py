@@ -34,6 +34,13 @@ from vla_lens.interventions.families import (
     required_controls_for_artifact_claim,
     target_from_discovery_artifact,
 )
+from vla_lens.interventions.patch_study import (
+    PlannedPatchTrial,
+    build_patch_trial_request,
+    expand_patch_study,
+    patch_study_request_sha256,
+)
+from vla_lens.interventions.patch_study_store import PatchStudyProgress, PatchStudyStore
 from vla_lens.interventions.preflight import intervention_preflight
 from vla_lens.interventions.results import (
     ActionOutcomeResult,
@@ -102,7 +109,10 @@ __all__ = [
     "PatchDecisionThresholds",
     "PatchStudyArtifact",
     "PatchStudySpec",
+    "PatchStudyProgress",
+    "PatchStudyStore",
     "PatchTrialManifest",
+    "PlannedPatchTrial",
     "PolicyCallRef",
     "PreflightCheck",
     "RecipientSpec",
@@ -120,14 +130,17 @@ __all__ = [
     "artifact_family_registry",
     "build_intervention_study",
     "build_intervention_sweep",
+    "build_patch_trial_request",
     "counterfactual_action_metrics",
     "evaluate_patch_trial",
+    "expand_patch_study",
     "intervention_preflight",
     "intervention_run_to_lens_artifact",
     "intervention_sweep_to_lens_artifact",
     "legal_operators_for_artifact",
     "legal_outcomes_for_artifact",
     "promote_run_to_sweep",
+    "patch_study_request_sha256",
     "required_controls_for_artifact_claim",
     "resolve_action_basis",
     "target_from_discovery_artifact",

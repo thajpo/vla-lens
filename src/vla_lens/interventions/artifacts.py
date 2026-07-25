@@ -228,6 +228,10 @@ def _source_trace_ids(run: InterventionRun) -> tuple[str, ...]:
             trace_id = value.get("trace_id")
             if trace_id:
                 trace_ids.append(str(trace_id))
+    donor = _mapping(run.provenance.get("donor"))
+    donor_trace = _mapping(donor.get("trace")).get("trace_id")
+    if donor_trace:
+        trace_ids.append(str(donor_trace))
     return tuple(dict.fromkeys(trace_ids))
 
 
