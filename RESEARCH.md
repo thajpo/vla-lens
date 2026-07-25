@@ -95,6 +95,7 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-015 | Does a known object region identify the object occupying it? | Probe | Positive exploratory result | Confirm on fresh locked data |
 | RQ-016 | Can an explicit object query locate that object? | Probe | Negative for episode-specific location | Revisit with matched scenes or object-centric features |
 | RQ-017 | Are pose changes nonlinearly decodable from pooled representations? | Probe | Negative on validation | No larger global pooled probe sweep |
+| RQ-018 | Does the layer-8 object-identity direction causally affect PI0.5's action? | Intervention | Planned; runner ready | Run dedicated-hardware smoke |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -845,25 +846,89 @@ review-only preflight now recognizes this geometry-study spec and reports its
 targets, splits, controls, representation families, and model/PCA sweep without
 training or materializing features.
 
+## RQ-018: Object-Local Identity Direction Intervention
+
+**Question.** Does changing the RQ-015 layer-8 linear identity direction only
+inside a known object's image tokens change PI0.5's action in a direction- and
+region-specific way?
+
+**Hypothesis.** If the decoded object identity is used by the policy, removing
+the desk-caddy feature direction from the caddy ROI should change the replayed
+action more than a raw-norm-matched random direction, a poorly decoded object
+identity direction, or the same caddy direction applied to another object's
+ROI.
+
+**Target and method.** Start with RQ-015 held-out instance 2648: `desk_caddy_1`
+in policy call 0 of
+`pi05_mechanistic_sampled_libero_90_task73_seed2000`. Use the converged linear
+object-ROI probe at `pi05.vlm.layers.8.prefix.hidden_tokens`. Define identity as
+the target class weight minus the mean class weight in the probe's standardized
+16-dimensional feature space. Map that delta back to the raw 2,048-dimensional
+hidden space with the exact minimum-norm inverse of the saved scaler and PCA.
+Apply it only to the 45 main-camera prefix tokens saved for that instance.
+
+The first operation is `project_out_direction` at strength 1. This removes the
+feature-dependent coordinate from the current ROI mean but leaves the
+classifier intercept. It is not a general “erase identity” operator, and the
+full pre/post probe margin must be reported. Later signed add-direction checks
+may use smaller calibrated strengths; one standardized unit is a large decoded
+effect and is not a safe default for addition.
+
+**Baselines and controls.** Require exact stored-noise replay and repeated no-op
+actions within explicit L2 and max-absolute tolerances. Run an orthogonal random
+direction matched to the realized raw perturbation norm; the poorly decoded
+`red_coffee_mug_1` class-mean direction, also raw-norm matched; and the caddy
+direction on the saved wrong-object ROI. Preserve the stored original, every
+no-op, main intervention, and control action chunk.
+
+**Confounds.** RQ-015 is exploratory and uses a known simulator box. One policy
+call cannot establish a behavioral mechanism. PCA inversion chooses the
+minimum-norm raw delta but does not prove that it is on the model's natural
+activation manifold. A large action change can reflect generic sensitivity,
+which is why both direction and ROI controls are required.
+
+**Metrics.** Save the probe margin before and after the runtime-dtype hook, raw
+perturbation L2/RMS, raw and named action deltas from no-op, main-versus-control
+action differences, exact artifact/table/array hashes, resolved checkpoint,
+layer, tensor shape, token indices, and replay environment.
+
+**Allowed conclusion.** Passing replay and control gates makes the run eligible
+for a local, action-level causal comparison. It does not automatically support
+the identity-mechanism hypothesis. A positive scientific result additionally
+requires the main action effect to exceed the matched random, wrong-identity,
+and wrong-ROI effects. Behavioral or general identity claims require repeated
+recipients and rollouts.
+
+**Stopping rule.** Do not run the hook if artifact reconstruction, checkpoint,
+policy call, layer, prefix layout, ROI token mapping, initial-noise exactness,
+or no-op replay fails. Stop after the first full controlled action-level run and
+inspect effect sizes before choosing strengths or a cohort. Do not call a single
+eligible run behavioral evidence.
+
+**Status.** Planned under GitHub issue #18. The runtime-light resolver, exact
+layer hook, required controls, evidence fields, and request are implemented.
+Hardware execution remains pending through the dedicated PI0.5 capture
+environment. Request:
+`configs/interventions/rq018_caddy_identity_project_out.json`.
+
 ## Not Yet Run
 
 - Feature-level sparse object-location probes beyond the fixed MLP battery
 - Set decoder for unordered scene objects
 - Filtered first-moved/first-lifted target probes
 - Target-parse VLM probe (the existing selector matched no rows)
-- Representation interventions based on these probe results
+- RQ-018 dedicated-hardware execution and evidence review
 
 ## Current Priority
 
 1. Expose the RQ-015 episode/object predictions in the existing episode lens so
    a researcher can move from aggregate accuracy to the images the probe got
    right, got wrong, or was uncertain about.
-2. Run a small controlled identity intervention on one reliably decoded object
-   and one poorly decoded control. Change only tokens inside the supplied
-   object region; do not use the failed RQ-016 location map as an intervention
-   handle.
-3. Compare the intervention's effect on the identity probe score, policy action
-   output, and episode behavior before attempting a broad sweep.
+2. Execute the prepared RQ-018 request through the dedicated PI0.5 environment,
+   first proving exact replay and then saving the main, matched-random,
+   wrong-identity, and wrong-ROI action trials.
+3. Compare probe-margin and action effects across those four trials before
+   choosing signed add strengths, rollouts, or a broader cohort.
 4. For geometry, next test must preserve object-token correspondence, such as
    an object-centric query or set decoder. Do not add capacity to another
    globally pooled pose readout.

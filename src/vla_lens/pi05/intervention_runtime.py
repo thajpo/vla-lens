@@ -60,6 +60,7 @@ def run_pi05_intervention(
     *,
     executor: ActionInterventionExecutor,
     save: bool = True,
+    claim_gate: Mapping[str, Any] | None = None,
 ) -> PI05InterventionRunResult:
     """Run a PI0.5 action intervention through an injected runtime executor."""
 
@@ -141,6 +142,7 @@ def run_pi05_intervention(
             context=context,
             action=intervened_action,
             preflight_target=preflight.target_resolution,
+            intervention_runtime=intervention.runtime,
         ),
         trials=trials,
         outcomes=tuple(_action_outcomes(delta_metrics)),
@@ -149,8 +151,13 @@ def run_pi05_intervention(
         display={
             "summary": "PI0.5 runtime produced no-op and intervened action chunks.",
             "action_basis": basis_result.to_dict(),
+            "specificity_summary": _specificity_summary(
+                noop_action,
+                intervened_action,
+                controls,
+            ),
         },
-        claim={"claim_strength": _claim_strength(status, trials)},
+        claim=_claim_record(status, trials, claim_gate=claim_gate),
         provenance={
             "schema_kind": "vla_lens.intervention_run",
             "runtime_adapter": "pi05",
@@ -253,8 +260,16 @@ def _runtime_resolution(
     context: ContextSpec,
     action: np.ndarray,
     preflight_target: Mapping[str, Any],
+    intervention_runtime: Mapping[str, Any],
 ) -> RuntimeResolution:
     target_metadata = dict(target.metadata)
+    direction_resolution = _mapping(intervention_runtime.get("direction_resolution"))
+    hook_shape = intervention_runtime.get("resolved_tensor_shape")
+    resolved_shape = (
+        tuple(int(value) for value in hook_shape)
+        if isinstance(hook_shape, (list, tuple))
+        else tuple(int(dim) for dim in action.shape)
+    )
     return RuntimeResolution(
         adapter="pi05",
         model_family="pi05",
@@ -265,13 +280,24 @@ def _runtime_resolution(
         resolved_hook={
             "model_site": target.model_site or target.site_id,
             "site_record": preflight_target.get("target_site_record"),
+            "layer": direction_resolution.get("layer"),
+            "token_indices": intervention_runtime.get("token_indices"),
+            "direction_resolution": direction_resolution,
         },
         generation_step_mapping=dict(_mapping(_mapping(request.get("schedule")).get("generation_steps"))),
         token_selector_mapping=dict(target.token_selector),
-        resolved_tensor_shape=tuple(int(dim) for dim in action.shape),
-        resolved_dtype=str(action.dtype),
-        resolved_device=_text(payload.get("device")) or "unknown",
-        runtime_environment={"adapter": "pi05", "executor": "injected"},
+        resolved_tensor_shape=resolved_shape,
+        resolved_dtype=_text(intervention_runtime.get("runtime_dtype")) or str(action.dtype),
+        resolved_device=_text(intervention_runtime.get("runtime_device"))
+        or _text(payload.get("device"))
+        or "unknown",
+        runtime_environment={
+            "adapter": "pi05",
+            "executor": "injected",
+            "artifact_id": direction_resolution.get("artifact_id"),
+            "array_sha256": direction_resolution.get("array_sha256"),
+            "evidence_table_sha256": direction_resolution.get("evidence_table_sha256"),
+        },
     )
 
 
@@ -311,13 +337,76 @@ def _run_status(
     return "ok"
 
 
-def _claim_strength(status: str, trials: tuple[InterventionTrial, ...]) -> list[str]:
-    """Prevent engineering-only hook smokes from being promoted to causal evidence."""
+def _claim_record(
+    status: str,
+    trials: tuple[InterventionTrial, ...],
+    *,
+    claim_gate: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Separate a valid causal method from a positive scientific result."""
     if status != "ok":
-        return []
+        return {"claim_strength": []}
     if any(trial.runtime.get("claim_eligible") is False for trial in trials):
-        return []
-    return ["causal_local", "action_level"]
+        return {"claim_strength": []}
+    artifact_trial = next(
+        (
+            trial
+            for trial in trials
+            if trial.runtime.get("purpose") == "artifact_probe_direction"
+        ),
+        None,
+    )
+    if artifact_trial is None:
+        return {"claim_strength": []}
+    required = {"matched_random", "wrong_identity", "wrong_roi"}
+    present = {
+        str(trial.control_kind)
+        for trial in trials
+        if trial.control_kind is not None and trial.status == "ok"
+    }
+    replay_passed = bool(_mapping(claim_gate).get("passed"))
+    method_eligible = replay_passed and required.issubset(present)
+    return {
+        "claim_strength": (["causal_local", "action_level"] if method_eligible else []),
+        "method_eligible": method_eligible,
+        "scientific_verdict": "not_evaluated_from_execution_alone",
+        "required_controls": sorted(required),
+        "completed_controls": sorted(present),
+        "replay_gate": dict(claim_gate or {}),
+        "limitations": [
+            "A claim-eligible action-level run does not by itself show that identity is causal.",
+            "Behavioral conclusions require rollouts and repeated recipients.",
+        ],
+    }
+
+
+def _specificity_summary(
+    noop_action: np.ndarray,
+    intervened_action: np.ndarray,
+    controls: tuple[RuntimeTrialOutput, ...],
+) -> Mapping[str, Any]:
+    main_l2 = float(np.linalg.norm(intervened_action - noop_action))
+    rows = []
+    for control in controls:
+        control_l2 = float(np.linalg.norm(_trial_action(control) - noop_action))
+        rows.append(
+            {
+                "control_kind": control.control_kind or control.trial_kind,
+                "action_delta_l2": control_l2,
+                "main_minus_control_l2": main_l2 - control_l2,
+                "control_to_main_ratio": (
+                    control_l2 / main_l2 if main_l2 > 0.0 else None
+                ),
+            }
+        )
+    return {
+        "main_action_delta_l2": main_l2,
+        "controls": rows,
+        "interpretation": (
+            "Descriptive action deltas only; no positive identity-mechanism verdict is "
+            "assigned automatically."
+        ),
+    }
 
 
 def _trial_action(output: RuntimeTrialOutput) -> np.ndarray:

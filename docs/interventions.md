@@ -38,10 +38,16 @@ VLA Lens can:
 - require repeated no-op replay to match the stored action within explicit
   tolerances before applying a hook;
 - save a synthetic action-head intervention and matched random control.
+- resolve the accepted RQ-015 linear object-ROI probe back into raw PI0.5 VLM
+  hidden space with exact saved scaler/PCA replay;
+- add or project out that direction at explicit prefix-token indices, with
+  matched-random, wrong-identity, and wrong-ROI controls.
 
-The current live hook is an engineering smoke. It uses a synthetic one-hot
-direction and records `claim_eligible = false`. It proves replay and hook
-plumbing, not a scientific mechanism.
+The synthetic one-hot action-head hook remains an engineering smoke and records
+`claim_eligible = false`. The artifact-derived layer-8 hook can become eligible
+for a local action-level comparison only after exact replay and all required
+controls pass. Eligibility says the method ran correctly; it is not a positive
+scientific verdict.
 
 ## The Main Objects
 
@@ -118,3 +124,5 @@ selected, its issue body becomes the plan by default.
 - `tests/test_intervention_*.py` and `tests/test_pi05_intervention_*.py`:
   contract coverage that does not require live hardware unless explicitly
   marked.
+- `configs/interventions/rq018_caddy_identity_project_out.json`: first prepared
+  artifact-derived request; execute only through `scripts/pi05_intervene.sh`.

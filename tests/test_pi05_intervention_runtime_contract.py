@@ -180,6 +180,74 @@ def test_pi05_runtime_does_not_assign_causal_claim_to_engineering_hook_smoke(tmp
     assert result.run.claim == {"claim_strength": []}
 
 
+def test_pi05_runtime_requires_replay_and_all_specificity_controls_for_method_eligibility(
+    tmp_path,
+):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=8)
+    stored = np.asarray(dataset.bundles[0].action_chunks(mmap=True)[0], dtype=np.float32)
+    request = _request(dataset)
+    request["intervention"]["request"]["controls"] = [
+        {"kind": "random_direction"},
+        {"kind": "wrong_feature"},
+        {"kind": "wrong_token"},
+    ]
+
+    class ArtifactExecutor(FakePI05Executor):
+        def run_intervention(self, payload):
+            output = super().run_intervention(payload)
+            return RuntimeTrialOutput(
+                trial_id=output.trial_id,
+                trial_kind=output.trial_kind,
+                action_chunk=output.action_chunk,
+                metrics=output.metrics,
+                runtime={
+                    "purpose": "artifact_probe_direction",
+                    "claim_eligible": True,
+                },
+            )
+
+        def run_control(self, payload, *, control_kind):
+            del payload
+            resolved = {
+                "random_direction_control": "matched_random",
+                "wrong_feature": "wrong_identity",
+                "wrong_token": "wrong_roi",
+            }[control_kind]
+            return RuntimeTrialOutput(
+                trial_id=f"trial_{resolved}",
+                trial_kind={
+                    "matched_random": "random_direction_control",
+                    "wrong_identity": "control",
+                    "wrong_roi": "wrong_token_control",
+                }[resolved],
+                control_kind=resolved,
+                action_chunk=self.base_action + 0.05,
+                runtime={"claim_eligible": True},
+            )
+
+    eligible = run_pi05_intervention(
+        dataset,
+        request,
+        executor=ArtifactExecutor(stored),
+        save=False,
+        claim_gate={"passed": True, "thresholds": {"max_noop_l2": 0.0}},
+    )
+    replay_blocked = run_pi05_intervention(
+        dataset,
+        request,
+        executor=ArtifactExecutor(stored),
+        save=False,
+        claim_gate={"passed": False},
+    )
+
+    assert eligible.run.claim["method_eligible"] is True
+    assert eligible.run.claim["scientific_verdict"] == "not_evaluated_from_execution_alone"
+    assert eligible.run.claim["claim_strength"] == ["causal_local", "action_level"]
+    assert replay_blocked.run.claim["method_eligible"] is False
+    assert replay_blocked.run.claim["claim_strength"] == []
+    assert len(eligible.run.display["specificity_summary"]["controls"]) == 3
+
+
 def test_pi05_intervention_runtime_import_does_not_load_heavy_dependencies():
     code = """
 import sys
