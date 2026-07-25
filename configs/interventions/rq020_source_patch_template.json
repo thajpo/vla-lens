@@ -1,0 +1,118 @@
+{
+  "run_id": "rq020-PAIR-layer-LAYER-target-roi",
+  "runtime_adapter": "pi05",
+  "title": "RQ-020 donor source patch",
+  "target": {
+    "kind": "activation_slice",
+    "model_id": "lerobot/pi05_libero_finetuned",
+    "model_family": "pi05",
+    "model_site": "pi05.vlm.layers.8.prefix.hidden_tokens",
+    "layer": 8,
+    "tensor_type": "hidden_tokens",
+    "token_space": "pi05.prefix",
+    "token_selector": {
+      "indices": [
+        97,
+        98,
+        99
+      ]
+    },
+    "metadata": {
+      "research_question_id": "RQ-020",
+      "replace_before_execution": "Use the validated recipient object-token indices."
+    }
+  },
+  "baseline": {
+    "context": {
+      "trace_id": "RECIPIENT_TRACE_ID",
+      "policy_call_index": 0
+    }
+  },
+  "donor": {
+    "trace": {
+      "trace_id": "DONOR_TRACE_ID"
+    },
+    "policy_call": {
+      "trace_id": "DONOR_TRACE_ID",
+      "policy_call_index": 0
+    },
+    "metadata": {
+      "pair_id": "PAIR_ID",
+      "shared_noise_source": "recipient"
+    }
+  },
+  "intervention": {
+    "request": {
+      "operator": {
+        "operator": "source_patch",
+        "strength": 1.0,
+        "parameters": {
+          "mode": "donor_source_patch",
+          "donor_token_indices": [
+            97,
+            98,
+            99
+          ]
+        }
+      },
+      "schedule": {
+        "policy_calls": [
+          0
+        ],
+        "generation_steps": "all",
+        "tokens": "target_tokens"
+      },
+      "outcome": {
+        "kind": "action",
+        "basis": [
+          "raw"
+        ],
+        "horizon": "full_chunk",
+        "parameters": {
+          "patch_decision_thresholds": {
+            "minimum_natural_delta_norm": 0.000001,
+            "minimum_direction_agreement": 0.5,
+            "minimum_transfer_fraction": 0.1,
+            "maximum_donor_gap_remaining": 0.95,
+            "minimum_control_margin": 0.05
+          }
+        }
+      },
+      "controls": [
+        {
+          "kind": "recipient_self_patch"
+        },
+        {
+          "kind": "donor_self_patch"
+        },
+        {
+          "kind": "shuffled_donor",
+          "parameters": {
+            "seed": 20260725
+          }
+        },
+        {
+          "kind": "random_matched_norm",
+          "parameters": {
+            "seed": 20260725
+          }
+        },
+        {
+          "kind": "wrong_region",
+          "parameters": {
+            "recipient_indices": [
+              10,
+              11,
+              12
+            ],
+            "donor_indices": [
+              10,
+              11,
+              12
+            ]
+          }
+        }
+      ]
+    }
+  }
+}

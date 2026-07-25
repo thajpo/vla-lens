@@ -19,6 +19,7 @@ class RuntimeTrialOutput:
     trial_id: str
     trial_kind: str
     action_chunk: Any
+    array_outputs: Mapping[str, Any] = field(default_factory=dict)
     control_kind: str | None = None
     metrics: Mapping[str, Any] = field(default_factory=dict)
     runtime: Mapping[str, Any] = field(default_factory=dict)
@@ -31,6 +32,13 @@ class RuntimeTrialOutput:
             "trial_id": self.trial_id,
             "trial_kind": self.trial_kind,
             "control_kind": self.control_kind,
+            "array_outputs": {
+                str(name): {
+                    "shape": list(getattr(value, "shape", ())),
+                    "dtype": str(getattr(value, "dtype", "unknown")),
+                }
+                for name, value in self.array_outputs.items()
+            },
             "metrics": jsonable(self.metrics),
             "runtime": jsonable(self.runtime),
             "status": self.status,

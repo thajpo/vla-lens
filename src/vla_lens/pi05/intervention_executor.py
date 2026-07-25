@@ -7,12 +7,15 @@ capture-specific runtime.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import hashlib
+import json
+from dataclasses import dataclass, field
 from typing import Any, Mapping
 
 import numpy as np
 
 from vla_lens.interventions import (
+    DonorSpec,
     InterventionOperatorSpec,
     InterventionScheduleSpec,
     RuntimeTrialOutput,
@@ -32,6 +35,7 @@ from vla_lens.traces import TraceDataset
 
 SYNTHETIC_HOOK_MODE = "synthetic_hook_smoke"
 PROBE_DIRECTION_MODE = "artifact_probe_direction"
+SOURCE_PATCH_MODE = "donor_source_patch"
 SUPPORTED_MODEL_SITE = "pi05.action_head.input"
 
 
@@ -44,6 +48,11 @@ class PI05ActionInterventionExecutor:
     observation: Mapping[str, Any]
     initial_noise: Any
     probe_direction: ResolvedProbeDirection | None = None
+    donor_replay_inputs: PolicyCallReplayInputs | None = None
+    donor_observation: Mapping[str, Any] | None = None
+    pair_compatibility: Mapping[str, Any] = field(default_factory=dict)
+    donor_hidden_cache: dict[int, Any] = field(default_factory=dict)
+    donor_action: np.ndarray | None = None
 
     def run_noop(self, request: Mapping[str, Any]) -> RuntimeTrialOutput:
         del request
@@ -88,6 +97,38 @@ class PI05ActionInterventionExecutor:
                     "dimension": int(operator.parameters.get("dimension", 0)),
                     "hidden_dim": hidden_dim,
                     "applied_generation_steps": applied_steps,
+                },
+            )
+        if mode == SOURCE_PATCH_MODE:
+            _validate_source_patch_request(
+                target,
+                operator,
+                schedule,
+                policy_call_index=self.replay_inputs.policy_call_index,
+            )
+            action, hook = self._predict_with_source_patch(
+                target=target,
+                operator=operator,
+                schedule=schedule,
+            )
+            if self.donor_action is None:
+                raise RuntimeError("Donor action was not captured with the donor activation")
+            return RuntimeTrialOutput(
+                trial_id="trial_source_patch",
+                trial_kind="intervention",
+                action_chunk=action,
+                array_outputs={"donor_shared_noise": self.donor_action.copy()},
+                metrics={
+                    "strength": float(operator.strength or 0.0),
+                    **hook["metrics"],
+                },
+                runtime={
+                    "executor": "pi05_action_intervention",
+                    "purpose": SOURCE_PATCH_MODE,
+                    "claim_eligible": True,
+                    "model_site": target.model_site,
+                    "pair_compatibility": dict(self.pair_compatibility),
+                    **hook["runtime"],
                 },
             )
         direction = self._validated_probe_request(target, operator, schedule)
@@ -156,6 +197,41 @@ class PI05ActionInterventionExecutor:
                 },
             )
 
+        if mode == SOURCE_PATCH_MODE:
+            _validate_source_patch_request(
+                target,
+                operator,
+                schedule,
+                policy_call_index=self.replay_inputs.policy_call_index,
+            )
+            parameters = _control_parameters(request, control_kind)
+            resolved_kind = _source_patch_control_kind(control_kind, parameters)
+            action, hook = self._predict_with_source_patch(
+                target=target,
+                operator=operator,
+                schedule=schedule,
+                control_kind=resolved_kind,
+                control_parameters=parameters,
+            )
+            return RuntimeTrialOutput(
+                trial_id=f"trial_{resolved_kind}",
+                trial_kind="source_patch_control",
+                control_kind=resolved_kind,
+                action_chunk=action,
+                metrics={
+                    "strength": float(operator.strength or 0.0),
+                    **hook["metrics"],
+                },
+                runtime={
+                    "executor": "pi05_action_intervention",
+                    "purpose": f"{SOURCE_PATCH_MODE}_control",
+                    "claim_eligible": True,
+                    "model_site": target.model_site,
+                    "pair_compatibility": dict(self.pair_compatibility),
+                    **hook["runtime"],
+                },
+            )
+
         primary = self._validated_probe_request(target, operator, schedule)
         parameters = _control_parameters(request, control_kind)
         token_indices = primary.token_indices
@@ -216,6 +292,30 @@ class PI05ActionInterventionExecutor:
 
     def close(self) -> None:
         """Match resource-owning executor interfaces; replay setup closes its environment."""
+
+    def prime_donor_cache(self, layers: tuple[int, ...] | list[int]) -> np.ndarray:
+        """Capture several donor layers in one model call for a later layer sweep."""
+        requested = tuple(dict.fromkeys(int(layer) for layer in layers))
+        if not requested:
+            raise ValueError("prime_donor_cache requires at least one layer")
+        missing = tuple(layer for layer in requested if layer not in self.donor_hidden_cache)
+        if missing:
+            if self.donor_observation is None or self.donor_replay_inputs is None:
+                raise ValueError(
+                    "Donor source patching requires a compatible donor trace and policy call"
+                )
+            action, captured = self._capture_layer_hiddens(
+                self.donor_observation,
+                missing,
+            )
+            self.donor_hidden_cache.update(captured)
+            if self.donor_action is None:
+                self.donor_action = action
+            elif not np.array_equal(self.donor_action, action):
+                raise RuntimeError("Shared-noise donor action changed while filling the cache")
+        if self.donor_action is None:
+            raise RuntimeError("Donor cache completed without a donor action")
+        return self.donor_action.copy()
 
     def _predict(self) -> np.ndarray:
         torch = self.runtime.torch
@@ -363,6 +463,263 @@ class PI05ActionInterventionExecutor:
             },
         }
 
+    def _predict_with_source_patch(
+        self,
+        *,
+        target: TargetSpec,
+        operator: InterventionOperatorSpec,
+        schedule: InterventionScheduleSpec,
+        control_kind: str | None = None,
+        control_parameters: Mapping[str, Any] | None = None,
+    ) -> tuple[np.ndarray, dict[str, Any]]:
+        """Patch donor prefix values into a recipient and restore the hook afterward."""
+        if target.layer is None:
+            raise ValueError("Donor source patching requires target.layer")
+        layer_index = int(target.layer)
+        donor_hidden = self._donor_hidden(layer_index)
+        recipient_indices = _source_patch_token_indices(target, schedule)
+        intended_recipient_indices = recipient_indices
+        intended_token_count = len(recipient_indices)
+        parameters = dict(control_parameters or {})
+        intended_donor_indices = _integer_tuple(
+            operator.parameters.get("donor_token_indices") or recipient_indices,
+            field_name="donor token indices",
+        )
+        donor_indices = intended_donor_indices
+        if control_kind == "wrong_region":
+            recipient_indices = _integer_tuple(
+                parameters.get("recipient_indices") or parameters.get("indices"),
+                field_name="wrong-region recipient indices",
+            )
+            donor_indices = _integer_tuple(
+                parameters.get("donor_indices") or donor_indices,
+                field_name="wrong-region donor indices",
+            )
+        if len(recipient_indices) != len(donor_indices):
+            raise ValueError("Recipient and donor source-patch token counts must match")
+        if control_kind == "wrong_region" and len(recipient_indices) != intended_token_count:
+            raise ValueError(
+                "Wrong-region control must match the intended patch token count"
+            )
+
+        target_observation = self.observation
+        if control_kind == "recipient_self_patch":
+            _action, recipient_hidden = self._capture_layer_hidden(
+                self.observation,
+                layer_index,
+            )
+            source_hidden = recipient_hidden
+            donor_indices = recipient_indices
+        elif control_kind == "donor_self_patch":
+            if self.donor_observation is None:
+                raise ValueError("Donor self-patch requires a donor observation")
+            target_observation = self.donor_observation
+            source_hidden = donor_hidden
+            donor_indices = recipient_indices
+        else:
+            source_hidden = donor_hidden
+
+        torch = self.runtime.torch
+        policy = self.runtime.policy
+        layer = _pi05_vlm_layer(policy, layer_index)
+        original_forward = layer.forward
+        strength = float(operator.strength or 0.0)
+        hook_calls = 0
+        realized: list[dict[str, float]] = []
+        runtime_details: dict[str, Any] = {}
+
+        def forward_with_source_patch(*args: Any, **kwargs: Any) -> Any:
+            nonlocal hook_calls
+            output = original_forward(*args, **kwargs)
+            hidden, rebuild = _layer_hidden_output(output)
+            shape = tuple(int(value) for value in hidden.shape)
+            source_shape = tuple(int(value) for value in source_hidden.shape)
+            if shape != source_shape:
+                raise ValueError(
+                    f"Recipient hidden shape {shape} does not match donor shape {source_shape}"
+                )
+            _validate_runtime_token_indices(recipient_indices, shape[1], label="recipient")
+            _validate_runtime_token_indices(donor_indices, source_shape[1], label="donor")
+            recipient_values = hidden[:, list(recipient_indices), :]
+            source_values = source_hidden[:, list(donor_indices), :]
+            source_values = source_values.to(device=hidden.device, dtype=hidden.dtype)
+            raw_delta = source_values - recipient_values
+            intended_recipient_values = hidden[:, list(intended_recipient_indices), :]
+            intended_source_values = donor_hidden[:, list(intended_donor_indices), :]
+            intended_source_values = intended_source_values.to(
+                device=hidden.device,
+                dtype=hidden.dtype,
+            )
+            intended_delta = intended_source_values - intended_recipient_values
+            unmatched_delta = raw_delta
+            resolved_control = control_kind
+            if control_kind == "shuffled_donor":
+                seed = int(parameters.get("seed", 0))
+                permutation = np.random.default_rng(seed).permutation(len(donor_indices))
+                source_values = source_values[:, permutation.tolist(), :]
+                raw_delta = source_values - recipient_values
+                unmatched_delta = raw_delta
+                raw_delta = _match_tensor_delta_norm(
+                    torch,
+                    recipient_values,
+                    raw_delta,
+                    intended_delta,
+                )
+            elif control_kind == "random_matched_norm":
+                seed = int(parameters.get("seed", 0))
+                raw_delta = _random_matched_delta(
+                    torch,
+                    recipient_values,
+                    intended_delta,
+                    seed=seed,
+                )
+            elif control_kind == "wrong_region":
+                raw_delta = _match_tensor_delta_norm(
+                    torch,
+                    recipient_values,
+                    raw_delta,
+                    intended_delta,
+                )
+            modified = hidden.clone()
+            modified[:, list(recipient_indices), :] = recipient_values + strength * raw_delta
+            realized_delta = modified[:, list(recipient_indices), :] - recipient_values
+            raw_delta_numpy = _tensor_numpy(raw_delta)
+            unmatched_delta_numpy = _tensor_numpy(unmatched_delta)
+            realized_numpy = _tensor_numpy(realized_delta)
+            realized.append(
+                {
+                    "source_delta_l2": float(np.linalg.norm(raw_delta_numpy)),
+                    "source_delta_l2_before_norm_match": float(
+                        np.linalg.norm(unmatched_delta_numpy)
+                    ),
+                    "realized_perturbation_l2": float(np.linalg.norm(realized_numpy)),
+                    "realized_perturbation_rms": float(
+                        np.sqrt(np.mean(np.square(realized_numpy)))
+                    ),
+                }
+            )
+            runtime_details.update(
+                {
+                    "resolved_tensor_shape": list(shape),
+                    "runtime_dtype": str(getattr(hidden, "dtype", "unknown")),
+                    "runtime_device": str(getattr(hidden, "device", "unknown")),
+                    "control_kind": resolved_control,
+                    "norm_matched_to_intended": control_kind
+                    in {"shuffled_donor", "random_matched_norm", "wrong_region"},
+                    "token_mapping_sha256": _mapping_sha256(
+                        {
+                            "recipient": recipient_indices,
+                            "donor": donor_indices,
+                        }
+                    ),
+                    "recipient_values_before_sha256": _array_sha256(
+                        _tensor_numpy(recipient_values)
+                    ),
+                    "donor_values_sha256": _array_sha256(
+                        _tensor_numpy(source_values)
+                    ),
+                }
+            )
+            hook_calls += 1
+            return rebuild(modified)
+
+        policy.reset()
+        layer.forward = forward_with_source_patch
+        try:
+            with torch.no_grad():
+                action = policy.predict_action_chunk(
+                    target_observation,
+                    noise=self.initial_noise.clone(),
+                )
+        finally:
+            layer.forward = original_forward
+        if hook_calls != 1 or len(realized) != 1:
+            raise RuntimeError(
+                "Expected the selected PI0.5 donor patch hook exactly once, "
+                f"observed {hook_calls} calls"
+            )
+        return _action_numpy(action), {
+            "metrics": realized[0],
+            "runtime": {
+                "hook_calls": hook_calls,
+                "layer": layer_index,
+                "recipient_token_indices": list(recipient_indices),
+                "donor_token_indices": list(donor_indices),
+                "donor_trace_id": (
+                    self.donor_replay_inputs.trace_id
+                    if self.donor_replay_inputs is not None
+                    else None
+                ),
+                "donor_policy_call_index": (
+                    self.donor_replay_inputs.policy_call_index
+                    if self.donor_replay_inputs is not None
+                    else None
+                ),
+                "shared_noise_ref": self.replay_inputs.initial_noise_ref,
+                "shared_noise_sha256": _array_sha256(
+                    _tensor_numpy(self.initial_noise)
+                ),
+                "donor_cache_layers": sorted(self.donor_hidden_cache),
+                **runtime_details,
+            },
+        }
+
+    def _donor_hidden(self, layer_index: int) -> Any:
+        self.prime_donor_cache((layer_index,))
+        return self.donor_hidden_cache[layer_index]
+
+    def _capture_layer_hidden(
+        self,
+        observation: Mapping[str, Any],
+        layer_index: int,
+    ) -> tuple[np.ndarray, Any]:
+        action, captures = self._capture_layer_hiddens(observation, (layer_index,))
+        return action, captures[layer_index]
+
+    def _capture_layer_hiddens(
+        self,
+        observation: Mapping[str, Any],
+        layer_indices: tuple[int, ...],
+    ) -> tuple[np.ndarray, dict[int, Any]]:
+        torch = self.runtime.torch
+        policy = self.runtime.policy
+        layers = {index: _pi05_vlm_layer(policy, index) for index in layer_indices}
+        original_forwards = {index: layer.forward for index, layer in layers.items()}
+        captures: dict[int, list[Any]] = {index: [] for index in layer_indices}
+
+        def wrapper_for(index: int):
+            original_forward = original_forwards[index]
+
+            def forward_and_capture(*args: Any, **kwargs: Any) -> Any:
+                output = original_forward(*args, **kwargs)
+                hidden, _rebuild = _layer_hidden_output(output)
+                captures[index].append(hidden.detach().clone())
+                return output
+
+            return forward_and_capture
+
+        policy.reset()
+        for index, layer in layers.items():
+            layer.forward = wrapper_for(index)
+        try:
+            with torch.no_grad():
+                action = policy.predict_action_chunk(
+                    observation,
+                    noise=self.initial_noise.clone(),
+                )
+        finally:
+            for index, layer in layers.items():
+                layer.forward = original_forwards[index]
+        invalid = {index: len(values) for index, values in captures.items() if len(values) != 1}
+        if invalid:
+            raise RuntimeError(
+                "Expected every selected PI0.5 donor capture hook exactly once, "
+                f"observed {invalid}"
+            )
+        return _action_numpy(action), {
+            index: values[0] for index, values in captures.items()
+        }
+
     def _predict_with_direction(
         self,
         *,
@@ -455,6 +812,25 @@ def build_pi05_action_intervention_executor(
             trace_id=trace_id,
             policy_call_index=policy_call_index,
         )
+    donor_inputs = None
+    donor_bundle = None
+    pair_compatibility: Mapping[str, Any] = {}
+    if str(operator.parameters.get("mode") or "") == SOURCE_PATCH_MODE:
+        donor = DonorSpec.from_dict(_required_mapping(payload.get("donor"), field="donor"))
+        if donor.trace is None:
+            raise ValueError("Donor source patching requires donor.trace")
+        donor_trace_id = donor.trace.trace_id
+        donor_call_index = (
+            donor.policy_call.policy_call_index if donor.policy_call is not None else 0
+        )
+        donor_bundle = dataset.bundle(donor_trace_id)
+        donor_inputs = policy_call_replay_inputs(donor_bundle, donor_call_index)
+        pair_compatibility = _validate_source_patch_pair(
+            bundle,
+            inputs,
+            donor_bundle,
+            donor_inputs,
+        )
     selected_model_id = str(model_id or bundle.manifest.model_id or "").strip()
     if not selected_model_id:
         raise ValueError(f"Trace {trace_id} does not declare a PI0.5 model_id")
@@ -469,6 +845,15 @@ def build_pi05_action_intervention_executor(
     )
     runtime = load_pi05_capture_runtime(args)
     observation = replay_policy_call_observation(runtime, bundle.actions(mmap=True), inputs)
+    donor_observation = (
+        replay_policy_call_observation(
+            runtime,
+            donor_bundle.actions(mmap=True),
+            donor_inputs,
+        )
+        if donor_bundle is not None and donor_inputs is not None
+        else None
+    )
     initial_noise = runtime.torch.as_tensor(
         np.asarray(inputs.initial_noise, dtype=np.float32),
         device=runtime.policy.config.device,
@@ -482,6 +867,9 @@ def build_pi05_action_intervention_executor(
         observation=observation,
         initial_noise=initial_noise,
         probe_direction=probe_direction,
+        donor_replay_inputs=donor_inputs,
+        donor_observation=donor_observation,
+        pair_compatibility=pair_compatibility,
     )
 
 
@@ -620,6 +1008,122 @@ def _validate_probe_direction_request(
         raise ValueError("Artifact probe intervention schedule.tokens must be 'target_tokens'")
 
 
+def _validate_source_patch_request(
+    target: TargetSpec,
+    operator: InterventionOperatorSpec,
+    schedule: InterventionScheduleSpec,
+    *,
+    policy_call_index: int,
+) -> None:
+    if operator.parameters.get("mode") != SOURCE_PATCH_MODE:
+        raise ValueError(
+            "Donor source patch requires operator.parameters.mode="
+            f"{SOURCE_PATCH_MODE!r}"
+        )
+    if operator.operator != "source_patch":
+        raise ValueError("Donor source patch requires operator=source_patch")
+    if operator.strength is None or not np.isfinite(operator.strength):
+        raise ValueError("Donor source patch requires a finite explicit strength")
+    if not 0.0 <= float(operator.strength) <= 1.0:
+        raise ValueError("Donor source patch strength must be between 0 and 1")
+    if target.layer is None:
+        raise ValueError("Donor source patch requires target.layer")
+    expected_site = f"pi05.vlm.layers.{int(target.layer)}.prefix.hidden_tokens"
+    if target.model_site != expected_site:
+        raise ValueError(
+            f"Donor source patch layer {target.layer} requires model_site={expected_site!r}"
+        )
+    if isinstance(schedule.policy_calls, tuple) and policy_call_index not in schedule.policy_calls:
+        raise ValueError(
+            f"Schedule does not include selected policy call {policy_call_index}: "
+            f"{schedule.policy_calls}"
+        )
+    if schedule.generation_steps != "all":
+        raise ValueError(
+            "VLM prefix source patching runs once before denoising; "
+            "generation_steps must be 'all'"
+        )
+    _source_patch_token_indices(target, schedule)
+
+
+def _source_patch_token_indices(
+    target: TargetSpec,
+    schedule: InterventionScheduleSpec,
+) -> tuple[int, ...]:
+    raw_indices = target.token_selector.get("indices")
+    if isinstance(schedule.tokens, Mapping):
+        scheduled = schedule.tokens.get("indices")
+        if raw_indices is not None and scheduled is not None:
+            if tuple(int(item) for item in raw_indices) != tuple(
+                int(item) for item in scheduled
+            ):
+                raise ValueError("Schedule tokens disagree with target token_selector")
+        raw_indices = scheduled if scheduled is not None else raw_indices
+    elif schedule.tokens != "target_tokens":
+        raise ValueError("Donor source patch schedule.tokens must select target tokens")
+    return _integer_tuple(raw_indices, field_name="recipient token indices")
+
+
+def _source_patch_control_kind(
+    requested_kind: str,
+    parameters: Mapping[str, Any],
+) -> str:
+    role = str(parameters.get("role") or "")
+    aliases = {
+        "recipient_self_patch": "recipient_self_patch",
+        "donor_self_patch": "donor_self_patch",
+        "shuffled_donor": "shuffled_donor",
+        "random_direction": "random_matched_norm",
+        "random_direction_control": "random_matched_norm",
+        "random_matched_norm": "random_matched_norm",
+        "wrong_token": "wrong_region",
+        "wrong_roi": "wrong_region",
+        "wrong_region": "wrong_region",
+    }
+    resolved = aliases.get(role) or aliases.get(requested_kind)
+    if resolved is None:
+        raise ValueError(f"Unsupported donor source-patch control {requested_kind!r}")
+    return resolved
+
+
+def _validate_source_patch_pair(
+    recipient_bundle: Any,
+    recipient_inputs: PolicyCallReplayInputs,
+    donor_bundle: Any,
+    donor_inputs: PolicyCallReplayInputs,
+) -> dict[str, Any]:
+    checks = {
+        "different_trace": recipient_inputs.trace_id != donor_inputs.trace_id,
+        "model_id": recipient_bundle.manifest.model_id == donor_bundle.manifest.model_id,
+        "prompt": recipient_bundle.manifest.prompt == donor_bundle.manifest.prompt,
+        "benchmark": recipient_inputs.config.benchmark == donor_inputs.config.benchmark,
+        "task_id": recipient_inputs.config.task_id == donor_inputs.config.task_id,
+        "observation_shape": recipient_inputs.config.obs_size == donor_inputs.config.obs_size,
+        "stored_action_shape": (
+            tuple(recipient_inputs.stored_action_chunk.shape)
+            == tuple(donor_inputs.stored_action_chunk.shape)
+        ),
+        "noise_shape": (
+            tuple(recipient_inputs.initial_noise.shape)
+            == tuple(donor_inputs.initial_noise.shape)
+        ),
+    }
+    failed = [name for name, passed in checks.items() if not passed]
+    if failed:
+        raise ValueError(
+            "Recipient and donor are incompatible for source patching: "
+            + ", ".join(failed)
+        )
+    return {
+        **checks,
+        "recipient_trace_id": recipient_inputs.trace_id,
+        "donor_trace_id": donor_inputs.trace_id,
+        "recipient_policy_call_index": recipient_inputs.policy_call_index,
+        "donor_policy_call_index": donor_inputs.policy_call_index,
+        "shared_noise_source": recipient_inputs.initial_noise_ref,
+    }
+
+
 def _pi05_vlm_layer(policy: Any, layer_index: int) -> Any:
     root = getattr(getattr(policy, "model", None), "paligemma_with_expert", None)
     paligemma = getattr(root, "paligemma", None)
@@ -666,6 +1170,82 @@ def _match_nonzero_norm(candidate: np.ndarray, reference: np.ndarray) -> np.ndar
     if candidate_norm == 0.0:
         raise ValueError("Specificity control has zero realized perturbation before norm matching")
     return np.asarray(candidate, dtype=np.float64) * (reference_norm / candidate_norm)
+
+
+def _random_matched_delta(
+    torch: Any,
+    recipient_values: Any,
+    reference_delta: Any,
+    *,
+    seed: int,
+) -> Any:
+    reference = _tensor_numpy(reference_delta)
+    reference_norm = float(np.linalg.norm(reference))
+    if reference_norm == 0.0:
+        return torch.as_tensor(
+            np.zeros_like(reference, dtype=np.float32),
+            device=recipient_values.device,
+            dtype=recipient_values.dtype,
+        )
+    random = np.random.default_rng(seed).normal(size=reference.shape).astype(np.float32)
+    random_norm = float(np.linalg.norm(random))
+    if random_norm == 0.0:
+        raise RuntimeError("Random source-patch control unexpectedly has zero norm")
+    random *= reference_norm / random_norm
+    return torch.as_tensor(
+        random,
+        device=recipient_values.device,
+        dtype=recipient_values.dtype,
+    )
+
+
+def _match_tensor_delta_norm(
+    torch: Any,
+    recipient_values: Any,
+    candidate_delta: Any,
+    reference_delta: Any,
+) -> Any:
+    candidate = _tensor_numpy(candidate_delta)
+    reference = _tensor_numpy(reference_delta)
+    matched = _match_nonzero_norm(candidate, reference).astype(np.float32)
+    return torch.as_tensor(
+        matched,
+        device=recipient_values.device,
+        dtype=recipient_values.dtype,
+    )
+
+
+def _integer_tuple(value: Any, *, field_name: str) -> tuple[int, ...]:
+    if not isinstance(value, (list, tuple)) or not value:
+        raise ValueError(f"{field_name} must be a non-empty list")
+    indices = tuple(int(item) for item in value)
+    if len(set(indices)) != len(indices) or any(item < 0 for item in indices):
+        raise ValueError(f"{field_name} must contain unique non-negative indices")
+    return indices
+
+
+def _validate_runtime_token_indices(
+    indices: tuple[int, ...],
+    token_count: int,
+    *,
+    label: str,
+) -> None:
+    if not indices or min(indices) < 0 or max(indices) >= token_count:
+        raise ValueError(f"{label} source-patch token selector is outside the runtime prefix")
+
+
+def _array_sha256(value: np.ndarray) -> str:
+    array = np.ascontiguousarray(np.asarray(value, dtype=np.float32))
+    digest = hashlib.sha256()
+    digest.update(str(array.shape).encode("utf-8"))
+    digest.update(str(array.dtype).encode("utf-8"))
+    digest.update(array.tobytes(order="C"))
+    return digest.hexdigest()
+
+
+def _mapping_sha256(value: Mapping[str, Any]) -> str:
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _control_parameters(payload: Mapping[str, Any], requested_kind: str) -> Mapping[str, Any]:
@@ -762,8 +1342,15 @@ def _mapping(value: Any) -> Mapping[str, Any]:
     return value if isinstance(value, Mapping) else {}
 
 
+def _required_mapping(value: Any, *, field: str) -> Mapping[str, Any]:
+    if not isinstance(value, Mapping):
+        raise TypeError(f"{field} must be an object")
+    return value
+
+
 __all__ = [
     "PI05ActionInterventionExecutor",
+    "SOURCE_PATCH_MODE",
     "SYNTHETIC_HOOK_MODE",
     "SUPPORTED_MODEL_SITE",
     "build_pi05_action_intervention_executor",

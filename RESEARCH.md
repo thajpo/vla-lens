@@ -97,7 +97,7 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-017 | Are pose changes nonlinearly decodable from pooled representations? | Probe | Negative on validation | No larger global pooled probe sweep |
 | RQ-018 | Does the layer-8 object-identity direction causally affect PI0.5's action? | Intervention | Completed; negative semantic-specificity result | Calibrate region and dose controls |
 | RQ-019 | Does exchanging target and distractor poses naturally change PI0.5's action? | Counterfactual | Planned | Required gate for patching |
-| RQ-020 | Where can donor activations transfer that natural action change? | Activation patching | Planned | Yes, layer and token sweep |
+| RQ-020 | Where can donor activations transfer that natural action change? | Activation patching | Runtime validated; scientific pilot pending | Yes, layer and token sweep |
 | RQ-021 | What object property does a successful patch carry? | Counterfactual intervention | Blocked on RQ-020 | Identity, appearance, role, or position |
 | RQ-022 | Which residual, key/value, or action-bridge path carries the effect? | Path intervention | Blocked on RQ-020 | Only after localization |
 | RQ-023 | Does a specific action-level transfer change closed-loop behavior? | Rollout intervention | Blocked on validation | Only after action specificity |
@@ -1021,6 +1021,36 @@ gates and beats measured controls by the predeclared margin. Stop after a
 3-5-pair pilot if the natural effect is absent, hooks are unreliable, or no
 site shows donor-directed movement. Do not run rollouts from action difference
 alone.
+
+**Runtime validation, not the RQ-020 answer.** The donor source-patch machinery
+was validated on existing matched pair `506357b9a6fb733db638`: task-73 seeds
+2000 and 2004, where the distractor `white_yellow_mug_1` moved. This is not the
+planned target/distractor pose exchange, so it is an engineering smoke and one
+exploratory negative example, not the scientific pilot.
+
+The ROCm run passed the replay gate, every hook fired once, recipient-self patch
+was an exact no-op, and donor-self patch reproduced the donor action under the
+same recipient noise. The natural recipient-to-donor action distance was
+`0.47157`. Patching the 20 union-of-old/new mug tokens at layer 8 changed the
+action by `0.06624`, but its direction agreement was only `0.2979`, transfer
+fraction `0.04184`, and donor recovery `0.03251`. It failed all three declared
+transfer gates. After bfloat16 conversion, shuffled-donor, random, and
+wrong-region controls were raw-norm matched to approximately the same hidden
+perturbation. Their action changes were `0.04780`, `0.04299`, and `0.05125`,
+respectively, versus `0.06624` for the intended patch.
+
+**Runtime validation decision.** The hook, shared-noise comparison, in-memory
+donor cache, action saving, and control machinery work. This example does not
+show meaningful donor-directed transfer, and it should not influence layer
+selection for the pose-exchange pilot. Continue to RQ-019 pair construction,
+then run the predeclared layer/token sweep.
+
+**Runtime validation artifact.**
+`intervention_run-rq-020-source-patch-machinery-smoke-on-an-existing-moved-object-pair-f65174098b`.
+The saved artifact contains recipient, donor, patched, and five control action
+chunks. Request: `configs/interventions/rq020_existing_pair_layer8_smoke.json`.
+Replay report:
+`vla_lens/intervention_reports/rq020_existing_pair_layer8_smoke.json`.
 
 ## RQ-021 Through RQ-023: Conditional Follow-Ups
 

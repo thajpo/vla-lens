@@ -21,12 +21,16 @@ from vla_lens.interventions import (
     ActionOutcomeResult,
     ContextSpec,
     ControlResult,
+    CounterfactualMetrics,
     InterventionRun,
     InterventionTrial,
+    PatchDecisionThresholds,
     RuntimeResolution,
     RuntimeTrialOutput,
     TargetSpec,
     action_delta_metrics,
+    counterfactual_action_metrics,
+    evaluate_patch_trial,
     intervention_run_to_lens_artifact,
     resolve_action_basis,
 )
@@ -77,6 +81,7 @@ def run_pi05_intervention(
     noop_action = _trial_action(noop)
     intervened_action = _trial_action(intervention)
     controls, control_arrays, control_action_refs = _run_controls(executor, payload, request)
+    intervention_arrays = _array_outputs(intervention)
 
     basis_result = resolve_action_basis(
         bundle,
@@ -95,8 +100,20 @@ def run_pi05_intervention(
         "noop": noop_action,
         "intervened": intervened_action,
         "intervened_minus_noop": delta,
+        **intervention_arrays,
         **control_arrays,
     }
+    source_patch_metrics, source_patch_decision, source_patch_thresholds = (
+        _source_patch_evidence(
+        noop_action,
+        intervened_action,
+        controls,
+        arrays,
+        intervention,
+        request,
+        claim_gate=claim_gate,
+    )
+    )
     trials = (
         InterventionTrial(
             trial_id="trial_stored_original",
@@ -156,8 +173,24 @@ def run_pi05_intervention(
                 intervened_action,
                 controls,
             ),
+            **(
+                {
+                    "counterfactual_transfer": {
+                        "metrics": source_patch_metrics.to_dict(),
+                        "decision": source_patch_decision.to_dict(),
+                        "thresholds": source_patch_thresholds.to_dict(),
+                    }
+                }
+                if source_patch_metrics is not None and source_patch_decision is not None
+                else {}
+            ),
         },
-        claim=_claim_record(status, trials, claim_gate=claim_gate),
+        claim=_claim_record(
+            status,
+            trials,
+            claim_gate=claim_gate,
+            source_patch_decision=source_patch_decision,
+        ),
         provenance={
             "schema_kind": "vla_lens.intervention_run",
             "runtime_adapter": "pi05",
@@ -186,6 +219,11 @@ def _run_controls(
         controls.append(output)
         action_ref = f"control_{control_kind}"
         arrays[action_ref] = _trial_action(output)
+        for name, value in _array_outputs(output).items():
+            existing = arrays.get(name)
+            if existing is not None and not np.array_equal(existing, value):
+                raise ValueError(f"Runtime trials produced conflicting array output {name!r}")
+            arrays.setdefault(name, value)
         action_refs.append(action_ref)
     return tuple(controls), arrays, tuple(action_refs)
 
@@ -201,7 +239,10 @@ def _trial_from_output(
         trial_id=output.trial_id or default_trial_id,
         trial_kind=output.trial_kind or default_kind,
         control_kind=output.control_kind,
-        outputs={"action_ref": action_ref},
+        outputs={
+            "action_ref": action_ref,
+            **{f"{name}_ref": name for name in output.array_outputs},
+        },
         metrics=output.metrics,
         runtime=output.runtime,
         status=output.status,
@@ -342,12 +383,32 @@ def _claim_record(
     trials: tuple[InterventionTrial, ...],
     *,
     claim_gate: Mapping[str, Any] | None,
+    source_patch_decision: Any | None = None,
 ) -> dict[str, Any]:
     """Separate a valid causal method from a positive scientific result."""
     if status != "ok":
         return {"claim_strength": []}
     if any(trial.runtime.get("claim_eligible") is False for trial in trials):
         return {"claim_strength": []}
+    if source_patch_decision is not None:
+        method_eligible = bool(_mapping(claim_gate).get("passed")) and (
+            source_patch_decision.verdict
+            not in {"pair_invalid", "replay_invalid", "hook_invalid", "insufficient_data"}
+        )
+        supports_specificity = bool(source_patch_decision.supports_specificity)
+        return {
+            "claim_strength": (
+                ["causal_local", "action_level"] if supports_specificity else []
+            ),
+            "method_eligible": method_eligible,
+            "scientific_verdict": source_patch_decision.verdict,
+            "supports_specificity": supports_specificity,
+            "replay_gate": dict(claim_gate or {}),
+            "limitations": [
+                "Action-level donor transfer does not establish closed-loop behavior.",
+                "A cohort and held-out confirmation are required beyond one pair.",
+            ],
+        }
     artifact_trial = next(
         (
             trial
@@ -411,6 +472,89 @@ def _specificity_summary(
 
 def _trial_action(output: RuntimeTrialOutput) -> np.ndarray:
     return np.asarray(output.action_chunk, dtype=np.float32)
+
+
+def _array_outputs(output: RuntimeTrialOutput) -> dict[str, np.ndarray]:
+    arrays: dict[str, np.ndarray] = {}
+    for name, value in output.array_outputs.items():
+        array = np.asarray(value, dtype=np.float32)
+        if array.ndim != 2 or not np.all(np.isfinite(array)):
+            raise ValueError(
+                f"Runtime array output {name!r} must be a finite action_horizon by "
+                "action_dim array"
+            )
+        arrays[str(name)] = array
+    return arrays
+
+
+def _source_patch_evidence(
+    noop_action: np.ndarray,
+    intervened_action: np.ndarray,
+    controls: tuple[RuntimeTrialOutput, ...],
+    arrays: Mapping[str, np.ndarray],
+    intervention: RuntimeTrialOutput,
+    request: Mapping[str, Any],
+    *,
+    claim_gate: Mapping[str, Any] | None,
+) -> tuple[
+    CounterfactualMetrics | None,
+    Any | None,
+    PatchDecisionThresholds | None,
+]:
+    donor_action = arrays.get("donor_shared_noise")
+    if donor_action is None or intervention.runtime.get("purpose") != "donor_source_patch":
+        return None, None, None
+    thresholds = _source_patch_thresholds(request)
+    main = counterfactual_action_metrics(noop_action, donor_action, intervened_action)
+    negative_controls = []
+    for control in controls:
+        if control.control_kind not in {
+            "shuffled_donor",
+            "random_matched_norm",
+            "wrong_region",
+        }:
+            continue
+        negative_controls.append(
+            counterfactual_action_metrics(
+                noop_action,
+                donor_action,
+                _trial_action(control),
+            )
+        )
+    runtime_pair = _mapping(intervention.runtime.get("pair_compatibility"))
+    pair_valid = bool(runtime_pair) and all(
+        bool(value)
+        for key, value in runtime_pair.items()
+        if key
+        in {
+            "different_trace",
+            "model_id",
+            "prompt",
+            "benchmark",
+            "task_id",
+            "observation_shape",
+            "stored_action_shape",
+            "noise_shape",
+        }
+    )
+    decision = evaluate_patch_trial(
+        main,
+        pair_valid=pair_valid,
+        replay_valid=bool(_mapping(claim_gate).get("passed")),
+        hook_valid=int(intervention.runtime.get("hook_calls") or 0) == 1,
+        controls=tuple(negative_controls),
+        thresholds=thresholds,
+    )
+    return main, decision, thresholds
+
+
+def _source_patch_thresholds(
+    request: Mapping[str, Any],
+) -> PatchDecisionThresholds:
+    outcome = _mapping(request.get("outcome"))
+    parameters = _mapping(outcome.get("parameters"))
+    payload = _mapping(parameters.get("patch_decision_thresholds"))
+    return PatchDecisionThresholds.from_dict(payload)
 
 
 def _control_kinds(request: Mapping[str, Any]) -> tuple[str, ...]:

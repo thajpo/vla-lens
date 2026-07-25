@@ -1,7 +1,7 @@
 # Interventions
 
-Status: implemented evidence foundation; live scientific execution remains in
-progress.
+Status: implemented evidence foundation and donor source-patching runtime;
+counterfactual scene capture and cohort execution remain in progress.
 
 ## What This Part Of VLA Lens Does
 
@@ -42,6 +42,13 @@ VLA Lens can:
   hidden space with exact saved scaler/PCA replay;
 - add or project out that direction at explicit prefix-token indices, with
   matched-random, wrong-identity, and wrong-ROI controls.
+- load a compatible recipient/donor trace pair once, capture donor VLM layers
+  into an in-memory cache, and patch explicit donor prefix tokens into the
+  recipient under the recipient's exact saved noise;
+- run recipient-self, donor-self, shuffled-donor, norm-matched random, and
+  wrong-region source-patch controls;
+- save the donor action alongside recipient, patched, and control action chunks
+  and report whether the patch moved the action toward the donor.
 
 The synthetic one-hot action-head hook remains an engineering smoke and records
 `claim_eligible = false`. The artifact-derived layer-8 hook can become eligible
@@ -67,6 +74,11 @@ failed attempt.
 request, trials, outcomes, runtime resolution, provenance, warnings, and claim
 labels.
 
+`CounterfactualPairManifest`, `PatchTrialManifest`, and `PatchStudyArtifact`
+record the larger recipient/donor experiment. They preserve the scene recipe,
+shared-noise identity, token mapping and hashes, named action axes, decisions,
+and enough lineage to rebuild any disposable activation cache.
+
 `LensArtifact(type="intervention_run")` is the compact browser/index view of
 that run. It is not a second source of truth.
 
@@ -78,6 +90,8 @@ that run. It is not a second source of truth.
 - A single changed action chunk is action-level evidence, not behavioral rescue.
 - A random direction with a similar effect weakens the candidate direction.
 - A wrong layer, time, or token with a similar effect weakens specificity.
+- Merely completing a control does not earn a `specific` label. The intended
+  patch must beat the measured control by the declared margin.
 - Rollout and cohort claims require rollout and cohort evidence.
 - Missing controls or runtime identity must remain visible in the saved record.
 
@@ -105,9 +119,10 @@ command and replay gate.
 
 The active work is tracked in GitHub rather than another planning document:
 
-- [#18: first claim-eligible PI0.5 probe-direction intervention](https://github.com/thajpo/vla-lens/issues/18)
 - [#19: live Intervention Lab execution and action comparison](https://github.com/thajpo/vla-lens/issues/19)
 - [#20: sweep and cohort execution](https://github.com/thajpo/vla-lens/issues/20)
+- [#33: donor-aware PI0.5 activation patching](https://github.com/thajpo/vla-lens/issues/33)
+- [#34: pose-exchange capture and patching pilot](https://github.com/thajpo/vla-lens/issues/34)
 
 There is no active temporary implementation spec. When one of these issues is
 selected, its issue body becomes the plan by default.
@@ -126,3 +141,9 @@ selected, its issue body becomes the plan by default.
   marked.
 - `configs/interventions/rq018_caddy_identity_project_out.json`: first prepared
   artifact-derived request; execute only through `scripts/pi05_intervene.sh`.
+- `configs/interventions/rq020_source_patch_template.json`: replace every
+  placeholder and token region from a validated counterfactual pair before
+  executing through the same dedicated wrapper.
+- `configs/interventions/rq020_existing_pair_layer8_smoke.json`: a real
+  moved-distractor pair for runtime validation only. It is not the cleaner
+  target/distractor pose-exchange experiment planned by RQ-019.
