@@ -176,6 +176,11 @@ class CapturePlan:
             [_past_key_values_collection_metadata(self)] if self.capture_bridge_sites else []
         )
         payload["axis_strategy"] = "policy_call"
+        payload["runtime_hook_sites"] = [
+            f"pi05.vlm.layers.{layer}.prefix.hidden_tokens"
+            for layer in ALL_PI05_LAYERS
+        ]
+        payload["runtime_hook_sites_materialized"] = False
         payload["attention_full_semantics"] = "head x query_token x key_token"
         payload["attention_key_mass_semantics"] = "head x key_token, mean over query_token"
         return payload
@@ -370,6 +375,7 @@ class EpisodeBuffer:
     infos: list[dict[str, Any]] = field(default_factory=list)
     terminated: list[bool] = field(default_factory=list)
     truncated: list[bool] = field(default_factory=list)
+    scene_mutation_report: dict[str, Any] = field(default_factory=dict)
     success: bool = False
 
 @dataclass

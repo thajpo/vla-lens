@@ -97,6 +97,34 @@ def test_replay_config_resolves_current_capture_manifest_and_environment_metadat
     assert config.horizon == 6
 
 
+def test_replay_config_keeps_scene_mutation_recipe(tmp_path):
+    mutation = {
+        "spec": {
+            "kind": "pose_exchange",
+            "objects": ["black_book_1", "white_yellow_mug_1"],
+        },
+        "outside_object_qpos_max_abs": 0.0,
+    }
+    bundle = _replay_bundle(
+        tmp_path,
+        include_exact_noise=True,
+        metadata={
+            "seed": 1234,
+            "environment": {
+                "benchmark": "libero_object",
+                "task_id": 7,
+                "layout_id": 3,
+                "obs_size": 224,
+                "scene_mutation": mutation,
+            },
+        },
+    )
+
+    config = replay_config_from_bundle(bundle)
+
+    assert config.scene_mutation == mutation
+
+
 def test_replay_config_preserves_legacy_flat_metadata_aliases(tmp_path):
     bundle = _replay_bundle(
         tmp_path,

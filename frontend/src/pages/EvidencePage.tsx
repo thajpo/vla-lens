@@ -6,6 +6,7 @@ import { EvidenceLibrary } from "../components/interventions/EvidenceLibrary";
 import { InterventionLab } from "../components/interventions/InterventionLab";
 import { InterventionRunDetail } from "../components/interventions/InterventionRunDetail";
 import { InterventionTargetPicker } from "../components/interventions/InterventionTargetPicker";
+import { PatchStudyExplorer } from "../components/interventions/PatchStudyExplorer";
 import { evidencePinHash, evidencePinSummary } from "./evidencePinsModel";
 import type { InterventionLabSeed } from "../types/interventions";
 
@@ -67,6 +68,7 @@ export function InterventionsPage({
       />
       <section className="interventions-workspace">
         <section className="interventions-center">
+          <PatchStudyExplorer />
           <InterventionTargetPicker
             initialDraft={targetDraft}
             onDraftChange={setTargetDraft}

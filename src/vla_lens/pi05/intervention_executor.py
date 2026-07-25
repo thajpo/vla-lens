@@ -31,6 +31,10 @@ from vla_lens.pi05.probe_direction import (
     resolve_object_roi_probe_direction,
 )
 from vla_lens.pi05.replay import PolicyCallReplayInputs, policy_call_replay_inputs
+from vla_lens.pi05.scene_mutation import (
+    apply_scene_mutation,
+    scene_mutation_from_metadata,
+)
 from vla_lens.traces import TraceDataset
 
 SYNTHETIC_HOOK_MODE = "synthetic_hook_smoke"
@@ -908,6 +912,9 @@ def replay_policy_call_observation(
         )
     try:
         observation, _ = env.reset(seed=[config.seed])
+        mutation = scene_mutation_from_metadata(config.scene_mutation)
+        if mutation is not None:
+            observation, _report = apply_scene_mutation(env, mutation)
         for timestep in range(inputs.observation_timestep):
             env_action = np.expand_dims(
                 np.asarray(executed_actions[timestep], dtype=np.float32),

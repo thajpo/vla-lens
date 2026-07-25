@@ -120,6 +120,20 @@ def test_counterfactual_capture_args_make_variant_trace_id_and_metadata() -> Non
     assert metadata["counterfactual"]["target_object_id"] == "mug"
 
 
+def test_pose_exchange_capture_args_preserve_layout_and_replay_recipe() -> None:
+    args = parse_args(
+        [
+            "--layout-id",
+            "3",
+            "--scene-mutation-json",
+            '{"kind":"pose_exchange","objects":["book","mug"]}',
+        ]
+    )
+
+    assert args.layout_id == 3
+    assert args.scene_mutation_json.endswith('["book","mug"]}')
+
+
 def test_episode_success_false_when_success_signal_never_passes() -> None:
     buffer = EpisodeBuffer(
         trace_id="trace",

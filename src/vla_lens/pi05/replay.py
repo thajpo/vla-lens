@@ -8,13 +8,17 @@ from the original capture directory.
 from __future__ import annotations
 
 import threading
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Mapping
 
 import imageio.v2 as imageio
 import numpy as np
 
+from vla_lens.pi05.scene_mutation import (
+    apply_scene_mutation,
+    scene_mutation_from_metadata,
+)
 from vla_lens.traces import TraceBundle
 
 DEFAULT_CAMERAS = "agentview_image,robot0_eye_in_hand_image"
@@ -30,6 +34,7 @@ class ReplayConfig:
     obs_size: int = 256
     camera_name: str = DEFAULT_CAMERAS
     control_mode: str = "relative"
+    scene_mutation: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
@@ -60,6 +65,7 @@ class PolicyCallReplayInputs:
                 "obs_size": self.config.obs_size,
                 "camera_name": self.config.camera_name,
                 "control_mode": self.config.control_mode,
+                "scene_mutation": dict(self.config.scene_mutation),
             },
             "stored_action_chunk": {
                 "shape": list(self.stored_action_chunk.shape),
@@ -123,6 +129,9 @@ class PI05LiberoReplayRenderer:
             self._base_env.episode_index = self.config.layout_id
             self._base_env.init_state_id = self.config.layout_id
         self._raw_obs, _ = self._base_env.reset(seed=self.config.seed)
+        mutation = scene_mutation_from_metadata(self.config.scene_mutation)
+        if mutation is not None:
+            self._raw_obs, _report = apply_scene_mutation(self._base_env, mutation)
         self._last_rendered_timestep = -1
         self._done = False
 
@@ -177,6 +186,7 @@ def replay_config_from_bundle(bundle: TraceBundle) -> ReplayConfig:
         seed=seed,
         horizon=int(bundle.manifest.length),
         obs_size=obs_size,
+        scene_mutation=dict(_mapping(environment.get("scene_mutation"))),
     )
 
 

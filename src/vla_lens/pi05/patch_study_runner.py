@@ -22,6 +22,7 @@ from vla_lens.interventions import (
     intervention_sweep_to_lens_artifact,
     patch_study_request_sha256,
 )
+from vla_lens.interventions.patch_study_analysis import save_patch_study_analysis
 from vla_lens.pi05.intervention_executor import (
     PI05ActionInterventionExecutor,
     build_pi05_action_intervention_executor,
@@ -281,6 +282,7 @@ def run_patch_study_job(
             close()
 
     artifact = store.finalize()
+    analysis = save_patch_study_analysis(store.root)
     runs = store.intervention_runs()
     sweep_artifact_id = None
     if runs and not args.no_workbench:
@@ -319,6 +321,8 @@ def run_patch_study_job(
             "verdict_counts": dict(sorted(verdicts.items())),
             "pair_replay_gates": pair_gates,
             "sweep_artifact_id": sweep_artifact_id,
+            "analysis_path": str(store.root / "analysis.json"),
+            "analysis_headline": analysis.get("headline"),
             "model_loaded_once": runtime is not None,
         }
     )

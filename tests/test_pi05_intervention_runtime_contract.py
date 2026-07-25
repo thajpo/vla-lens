@@ -199,6 +199,64 @@ def test_pi05_source_patch_preflight_checks_recipient_donor_compatibility(tmp_pa
     assert "recipient and donor must be different traces" in same_trace_check["errors"]
 
 
+def test_pi05_source_patch_accepts_live_hook_without_saved_activation(tmp_path):
+    dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=2, timesteps=8)
+    manifest_paths = sorted(
+        (dataset.root / "vla_lens" / "episodes").glob("*/manifest.json")
+    )
+    manifests = [json.loads(path.read_text(encoding="utf-8")) for path in manifest_paths]
+    for manifest in manifests:
+        manifest["model_id"] = "lerobot/pi05_libero_finetuned"
+        manifest["prompt"] = manifests[0]["prompt"]
+        manifest["task_id"] = manifests[0]["task_id"]
+    for path, manifest in zip(manifest_paths, manifests, strict=True):
+        path.write_text(json.dumps(manifest), encoding="utf-8")
+    dataset = TraceDataset.open(dataset.root)
+    recipient, donor = dataset.bundles
+    request = {
+        "runtime_adapter": "pi05",
+        "target": {
+            "kind": "activation_slice",
+            "model_family": "pi05",
+            "model_site": "pi05.vlm.layers.8.prefix.hidden_tokens",
+            "token_space": "synthetic.action_suffix",
+            "token_selector": {"indices": [0, 1]},
+        },
+        "baseline": {
+            "context": {
+                "trace_id": recipient.manifest.trace_id,
+                "policy_call_index": 0,
+            }
+        },
+        "donor": {
+            "trace": {"trace_id": donor.manifest.trace_id},
+            "policy_call": {"trace_id": donor.manifest.trace_id, "policy_call_index": 0},
+        },
+        "intervention": {
+            "request": {
+                "operator": {
+                    "operator": "source_patch",
+                    "strength": 1.0,
+                    "parameters": {"mode": "donor_source_patch"},
+                },
+                "schedule": {"policy_calls": [0], "tokens": "target_tokens"},
+                "outcome": {"kind": "action", "basis": ["raw"]},
+            }
+        },
+    }
+
+    result = pi05_intervention_preflight(dataset, request, runtime_available=True).to_dict()
+    site_check = next(
+        check
+        for check in result["checks"]
+        if check["name"] == "target_site_declared_in_model_site_index"
+    )
+
+    assert site_check["status"] == "ok"
+    assert site_check["metadata"]["saved_activation"] is False
+    assert result["target_resolution"]["target_site_record"]["materialization"] == "runtime_only"
+
+
 def test_pi05_runtime_contract_writes_saved_intervention_run_and_artifact(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "demo", num_episodes=1, timesteps=8)
     stored = np.asarray(dataset.bundles[0].action_chunks(mmap=True)[0], dtype=np.float32)

@@ -18,6 +18,7 @@ import vla_lens.server.indexed as indexed_api
 import vla_lens.server.indexed_probes as indexed_probes_api
 import vla_lens.server.interventions as interventions_api
 import vla_lens.server.metrics as metrics_api
+import vla_lens.server.patch_studies as patch_studies_api
 import vla_lens.server.probe_studies as probe_studies_api
 import vla_lens.server.probes as probes_api
 import vla_lens.server.research_runs as research_runs_api
@@ -64,6 +65,7 @@ def create_dashboard_app(root: str | Path) -> FastAPI:
     app.state.dashboard = DashboardState(root)
     app.openapi = lambda: _openapi_schema(app)  # type: ignore[method-assign]
     research_runs_api.register_research_run_routes(app)
+    patch_studies_api.register_patch_study_routes(app)
 
     @app.get("/")
     async def root_endpoint(request: Request) -> Response:

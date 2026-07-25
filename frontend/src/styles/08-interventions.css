@@ -722,3 +722,117 @@
     grid-template-columns: 1fr;
   }
 }
+.patch-study-explorer {
+  padding: 20px 22px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.patch-study-header,
+.patch-pair-inspector > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.patch-study-header span,
+.patch-pair-inspector header span {
+  color: var(--text-muted);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.patch-study-header h2 {
+  max-width: 760px;
+  margin: 5px 0 0;
+  font-size: 17px;
+  line-height: 1.35;
+}
+
+.patch-study-header select,
+.patch-pair-inspector select {
+  max-width: 220px;
+}
+
+.patch-study-lede {
+  max-width: 880px;
+  margin: 12px 0 6px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.patch-study-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.patch-transfer-table-wrap {
+  margin-top: 18px;
+  overflow-x: auto;
+}
+
+.patch-transfer-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.patch-transfer-table th,
+.patch-transfer-table td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.patch-transfer-table thead th,
+.patch-transfer-table tbody th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.patch-transfer-table thead th:first-child,
+.patch-transfer-table tbody th {
+  text-align: left;
+}
+
+.patch-transfer-table td strong,
+.patch-transfer-table td small {
+  display: block;
+}
+
+.patch-transfer-table td small {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.patch-transfer-table td.transfer-strong { color: var(--success-text); background: color-mix(in srgb, var(--success-bg) 55%, transparent); }
+.patch-transfer-table td.transfer-partial { color: var(--accent-text); background: color-mix(in srgb, var(--accent-soft) 40%, transparent); }
+.patch-transfer-table td.transfer-negative { color: var(--warning-text); }
+.patch-transfer-table td.transfer-weak { color: var(--text-secondary); }
+
+.patch-pair-inspector {
+  margin-top: 20px;
+}
+
+.patch-pair-inspector header strong {
+  display: block;
+  margin-top: 3px;
+  font-size: 13px;
+}
+
+.patch-pair-frames {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.patch-pair-frames figure { margin: 0; }
+.patch-pair-frames img { display: block; width: 100%; background: var(--surface-raised); }
+.patch-pair-frames figcaption { margin-top: 5px; color: var(--text-muted); font-size: 11px; }

@@ -6,10 +6,12 @@ Torch, LeRobot, LIBERO, or model checkpoints.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Mapping
 
 from vla_lens.interventions.preflight import intervention_preflight
 from vla_lens.interventions.specs import PreflightCheck, RuntimePreflightResult
+from vla_lens.pi05.capture_schema import ALL_PI05_LAYERS
 from vla_lens.traces import TraceDataset
 
 
@@ -22,15 +24,15 @@ def pi05_intervention_preflight(
     """Run generic preflight and resolve PI0.5 runtime availability."""
 
     base = intervention_preflight(dataset, payload)
-    checks = tuple(
-        [
-            *_replace_model_runtime_check(
-                base.checks,
-                runtime_available=runtime_available,
-            ),
-            *_source_patch_checks(dataset, payload),
-        ]
+    checks, runtime_site_record = _replace_source_patch_runtime_site_check(
+        dataset,
+        payload,
+        _replace_model_runtime_check(
+            base.checks,
+            runtime_available=runtime_available,
+        ),
     )
+    checks = tuple([*checks, *_source_patch_checks(dataset, payload)])
     runtime_resolution = {
         **dict(base.runtime_resolution),
         "adapter": "pi05",
@@ -49,7 +51,14 @@ def pi05_intervention_preflight(
             if check.status in {"failed", "partial", "unavailable"}
         ),
         capability_status={check.name: check.status == "ok" for check in checks},
-        target_resolution=base.target_resolution,
+        target_resolution={
+            **dict(base.target_resolution),
+            **(
+                {"target_site_record": runtime_site_record}
+                if runtime_site_record is not None
+                else {}
+            ),
+        },
         action_basis_status=base.action_basis_status,
         runtime_environment={
             **dict(base.runtime_environment),
@@ -93,6 +102,78 @@ def _replace_model_runtime_check(
                 )
             )
     return out
+
+
+def _replace_source_patch_runtime_site_check(
+    dataset: TraceDataset,
+    payload: Mapping[str, Any],
+    checks: list[PreflightCheck],
+) -> tuple[list[PreflightCheck], dict[str, Any] | None]:
+    """Accept declared live hook sites even when no activation was stored.
+
+    A replay-only capture deliberately has an empty model-site tensor index.  A
+    source patch needs the runtime hook address, not a saved recipient tensor.
+    """
+    if _execution_mode(payload) != "donor_source_patch":
+        return checks, None
+    target = _mapping(payload.get("target"))
+    target_site = str(target.get("model_site") or target.get("site_id") or "").strip()
+    match = re.fullmatch(r"pi05\.vlm\.layers\.(\d+)\.prefix\.hidden_tokens", target_site)
+    if match is None or int(match.group(1)) not in ALL_PI05_LAYERS:
+        return checks, None
+    context = _mapping(payload.get("context"))
+    if not context:
+        context = _mapping(_mapping(payload.get("baseline")).get("context"))
+    trace_id = str(context.get("trace_id") or "").strip()
+    try:
+        bundle = dataset.bundle(trace_id)
+    except Exception:
+        return checks, None
+    capture_plan = _mapping(bundle.manifest.metadata.get("capture_plan"))
+    declared_sites = {
+        str(site) for site in capture_plan.get("runtime_hook_sites") or ()
+    }
+    model_id = str(bundle.manifest.model_id or "").lower()
+    declaration_source = None
+    if target_site in declared_sites:
+        declaration_source = "capture_plan.runtime_hook_sites"
+    elif "pi05" in model_id:
+        # Compatibility for traces captured before runtime hook declarations
+        # became part of the capture-plan contract.
+        declaration_source = "pi05_adapter_contract_legacy_trace"
+    if declaration_source is None:
+        return checks, None
+    record = {
+        "name": target_site,
+        "model_site": target_site,
+        "layer": int(match.group(1)),
+        "tensor_type": "hidden_tokens",
+        "token_space_id": str(target.get("token_space") or "pi05.prefix"),
+        "materialization": "runtime_only",
+        "saved_activation": False,
+        "declaration_source": declaration_source,
+    }
+    replacement = PreflightCheck(
+        name="target_site_declared_in_model_site_index",
+        status="ok",
+        ok=True,
+        message=(
+            f"Target site {target_site!r} is a declared PI0.5 live hook; "
+            "no saved activation tensor is required for source patching."
+        ),
+        metadata={
+            "target_site": target_site,
+            "trace_id": trace_id,
+            "model_site": record,
+            "saved_activation": False,
+        },
+    )
+    return [
+        replacement
+        if check.name == "target_site_declared_in_model_site_index"
+        else check
+        for check in checks
+    ], record
 
 
 def _status_from_checks(checks: tuple[PreflightCheck, ...]) -> str:

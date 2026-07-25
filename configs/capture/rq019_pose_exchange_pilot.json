@@ -1,0 +1,46 @@
+{
+  "dataset_id": "rq019_pose_exchange_pilot",
+  "model_id": "lerobot/pi05_libero_finetuned",
+  "benchmark": "libero_90",
+  "task_id": 73,
+  "capture_profile": "rollout",
+  "obs_size": 256,
+  "max_steps": 1,
+  "pairs": [
+    {
+      "pair_id": "rq019-task73-layout0",
+      "seed": 3100,
+      "layout_id": 0,
+      "target_object": "black_book_1",
+      "distractor_object": "white_yellow_mug_1"
+    },
+    {
+      "pair_id": "rq019-task73-layout1",
+      "seed": 3101,
+      "layout_id": 1,
+      "target_object": "black_book_1",
+      "distractor_object": "white_yellow_mug_1"
+    },
+    {
+      "pair_id": "rq019-task73-layout2",
+      "seed": 3102,
+      "layout_id": 2,
+      "target_object": "black_book_1",
+      "distractor_object": "white_yellow_mug_1"
+    },
+    {
+      "pair_id": "rq019-task73-layout3",
+      "seed": 3103,
+      "layout_id": 3,
+      "target_object": "black_book_1",
+      "distractor_object": "white_yellow_mug_1"
+    },
+    {
+      "pair_id": "rq019-task73-layout4",
+      "seed": 3104,
+      "layout_id": 4,
+      "target_object": "black_book_1",
+      "distractor_object": "white_yellow_mug_1"
+    }
+  ]
+}

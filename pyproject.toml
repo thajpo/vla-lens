@@ -26,6 +26,9 @@ vla-pi05-capture = "vla_lens.pi05.capture:main"
 vla-pi05-batch-capture = "vla_lens.pi05.batch_capture:main"
 vla-pi05-intervene = "vla_lens.pi05.intervention_runner:main"
 vla-pi05-patch-study = "vla_lens.pi05.patch_study_runner:main"
+vla-pi05-pose-exchange-capture = "vla_lens.pi05.pose_exchange_capture:main"
+vla-pi05-pose-exchange-study = "vla_lens.pi05.pose_exchange_study:main"
+vla-patch-study-analyze = "vla_lens.interventions.patch_study_analysis:main"
 vla-cache = "vla_lens.cache_cli:main"
 
 [project.optional-dependencies]
