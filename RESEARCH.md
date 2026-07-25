@@ -1052,6 +1052,29 @@ chunks. Request: `configs/interventions/rq020_existing_pair_layer8_smoke.json`.
 Replay report:
 `vla_lens/intervention_reports/rq020_existing_pair_layer8_smoke.json`.
 
+**Study-runner implementation.** A reconstructable study job now expands pair,
+layer, and token-region axes into deterministic trial IDs. Live execution uses
+one PI0.5 model load, captures all requested donor layers in one call per pair,
+checks recipient replay once per pair, and checkpoints after every trial. A
+retry skips completed work. Permanent outputs are full action chunks, pair and
+trial tables, decisions, failures, hashes, and the exact request. Donor hidden
+states remain in memory and are rebuilt from the saved traces and plan instead
+of consuming permanent disk. Runtime validation uses
+`configs/interventions/rq020_existing_pair_runner_smoke.json`; it remains an
+engineering smoke and cannot answer RQ-020.
+
+The ROCm runner smoke completed both declared trials with one model load, one
+two-layer donor cache fill, and one three-repeat recipient replay check. A
+second identical command loaded no model and skipped both completed trials.
+The permanent study is 523 KB and contains 16 full 50-by-7 action chunks plus
+the pair, trial, decision, failure, and sweep records; it contains no hidden
+states. Layers 0 and 8 were both `nonspecific`. Layer 0 had direction agreement
+`0.2045` and transfer fraction `0.04554`; layer 8 had direction agreement
+`0.2979` and transfer fraction `0.04184`. These negative smoke values only
+confirm that the study store and aggregation preserve the measurements. Study:
+`vla_lens/patch_studies/rq020-existing-pair-runner-smoke`; report:
+`vla_lens/intervention_reports/rq020_existing_pair_runner_smoke.json`.
+
 ## RQ-021 Through RQ-023: Conditional Follow-Ups
 
 RQ-021 will split any successful RQ-020 effect into identity, appearance/shape,

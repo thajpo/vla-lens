@@ -65,6 +65,7 @@ def run_pi05_intervention(
     executor: ActionInterventionExecutor,
     save: bool = True,
     claim_gate: Mapping[str, Any] | None = None,
+    noop_output: RuntimeTrialOutput | None = None,
 ) -> PI05InterventionRunResult:
     """Run a PI0.5 action intervention through an injected runtime executor."""
 
@@ -76,7 +77,7 @@ def run_pi05_intervention(
     call_index = int(context.policy_call_index or 0)
     stored_original = np.asarray(bundle.action_chunks(mmap=True)[call_index], dtype=np.float32)
 
-    noop = executor.run_noop(payload)
+    noop = noop_output or executor.run_noop(payload)
     intervention = executor.run_intervention(payload)
     noop_action = _trial_action(noop)
     intervened_action = _trial_action(intervention)
@@ -162,7 +163,13 @@ def run_pi05_intervention(
             intervention_runtime=intervention.runtime,
         ),
         trials=trials,
-        outcomes=tuple(_action_outcomes(delta_metrics)),
+        outcomes=tuple(
+            _action_outcomes(
+                delta_metrics,
+                source_patch_metrics=source_patch_metrics,
+                source_patch_decision=source_patch_decision,
+            )
+        ),
         controls=tuple(_control_results(controls, noop_action)),
         outputs=tuple(arrays),
         display={
@@ -196,6 +203,8 @@ def run_pi05_intervention(
             "runtime_adapter": "pi05",
             "runtime_surface": "injected_executor",
             "source": "pi05_intervention_runtime",
+            "counterfactual": dict(_mapping(payload.get("counterfactual"))),
+            "donor": dict(_mapping(payload.get("donor"))),
         },
     )
     artifact_id = None
@@ -251,7 +260,12 @@ def _trial_from_output(
     )
 
 
-def _action_outcomes(delta_metrics: Mapping[str, Mapping[str, float]]) -> list[dict[str, Any]]:
+def _action_outcomes(
+    delta_metrics: Mapping[str, Mapping[str, float]],
+    *,
+    source_patch_metrics: CounterfactualMetrics | None = None,
+    source_patch_decision: Any | None = None,
+) -> list[dict[str, Any]]:
     outcomes: list[dict[str, Any]] = []
     for basis, metrics in delta_metrics.items():
         outcomes.append(
@@ -264,6 +278,24 @@ def _action_outcomes(delta_metrics: Mapping[str, Mapping[str, float]]) -> list[d
                 action_ref_intervened="intervened",
                 delta_ref="intervened_minus_noop",
                 metrics=metrics,
+            ).to_dict()
+        )
+    if source_patch_metrics is not None:
+        outcomes.append(
+            ActionOutcomeResult(
+                basis="counterfactual_donor_direction",
+                horizon="full_chunk",
+                baseline_trial_id="trial_noop",
+                intervention_trial_id="trial_intervention",
+                action_ref_baseline="noop",
+                action_ref_intervened="intervened",
+                delta_ref="intervened_minus_noop",
+                metrics=source_patch_metrics.to_dict(),
+                summaries=(
+                    {"decision": source_patch_decision.to_dict()}
+                    if source_patch_decision is not None
+                    else {}
+                ),
             ).to_dict()
         )
     return outcomes
