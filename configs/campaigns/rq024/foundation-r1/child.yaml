@@ -1,0 +1,245 @@
+schema_version: 1
+kind: vla_lens.research_child
+child_plan_id: rq024-foundation-r1
+revision: 1
+prepared_by: opencode-orchestrator
+
+program:
+  path: configs/campaigns/rq024_controlled_scene_to_behavior.yaml
+  program_id: rq024-controlled-scene-to-behavior
+  fingerprint: sha256:95fe070240e15e2da44486e3c635ca4dc92f50b4a0d240242c7568976b7123b3
+
+study:
+  id: FOUNDATION
+  fingerprint: sha256:f98b00fd23870b323f4c98905a6f664369b1d4325060782e1a210ce5211897f3
+  phase: foundation
+
+predecessor_result_events: []
+
+claim:
+  result_kind: preparation_gate
+  question: Which task-object families support the design and competent base behavior?
+  allowed_conclusions:
+    - The named families do or do not support later controlled comparisons.
+  forbidden_conclusions:
+    - Baseline success demonstrates a semantic representation.
+
+cohort:
+  family_pool: both_baseline_only
+  pool_phase: baseline
+  requires_gate: none
+  read_namespaces:
+    - task_catalog
+  write_namespace: foundation_baseline
+  selection_allowed: true
+  manifest:
+    id: rq024-foundation-candidates-r1
+    type: candidate_and_pool_manifest
+    path: configs/campaigns/rq024/foundation-r1/candidates.json
+    sha256: sha256:0c153586a7e759210bd1c7b1674fb4a3f617b2af507fd66cbd8c95c8ef4b34b0
+  exposure_log:
+    id: rq024-exposure-log-r1
+    type: prospective_exposure_log
+    path: configs/campaigns/rq024/foundation-r1/exposure_log.json
+    sha256: sha256:1a4f977f3e63755bb97f0aec3406bf9a4af023c6e678da185b8c151c2a52e6f6
+
+trials:
+  manifest:
+    id: rq024-foundation-trials-r1
+    type: rollout_trial_manifest
+    path: configs/campaigns/rq024/foundation-r1/trials.csv
+    sha256: sha256:abbeb22023c892f545e8ff4ecc0d606b266e81529be5e2204646a8d492c8dae8
+  expected_count: 72
+  stable_id_fields:
+    - child_plan_id
+    - canonical_family_id
+    - pool
+    - replicate_id
+  seed_domains:
+    - layout
+    - reset
+    - environment
+    - policy
+    - flow_noise
+  expected_independent_units:
+    task_families: 24
+    scene_clusters: 24
+    noise_repeats: 0
+    rollouts: 72
+
+measurement:
+  primary:
+    metric_id: family_baseline_eligibility
+    formula: A family is eligible when at least two of three untouched rollouts succeed.
+    implementation_id: rq024_family_baseline_eligibility_v1
+    unit: binary_per_task_object_family
+    direction: eligible_in_both_preassigned_pools
+    minimum_useful_effect: six eligible families in each fixed pool
+  controls:
+    - deterministic outcome-blind candidate ordering
+    - environment reset and seed identity
+    - simulator success versus contact and object-motion consistency
+    - controller action-unit and postprocessing audit
+    - prior-research exposure manifest
+  strongest_control_metric_id: simulator_success_vs_object_motion_consistency
+  inference:
+    method: exact_family_count_with_prespecified_2_of_3_screen
+    level: 0.95
+    grouping_unit: task_object_family
+    replicates: 1
+    seed: 24001
+
+decision:
+  gate_components:
+    - id: discovery_eligible_count
+      role: positive
+      value_id: discovery_eligible_count
+      operator: greater_than_or_equal
+      threshold: 6
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
+    - id: confirmation_eligible_count
+      role: positive
+      value_id: confirmation_eligible_count
+      operator: greater_than_or_equal
+      threshold: 6
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
+    - id: discovery_total_count
+      role: integrity
+      value_id: discovery_total_count
+      operator: equal
+      threshold: 12
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
+    - id: confirmation_total_count
+      role: integrity
+      value_id: confirmation_total_count
+      operator: equal
+      threshold: 12
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
+    - id: trial_matrix_complete
+      role: integrity
+      value_id: completed_trial_count
+      operator: equal
+      threshold: 72
+      unit: rollout_trials
+      evidence_artifact_type: gate_analysis
+    - id: either_pool_below_six
+      role: negative
+      value_id: minimum_pool_eligible_count
+      operator: less
+      threshold: 6
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
+  positive_combiner: all
+  negative_combiner: all
+  inconclusive_rule: technical missingness prevents a complete 72-trial matrix within budget
+  invalid_conditions:
+    - candidate ordering or pool assignment occurred after outcomes were visible
+    - simulator success or task-object-family parsing cannot be reproduced
+    - a policy or flow-noise seed was silently substituted for another seed domain
+
+runtime:
+  model:
+    repo_id: lerobot/pi05_libero_finetuned
+    revision: dbf8a3f794a9c4297b44f40b752712f50073d945
+    snapshot_manifest_sha256: sha256:9fd3816594fc0ec0e334ddc8eaee927a86d49ab2cec7ad51142db91c0c552c17
+  environment:
+    backend: rocm
+    package_receipt:
+      id: rq024-foundation-environment-r1
+      type: capture_environment_receipt
+      path: configs/campaigns/rq024/foundation-r1/environment.json
+      sha256: sha256:003ad6d756482160be1e894b92794404f758670d9218c4a3d4e127dc007f5271
+    camera_config_sha256: sha256:528712c0bee463d2c8ba01a896277341003ff6d71a08d12bc758a41120a5d5a8
+    controller_config_sha256: sha256:0b71939c43f41ca377d3d3bb99c278844b2a3bd8dc2bac7fb5f3d7a15c06f043
+    preprocessor_config_sha256: sha256:75354c1ec7c9bfa2c6c392acd6f9953381e7681e12e7556aefd757d44eca62f4
+    postprocessor_config_sha256: sha256:d4765ecb63a0c7bf37edda42147e5ef9e3693a3ef1bbad64a30b526095a6d8c4
+  code:
+    implementation_commit: 9972ef773772ad5fb062029692d491586b2c7f7b
+    source_tree_sha256: sha256:c31af6caa1f0e45f9a42cf25003e729a369c6aa0d0ac4c1055a290451df53d44
+  runner:
+    entrypoint: scripts/pi05_batch_capture.sh
+    argv:
+      - --backend
+      - rocm
+      - --config
+      - configs/campaigns/rq024/foundation-r1/capture.yaml
+      - --episode-plan
+      - configs/campaigns/rq024/foundation-r1/trials.csv
+      - --validate-exact
+      - --run
+    config:
+      id: rq024-foundation-capture-r1
+      type: pi05_batch_capture_config
+      path: configs/campaigns/rq024/foundation-r1/capture.yaml
+      sha256: sha256:81affbde1fe67ced3189fd1e3377a2c51ee3cf6d2053094b32bfb317417a1a21
+
+budget:
+  max_model_calls: 1440
+  max_action_generations: 1440
+  max_full_rollouts: 72
+  max_simulator_steps: 43200
+  max_probe_fits: 0
+  max_persistent_gb: 10
+  max_ephemeral_gb: 20
+  min_free_space_gb: 200
+
+output:
+  root: /mnt/new-volume/vla-lens/rq024
+  namespace: rq024-foundation-r1
+  attempt_ledger: events/trial_attempts
+  required_artifact_types:
+    - candidate_and_rejection_manifest.parquet
+    - pool_assignment.json
+    - baseline_rollout_trials.parquet
+    - eligible_family_manifests.json
+    - physical_trajectories
+    - measurement_capability_audit.json
+    - foundation_audit.json
+
+completion:
+  valid_trial_statuses:
+    - rollout_success
+    - rollout_behavior_failure
+  technical_retry_rule: append a new attempt; never overwrite an earlier failure
+  resume_identity_fields:
+    - child_fingerprint
+    - trial_id
+    - checkpoint_revision
+    - effective_config_sha256
+    - trace_sha256
+
+protocol_lock:
+  required_lock_fields:
+    - question_and_allowed_claim
+    - exact_model_checkpoint_hash
+    - environment_camera_controller_and_preprocessor_versions
+    - cohort_split_and_prior_exposure_hashes
+    - metric_id_and_formula
+    - minimum_useful_effect
+    - controls
+    - trial_matrix_and_seed_schedule
+    - analysis_code_commit
+    - runner_config_hash
+    - output_root_and_storage_budget
+    - stop_and_transition_rules
+    - precision_or_bounded_replication_justification
+    - small_sample_family_level_inference
+    - candidate_task_manifest_and_rejection_rules
+    - preassigned_pool_membership
+    - exact_rollout_reset_seeds
+    - maximum_72_rollouts
+    - deterministic_first_six_eligible_rule
+    - family_level_precision_and_small_sample_method
+    - simulator_contact_telemetry_capability_status
+  locked_choices:
+    candidate_task_manifest_and_rejection_rules: rq024-foundation-candidates-r1/rq024-libero90-family-v1
+    preassigned_pool_membership: rq024-foundation-pool-assignment-r1
+    exact_rollout_reset_seeds: rq024-foundation-trials-r1
+    maximum_72_rollouts: 72
+    deterministic_first_six_eligible_rule: first_six_eligible_in_precomputed_pool_order
+    family_level_precision_and_small_sample_method: exact_family_count_with_prespecified_2_of_3_screen
+    simulator_contact_telemetry_capability_status: implemented_control_step_pre_action_runtime_verification_pending
