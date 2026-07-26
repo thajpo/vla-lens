@@ -2,14 +2,23 @@ from __future__ import annotations
 
 import csv
 from pathlib import Path
+from types import SimpleNamespace
 
+import vla_lens.pi05.batch_capture as batch_capture
 from vla_lens.pi05.batch_capture import (
+    CaptureCommand,
+    EpisodePlanRow,
     _capture_commands,
     _episode_rows_from_config,
     _read_episode_plan,
     _write_plan_files,
+    validate_exact_trace_output,
+)
+from vla_lens.pi05.batch_capture import (
+    parse_args as parse_batch_args,
 )
 from vla_lens.pi05.plan_capture import RECYCLE_EXIT_CODE, capture_args_from_command, parse_args
+from vla_lens.traces import TraceDataset
 
 
 def _config(tmp_path):
@@ -165,6 +174,105 @@ def test_plan_capture_accepts_recycle_limit():
 
     assert args.max_executed_commands == 100
     assert RECYCLE_EXIT_CODE == 75
+
+
+def test_batch_capture_accepts_exact_single_trial_without_rewriting_plan():
+    args = parse_batch_args(
+        [
+            "--episode-plan",
+            "trials.csv",
+            "--validate-exact",
+            "--trial-id",
+            "trial-1",
+            "--skip-plan-write",
+            "--run",
+        ]
+    )
+
+    assert args.trial_id == "trial-1"
+    assert args.skip_plan_write is True
+
+
+def test_exact_output_validation_binds_trial_runtime_and_measures_calls(
+    tmp_path, monkeypatch
+):
+    row = EpisodePlanRow(
+        dataset_id="dataset-a",
+        benchmark="libero_90",
+        task_id=7,
+        seed=20,
+        split="train",
+        capture_profile="rollout",
+        trial_id="trial-1",
+        child_plan_id="child-1",
+        canonical_family_id="family-1",
+        pool="discovery",
+        replicate_id="0",
+        layout_seed=10,
+        layout_id=2,
+        reset_seed=20,
+        environment_seed=30,
+        policy_seed=40,
+        flow_noise_seed=50,
+    )
+    expected_runtime = {
+        "model_id": "model-a",
+        "model_revision": "a" * 40,
+        "snapshot_manifest_sha256": "sha256:" + "b" * 64,
+    }
+    runtime_audit = {
+        "trial_id": row.trial_id,
+        "child_plan_id": row.child_plan_id,
+        "canonical_family_id": row.canonical_family_id,
+        "pool": row.pool,
+        "replicate_id": row.replicate_id,
+        "seed_identities": {
+            "layout": 10,
+            "reset": 20,
+            "environment": 30,
+            "policy": 40,
+            "flow_noise": 50,
+        },
+        "layout_id": 2,
+        "model_revision": "a" * 40,
+        "snapshot_manifest_sha256": "sha256:" + "b" * 64,
+    }
+    bundle = SimpleNamespace(
+        manifest=SimpleNamespace(
+            trace_id=row.expected_trace_id,
+            task_id="7",
+            env_id="libero_90",
+            model_id="model-a",
+            length=12,
+            outcome="success",
+            metadata={"runtime_audit": runtime_audit},
+        ),
+        policy_calls=[{}, {}, {}],
+        overlay_bundle=None,
+        _data_path=lambda: None,
+    )
+    dataset = SimpleNamespace(bundle=lambda trace_id: bundle)
+    command = CaptureCommand(
+        dataset_id=row.dataset_id,
+        benchmark=row.benchmark,
+        task_id=row.task_id,
+        start_seed=row.seed,
+        episodes=1,
+        capture_profile=row.capture_profile,
+        output_root=tmp_path,
+        expected_paths=(tmp_path,),
+        expected_trace_ids=(row.expected_trace_id,),
+        command=("capture",),
+    )
+    monkeypatch.setattr(batch_capture, "_expected_trace_exists", lambda *args: True)
+    monkeypatch.setattr(TraceDataset, "open", lambda root: dataset)
+
+    output = validate_exact_trace_output(command, row, expected_runtime=expected_runtime)
+
+    assert output.terminal_status == "rollout_success"
+    assert output.model_calls == 3
+    assert output.action_generations == 3
+    assert output.simulator_steps == 12
 
 
 def test_rocm_plan_supervisor_restarts_only_for_recycle_exit():

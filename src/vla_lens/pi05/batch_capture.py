@@ -153,6 +153,17 @@ class CaptureCommand:
     command: tuple[str, ...]
 
 
+@dataclass(frozen=True, slots=True)
+class ExactTraceOutput:
+    trace_id: str
+    terminal_status: str
+    model_calls: int
+    action_generations: int
+    simulator_steps: int
+    output_bytes: int
+    files: tuple[Mapping[str, Any], ...]
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -190,6 +201,15 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Only run/print the first N grouped capture commands.",
     )
     parser.add_argument(
+        "--trial-id",
+        help="Select one exact trial from a fully validated episode plan.",
+    )
+    parser.add_argument(
+        "--skip-plan-write",
+        action="store_true",
+        help="Execute a selected trial after an orchestrator wrote the full resolved plan.",
+    )
+    parser.add_argument(
         "--force",
         action="store_true",
         help="Run commands even if all expected trace directories already exist.",
@@ -224,6 +244,16 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit("episode plan is empty")
     _validate_episode_rows(rows, exact=args.validate_exact)
 
+    plan_rows = rows
+    if args.trial_id:
+        if not args.validate_exact or args.episode_plan is None:
+            raise SystemExit("--trial-id requires --validate-exact and --episode-plan")
+        rows = [row for row in rows if row.trial_id == args.trial_id]
+        if len(rows) != 1:
+            raise SystemExit(f"--trial-id must select exactly one row: {args.trial_id}")
+    if args.skip_plan_write and (not args.run or not args.trial_id):
+        raise SystemExit("--skip-plan-write requires --run and --trial-id")
+
     if args.validate_only:
         print(f"validated config={args.config} episodes={len(rows)} exact={args.validate_exact}")
         return
@@ -234,7 +264,10 @@ def main(argv: list[str] | None = None) -> None:
     if args.limit_commands is not None:
         commands = commands[: max(0, args.limit_commands)]
 
-    _write_plan_files(output_root, config=config, rows=rows)
+    if args.skip_plan_write:
+        _validate_resolved_plan_files(output_root, config=config, rows=plan_rows)
+    else:
+        _write_plan_files(output_root, config=config, rows=plan_rows)
     _preflight_storage(config, output_root, episode_count=len(rows))
 
     print(f"dataset_id={_dataset_ids(rows)}")
@@ -660,6 +693,28 @@ def _write_plan_files(
         json.dump(plan_rows, handle, indent=2)
 
 
+def _validate_resolved_plan_files(
+    output_root: Path,
+    *,
+    config: Mapping[str, Any],
+    rows: Sequence[EpisodePlanRow],
+) -> None:
+    paths = (
+        output_root / "episode_plan.csv",
+        output_root / "episode_plan.json",
+        output_root / "probe_splits.csv",
+        output_root / "capture_config.resolved.json",
+    )
+    if not all(path.is_file() for path in paths):
+        raise SystemExit("--skip-plan-write requires an existing complete resolved plan")
+    if _read_episode_plan(paths[0], exact=True) != list(rows):
+        raise SystemExit("existing resolved episode plan differs from the requested full plan")
+    with paths[3].open("r", encoding="utf-8") as handle:
+        resolved_config = json.load(handle)
+    if resolved_config != _jsonable(config):
+        raise SystemExit("existing resolved capture config differs from the requested config")
+
+
 def _write_csv(
     path: Path,
     rows: Sequence[Mapping[str, Any]],
@@ -745,6 +800,114 @@ def _expected_trace_exists(task_root: Path, trace_id: str) -> bool:
         if not (overlay_path / "manifest.json").exists():
             return False
     return True
+
+
+def validate_exact_trace_output(
+    command: CaptureCommand,
+    row: EpisodePlanRow,
+    *,
+    expected_runtime: Mapping[str, Any],
+) -> ExactTraceOutput:
+    """Validate one exact trial and return its measured resource use."""
+
+    if command.expected_trace_ids != (row.expected_trace_id,):
+        raise ValueError("exact trial command must identify exactly one expected trace")
+    if not _expected_trace_exists(command.output_root, row.expected_trace_id):
+        raise ValueError(f"exact trace output is missing or invalid: {row.expected_trace_id}")
+
+    from vla_lens.traces import TraceDataset
+
+    dataset = TraceDataset.open(command.output_root)
+    bundle = dataset.bundle(row.expected_trace_id)
+    manifest = bundle.manifest
+    runtime = dict(manifest.metadata.get("runtime_audit") or {})
+    expected_runtime_fields = dict(expected_runtime)
+    expected_model_id = str(expected_runtime_fields.pop("model_id", ""))
+    expected_identity = {
+        "trial_id": row.trial_id,
+        "child_plan_id": row.child_plan_id,
+        "canonical_family_id": row.canonical_family_id,
+        "pool": row.pool,
+        "replicate_id": row.replicate_id,
+        "seed_identities": {
+            "layout": row.layout_seed,
+            "reset": row.reset_seed,
+            "environment": row.environment_seed,
+            "policy": row.policy_seed,
+            "flow_noise": row.flow_noise_seed,
+        },
+        "layout_id": row.layout_id,
+        **expected_runtime_fields,
+    }
+    mismatches = sorted(
+        name for name, expected in expected_identity.items() if runtime.get(name) != expected
+    )
+    if (
+        manifest.trace_id != row.expected_trace_id
+        or manifest.task_id != str(row.task_id)
+        or manifest.env_id != row.benchmark
+        or manifest.model_id != expected_model_id
+        or int(manifest.length) <= 0
+        or manifest.outcome not in {"success", "failure"}
+        or mismatches
+    ):
+        raise ValueError(
+            "exact trace identity mismatch: "
+            f"trace={manifest.trace_id!r} task={manifest.task_id!r} "
+            f"runtime_fields={mismatches}"
+        )
+
+    model_calls = len(bundle.policy_calls)
+    if model_calls <= 0:
+        raise ValueError("exact trace has no recorded model policy calls")
+    files = _exact_output_files(bundle, command.output_root)
+    return ExactTraceOutput(
+        trace_id=manifest.trace_id,
+        terminal_status=(
+            "rollout_success" if manifest.outcome == "success" else "rollout_behavior_failure"
+        ),
+        model_calls=model_calls,
+        action_generations=model_calls,
+        simulator_steps=int(manifest.length),
+        output_bytes=sum(int(item["size"]) for item in files),
+        files=files,
+    )
+
+
+def _exact_output_files(bundle: Any, task_root: Path) -> tuple[Mapping[str, Any], ...]:
+    paths: set[Path] = set()
+    overlay = getattr(bundle, "overlay_bundle", None)
+    if overlay is not None:
+        paths.update(path for path in overlay.path.rglob("*") if path.is_file())
+    data_path = getattr(bundle, "_data_path", lambda: None)()
+    if isinstance(data_path, Path) and data_path.is_file():
+        paths.add(data_path)
+    for camera in getattr(bundle, "cameras", lambda: [])():
+        video_path = getattr(bundle, "_video_path", lambda _camera: None)(camera)
+        if isinstance(video_path, Path) and video_path.is_file():
+            paths.add(video_path)
+    for name in ("runtime_identity.json", "capture_environment_receipt.json"):
+        path = task_root / name
+        if path.is_file():
+            paths.add(path)
+    return tuple(
+        {
+            "path": str(path.resolve()),
+            "sha256": _path_sha256(path),
+            "size": path.stat().st_size,
+        }
+        for path in sorted(paths)
+    )
+
+
+def _path_sha256(path: Path) -> str:
+    import hashlib
+
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for block in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(block)
+    return f"sha256:{digest.hexdigest()}"
 
 
 def _contiguous_seed_groups(seeds: Sequence[int]) -> list[list[int]]:
