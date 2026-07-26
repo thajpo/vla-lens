@@ -88,11 +88,14 @@ EOF
   exit 2
 fi
 
-"$ROOT/scripts/check_pi05_env.sh" --backend "$BACKEND" >/dev/null
+ENV_RECEIPT="$(mktemp "${TMPDIR:-/tmp}/vla-lens-pi05-env.XXXXXX.json")"
+trap 'rm -f "$ENV_RECEIPT"' EXIT
+"$ROOT/scripts/check_pi05_env.sh" --backend "$BACKEND" --receipt "$ENV_RECEIPT" >/dev/null
+export VLA_LENS_CAPTURE_ENV_RECEIPT="$ENV_RECEIPT"
 
 export VLA_LENS_CAPTURE_PYTHON="${VLA_LENS_CAPTURE_PYTHON:-$VENV/bin/python}"
 export VLA_LENS_CAPTURE_PYTHONPATH="${VLA_LENS_CAPTURE_PYTHONPATH:-$ROOT/src}"
 export VLA_LENS_CAPTURE_DEVICE="${VLA_LENS_CAPTURE_DEVICE:-$(default_device_for_backend "$BACKEND")}"
 export VLA_LENS_CAPTURE_DTYPE="${VLA_LENS_CAPTURE_DTYPE:-$(default_dtype_for_backend "$BACKEND")}"
 
-exec "$VENV/bin/vla-pi05-batch-capture" "${args[@]}"
+"$VENV/bin/vla-pi05-batch-capture" "${args[@]}"

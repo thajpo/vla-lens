@@ -24,6 +24,12 @@ import pandas as pd
 import yaml
 
 from vla_lens.capture.lerobot_v3 import validate_lerobot_v3_dataset
+from vla_lens.pi05.runtime_identity import (
+    canonical_sha256,
+    declared_runtime_identity,
+    persist_runtime_identity,
+    require_immutable_revision,
+)
 
 DEFAULT_CONFIG = Path("configs/pi05_diverse_500.yaml")
 PLAN_COLUMNS = (
@@ -33,6 +39,15 @@ PLAN_COLUMNS = (
     "seed",
     "split",
     "capture_profile",
+    "trial_id",
+    "child_plan_id",
+    "canonical_family_id",
+    "pool",
+    "replicate_id",
+    "reset_seed",
+    "environment_seed",
+    "policy_seed",
+    "flow_noise_seed",
     "capture_design",
     "trace_variant",
     "counterfactual_group_id",
@@ -55,6 +70,15 @@ PROBE_SPLIT_COLUMNS = (
     "seed",
     "split",
     "capture_profile",
+    "trial_id",
+    "child_plan_id",
+    "canonical_family_id",
+    "pool",
+    "replicate_id",
+    "reset_seed",
+    "environment_seed",
+    "policy_seed",
+    "flow_noise_seed",
     "capture_design",
     "trace_variant",
     "counterfactual_group_id",
@@ -77,6 +101,15 @@ class EpisodePlanRow:
     seed: int
     split: str
     capture_profile: str
+    trial_id: str = ""
+    child_plan_id: str = ""
+    canonical_family_id: str = ""
+    pool: str = ""
+    replicate_id: str = ""
+    reset_seed: int | None = None
+    environment_seed: int | None = None
+    policy_seed: int | None = None
+    flow_noise_seed: int | None = None
     capture_design: str = "single_trace"
     trace_variant: str = ""
     counterfactual_group_id: str = ""
@@ -126,6 +159,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "from the YAML matrix config."
         ),
     )
+    parser.add_argument(
+        "--validate-exact",
+        action="store_true",
+        help=(
+            "Require an immutable model revision and complete, independent trial/seed "
+            "identities. This validation performs no model or simulator work."
+        ),
+    )
+    parser.add_argument(
+        "--validate-only",
+        action="store_true",
+        help="Validate config and episode rows, write no files, and execute no capture.",
+    )
     parser.add_argument("--output-root", type=Path, help="Override config output_root.")
     parser.add_argument(
         "--run",
@@ -151,23 +197,34 @@ def main(argv: list[str] | None = None) -> None:
     if args.output_root:
         config["output_root"] = str(args.output_root)
 
+    _validate_batch_config(
+        config,
+        exact=args.validate_exact,
+        has_episode_plan=args.episode_plan is not None,
+    )
     output_root = Path(str(config["output_root"])).expanduser()
-    output_root.mkdir(parents=True, exist_ok=True)
 
     if args.episode_plan is None and config.get("requires_episode_plan"):
         raise SystemExit(
             f"{args.config} requires --episode-plan because it does not define a matrix plan"
         )
     rows = (
-        _read_episode_plan(args.episode_plan)
+        _read_episode_plan(args.episode_plan, exact=args.validate_exact)
         if args.episode_plan is not None
         else _episode_rows_from_config(config)
     )
     rows = _infer_counterfactual_pair_links(rows)
     if not rows:
         raise SystemExit("episode plan is empty")
+    _validate_episode_rows(rows, exact=args.validate_exact)
 
-    commands = _capture_commands(config, output_root, rows)
+    if args.validate_only:
+        print(f"validated config={args.config} episodes={len(rows)} exact={args.validate_exact}")
+        return
+
+    output_root.mkdir(parents=True, exist_ok=True)
+
+    commands = _capture_commands(config, output_root, rows, exact=args.validate_exact)
     if args.limit_commands is not None:
         commands = commands[: max(0, args.limit_commands)]
 
@@ -267,7 +324,7 @@ def _episode_rows_from_config(config: Mapping[str, Any]) -> list[EpisodePlanRow]
     return rows
 
 
-def _read_episode_plan(path: Path) -> list[EpisodePlanRow]:
+def _read_episode_plan(path: Path, *, exact: bool = False) -> list[EpisodePlanRow]:
     with path.open("r", newline="", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
         missing = {
@@ -280,6 +337,23 @@ def _read_episode_plan(path: Path) -> list[EpisodePlanRow]:
         } - set(reader.fieldnames or [])
         if missing:
             raise ValueError(f"{path} is missing required columns: {sorted(missing)}")
+        if exact:
+            exact_columns = {
+                "trial_id",
+                "child_plan_id",
+                "canonical_family_id",
+                "pool",
+                "replicate_id",
+                "reset_seed",
+                "environment_seed",
+                "policy_seed",
+                "flow_noise_seed",
+            }
+            missing_exact = exact_columns - set(reader.fieldnames or [])
+            if missing_exact:
+                raise ValueError(
+                    f"{path} is missing exact trial columns: {sorted(missing_exact)}"
+                )
         rows = [_episode_plan_row_from_record(record) for record in reader]
     return _infer_counterfactual_pair_links(rows)
 
@@ -297,6 +371,15 @@ def _episode_plan_row_from_record(record: Mapping[str, Any]) -> EpisodePlanRow:
         seed=int(record["seed"]),
         split=str(record["split"]).strip(),
         capture_profile=str(record["capture_profile"]).strip(),
+        trial_id=str(record.get("trial_id") or "").strip(),
+        child_plan_id=str(record.get("child_plan_id") or "").strip(),
+        canonical_family_id=str(record.get("canonical_family_id") or "").strip(),
+        pool=str(record.get("pool") or "").strip(),
+        replicate_id=str(record.get("replicate_id") or "").strip(),
+        reset_seed=_optional_int(record.get("reset_seed")),
+        environment_seed=_optional_int(record.get("environment_seed")),
+        policy_seed=_optional_int(record.get("policy_seed")),
+        flow_noise_seed=_optional_int(record.get("flow_noise_seed")),
         capture_design=capture_design,
         trace_variant=str(record.get("trace_variant") or "").strip(),
         counterfactual_group_id=counterfactual_group_id,
@@ -317,6 +400,8 @@ def _capture_commands(
     config: Mapping[str, Any],
     output_root: Path,
     rows: Sequence[EpisodePlanRow],
+    *,
+    exact: bool = False,
 ) -> list[CaptureCommand]:
     commands: list[CaptureCommand] = []
     python_executable = str(
@@ -362,6 +447,8 @@ def _capture_commands(
                 "vla_lens.pi05.capture",
                 "--model-id",
                 str(config["model_id"]),
+                *_model_revision_args(config),
+                *(("--exact-runtime",) if exact else ()),
                 "--benchmark",
                 benchmark,
                 "--task-id",
@@ -384,6 +471,7 @@ def _capture_commands(
                 str(task_root),
                 "--dataset-id",
                 dataset_id,
+                *_trial_identity_command_args(seed_rows[0]),
                 *_counterfactual_command_args(seed_rows[0]),
             )
             if config.get("group_seed_list"):
@@ -415,6 +503,15 @@ def _capture_command_group_key(row: EpisodePlanRow) -> tuple[Any, ...]:
         row.capture_profile,
         row.benchmark,
         row.task_id,
+        row.trial_id,
+        row.child_plan_id,
+        row.canonical_family_id,
+        row.pool,
+        row.replicate_id,
+        row.reset_seed,
+        row.environment_seed,
+        row.policy_seed,
+        row.flow_noise_seed,
         row.capture_design,
         row.trace_variant,
         row.counterfactual_group_id,
@@ -458,6 +555,29 @@ def _counterfactual_command_args(row: EpisodePlanRow) -> tuple[str, ...]:
     return tuple(args)
 
 
+def _model_revision_args(config: Mapping[str, Any]) -> tuple[str, ...]:
+    revision = str(config.get("model_revision") or "").strip()
+    return ("--model-revision", revision) if revision else ()
+
+
+def _trial_identity_command_args(row: EpisodePlanRow) -> tuple[str, ...]:
+    args: list[str] = []
+    for flag, value in (
+        ("--trial-id", row.trial_id),
+        ("--child-plan-id", row.child_plan_id),
+        ("--canonical-family-id", row.canonical_family_id),
+        ("--pool", row.pool),
+        ("--replicate-id", row.replicate_id),
+        ("--reset-seed", row.reset_seed),
+        ("--environment-seed", row.environment_seed),
+        ("--policy-seed", row.policy_seed),
+        ("--flow-noise-seed", row.flow_noise_seed),
+    ):
+        if value is not None and value != "":
+            args.extend([flag, str(value)])
+    return tuple(args)
+
+
 def _write_plan_files(
     output_root: Path,
     *,
@@ -467,6 +587,16 @@ def _write_plan_files(
     (output_root / "logs").mkdir(parents=True, exist_ok=True)
     with (output_root / "capture_config.resolved.json").open("w", encoding="utf-8") as handle:
         json.dump(_jsonable(config), handle, indent=2, sort_keys=True)
+    runtime_args = argparse.Namespace(
+        model_id=config["model_id"],
+        model_revision=config.get("model_revision"),
+        obs_size=config["obs_size"],
+        device=os.environ.get("VLA_LENS_CAPTURE_DEVICE") or config["device"],
+        dtype=os.environ.get("VLA_LENS_CAPTURE_DTYPE") or config["dtype"],
+    )
+    runtime_identity = declared_runtime_identity(runtime_args)
+    runtime_identity["batch_config_sha256"] = canonical_sha256(_jsonable(config))
+    persist_runtime_identity(output_root, runtime_identity)
 
     plan_rows = [_episode_plan_record(output_root, row) for row in rows]
     _write_csv(output_root / "episode_plan.csv", plan_rows, fieldnames=PLAN_COLUMNS)
@@ -481,6 +611,19 @@ def _write_plan_files(
                 "seed": row.seed,
                 "split": row.split,
                 "capture_profile": row.capture_profile,
+                "trial_id": row.trial_id,
+                "child_plan_id": row.child_plan_id,
+                "canonical_family_id": row.canonical_family_id,
+                "pool": row.pool,
+                "replicate_id": row.replicate_id,
+                "reset_seed": row.reset_seed if row.reset_seed is not None else "",
+                "environment_seed": (
+                    row.environment_seed if row.environment_seed is not None else ""
+                ),
+                "policy_seed": row.policy_seed if row.policy_seed is not None else "",
+                "flow_noise_seed": (
+                    row.flow_noise_seed if row.flow_noise_seed is not None else ""
+                ),
                 "capture_design": row.capture_design,
                 "trace_variant": row.trace_variant,
                 "counterfactual_group_id": row.counterfactual_group_id,
@@ -521,6 +664,15 @@ def _episode_plan_record(output_root: Path, row: EpisodePlanRow) -> dict[str, An
         "seed": row.seed,
         "split": row.split,
         "capture_profile": row.capture_profile,
+        "trial_id": row.trial_id,
+        "child_plan_id": row.child_plan_id,
+        "canonical_family_id": row.canonical_family_id,
+        "pool": row.pool,
+        "replicate_id": row.replicate_id,
+        "reset_seed": row.reset_seed if row.reset_seed is not None else "",
+        "environment_seed": row.environment_seed if row.environment_seed is not None else "",
+        "policy_seed": row.policy_seed if row.policy_seed is not None else "",
+        "flow_noise_seed": row.flow_noise_seed if row.flow_noise_seed is not None else "",
         "capture_design": row.capture_design,
         "trace_variant": row.trace_variant,
         "counterfactual_group_id": row.counterfactual_group_id,
@@ -687,6 +839,71 @@ def _preflight_storage(
         f"free={free_gb:.1f}GB estimated_needed={estimate_gb:.1f}GB "
         f"estimated_remaining={free_gb - estimate_gb:.1f}GB"
     )
+
+
+def _validate_batch_config(
+    config: Mapping[str, Any], *, exact: bool, has_episode_plan: bool
+) -> None:
+    required = {
+        "output_root",
+        "model_id",
+        "capture_profile",
+        "storage_dtype",
+        "obs_size",
+        "device",
+        "dtype",
+    }
+    if not has_episode_plan:
+        required.update(
+            {
+                "start_seed",
+                "seeds_per_task",
+                "benchmarks",
+                "task_ids",
+                "seed_splits_for_train_seen_tasks",
+            }
+        )
+    missing = sorted(key for key in required if key not in config)
+    if missing:
+        raise ValueError(f"capture config is missing required fields: {missing}")
+    if int(config["obs_size"]) <= 0:
+        raise ValueError("obs_size must be positive")
+    if exact:
+        require_immutable_revision(str(config.get("model_revision") or ""))
+        if not has_episode_plan:
+            raise ValueError("exact validation requires an explicit --episode-plan")
+
+
+def _validate_episode_rows(rows: Sequence[EpisodePlanRow], *, exact: bool) -> None:
+    seen: set[tuple[str, str]] = set()
+    for index, row in enumerate(rows, start=1):
+        if not all((row.dataset_id, row.benchmark, row.split, row.capture_profile)):
+            raise ValueError(f"episode row {index} has an empty required identity field")
+        if not exact:
+            continue
+        identities = {
+            "trial_id": row.trial_id,
+            "child_plan_id": row.child_plan_id,
+            "canonical_family_id": row.canonical_family_id,
+            "pool": row.pool,
+            "replicate_id": row.replicate_id,
+        }
+        empty = sorted(name for name, value in identities.items() if not value)
+        if empty:
+            raise ValueError(f"episode row {index} has empty exact identities: {empty}")
+        seeds = {
+            "reset_seed": row.reset_seed,
+            "environment_seed": row.environment_seed,
+            "policy_seed": row.policy_seed,
+            "flow_noise_seed": row.flow_noise_seed,
+        }
+        missing_seeds = sorted(name for name, value in seeds.items() if value is None)
+        if missing_seeds:
+            raise ValueError(f"episode row {index} has missing exact seeds: {missing_seeds}")
+        stable_id = (row.child_plan_id, row.trial_id)
+        if stable_id in seen:
+            raise ValueError(f"duplicate exact trial identity: {stable_id}")
+        seen.add(stable_id)
 
 
 def _append_status(path: Path, payload: Mapping[str, Any]) -> None:

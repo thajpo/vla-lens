@@ -3,11 +3,13 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BACKEND="${PI05_BACKEND:-rocm}"
+RECEIPT=""
+JSON_STDOUT=0
 
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/check_pi05_env.sh --backend rocm|cuda|mps|cpu
+  scripts/check_pi05_env.sh --backend rocm|cuda|mps|cpu [--receipt PATH] [--json]
 
 Set PI05_STRICT_DEVICE_CHECK=0 to check imports without requiring a visible GPU.
 EOF
@@ -21,6 +23,18 @@ while [[ $# -gt 0 ]]; do
       ;;
     --backend=*)
       BACKEND="${1#--backend=}"
+      shift
+      ;;
+    --receipt)
+      RECEIPT="${2:-}"
+      shift 2
+      ;;
+    --receipt=*)
+      RECEIPT="${1#--receipt=}"
+      shift
+      ;;
+    --json)
+      JSON_STDOUT=1
       shift
       ;;
     -h|--help)
@@ -69,10 +83,15 @@ EOF
   exit 2
 fi
 
-PI05_BACKEND="$BACKEND" "$PY" - <<'PY'
+PI05_BACKEND="$BACKEND" PI05_ENV_RECEIPT="$RECEIPT" PI05_JSON_STDOUT="$JSON_STDOUT" "$PY" - <<'PY'
+import hashlib
 import importlib.metadata as md
+import json
 import os
 import platform
+import sys
+from contextlib import redirect_stdout
+from datetime import datetime, timezone
 from pathlib import Path
 
 from packaging.version import Version
@@ -80,6 +99,8 @@ import yaml
 
 backend = os.environ["PI05_BACKEND"]
 strict_device = os.environ.get("PI05_STRICT_DEVICE_CHECK", "1") != "0"
+receipt_path = os.environ.get("PI05_ENV_RECEIPT", "").strip()
+json_stdout = os.environ.get("PI05_JSON_STDOUT") == "1"
 
 
 def fail(message: str) -> None:
@@ -140,6 +161,7 @@ except Exception as exc:
 
 if not check.check_whether_transformers_replace_is_installed_correctly():
     fail("OpenPI transformers replacement check failed")
+openpi_check_path = Path(check.__file__).resolve()
 
 try:
     import lerobot.policies.pi05.modeling_pi05  # noqa: F401
@@ -147,7 +169,9 @@ except Exception as exc:
     fail(f"LeRobot PI0.5 import failed: {exc}")
 
 try:
-    from libero.libero.envs import OffScreenRenderEnv  # noqa: F401
+    with redirect_stdout(sys.stderr):
+        import libero
+        from libero.libero.envs import OffScreenRenderEnv  # noqa: F401
 except Exception as exc:
     fail(f"LIBERO import failed: {exc}")
 
@@ -175,7 +199,8 @@ for key in ("benchmark_root", "bddl_files", "init_states"):
         )
 
 try:
-    import robosuite
+    with redirect_stdout(sys.stderr):
+        import robosuite
 except Exception as exc:
     fail(f"robosuite import failed: {exc}")
 
@@ -213,8 +238,7 @@ elif backend == "cuda":
         os.environ.get("PI05_EXPECTED_TORCHAUDIO_VERSION", "2.11.0+cu128"),
     )
 
-print(f"PI0.5 {backend} capture environment OK")
-for pkg in [
+package_names = [
     "torch",
     "torchvision",
     "torchaudio",
@@ -228,6 +252,74 @@ for pkg in [
     "peft",
     "hf-libero",
     "robosuite",
-]:
-    print(f"  {pkg}: {md.version(pkg)}")
+]
+packages = {
+    pkg: {
+        "version": md.version(pkg),
+        "location": str(Path(md.distribution(pkg).locate_file("")).resolve()),
+    }
+    for pkg in package_names
+}
+gpu_devices = []
+if torch.cuda.is_available():
+    for index in range(torch.cuda.device_count()):
+        properties = torch.cuda.get_device_properties(index)
+        gpu_devices.append(
+            {
+                "index": index,
+                "name": torch.cuda.get_device_name(index),
+                "total_memory": int(properties.total_memory),
+                "major": int(properties.major),
+                "minor": int(properties.minor),
+            }
+        )
+
+receipt = {
+    "schema_version": 1,
+    "kind": "vla_lens.pi05_capture_environment_receipt",
+    "status": "pass",
+    "backend": backend,
+    "created_utc": datetime.now(timezone.utc).isoformat(),
+    "runtime": {
+        "python": sys.version,
+        "executable": sys.executable,
+        "platform": platform.platform(),
+        "machine": platform.machine(),
+    },
+    "packages": packages,
+    "accelerator": {
+        "torch_version": torch.__version__,
+        "cuda_runtime": getattr(torch.version, "cuda", None),
+        "rocm_runtime": getattr(torch.version, "hip", None),
+        "device_available": bool(torch.cuda.is_available()),
+        "devices": gpu_devices,
+    },
+    "openpi_transformers": {
+        "replacement_check": True,
+        "check_module": str(openpi_check_path),
+        "check_module_sha256": "sha256:"
+        + hashlib.sha256(openpi_check_path.read_bytes()).hexdigest(),
+    },
+    "libero": {
+        "module": str(Path(libero.__file__).resolve()),
+        "config_path": str(libero_config_file.resolve()),
+        "config_sha256": "sha256:"
+        + hashlib.sha256(libero_config_file.read_bytes()).hexdigest(),
+        "paths": {
+            key: str(Path(str(libero_config[key])).expanduser().resolve())
+            for key in ("benchmark_root", "bddl_files", "init_states")
+        },
+    },
+}
+encoded = json.dumps(receipt, indent=2, sort_keys=True) + "\n"
+if receipt_path:
+    Path(receipt_path).write_text(encoded, encoding="utf-8")
+if json_stdout:
+    print(encoded, end="")
+else:
+    print(f"PI0.5 {backend} capture environment OK")
+    for pkg in package_names:
+        print(f"  {pkg}: {packages[pkg]['version']}")
+    if receipt_path:
+        print(f"  receipt: {receipt_path}")
 PY
