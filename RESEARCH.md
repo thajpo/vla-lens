@@ -28,6 +28,40 @@ Probe success means the target is decodable under the saved data and readout
 contract. It does not show that the VLA uses the decoded information. Causal
 claims require interventions.
 
+## Research Framing: Semantics Through Action
+
+VLA Lens should study semantics and action together. Semantic questions remain
+important: we still want to know whether the model distinguishes objects,
+positions, poses, appearance, and task roles. But PI0.5 was trained to produce
+actions, so we should not assume that it stores those facts as stable,
+human-readable object records.
+
+The main framing is:
+
+> When one part of a scene changes, how does the predicted action change, and
+> where inside the model does that action change take shape?
+
+Use controlled scene pairs whenever possible. Change one factor, keep the
+instruction, robot, camera, noise, and other objects fixed, and measure the
+effect on translation, rotation, gripper command, action-horizon position, and
+denoising step. Then follow the same difference through visual tokens, the
+visual key/value memory, action-expert layers, predicted action updates, and
+the final action chunk. Preserve token and time structure rather than averaging
+it away by default.
+
+This action-centered view and direct semantic probes are complementary. A
+semantic probe can show that information is available. A consistent link
+between a scene change, an internal change, and an action correction can show
+what that information means for the policy. Internal interventions should come
+after this measurement identifies a small, repeatable model location worth
+testing.
+
+The current evidence is mostly a set of useful constraints, not a discovered
+object model. We have a positive known-region identity result and a broad path
+from early vision to late action state. We do not yet have a reliable object
+position or pose representation, a moving object handle, or a small semantic
+feature set. Future entries must keep that distinction explicit.
+
 ## Required Record For New Questions
 
 Before running an experiment, record:
@@ -42,6 +76,15 @@ Before running an experiment, record:
 - important confounds;
 - metrics and uncertainty method;
 - allowed conclusion and stopping rule.
+
+For action-centered scene experiments, also record:
+
+- the scene factor changed and everything deliberately held fixed;
+- the expected action consequence, including relevant action dimensions and
+  horizon positions;
+- the internal stages and axes used to follow that action difference;
+- whether the result concerns semantic availability, action relevance, or
+  both.
 
 After the run, add artifact IDs, the result, limitations, and the next decision.
 
@@ -1252,13 +1295,16 @@ caches are disposable and may be rebuilt from the saved recipes.
 
 ## Current Priority
 
-1. Patch the exact PI0.5 prefix key/value cache consumed by the action expert;
-   do not infer a same-layer handoff from the current residual-output hooks.
-2. Build one-factor counterfactuals that separate identity, position,
-   appearance, and task role before claiming a semantic object representation.
-3. Repeat the broad visual-prefix and late-expert results on fresh tasks and
-   object pairs before treating them as general.
-4. Keep RQ-018 as a useful negative semantic result; its calibrated dose
+1. Build controlled scene pairs that change one factor at a time—position,
+   pose, appearance, or task role—and measure the resulting action correction.
+2. Follow those action differences through visual tokens, the exact prefix
+   key/value memory consumed by the expert, expert layers, denoising steps, and
+   final action dimensions. Do not infer a same-layer handoff from the current
+   residual-output hooks.
+3. Use semantic probes alongside this path when they preserve object and token
+   correspondence; do not assume a global pooled state should contain an
+   LLM-like object record.
+4. Repeat positive results on fresh tasks and object pairs before treating them
+   as general.
+5. Keep RQ-018 as a useful negative semantic result; its calibrated dose
    controls are secondary to the cleaner natural counterfactual direction.
-5. For geometry probes, preserve object-token correspondence. Do not add
-   capacity to another globally pooled pose readout.
