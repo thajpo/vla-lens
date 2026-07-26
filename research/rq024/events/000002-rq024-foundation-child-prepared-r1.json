@@ -1,0 +1,26 @@
+{
+  "actor_id": "opencode-orchestrator",
+  "created_utc": "2026-07-26T18:51:14.827496+00:00",
+  "event_id": "rq024-foundation-child-prepared-r1",
+  "event_type": "child_prepared",
+  "payload": {
+    "child_ref": {
+      "content_fingerprint": "sha256:c369a8f0732da9bbe9e945005d21aefb1ce8e4c6fc8e587620947707b691809b",
+      "id": "rq024-foundation-r1",
+      "path": "configs/campaigns/rq024/foundation-r1/child.yaml",
+      "root_id": "repo",
+      "sha256": "sha256:c7852748a162a7f5076995068c2730732629887edcb8a06788b7f5def3f90e6c",
+      "type": "research_child"
+    },
+    "study_fingerprint": "sha256:f98b00fd23870b323f4c98905a6f664369b1d4325060782e1a210ce5211897f3",
+    "study_id": "FOUNDATION",
+    "study_instance_id": "rq024-foundation-instance-r1"
+  },
+  "previous_event_sha256": "sha256:968bb8f14e0512aa5e5c1c4c7b77377973a97aa906a9d5346b42d32a6bf220c6",
+  "program_fingerprint": "sha256:95fe070240e15e2da44486e3c635ca4dc92f50b4a0d240242c7568976b7123b3",
+  "program_id": "rq024-controlled-scene-to-behavior",
+  "schema_version": 1,
+  "sequence": 2,
+  "subject_fingerprint": "sha256:c369a8f0732da9bbe9e945005d21aefb1ce8e4c6fc8e587620947707b691809b",
+  "subject_id": "rq024-foundation-r1"
+}
