@@ -46,6 +46,7 @@ from vla_lens.pi05.capture_writer import (
 )
 from vla_lens.pi05.context_capture import (
     capture_camera_snapshot,
+    capture_contact_snapshot,
     capture_scene_snapshot,
 )
 from vla_lens.pi05.scene_mutation import apply_scene_mutation, scene_mutation_from_json
@@ -316,6 +317,7 @@ def run_pi05_capture_task(
 
                 env_action = np.expand_dims(action_numpy, axis=0)
                 observation, reward, terminated, truncated, info = env.step(env_action)
+                buffer.contact_snapshots.append(capture_contact_snapshot(env, timestep=step))
                 buffer.executed_actions.append(np.asarray(action_numpy, dtype=np.float32))
                 buffer.rewards.append(float(np.asarray(reward).reshape(-1)[0]))
                 buffer.terminated.append(bool(np.asarray(terminated).reshape(-1)[0]))

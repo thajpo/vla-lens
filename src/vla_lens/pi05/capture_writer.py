@@ -5,6 +5,8 @@ from __future__ import annotations
 import argparse
 from typing import Any
 
+import numpy as np
+
 from vla_lens.capture import (
     EnvironmentDescriptor,
     EpisodeRecord,
@@ -74,6 +76,7 @@ def _write_episode(
         env,
         scene_snapshots=buffer.scene_snapshots,
         camera_snapshots=buffer.camera_snapshots,
+        contact_snapshots=buffer.contact_snapshots,
     )
     episode_arrays = {**_episode_arrays(buffer, length), **dict(context.arrays)}
     model_arrays = _model_arrays(buffer, plan)
@@ -87,6 +90,7 @@ def _write_episode(
     evaluation = _evaluation_table(buffer, length)
     capture_plan = plan.to_metadata()
     capture_report = _capture_report(buffer, plan, context, model_arrays=model_arrays)
+    contact_capability = _contact_capability_metadata(context)
     metadata = {
         "capture_profile": args.capture_profile,
         "requested_profile": args.capture_profile,
@@ -107,6 +111,7 @@ def _write_episode(
             "vlm_attention": plan.vlm_attention,
             "expert_hidden": plan.expert_hidden,
             "expert_attention": plan.expert_attention,
+            "simulator_contact_telemetry": contact_capability,
         },
     }
     dataset_id = _capture_dataset_id(args)
@@ -142,6 +147,7 @@ def _write_episode(
                 "obs_size": args.obs_size,
                 "layout_id": args.layout_id,
                 "scene_mutation": dict(buffer.scene_mutation_report),
+                "simulator_contact_telemetry": contact_capability,
             },
         ),
         tokens=tokens,
@@ -279,7 +285,20 @@ def _capture_report(
         "declared_model_sites": declared_model_sites,
         "required_model_sites": required_model_sites,
         "missing_model_sites": missing_model_sites,
+        "simulator_contact_telemetry": _contact_capability_metadata(context),
     }
+
+
+def _contact_capability_metadata(context: ContextCaptureResult) -> dict[str, Any]:
+    capability = context.tables.get("contact_capability")
+    if capability is None or capability.empty:
+        return {}
+    payload = capability.iloc[0].to_dict()
+    return {
+        str(key): value.item() if isinstance(value, np.generic) else value
+        for key, value in payload.items()
+    }
+
 
 def _declared_pi05_sites(plan: CapturePlan) -> list[str]:
     profile = canonical_profile(plan.profile)

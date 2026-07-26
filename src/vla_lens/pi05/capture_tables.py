@@ -422,6 +422,15 @@ def _scene_state_table(context: ContextCaptureResult) -> pd.DataFrame:
         frame = context.tables["episode_context"].copy()
         frame["context_kind"] = "episode"
         frames.append(frame)
+    if "contacts" in context.tables and not context.tables["contacts"].empty:
+        frame = context.tables["contacts"].copy()
+        frame["context_kind"] = "mujoco_contact"
+        frames.append(frame)
+    if "contact_capability" in context.tables:
+        frame = context.tables["contact_capability"].copy()
+        if not frame.empty:
+            frame["context_kind"] = "contact_capability"
+            frames.append(frame)
     object_availability = _context_table(context, "object")
     if not object_availability.empty:
         object_availability["context_kind"] = "availability"

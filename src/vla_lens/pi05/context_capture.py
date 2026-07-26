@@ -19,6 +19,10 @@ from vla_lens.pi05.context_capture_common import (
     _scene_snapshot_sequence,
     _Status,
 )
+from vla_lens.pi05.context_capture_contacts import (
+    capture_contact_snapshot,
+    extract_contact_context,
+)
 from vla_lens.pi05.context_capture_objects import extract_object_context
 from vla_lens.pi05.context_capture_robot import extract_env_metadata, extract_robot_arrays
 from vla_lens.pi05.context_capture_scene import capture_scene_snapshot
@@ -31,6 +35,7 @@ def capture_libero_context(
     env: Any | None = None,
     scene_snapshots: Sequence[Mapping[str, Any]] | None = None,
     camera_snapshots: Sequence[Mapping[str, Any]] | None = None,
+    contact_snapshots: Sequence[Mapping[str, Any]] | None = None,
 ) -> ContextCaptureResult:
     """Extract cheap environment context from observations and an optional env.
 
@@ -68,6 +73,10 @@ def capture_libero_context(
     tables["cameras"] = camera_table
     arrays.update(camera_arrays)
 
+    contacts, contact_capability = extract_contact_context(contact_snapshots, status=status)
+    tables["contacts"] = contacts
+    tables["contact_capability"] = contact_capability
+
     tables["context_availability"] = status.frame()
     return ContextCaptureResult(arrays=arrays, tables=tables)
 
@@ -75,6 +84,7 @@ def capture_libero_context(
 __all__ = [
     "ContextCaptureResult",
     "capture_camera_snapshot",
+    "capture_contact_snapshot",
     "capture_libero_context",
     "capture_scene_snapshot",
     "extract_camera_context",
