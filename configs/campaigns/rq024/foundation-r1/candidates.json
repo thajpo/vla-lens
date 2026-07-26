@@ -1,0 +1,2672 @@
+{
+  "accepted_family_count": 79,
+  "child_plan_id": "rq024-foundation-r1",
+  "families": [
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE2_pick_up_the_milk_and_put_it_in_the_basket.bddl",
+      "bddl_sha256": "sha256:db1d192adbf1ccfc2360bd3fbcd6382f6927ffa88011d2f72e186e7c4e52d089",
+      "candidate_position": 0,
+      "canonical_family_id": "52\u001fplace_in\u001fmilk\u001fbasket[region=contain]",
+      "destination_identity": "basket",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "milk_1",
+          "basket_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "milk",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 0,
+      "language": "pick up the milk and put it in the basket",
+      "normalized_destination": "basket[region=contain]",
+      "normalized_instructed_object": "milk",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 0,
+      "rank_digest": "sha256:8a9afbb764acfc5ee8a1dee83b27dcac81e3769e9b61f28af6290ebf92c80fc3",
+      "selected": true,
+      "stratum_digest": "sha256:0cb30d39292f8301e4193c61a609a8bd74b3af08332553f5c1fba875ccd6a010",
+      "stratum_id": "place_in\u001fmilk",
+      "task_id": 52,
+      "task_name": "LIVING_ROOM_SCENE2_pick_up_the_milk_and_put_it_in_the_basket"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE8_turn_off_the_stove.bddl",
+      "bddl_sha256": "sha256:f8853af24d192d8416cba268ad3b95ad697cb92a06922bad5f1e4a6d5646c4f3",
+      "candidate_position": 1,
+      "canonical_family_id": "39\u001fturn_off\u001fstove\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "flat_stove_1"
+        ],
+        "predicate": "Turnoff"
+      },
+      "instructed_object_identity": "stove",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 1,
+      "language": "turn off the stove",
+      "normalized_destination": "",
+      "normalized_instructed_object": "stove",
+      "normalized_task_verb": "turn_off",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 0,
+      "rank_digest": "sha256:024f2213acea2a3bd6a4784a4805f7b5d5137dc83bbe933ad42bb44747886923",
+      "selected": true,
+      "stratum_digest": "sha256:0cf87d2721345c6dbaf53089123328ec98c3c38f5f1a8c4792037ae6dccdb502",
+      "stratum_id": "turn_off\u001fstove",
+      "task_id": 39,
+      "task_name": "KITCHEN_SCENE8_turn_off_the_stove"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE3_pick_up_the_butter_and_put_it_in_the_tray.bddl",
+      "bddl_sha256": "sha256:9ec972d564151ee40d8b5b5fc1bd7acf62a3256d42c8d49e671c1d6caece7827",
+      "candidate_position": 2,
+      "canonical_family_id": "56\u001fplace_in\u001fbutter\u001ftray[region=contain]",
+      "destination_identity": "tray",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "butter_1",
+          "wooden_tray_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "butter",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 2,
+      "language": "pick up the butter and put it in the tray",
+      "normalized_destination": "tray[region=contain]",
+      "normalized_instructed_object": "butter",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 1,
+      "rank_digest": "sha256:ba3eb3a4101c96bdc56563130b9c737638bf1efea322d5f72779fb6172cdf3cf",
+      "selected": true,
+      "stratum_digest": "sha256:1998cc0f99c784880e175cba25d32c8a246f79e71e6910fa075a98fc1c2bd937",
+      "stratum_id": "place_in\u001fbutter",
+      "task_id": 56,
+      "task_name": "LIVING_ROOM_SCENE3_pick_up_the_butter_and_put_it_in_the_tray"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE4_pick_up_the_black_bowl_on_the_left_and_put_it_in_the_tray.bddl",
+      "bddl_sha256": "sha256:55a2869f06068a66279aa4434c9d97907301e763b394dd20e49e03f216636396",
+      "candidate_position": 3,
+      "canonical_family_id": "60\u001fplace_in\u001fblack_bowl[initial=left]\u001ftray[region=contain]",
+      "destination_identity": "tray",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "wooden_tray_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [
+        "initial=left"
+      ],
+      "interleave_order": 3,
+      "language": "pick up the black bowl on the left and put it in the tray",
+      "normalized_destination": "tray[region=contain]",
+      "normalized_instructed_object": "black_bowl[initial=left]",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 1,
+      "rank_digest": "sha256:1ff129a70da078dc2eea15f8d50c83b0ebee0e86f310099a16816070caf6cd6e",
+      "selected": true,
+      "stratum_digest": "sha256:21843ec0658e819513cbb0c9ee33087a914de503c47f064f9f5077091e36eb10",
+      "stratum_id": "place_in\u001fblack_bowl",
+      "task_id": 60,
+      "task_name": "LIVING_ROOM_SCENE4_pick_up_the_black_bowl_on_the_left_and_put_it_in_the_tray"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE3_turn_on_the_stove.bddl",
+      "bddl_sha256": "sha256:b081c85eec6ba5ede60bcb773e33cef284bd7befc96d4bbeeff48764d6fe16d6",
+      "candidate_position": 4,
+      "canonical_family_id": "20\u001fturn_on\u001fstove\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "flat_stove_1"
+        ],
+        "predicate": "Turnon"
+      },
+      "instructed_object_identity": "stove",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 4,
+      "language": "turn on the stove",
+      "normalized_destination": "",
+      "normalized_instructed_object": "stove",
+      "normalized_task_verb": "turn_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 2,
+      "rank_digest": "sha256:cef949e9a0593ba8deb80785a7866d5177503821686d552d544fad5d1768ec19",
+      "selected": true,
+      "stratum_digest": "sha256:3554fc978601f2969717002784da06174ade6c31e9c77b7ed086fb947a429d08",
+      "stratum_id": "turn_on\u001fstove",
+      "task_id": 20,
+      "task_name": "KITCHEN_SCENE3_turn_on_the_stove"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE1_pick_up_the_cream_cheese_box_and_put_it_in_the_basket.bddl",
+      "bddl_sha256": "sha256:750d8ec117142214ab2910df68290258be0b516adadc753a02297267028ea9dd",
+      "candidate_position": 5,
+      "canonical_family_id": "47\u001fplace_in\u001fcream_cheese\u001fbasket[region=contain]",
+      "destination_identity": "basket",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "cream_cheese_1",
+          "basket_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "cream_cheese",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 5,
+      "language": "pick up the cream cheese box and put it in the basket",
+      "normalized_destination": "basket[region=contain]",
+      "normalized_instructed_object": "cream_cheese",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 2,
+      "rank_digest": "sha256:358535ef585649af2de865ba28c8ace74c2ea8c9ee0471e5f57b4ddc26f87332",
+      "selected": true,
+      "stratum_digest": "sha256:3854debe909130b5de1c8052cc22a2006d5c05b6c393fced65f7e4b92f389868",
+      "stratum_id": "place_in\u001fcream_cheese",
+      "task_id": 47,
+      "task_name": "LIVING_ROOM_SCENE1_pick_up_the_cream_cheese_box_and_put_it_in_the_basket"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE2_pick_up_the_alphabet_soup_and_put_it_in_the_basket.bddl",
+      "bddl_sha256": "sha256:2cebb752ffc9d2f2a06c3b257cbfc652df42905a12f597d7304f93bfdb42f50b",
+      "candidate_position": 6,
+      "canonical_family_id": "50\u001fplace_in\u001falphabet_soup\u001fbasket[region=contain]",
+      "destination_identity": "basket",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "alphabet_soup_1",
+          "basket_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "alphabet_soup",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 6,
+      "language": "pick up the alphabet soup and put it in the basket",
+      "normalized_destination": "basket[region=contain]",
+      "normalized_instructed_object": "alphabet_soup",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 3,
+      "rank_digest": "sha256:5ed74816c7cfc04f76ee23f13f923c042a5f43c4b1bc3ba99b6c995dfefc856f",
+      "selected": true,
+      "stratum_digest": "sha256:4e668bd7cd18d7886743d1b37c3524a59429c9af749004ee5e18529172a98cc7",
+      "stratum_id": "place_in\u001falphabet_soup",
+      "task_id": 50,
+      "task_name": "LIVING_ROOM_SCENE2_pick_up_the_alphabet_soup_and_put_it_in_the_basket"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE4_pick_up_the_book_on_the_left_and_place_it_on_top_of_the_shelf.bddl",
+      "bddl_sha256": "sha256:cc32019a35c3bf065ea454992d3b16e0c2d6d9882e1e762ff41ebe4f5728f2da",
+      "candidate_position": 7,
+      "canonical_family_id": "87\u001fplace_on\u001fbook[initial=left]\u001fshelf[region=top_side]",
+      "destination_identity": "shelf",
+      "destination_qualifiers": [
+        "region=top_side"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "yellow_book_2",
+          "wooden_two_layer_shelf_1_top_side"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [
+        "initial=left"
+      ],
+      "interleave_order": 7,
+      "language": "pick up the book on the left and place it on top of the shelf",
+      "normalized_destination": "shelf[region=top_side]",
+      "normalized_instructed_object": "book[initial=left]",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 3,
+      "rank_digest": "sha256:7eb4854295a85bd218aadf970cbc2562f215804531518e603eca9cd8115e55a3",
+      "selected": true,
+      "stratum_digest": "sha256:52269186b1518bb8bcc291a3f6bb32fb9976e4503c2676f68a139d3205b844d2",
+      "stratum_id": "place_on\u001fbook",
+      "task_id": 87,
+      "task_name": "STUDY_SCENE4_pick_up_the_book_on_the_left_and_place_it_on_top_of_the_shelf"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE7_put_the_white_bowl_on_the_plate.bddl",
+      "bddl_sha256": "sha256:dc9b9db1cfc513b0ce88fa40c0406ccb6b4dbf42543404b88319e94f0f34c6ee",
+      "candidate_position": 8,
+      "canonical_family_id": "36\u001fplace_on\u001fwhite_bowl\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "white_bowl_1",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "white_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 8,
+      "language": "put the white bowl on the plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "white_bowl",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 4,
+      "rank_digest": "sha256:08e24d4c7fd803f9fdbbbb5881e1fed7043c47aa3a2acafda644eb72907298bf",
+      "selected": true,
+      "stratum_digest": "sha256:55a3b7d8dcfa6bf88192773d821e8cb74a8d6c23fe604af6add270e5f63c8937",
+      "stratum_id": "place_on\u001fwhite_bowl",
+      "task_id": 36,
+      "task_name": "KITCHEN_SCENE7_put_the_white_bowl_on_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE1_pick_up_the_book_and_place_it_in_the_left_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:7a46821e87185877e6bf9f2128f56842cb2bb58e3822f0b0a9650d4b78250ae4",
+      "candidate_position": 9,
+      "canonical_family_id": "74\u001fplace_in\u001fbook\u001fcaddy[region=left_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=left_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_left_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 9,
+      "language": "pick up the book and place it in the left compartment of the caddy",
+      "normalized_destination": "caddy[region=left_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 4,
+      "rank_digest": "sha256:3968af2a27972aaaa424084d1e400315f67df6e72f4d1c9df73aec16c6d45001",
+      "selected": true,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 74,
+      "task_name": "STUDY_SCENE1_pick_up_the_book_and_place_it_in_the_left_compartment_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE7_open_the_microwave.bddl",
+      "bddl_sha256": "sha256:af12c019cde75245f2d301c2519dca670818f6827ad412853777ec9389874f2f",
+      "candidate_position": 10,
+      "canonical_family_id": "35\u001fopen\u001fmicrowave\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "microwave_1"
+        ],
+        "predicate": "Open"
+      },
+      "instructed_object_identity": "microwave",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 10,
+      "language": "open the microwave",
+      "normalized_destination": "",
+      "normalized_instructed_object": "microwave",
+      "normalized_task_verb": "open",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 5,
+      "rank_digest": "sha256:3456a74b5e57831f654c3dea1244c3bf35ebf4972b02e08ff1e61151bb18ac0d",
+      "selected": true,
+      "stratum_digest": "sha256:5dd833178a4b58ab14db052cef6c92f3430edbb3fceaea75841e76c6bfea2d19",
+      "stratum_id": "open\u001fmicrowave",
+      "task_id": 35,
+      "task_name": "KITCHEN_SCENE7_open_the_microwave"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE9_put_the_frying_pan_on_top_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:dab7ed3a0f17e0f619a50130a247a706af0903402c9876ea5957f8cc90964bb5",
+      "candidate_position": 11,
+      "canonical_family_id": "41\u001fplace_on\u001ffrying_pan\u001fshelf[region=top_side]",
+      "destination_identity": "shelf",
+      "destination_qualifiers": [
+        "region=top_side"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "chefmate_8_frypan_1",
+          "wooden_two_layer_shelf_1_top_side"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "frying_pan",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 11,
+      "language": "put the frying pan on top of the cabinet",
+      "normalized_destination": "shelf[region=top_side]",
+      "normalized_instructed_object": "frying_pan",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 5,
+      "rank_digest": "sha256:0eedc3be863f8a9ebbb0f3fee66976c878af8f9475f0d1ab7945de7d3ae91ace",
+      "selected": true,
+      "stratum_digest": "sha256:6da24d5225d762df946ea25e843f49848450158d8172b4e5c7f53bfcc2a17f10",
+      "stratum_id": "place_on\u001ffrying_pan",
+      "task_id": 41,
+      "task_name": "KITCHEN_SCENE9_put_the_frying_pan_on_top_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE6_put_the_chocolate_pudding_to_the_right_of_the_plate.bddl",
+      "bddl_sha256": "sha256:b6dfb0380bcb6291fb45274a04ce1dba222f737d2284b1fb36463f5920420bcb",
+      "candidate_position": 12,
+      "canonical_family_id": "70\u001fplace_on\u001fchocolate_pudding\u001fplate[region=right]",
+      "destination_identity": "plate",
+      "destination_qualifiers": [
+        "region=right"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "chocolate_pudding_1",
+          "living_room_table_plate_right_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "chocolate_pudding",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 12,
+      "language": "put the chocolate pudding to the right of the plate",
+      "normalized_destination": "plate[region=right]",
+      "normalized_instructed_object": "chocolate_pudding",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 6,
+      "rank_digest": "sha256:6fef2b45cadf4584ba9b0981903a0c8e1a60913c9bdb85937bd2e1f5e173ef26",
+      "selected": true,
+      "stratum_digest": "sha256:6e20f92527a1a876019bad81f4c446bb48b34a392095779a0f157346478b3e61",
+      "stratum_id": "place_on\u001fchocolate_pudding",
+      "task_id": 70,
+      "task_name": "LIVING_ROOM_SCENE6_put_the_chocolate_pudding_to_the_right_of_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE6_put_the_white_mug_on_the_plate.bddl",
+      "bddl_sha256": "sha256:7b1f805dc9b6abe3793655026bd4bb14b24f4596c65506f561a3a7057abf3771",
+      "candidate_position": 13,
+      "canonical_family_id": "72\u001fplace_on\u001fwhite_mug\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "porcelain_mug_1",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "white_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 13,
+      "language": "put the white mug on the plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "white_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 6,
+      "rank_digest": "sha256:2c12635e6038169e8fc5a1173391ebd23575d1970b3d8f95c83b5119090043c2",
+      "selected": true,
+      "stratum_digest": "sha256:7728326839fe31bcd08ea36e502a9d032ba83a1eda2cb4f799b46d9cc89ec722",
+      "stratum_id": "place_on\u001fwhite_mug",
+      "task_id": 72,
+      "task_name": "LIVING_ROOM_SCENE6_put_the_white_mug_on_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE3_pick_up_the_ketchup_and_put_it_in_the_tray.bddl",
+      "bddl_sha256": "sha256:9d765199eb93e1d52a043171a322ca369369566056fab904d6ebfba1d01bc3a5",
+      "candidate_position": 14,
+      "canonical_family_id": "58\u001fplace_in\u001fketchup\u001ftray[region=contain]",
+      "destination_identity": "tray",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "ketchup_1",
+          "wooden_tray_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "ketchup",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 14,
+      "language": "pick up the ketchup and put it in the tray",
+      "normalized_destination": "tray[region=contain]",
+      "normalized_instructed_object": "ketchup",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 7,
+      "rank_digest": "sha256:a1b4c28f173cd9e576902bd1c2f0a9378824a676ffe039dd6da264d67a51208f",
+      "selected": true,
+      "stratum_digest": "sha256:7c2a85ac0bc8804daae08f67a66e18476a74cc0aae55900a0589b86fe019cfaa",
+      "stratum_id": "place_in\u001fketchup",
+      "task_id": 58,
+      "task_name": "LIVING_ROOM_SCENE3_pick_up_the_ketchup_and_put_it_in_the_tray"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE3_put_the_moka_pot_on_the_stove.bddl",
+      "bddl_sha256": "sha256:d94a21d1fb32f76c08050242581c692486ae12956ae2de3dd96dd4d7d656fcd6",
+      "candidate_position": 15,
+      "canonical_family_id": "19\u001fplace_on\u001fmoka_pot\u001fstove[region=cook]",
+      "destination_identity": "stove",
+      "destination_qualifiers": [
+        "region=cook"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "moka_pot_1",
+          "flat_stove_1_cook_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "moka_pot",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 15,
+      "language": "put the moka pot on the stove",
+      "normalized_destination": "stove[region=cook]",
+      "normalized_instructed_object": "moka_pot",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 7,
+      "rank_digest": "sha256:79094511f6b426a22c24562680ef4d434fbc6a1608075db6a699f7181ec690d2",
+      "selected": true,
+      "stratum_digest": "sha256:7ef132ce90867b26b85eaedc1a15150fab98dcedf1d01bd3b4819ff2fed2a926",
+      "stratum_id": "place_on\u001fmoka_pot",
+      "task_id": 19,
+      "task_name": "KITCHEN_SCENE3_put_the_moka_pot_on_the_stove"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE6_put_the_yellow_and_white_mug_to_the_front_of_the_white_mug.bddl",
+      "bddl_sha256": "sha256:d766b419c796848db2c93b46b9388770d8a2597730623ccab02a37853a6538d6",
+      "candidate_position": 16,
+      "canonical_family_id": "34\u001fplace_on\u001fyellow_and_white_mug\u001fwhite_mug[region=front]",
+      "destination_identity": "white_mug",
+      "destination_qualifiers": [
+        "region=front"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "white_yellow_mug_1",
+          "kitchen_table_porcelain_mug_front_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "yellow_and_white_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 16,
+      "language": "put the yellow and white mug to the front of the white mug",
+      "normalized_destination": "white_mug[region=front]",
+      "normalized_instructed_object": "yellow_and_white_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 8,
+      "rank_digest": "sha256:3e804cb5979952fcc4a390e76619ba36c9769fde164feae4b76e1f9f50d6583b",
+      "selected": true,
+      "stratum_digest": "sha256:9490efa966ce90dab6901185197f13e997787728a04c3a6c70d03bcdf5138940",
+      "stratum_id": "place_on\u001fyellow_and_white_mug",
+      "task_id": 34,
+      "task_name": "KITCHEN_SCENE6_put_the_yellow_and_white_mug_to_the_front_of_the_white_mug"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE4_pick_up_the_salad_dressing_and_put_it_in_the_tray.bddl",
+      "bddl_sha256": "sha256:ddd537c6a69f8ad765ac5cfbae8fbadcb3e13cc8746d8cfe6c28659aae7228d5",
+      "candidate_position": 17,
+      "canonical_family_id": "62\u001fplace_in\u001fsalad_dressing\u001ftray[region=contain]",
+      "destination_identity": "tray",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "new_salad_dressing_1",
+          "wooden_tray_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "salad_dressing",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 17,
+      "language": "pick up the salad dressing and put it in the tray",
+      "normalized_destination": "tray[region=contain]",
+      "normalized_instructed_object": "salad_dressing",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 8,
+      "rank_digest": "sha256:e9a8c4882eeabf4441bde9c33104120d16aba4cc3d032c1d5ce606bba184a6bb",
+      "selected": true,
+      "stratum_digest": "sha256:9dcf824a54e46d9a55f80560d8e60b72521adc6bfb62c9397a4a7210fcaa2f41",
+      "stratum_id": "place_in\u001fsalad_dressing",
+      "task_id": 62,
+      "task_name": "LIVING_ROOM_SCENE4_pick_up_the_salad_dressing_and_put_it_in_the_tray"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE4_put_the_wine_bottle_on_the_wine_rack.bddl",
+      "bddl_sha256": "sha256:a5a1a379b1c9511105218c72417b1b4d76ece5119ef08cefcd51facfb2f1b108",
+      "candidate_position": 18,
+      "canonical_family_id": "27\u001fplace_on\u001fwine_bottle\u001fwine_rack[region=top]",
+      "destination_identity": "wine_rack",
+      "destination_qualifiers": [
+        "region=top"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "wine_bottle_1",
+          "wine_rack_1_top_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "wine_bottle",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 18,
+      "language": "put the wine bottle on the wine rack",
+      "normalized_destination": "wine_rack[region=top]",
+      "normalized_instructed_object": "wine_bottle",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 9,
+      "rank_digest": "sha256:2bbc342d2655e0731d1362e025904f3d530c607e611c37da525214ec68506376",
+      "selected": true,
+      "stratum_digest": "sha256:a7ada66711c59235c9b3f3790cf91035ae1f8372fb27a49313d40c7a1569744d",
+      "stratum_id": "place_on\u001fwine_bottle",
+      "task_id": 27,
+      "task_name": "KITCHEN_SCENE4_put_the_wine_bottle_on_the_wine_rack"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE2_pick_up_the_orange_juice_and_put_it_in_the_basket.bddl",
+      "bddl_sha256": "sha256:a8429485e725b7ba764f1fa17618880c0b0be9257ae931af5a8b3c9dcbbe5497",
+      "candidate_position": 19,
+      "canonical_family_id": "53\u001fplace_in\u001forange_juice\u001fbasket[region=contain]",
+      "destination_identity": "basket",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "orange_juice_1",
+          "basket_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "orange_juice",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 19,
+      "language": "pick up the orange juice and put it in the basket",
+      "normalized_destination": "basket[region=contain]",
+      "normalized_instructed_object": "orange_juice",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 9,
+      "rank_digest": "sha256:3edb3354c10b625d14ebf77ffc118be580bf58ad2adb75b0a02df4e28cc6060b",
+      "selected": true,
+      "stratum_digest": "sha256:b851c1792f04b8f3a1677ed31b8a0648f6de3d304cb36666f20c6152379ecbd9",
+      "stratum_id": "place_in\u001forange_juice",
+      "task_id": 53,
+      "task_name": "LIVING_ROOM_SCENE2_pick_up_the_orange_juice_and_put_it_in_the_basket"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE3_pick_up_the_red_mug_and_place_it_to_the_right_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:67ac86171a2ffc17064e839487189a8d28b0e33b7896ff39d82ce3bfe02ada3e",
+      "candidate_position": 20,
+      "canonical_family_id": "84\u001fplace_on\u001fred_mug\u001fcaddy[region=right]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=right"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "red_coffee_mug_1",
+          "study_table_desk_caddy_right_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "red_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 20,
+      "language": "pick up the red mug and place it to the right compartment of the caddy",
+      "normalized_destination": "caddy[region=right]",
+      "normalized_instructed_object": "red_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 10,
+      "rank_digest": "sha256:1ba1e3bce5dd964f9a7b617667ad81e77ff7f657979502affbf5eb27a96604d5",
+      "selected": true,
+      "stratum_digest": "sha256:ba7e3732e81e6f59c10f0ffab7e2175f5f0ed795033c9d630c7f4fb27432854e",
+      "stratum_id": "place_on\u001fred_mug",
+      "task_id": 84,
+      "task_name": "STUDY_SCENE3_pick_up_the_red_mug_and_place_it_to_the_right_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE2_put_the_black_bowl_at_the_front_on_the_plate.bddl",
+      "bddl_sha256": "sha256:6cae8e15ca524c067b2eeae02e95400a5f14ad5152e358d4acaeb355f23d0d54",
+      "candidate_position": 21,
+      "canonical_family_id": "13\u001fplace_on\u001fblack_bowl[initial=front]\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [
+        "initial=front"
+      ],
+      "interleave_order": 21,
+      "language": "put the black bowl at the front on the plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "black_bowl[initial=front]",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 10,
+      "rank_digest": "sha256:1233b04753183fe40baf5ba2b2302a228c93d07aa9c29ab28a75466f05d69c2f",
+      "selected": true,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 13,
+      "task_name": "KITCHEN_SCENE2_put_the_black_bowl_at_the_front_on_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE1_pick_up_the_tomato_sauce_and_put_it_in_the_basket.bddl",
+      "bddl_sha256": "sha256:cce015229a021baf1124562dd5efbc5bc65195926ecce34254c9da5728690816",
+      "candidate_position": 22,
+      "canonical_family_id": "49\u001fplace_in\u001ftomato_sauce\u001fbasket[region=contain]",
+      "destination_identity": "basket",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "tomato_sauce_1",
+          "basket_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "tomato_sauce",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 22,
+      "language": "pick up the tomato sauce and put it in the basket",
+      "normalized_destination": "basket[region=contain]",
+      "normalized_instructed_object": "tomato_sauce",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "discovery",
+      "pool_position": 11,
+      "rank_digest": "sha256:7c4a52903628e9e77f7b3ac818ccd0d11be4831d18f2a06e54e8f34596f14bc8",
+      "selected": true,
+      "stratum_digest": "sha256:d2f1467afcc7ada8c605d6782ace71758aee855afcc15405feb98279a0c3412c",
+      "stratum_id": "place_in\u001ftomato_sauce",
+      "task_id": 49,
+      "task_name": "LIVING_ROOM_SCENE1_pick_up_the_tomato_sauce_and_put_it_in_the_basket"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE4_pick_up_the_chocolate_pudding_and_put_it_in_the_tray.bddl",
+      "bddl_sha256": "sha256:766f93639728bc0be416df897e5ebe7143196ea8eff8b35301cc05a753824a54",
+      "candidate_position": 23,
+      "canonical_family_id": "61\u001fplace_in\u001fchocolate_pudding\u001ftray[region=contain]",
+      "destination_identity": "tray",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "chocolate_pudding_1",
+          "wooden_tray_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "chocolate_pudding",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 23,
+      "language": "pick up the chocolate pudding and put it in the tray",
+      "normalized_destination": "tray[region=contain]",
+      "normalized_instructed_object": "chocolate_pudding",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": "confirmation",
+      "pool_position": 11,
+      "rank_digest": "sha256:4a85ac003305cf9424410a8edebe77d690f8ddc661fe502c19da815633eaed29",
+      "selected": true,
+      "stratum_digest": "sha256:d3532bcfbb688848f26cf00e0bd45fd5e593bc00892f5a4b9d247d844955dac3",
+      "stratum_id": "place_in\u001fchocolate_pudding",
+      "task_id": 61,
+      "task_name": "LIVING_ROOM_SCENE4_pick_up_the_chocolate_pudding_and_put_it_in_the_tray"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE5_close_the_top_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:8a3a63e58724927992d314ce99b7308c4a80401d4f2bf832bbd6fb1b836b162f",
+      "candidate_position": null,
+      "canonical_family_id": "28\u001fclose\u001fcabinet[region=top]\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "white_cabinet_1_top_region"
+        ],
+        "predicate": "Close"
+      },
+      "instructed_object_identity": "cabinet",
+      "instructed_object_qualifiers": [
+        "region=top"
+      ],
+      "interleave_order": 24,
+      "language": "close the top drawer of the cabinet",
+      "normalized_destination": "",
+      "normalized_instructed_object": "cabinet[region=top]",
+      "normalized_task_verb": "close",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:1f8d30c89d150dcc1659ac74c213156601774fdcabf93e188b3b0f742c2a9c5d",
+      "selected": false,
+      "stratum_digest": "sha256:d37290357970772fca68288726ae5a2e59463550c58bc3bc609a9d0e2e5f7438",
+      "stratum_id": "close\u001fcabinet",
+      "task_id": 28,
+      "task_name": "KITCHEN_SCENE5_close_the_top_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE9_put_the_frying_pan_under_the_cabinet_shelf.bddl",
+      "bddl_sha256": "sha256:a414dbc0ca297d07c9f609dc63948e312e1f977bf2e85344cb54ad8c957bda2b",
+      "candidate_position": null,
+      "canonical_family_id": "42\u001fplace_in\u001ffrying_pan\u001fshelf[region=bottom]",
+      "destination_identity": "shelf",
+      "destination_qualifiers": [
+        "region=bottom"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "chefmate_8_frypan_1",
+          "wooden_two_layer_shelf_1_bottom_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "frying_pan",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 25,
+      "language": "put the frying pan under the cabinet shelf",
+      "normalized_destination": "shelf[region=bottom]",
+      "normalized_instructed_object": "frying_pan",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:a625fe4ac495de60cdb0733fa01d8aad401fe2f8f5f21f90091192ba0e025d93",
+      "selected": false,
+      "stratum_digest": "sha256:f5759b60345760de0517ce7719b30c0e595b994c010359ac042b151357b3a3a2",
+      "stratum_id": "place_in\u001ffrying_pan",
+      "task_id": 42,
+      "task_name": "KITCHEN_SCENE9_put_the_frying_pan_under_the_cabinet_shelf"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE4_put_the_wine_bottle_in_the_bottom_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:70fd15c43ee8f9c92e2e832e64a8afd118d9cba43b7817572750b03b6cba06fc",
+      "candidate_position": null,
+      "canonical_family_id": "26\u001fplace_in\u001fwine_bottle\u001fcabinet[region=bottom]",
+      "destination_identity": "cabinet",
+      "destination_qualifiers": [
+        "region=bottom"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "wine_bottle_1",
+          "white_cabinet_1_bottom_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "wine_bottle",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 26,
+      "language": "put the wine bottle in the bottom drawer of the cabinet",
+      "normalized_destination": "cabinet[region=bottom]",
+      "normalized_instructed_object": "wine_bottle",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:387b8ef4c72bc296f5e1c96e8a4ba35efde59e8a864f1f0a48ddbd9dc38dc2d4",
+      "selected": false,
+      "stratum_digest": "sha256:f6a00657c7ac3db3689f7d293d5b015553f93ca58d2405859245e7a26d93932d",
+      "stratum_id": "place_in\u001fwine_bottle",
+      "task_id": 26,
+      "task_name": "KITCHEN_SCENE4_put_the_wine_bottle_in_the_bottom_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE6_close_the_microwave.bddl",
+      "bddl_sha256": "sha256:97df87deffb264990bcb06b877deaace02d296c01de7cc5c312c7bfc30da3b00",
+      "candidate_position": null,
+      "canonical_family_id": "33\u001fclose\u001fmicrowave\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "microwave_1"
+        ],
+        "predicate": "Close"
+      },
+      "instructed_object_identity": "microwave",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 27,
+      "language": "close the microwave",
+      "normalized_destination": "",
+      "normalized_instructed_object": "microwave",
+      "normalized_task_verb": "close",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:9decf6b0cf79fc50a26288a8e4cffa5961478f2feda51dfef02f6be3b7647fe0",
+      "selected": false,
+      "stratum_digest": "sha256:fc85671405227312f0aa585216756d76fe08663ba61446a39885aa9b846ab090",
+      "stratum_id": "close\u001fmicrowave",
+      "task_id": 33,
+      "task_name": "KITCHEN_SCENE6_close_the_microwave"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE1_open_the_bottom_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:26453b960c3c071a731e13d1447c31dd4dc939a8852030edad5e90d0ee465e0e",
+      "candidate_position": null,
+      "canonical_family_id": "6\u001fopen\u001fcabinet[region=bottom]\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "wooden_cabinet_1_bottom_region"
+        ],
+        "predicate": "Open"
+      },
+      "instructed_object_identity": "cabinet",
+      "instructed_object_qualifiers": [
+        "region=bottom"
+      ],
+      "interleave_order": 28,
+      "language": "open the bottom drawer of the cabinet",
+      "normalized_destination": "",
+      "normalized_instructed_object": "cabinet[region=bottom]",
+      "normalized_task_verb": "open",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:cbbd0b9b8b75d3cd931226ba86f6e970661e259cbc3597350628bf9320850f5a",
+      "selected": false,
+      "stratum_digest": "sha256:fcaa44f935c558563319825a1fd52e1786a8d9901f4e6c5c3439cbc17439315e",
+      "stratum_id": "open\u001fcabinet",
+      "task_id": 6,
+      "task_name": "KITCHEN_SCENE1_open_the_bottom_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE2_pick_up_the_butter_and_put_it_in_the_basket.bddl",
+      "bddl_sha256": "sha256:8d580df5f2bf9796b22f0bfa1f06b1c9b63643cffcff67e534cca56c5dd330b5",
+      "candidate_position": null,
+      "canonical_family_id": "51\u001fplace_in\u001fbutter\u001fbasket[region=contain]",
+      "destination_identity": "basket",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "butter_1",
+          "basket_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "butter",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 29,
+      "language": "pick up the butter and put it in the basket",
+      "normalized_destination": "basket[region=contain]",
+      "normalized_instructed_object": "butter",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:d75b0bfa49aaf8b6e21b704e39464b25624a0795f8febeef466d741661813f1e",
+      "selected": false,
+      "stratum_digest": "sha256:1998cc0f99c784880e175cba25d32c8a246f79e71e6910fa075a98fc1c2bd937",
+      "stratum_id": "place_in\u001fbutter",
+      "task_id": 51,
+      "task_name": "LIVING_ROOM_SCENE2_pick_up_the_butter_and_put_it_in_the_basket"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE10_put_the_black_bowl_in_the_top_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:ffca5a60db6d6fe14aedb8ec9d4fe75363d49f28b686c9d55acda312450cb19a",
+      "candidate_position": null,
+      "canonical_family_id": "2\u001fplace_in\u001fblack_bowl\u001fcabinet[region=top]",
+      "destination_identity": "cabinet",
+      "destination_qualifiers": [
+        "region=top"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "wooden_cabinet_1_top_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 30,
+      "language": "put the black bowl in the top drawer of the cabinet",
+      "normalized_destination": "cabinet[region=top]",
+      "normalized_instructed_object": "black_bowl",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:2e7abf7d5f13397ac2384708b9a913d9a21f4587ebcbf29b31eac2642d449c6a",
+      "selected": false,
+      "stratum_digest": "sha256:21843ec0658e819513cbb0c9ee33087a914de503c47f064f9f5077091e36eb10",
+      "stratum_id": "place_in\u001fblack_bowl",
+      "task_id": 2,
+      "task_name": "KITCHEN_SCENE10_put_the_black_bowl_in_the_top_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE9_turn_on_the_stove.bddl",
+      "bddl_sha256": "sha256:e258902172935538f45757dfad6e5c25b2313138555cbf79e6119a4024948d13",
+      "candidate_position": null,
+      "canonical_family_id": "44\u001fturn_on\u001fstove\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "flat_stove_1"
+        ],
+        "predicate": "Turnon"
+      },
+      "instructed_object_identity": "stove",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 31,
+      "language": "turn on the stove",
+      "normalized_destination": "",
+      "normalized_instructed_object": "stove",
+      "normalized_task_verb": "turn_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:d46c312025fe0a25907441e09f6a1b018a57dc89ac4aa8a2482ad534c22a205b",
+      "selected": false,
+      "stratum_digest": "sha256:3554fc978601f2969717002784da06174ade6c31e9c77b7ed086fb947a429d08",
+      "stratum_id": "turn_on\u001fstove",
+      "task_id": 44,
+      "task_name": "KITCHEN_SCENE9_turn_on_the_stove"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE3_pick_up_the_cream_cheese_and_put_it_in_the_tray.bddl",
+      "bddl_sha256": "sha256:394de660979995c9dd1131bdbfa5fb25eb824828e60dee25a5b80c3cbfd5155a",
+      "candidate_position": null,
+      "canonical_family_id": "57\u001fplace_in\u001fcream_cheese\u001ftray[region=contain]",
+      "destination_identity": "tray",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "cream_cheese_1",
+          "wooden_tray_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "cream_cheese",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 32,
+      "language": "pick up the cream cheese and put it in the tray",
+      "normalized_destination": "tray[region=contain]",
+      "normalized_instructed_object": "cream_cheese",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:cf9378cc9f45c0bc26bdaed62191812776ec11a783ae88ea5f0ed6506e27fa2f",
+      "selected": false,
+      "stratum_digest": "sha256:3854debe909130b5de1c8052cc22a2006d5c05b6c393fced65f7e4b92f389868",
+      "stratum_id": "place_in\u001fcream_cheese",
+      "task_id": 57,
+      "task_name": "LIVING_ROOM_SCENE3_pick_up_the_cream_cheese_and_put_it_in_the_tray"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE1_pick_up_the_alphabet_soup_and_put_it_in_the_basket.bddl",
+      "bddl_sha256": "sha256:99ae5af0f77aca18d2eab39e4b302a9af59ae86766b8e7dc528c08a75fa12515",
+      "candidate_position": null,
+      "canonical_family_id": "46\u001fplace_in\u001falphabet_soup\u001fbasket[region=contain]",
+      "destination_identity": "basket",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "alphabet_soup_1",
+          "basket_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "alphabet_soup",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 33,
+      "language": "pick up the alphabet soup and put it in the basket",
+      "normalized_destination": "basket[region=contain]",
+      "normalized_instructed_object": "alphabet_soup",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:649b30a8f2f55a946d98a164661c4c7f44d3a753ee099f2ca113cb5258ee3be5",
+      "selected": false,
+      "stratum_digest": "sha256:4e668bd7cd18d7886743d1b37c3524a59429c9af749004ee5e18529172a98cc7",
+      "stratum_id": "place_in\u001falphabet_soup",
+      "task_id": 46,
+      "task_name": "LIVING_ROOM_SCENE1_pick_up_the_alphabet_soup_and_put_it_in_the_basket"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE9_put_the_white_bowl_on_top_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:a595358c840e6dca31d2d914726bb49d58944252ae868796bd603345a444b627",
+      "candidate_position": null,
+      "canonical_family_id": "43\u001fplace_on\u001fwhite_bowl\u001fshelf[region=top_side]",
+      "destination_identity": "shelf",
+      "destination_qualifiers": [
+        "region=top_side"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "white_bowl_1",
+          "wooden_two_layer_shelf_1_top_side"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "white_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 34,
+      "language": "put the white bowl on top of the cabinet",
+      "normalized_destination": "shelf[region=top_side]",
+      "normalized_instructed_object": "white_bowl",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:20fa2f9535cc118b5a1c3a2c48f2f7c71bf7edcd40f60ae18f53972c329b48f0",
+      "selected": false,
+      "stratum_digest": "sha256:55a3b7d8dcfa6bf88192773d821e8cb74a8d6c23fe604af6add270e5f63c8937",
+      "stratum_id": "place_on\u001fwhite_bowl",
+      "task_id": 43,
+      "task_name": "KITCHEN_SCENE9_put_the_white_bowl_on_top_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE2_pick_up_the_book_and_place_it_in_the_left_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:a09ebd472eab1cddf4050711d54789994ce0dbc58a11b03654b6699129093611",
+      "candidate_position": null,
+      "canonical_family_id": "79\u001fplace_in\u001fbook\u001fcaddy[region=left_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=left_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_left_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 35,
+      "language": "pick up the book and place it in the left compartment of the caddy",
+      "normalized_destination": "caddy[region=left_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:418a5012d3afd13eb9b718dfcc15dfebe3bbca56bb320f0d3983e1c495279672",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 79,
+      "task_name": "STUDY_SCENE2_pick_up_the_book_and_place_it_in_the_left_compartment_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE3_put_the_frying_pan_on_the_stove.bddl",
+      "bddl_sha256": "sha256:f54f8550e4058af1ed72aa0a0a41a4ae8d8d5cacbf453085130b0a279c7f8d55",
+      "candidate_position": null,
+      "canonical_family_id": "18\u001fplace_on\u001ffrying_pan\u001fstove[region=cook]",
+      "destination_identity": "stove",
+      "destination_qualifiers": [
+        "region=cook"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "chefmate_8_frypan_1",
+          "flat_stove_1_cook_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "frying_pan",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 36,
+      "language": "put the frying pan on the stove",
+      "normalized_destination": "stove[region=cook]",
+      "normalized_instructed_object": "frying_pan",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:8f1a460c4aedfbfef1d663e6c3442c2d2c31cfeaf4505e7e0d576f5a3d45e810",
+      "selected": false,
+      "stratum_digest": "sha256:6da24d5225d762df946ea25e843f49848450158d8172b4e5c7f53bfcc2a17f10",
+      "stratum_id": "place_on\u001ffrying_pan",
+      "task_id": 18,
+      "task_name": "KITCHEN_SCENE3_put_the_frying_pan_on_the_stove"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE6_put_the_chocolate_pudding_to_the_left_of_the_plate.bddl",
+      "bddl_sha256": "sha256:6dedd8a22eba99fc31669d830fb4251190976d9236030db2142e966ba42668fd",
+      "candidate_position": null,
+      "canonical_family_id": "69\u001fplace_on\u001fchocolate_pudding\u001fplate[region=left]",
+      "destination_identity": "plate",
+      "destination_qualifiers": [
+        "region=left"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "chocolate_pudding_1",
+          "living_room_table_plate_left_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "chocolate_pudding",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 37,
+      "language": "put the chocolate pudding to the left of the plate",
+      "normalized_destination": "plate[region=left]",
+      "normalized_instructed_object": "chocolate_pudding",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:c78b6fd3d992a6fa0657f35036d9fae5b3cf9009da9dc14ce26e01d985d5a447",
+      "selected": false,
+      "stratum_digest": "sha256:6e20f92527a1a876019bad81f4c446bb48b34a392095779a0f157346478b3e61",
+      "stratum_id": "place_on\u001fchocolate_pudding",
+      "task_id": 69,
+      "task_name": "LIVING_ROOM_SCENE6_put_the_chocolate_pudding_to_the_left_of_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE5_put_the_white_mug_on_the_left_plate.bddl",
+      "bddl_sha256": "sha256:4ea39c7b56d60c046e8034d209b8fbd2e734ec4f525a214c031e42ee3683a5a4",
+      "candidate_position": null,
+      "canonical_family_id": "67\u001fplace_on\u001fwhite_mug\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "porcelain_mug_1",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "white_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 38,
+      "language": "put the white mug on the left plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "white_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:517468ad3f9fb2e2ea227d09f1779927218bba36b8e2ec86504cd50fb6d15175",
+      "selected": false,
+      "stratum_digest": "sha256:7728326839fe31bcd08ea36e502a9d032ba83a1eda2cb4f799b46d9cc89ec722",
+      "stratum_id": "place_on\u001fwhite_mug",
+      "task_id": 67,
+      "task_name": "LIVING_ROOM_SCENE5_put_the_white_mug_on_the_left_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE5_put_the_ketchup_in_the_top_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:6ac925726b1963919995df27483c5e5ba72877b5de52f7e40c6c47ce382d0a1c",
+      "candidate_position": null,
+      "canonical_family_id": "32\u001fplace_in\u001fketchup\u001fcabinet[region=top]",
+      "destination_identity": "cabinet",
+      "destination_qualifiers": [
+        "region=top"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "ketchup_1",
+          "white_cabinet_1_top_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "ketchup",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 39,
+      "language": "put the ketchup in the top drawer of the cabinet",
+      "normalized_destination": "cabinet[region=top]",
+      "normalized_instructed_object": "ketchup",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:d51888c3a4c6bb26af4f501ba10e4be76a5b96bb1cf9d164716c14080778c9f1",
+      "selected": false,
+      "stratum_digest": "sha256:7c2a85ac0bc8804daae08f67a66e18476a74cc0aae55900a0589b86fe019cfaa",
+      "stratum_id": "place_in\u001fketchup",
+      "task_id": 32,
+      "task_name": "KITCHEN_SCENE5_put_the_ketchup_in_the_top_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE1_pick_up_the_yellow_and_white_mug_and_place_it_to_the_right_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:46fe1a53f826f4e7e67a02695578aee431e07847fe12b50ef78e300167551fe4",
+      "candidate_position": null,
+      "canonical_family_id": "76\u001fplace_on\u001fyellow_and_white_mug\u001fcaddy[region=right]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=right"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "white_yellow_mug_1",
+          "study_table_desk_caddy_right_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "yellow_and_white_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 40,
+      "language": "pick up the yellow and white mug and place it to the right of the caddy",
+      "normalized_destination": "caddy[region=right]",
+      "normalized_instructed_object": "yellow_and_white_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:7f543d053bf9d6143374597712a5094ba649c1cde57e8ff1ed014702240fe673",
+      "selected": false,
+      "stratum_digest": "sha256:9490efa966ce90dab6901185197f13e997787728a04c3a6c70d03bcdf5138940",
+      "stratum_id": "place_on\u001fyellow_and_white_mug",
+      "task_id": 76,
+      "task_name": "STUDY_SCENE1_pick_up_the_yellow_and_white_mug_and_place_it_to_the_right_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE5_put_the_red_mug_on_the_left_plate.bddl",
+      "bddl_sha256": "sha256:31b8c105f80a531465e4651d3d000fab366835d3634bfdf9cb4af0fe54e4e76c",
+      "candidate_position": null,
+      "canonical_family_id": "65\u001fplace_on\u001fred_mug\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "red_coffee_mug_1",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "red_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 41,
+      "language": "put the red mug on the left plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "red_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:a3c38bad9beb8314bde5cf8237b25f51464ca5717c56dfbb7a0c6fb0dad23a2f",
+      "selected": false,
+      "stratum_digest": "sha256:ba7e3732e81e6f59c10f0ffab7e2175f5f0ed795033c9d630c7f4fb27432854e",
+      "stratum_id": "place_on\u001fred_mug",
+      "task_id": 65,
+      "task_name": "LIVING_ROOM_SCENE5_put_the_red_mug_on_the_left_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE5_put_the_black_bowl_on_top_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:c43bc716d0015fd88243bd979290cf7509e1fa1ab9c5c4482329eb34b69220b0",
+      "candidate_position": null,
+      "canonical_family_id": "31\u001fplace_on\u001fblack_bowl\u001fcabinet[region=top_side]",
+      "destination_identity": "cabinet",
+      "destination_qualifiers": [
+        "region=top_side"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "white_cabinet_1_top_side"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 42,
+      "language": "put the black bowl on top of the cabinet",
+      "normalized_destination": "cabinet[region=top_side]",
+      "normalized_instructed_object": "black_bowl",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:3760a0776520ede31f184848b6f76d6ec0175ed03af40078f86622016bd4f090",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 31,
+      "task_name": "KITCHEN_SCENE5_put_the_black_bowl_on_top_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE3_pick_up_the_tomato_sauce_and_put_it_in_the_tray.bddl",
+      "bddl_sha256": "sha256:7580a3282b33142c441a3a4f906e7f88415a9a734b3ef14e59e22f3a8d7d3315",
+      "candidate_position": null,
+      "canonical_family_id": "59\u001fplace_in\u001ftomato_sauce\u001ftray[region=contain]",
+      "destination_identity": "tray",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "tomato_sauce_1",
+          "wooden_tray_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "tomato_sauce",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 43,
+      "language": "pick up the tomato sauce and put it in the tray",
+      "normalized_destination": "tray[region=contain]",
+      "normalized_instructed_object": "tomato_sauce",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:89cea3592980252c1f9a33cae45ee2511987810b78d47652724fa1d21f8c8635",
+      "selected": false,
+      "stratum_digest": "sha256:d2f1467afcc7ada8c605d6782ace71758aee855afcc15405feb98279a0c3412c",
+      "stratum_id": "place_in\u001ftomato_sauce",
+      "task_id": 59,
+      "task_name": "LIVING_ROOM_SCENE3_pick_up_the_tomato_sauce_and_put_it_in_the_tray"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE4_close_the_bottom_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:625d60f5028da5944f596df6a10b19d4cff3df2d5721650da671612e58f21527",
+      "candidate_position": null,
+      "canonical_family_id": "22\u001fclose\u001fcabinet[region=bottom]\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "white_cabinet_1_bottom_region"
+        ],
+        "predicate": "Close"
+      },
+      "instructed_object_identity": "cabinet",
+      "instructed_object_qualifiers": [
+        "region=bottom"
+      ],
+      "interleave_order": 44,
+      "language": "close the bottom drawer of the cabinet",
+      "normalized_destination": "",
+      "normalized_instructed_object": "cabinet[region=bottom]",
+      "normalized_task_verb": "close",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:50cb33ca6823f630d66c8124a8007cb21953e794df2735c2d987cdc7d5529986",
+      "selected": false,
+      "stratum_digest": "sha256:d37290357970772fca68288726ae5a2e59463550c58bc3bc609a9d0e2e5f7438",
+      "stratum_id": "close\u001fcabinet",
+      "task_id": 22,
+      "task_name": "KITCHEN_SCENE4_close_the_bottom_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE9_put_the_frying_pan_on_the_cabinet_shelf.bddl",
+      "bddl_sha256": "sha256:6c779772e772fae0f2a1e3b6fc48536ea165295021635c27962d2a8bba7becc2",
+      "candidate_position": null,
+      "canonical_family_id": "40\u001fplace_in\u001ffrying_pan\u001fshelf[region=top]",
+      "destination_identity": "shelf",
+      "destination_qualifiers": [
+        "region=top"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "chefmate_8_frypan_1",
+          "wooden_two_layer_shelf_1_top_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "frying_pan",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 45,
+      "language": "put the frying pan on the cabinet shelf",
+      "normalized_destination": "shelf[region=top]",
+      "normalized_instructed_object": "frying_pan",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:b3db79c2c0c508cf597c7e650c92c55085cc14cde2adbccfe68f122b5df4c7d4",
+      "selected": false,
+      "stratum_digest": "sha256:f5759b60345760de0517ce7719b30c0e595b994c010359ac042b151357b3a3a2",
+      "stratum_id": "place_in\u001ffrying_pan",
+      "task_id": 40,
+      "task_name": "KITCHEN_SCENE9_put_the_frying_pan_on_the_cabinet_shelf"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE2_open_the_top_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:f720fe5676043a9f543a02165f656e97ad2f4f82483a576a938d69b4ae404f26",
+      "candidate_position": null,
+      "canonical_family_id": "11\u001fopen\u001fcabinet[region=top]\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "wooden_cabinet_1_top_region"
+        ],
+        "predicate": "Open"
+      },
+      "instructed_object_identity": "cabinet",
+      "instructed_object_qualifiers": [
+        "region=top"
+      ],
+      "interleave_order": 46,
+      "language": "open the top drawer of the cabinet",
+      "normalized_destination": "",
+      "normalized_instructed_object": "cabinet[region=top]",
+      "normalized_task_verb": "open",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:d3571e4d06fab649893e33654e1cae0554256c6a387745e45f31e10c6e73c220",
+      "selected": false,
+      "stratum_digest": "sha256:fcaa44f935c558563319825a1fd52e1786a8d9901f4e6c5c3439cbc17439315e",
+      "stratum_id": "open\u001fcabinet",
+      "task_id": 11,
+      "task_name": "KITCHEN_SCENE2_open_the_top_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE5_put_the_black_bowl_in_the_top_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:df10ccf402c0fdb47f50cf77c295e3014d5283504048c9da5089dd5af08f13ee",
+      "candidate_position": null,
+      "canonical_family_id": "29\u001fplace_in\u001fblack_bowl\u001fcabinet[region=top]",
+      "destination_identity": "cabinet",
+      "destination_qualifiers": [
+        "region=top"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "white_cabinet_1_top_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 47,
+      "language": "put the black bowl in the top drawer of the cabinet",
+      "normalized_destination": "cabinet[region=top]",
+      "normalized_instructed_object": "black_bowl",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:8728485e5cd258bf10c6660812ac14fd89430ae20199b46dd62a0d4c7e614170",
+      "selected": false,
+      "stratum_digest": "sha256:21843ec0658e819513cbb0c9ee33087a914de503c47f064f9f5077091e36eb10",
+      "stratum_id": "place_in\u001fblack_bowl",
+      "task_id": 29,
+      "task_name": "KITCHEN_SCENE5_put_the_black_bowl_in_the_top_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE3_pick_up_the_alphabet_soup_and_put_it_in_the_tray.bddl",
+      "bddl_sha256": "sha256:3af51e28930dc08a6e728d1f68ce2583251bb326cf8dea2295127b2819a29891",
+      "candidate_position": null,
+      "canonical_family_id": "55\u001fplace_in\u001falphabet_soup\u001ftray[region=contain]",
+      "destination_identity": "tray",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "alphabet_soup_1",
+          "wooden_tray_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "alphabet_soup",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 48,
+      "language": "pick up the alphabet soup and put it in the tray",
+      "normalized_destination": "tray[region=contain]",
+      "normalized_instructed_object": "alphabet_soup",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:e44743cb373691b2ac5ae2b5f1567741ec323cae41c23934d78673e69d719992",
+      "selected": false,
+      "stratum_digest": "sha256:4e668bd7cd18d7886743d1b37c3524a59429c9af749004ee5e18529172a98cc7",
+      "stratum_id": "place_in\u001falphabet_soup",
+      "task_id": 55,
+      "task_name": "LIVING_ROOM_SCENE3_pick_up_the_alphabet_soup_and_put_it_in_the_tray"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE7_put_the_white_bowl_to_the_right_of_the_plate.bddl",
+      "bddl_sha256": "sha256:ab81d511d4ea256154fa759b9e09e10c5209642a1048c44996a09cb0daea6296",
+      "candidate_position": null,
+      "canonical_family_id": "37\u001fplace_on\u001fwhite_bowl\u001fplate[region=right]",
+      "destination_identity": "plate",
+      "destination_qualifiers": [
+        "region=right"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "white_bowl_1",
+          "kitchen_table_plate_right_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "white_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 49,
+      "language": "put the white bowl to the right of the plate",
+      "normalized_destination": "plate[region=right]",
+      "normalized_instructed_object": "white_bowl",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:ec1b6ebf0fc40de1139754467aca7f5cfa596dcc6730d0c68cdd7a0be939cc2d",
+      "selected": false,
+      "stratum_digest": "sha256:55a3b7d8dcfa6bf88192773d821e8cb74a8d6c23fe604af6add270e5f63c8937",
+      "stratum_id": "place_on\u001fwhite_bowl",
+      "task_id": 37,
+      "task_name": "KITCHEN_SCENE7_put_the_white_bowl_to_the_right_of_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE3_pick_up_the_book_and_place_it_in_the_front_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:61fca3149420ce78e29520e085aae8edead8f4b555c5424a7ae6a9b6cf9a4b9d",
+      "candidate_position": null,
+      "canonical_family_id": "81\u001fplace_in\u001fbook\u001fcaddy[region=front_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=front_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_front_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 50,
+      "language": "pick up the book and place it in the front compartment of the caddy",
+      "normalized_destination": "caddy[region=front_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:53bdd3a97e86e1937b042671e01612911b2903b0c2e3a5f5f35a0e399f2449fc",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 81,
+      "task_name": "STUDY_SCENE3_pick_up_the_book_and_place_it_in_the_front_compartment_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE3_pick_up_the_white_mug_and_place_it_to_the_right_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:7723f0144dc82eac22dd095eaeff9ca5e1ec701f5a629a7be4e5176cb5f7bf8d",
+      "candidate_position": null,
+      "canonical_family_id": "85\u001fplace_on\u001fwhite_mug\u001fcaddy[region=right]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=right"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "porcelain_mug_1",
+          "study_table_desk_caddy_right_region"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "white_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 51,
+      "language": "pick up the white mug and place it to the right compartment of the caddy",
+      "normalized_destination": "caddy[region=right]",
+      "normalized_instructed_object": "white_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:8fafed05b20a383e7941ce865b157d7bc50f6c102f5d864672460239d8dce3fa",
+      "selected": false,
+      "stratum_digest": "sha256:7728326839fe31bcd08ea36e502a9d032ba83a1eda2cb4f799b46d9cc89ec722",
+      "stratum_id": "place_on\u001fwhite_mug",
+      "task_id": 85,
+      "task_name": "STUDY_SCENE3_pick_up_the_white_mug_and_place_it_to_the_right_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE1_pick_up_the_ketchup_and_put_it_in_the_basket.bddl",
+      "bddl_sha256": "sha256:4dda6bfe902c85a12e8bf54295f212d857d30fbadd43e7579a14c4b31f078121",
+      "candidate_position": null,
+      "canonical_family_id": "48\u001fplace_in\u001fketchup\u001fbasket[region=contain]",
+      "destination_identity": "basket",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "ketchup_1",
+          "basket_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "ketchup",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 52,
+      "language": "pick up the ketchup and put it in the basket",
+      "normalized_destination": "basket[region=contain]",
+      "normalized_instructed_object": "ketchup",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:f6c7691719ef32cc516904d839f66b00d098fff4ec4721ec552f33665855fb78",
+      "selected": false,
+      "stratum_digest": "sha256:7c2a85ac0bc8804daae08f67a66e18476a74cc0aae55900a0589b86fe019cfaa",
+      "stratum_id": "place_in\u001fketchup",
+      "task_id": 48,
+      "task_name": "LIVING_ROOM_SCENE1_pick_up_the_ketchup_and_put_it_in_the_basket"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE5_put_the_yellow_and_white_mug_on_the_right_plate.bddl",
+      "bddl_sha256": "sha256:a24811b2fb2350bf02ad2105395a2f62d102949cab39edfe9e6183b06e4e6409",
+      "candidate_position": null,
+      "canonical_family_id": "68\u001fplace_on\u001fyellow_and_white_mug\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "white_yellow_mug_1",
+          "plate_2"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "yellow_and_white_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 53,
+      "language": "put the yellow and white mug on the right plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "yellow_and_white_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:ae90188f3c0208238e9d5bcf633c8048313bc94b310bcd0c0dce8a87888ba294",
+      "selected": false,
+      "stratum_digest": "sha256:9490efa966ce90dab6901185197f13e997787728a04c3a6c70d03bcdf5138940",
+      "stratum_id": "place_on\u001fyellow_and_white_mug",
+      "task_id": 68,
+      "task_name": "LIVING_ROOM_SCENE5_put_the_yellow_and_white_mug_on_the_right_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE6_put_the_red_mug_on_the_plate.bddl",
+      "bddl_sha256": "sha256:07c3ace6506306dbf58c8f5043c8a4fbe52cc99b3f010cc07c081026a040e658",
+      "candidate_position": null,
+      "canonical_family_id": "71\u001fplace_on\u001fred_mug\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "red_coffee_mug_1",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "red_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 54,
+      "language": "put the red mug on the plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "red_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:a72012fa9961f35cf500912e06255d22fc9556c33c0162c8adfd603ce2379042",
+      "selected": false,
+      "stratum_digest": "sha256:ba7e3732e81e6f59c10f0ffab7e2175f5f0ed795033c9d630c7f4fb27432854e",
+      "stratum_id": "place_on\u001fred_mug",
+      "task_id": 71,
+      "task_name": "LIVING_ROOM_SCENE6_put_the_red_mug_on_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE4_put_the_black_bowl_on_top_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:d03064c6e26a4ad51a1d3f53b1f068a1cfefc83440c0abbda0bda47b3b657edb",
+      "candidate_position": null,
+      "canonical_family_id": "25\u001fplace_on\u001fblack_bowl\u001fcabinet[region=top_side]",
+      "destination_identity": "cabinet",
+      "destination_qualifiers": [
+        "region=top_side"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "white_cabinet_1_top_side"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 55,
+      "language": "put the black bowl on top of the cabinet",
+      "normalized_destination": "cabinet[region=top_side]",
+      "normalized_instructed_object": "black_bowl",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:3880132f4d1b85984e847680951e547a6bec9f8f0491b44c7d3feb23c09688e1",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 25,
+      "task_name": "KITCHEN_SCENE4_put_the_black_bowl_on_top_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE2_pick_up_the_tomato_sauce_and_put_it_in_the_basket.bddl",
+      "bddl_sha256": "sha256:741bf27d071004a840596227ae19d030f5a8439c6262909957daa7a971ea49e2",
+      "candidate_position": null,
+      "canonical_family_id": "54\u001fplace_in\u001ftomato_sauce\u001fbasket[region=contain]",
+      "destination_identity": "basket",
+      "destination_qualifiers": [
+        "region=contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "tomato_sauce_1",
+          "basket_1_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "tomato_sauce",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 56,
+      "language": "pick up the tomato sauce and put it in the basket",
+      "normalized_destination": "basket[region=contain]",
+      "normalized_instructed_object": "tomato_sauce",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:aa3124e2e668e862d63881ce37060b1dc3709f1af3c9fcadd323d23a55c00547",
+      "selected": false,
+      "stratum_digest": "sha256:d2f1467afcc7ada8c605d6782ace71758aee855afcc15405feb98279a0c3412c",
+      "stratum_id": "place_in\u001ftomato_sauce",
+      "task_id": 54,
+      "task_name": "LIVING_ROOM_SCENE2_pick_up_the_tomato_sauce_and_put_it_in_the_basket"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE10_close_the_top_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:a0824cbe6b3146c00984f5a01307a3e39aac9ddc434ee4ff040b5536a0c48bbc",
+      "candidate_position": null,
+      "canonical_family_id": "0\u001fclose\u001fcabinet[region=top]\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "wooden_cabinet_1_top_region"
+        ],
+        "predicate": "Close"
+      },
+      "instructed_object_identity": "cabinet",
+      "instructed_object_qualifiers": [
+        "region=top"
+      ],
+      "interleave_order": 57,
+      "language": "close the top drawer of the cabinet",
+      "normalized_destination": "",
+      "normalized_instructed_object": "cabinet[region=top]",
+      "normalized_task_verb": "close",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:f4e2ac92e1781334bf692de25576fa81f97e29019e69eebccaea3b2b42908e22",
+      "selected": false,
+      "stratum_digest": "sha256:d37290357970772fca68288726ae5a2e59463550c58bc3bc609a9d0e2e5f7438",
+      "stratum_id": "close\u001fcabinet",
+      "task_id": 0,
+      "task_name": "KITCHEN_SCENE10_close_the_top_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE1_open_the_top_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:d4f8f86fec0d4fe418f8c063792d07d179a71f06fb799dc5132ca06896e16ac1",
+      "candidate_position": null,
+      "canonical_family_id": "7\u001fopen\u001fcabinet[region=top]\u001f",
+      "destination_identity": "",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "wooden_cabinet_1_top_region"
+        ],
+        "predicate": "Open"
+      },
+      "instructed_object_identity": "cabinet",
+      "instructed_object_qualifiers": [
+        "region=top"
+      ],
+      "interleave_order": 58,
+      "language": "open the top drawer of the cabinet",
+      "normalized_destination": "",
+      "normalized_instructed_object": "cabinet[region=top]",
+      "normalized_task_verb": "open",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:f3b46258f1c039fc2d2b31be603eff77259467780726ec660bbfa06f93bc89d7",
+      "selected": false,
+      "stratum_digest": "sha256:fcaa44f935c558563319825a1fd52e1786a8d9901f4e6c5c3439cbc17439315e",
+      "stratum_id": "open\u001fcabinet",
+      "task_id": 7,
+      "task_name": "KITCHEN_SCENE1_open_the_top_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE4_put_the_black_bowl_in_the_bottom_drawer_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:ef4d7e68ed3a7c84141fdc881233d1981b0ddfa0ec35e06ff762e4f161599dc0",
+      "candidate_position": null,
+      "canonical_family_id": "24\u001fplace_in\u001fblack_bowl\u001fcabinet[region=bottom]",
+      "destination_identity": "cabinet",
+      "destination_qualifiers": [
+        "region=bottom"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "white_cabinet_1_bottom_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 59,
+      "language": "put the black bowl in the bottom drawer of the cabinet",
+      "normalized_destination": "cabinet[region=bottom]",
+      "normalized_instructed_object": "black_bowl",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:d274de9571fe78fc810c9afb97997610664ec3fa7d9668dd4f928bfb71a6114c",
+      "selected": false,
+      "stratum_digest": "sha256:21843ec0658e819513cbb0c9ee33087a914de503c47f064f9f5077091e36eb10",
+      "stratum_id": "place_in\u001fblack_bowl",
+      "task_id": 24,
+      "task_name": "KITCHEN_SCENE4_put_the_black_bowl_in_the_bottom_drawer_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE2_pick_up_the_book_and_place_it_in_the_right_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:5d3f98f9daa18ea19d7d27372641882eedb7fb28287f25a8ae22d61333efb5b4",
+      "candidate_position": null,
+      "canonical_family_id": "80\u001fplace_in\u001fbook\u001fcaddy[region=right_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=right_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_right_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 60,
+      "language": "pick up the book and place it in the right compartment of the caddy",
+      "normalized_destination": "caddy[region=right_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:5fca9525a56633844031fffc04dabd916dbbd09a5621d5cae7b0a34e54d65a76",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 80,
+      "task_name": "STUDY_SCENE2_pick_up_the_book_and_place_it_in_the_right_compartment_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/LIVING_ROOM_SCENE5_put_the_red_mug_on_the_right_plate.bddl",
+      "bddl_sha256": "sha256:25041096f0d0ec68a44ddd0aab85bbe12ff8a67abd73249460acbb1f2c153329",
+      "candidate_position": null,
+      "canonical_family_id": "66\u001fplace_on\u001fred_mug\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "red_coffee_mug_1",
+          "plate_2"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "red_mug",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 61,
+      "language": "put the red mug on the right plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "red_mug",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:eae0f2cb48a6b04725d7d43bc22b69c9b3c97bb47705dca69f7c9534fa16b627",
+      "selected": false,
+      "stratum_digest": "sha256:ba7e3732e81e6f59c10f0ffab7e2175f5f0ed795033c9d630c7f4fb27432854e",
+      "stratum_id": "place_on\u001fred_mug",
+      "task_id": 66,
+      "task_name": "LIVING_ROOM_SCENE5_put_the_red_mug_on_the_right_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE2_stack_the_black_bowl_at_the_front_on_the_black_bowl_in_the_middle.bddl",
+      "bddl_sha256": "sha256:381cf12788739624b2037b3cabca34b8efdd7c6397bf38c1af7056caf49d38b7",
+      "candidate_position": null,
+      "canonical_family_id": "16\u001fplace_on\u001fblack_bowl[initial=front]\u001fblack_bowl[initial=middle]",
+      "destination_identity": "black_bowl",
+      "destination_qualifiers": [
+        "initial=middle"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "akita_black_bowl_2"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [
+        "initial=front"
+      ],
+      "interleave_order": 62,
+      "language": "stack the black bowl at the front on the black bowl in the middle",
+      "normalized_destination": "black_bowl[initial=middle]",
+      "normalized_instructed_object": "black_bowl[initial=front]",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:44ab626752ac4bfbb15fe8acc78f77222c32f5d824b6b9f02321c65f6b869942",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 16,
+      "task_name": "KITCHEN_SCENE2_stack_the_black_bowl_at_the_front_on_the_black_bowl_in_the_middle"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE4_pick_up_the_book_on_the_right_and_place_it_under_the_cabinet_shelf.bddl",
+      "bddl_sha256": "sha256:bd51b8a8e9f681d834c9e879de4fbe408ba20d265ff7d1b95968e574d357a59c",
+      "candidate_position": null,
+      "canonical_family_id": "89\u001fplace_in\u001fbook[initial=right]\u001fshelf[region=bottom]",
+      "destination_identity": "shelf",
+      "destination_qualifiers": [
+        "region=bottom"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "yellow_book_1",
+          "wooden_two_layer_shelf_1_bottom_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [
+        "initial=right"
+      ],
+      "interleave_order": 63,
+      "language": "pick up the book on the right and place it under the cabinet shelf",
+      "normalized_destination": "shelf[region=bottom]",
+      "normalized_instructed_object": "book[initial=right]",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:8606db49515aab9aab63f3b947307fa22f6451225593e747376553bb10e7bf67",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 89,
+      "task_name": "STUDY_SCENE4_pick_up_the_book_on_the_right_and_place_it_under_the_cabinet_shelf"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE2_put_the_black_bowl_at_the_back_on_the_plate.bddl",
+      "bddl_sha256": "sha256:2737aa69961170f8da85c221b5cb4a5d07c83df2c9fa6a96abddf04d4897680b",
+      "candidate_position": null,
+      "canonical_family_id": "12\u001fplace_on\u001fblack_bowl[initial=back]\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_3",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [
+        "initial=back"
+      ],
+      "interleave_order": 64,
+      "language": "put the black bowl at the back on the plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "black_bowl[initial=back]",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:569f74ba49d128016f9f113bea7933364f4b6591d413f86a61b518ae00d570f9",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 12,
+      "task_name": "KITCHEN_SCENE2_put_the_black_bowl_at_the_back_on_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE4_pick_up_the_book_in_the_middle_and_place_it_on_the_cabinet_shelf.bddl",
+      "bddl_sha256": "sha256:b17612a9a5fb0314c5aadb297cf8936d8e36ae6d97840e2d7fd8622399321323",
+      "candidate_position": null,
+      "canonical_family_id": "86\u001fplace_in\u001fbook\u001fshelf[region=top]",
+      "destination_identity": "shelf",
+      "destination_qualifiers": [
+        "region=top"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "wooden_two_layer_shelf_1_top_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 65,
+      "language": "pick up the book in the middle and place it on the cabinet shelf",
+      "normalized_destination": "shelf[region=top]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:9c46d6f654ee06f09d178233592429690ffc6a2dc0946c07146981c28576895b",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 86,
+      "task_name": "STUDY_SCENE4_pick_up_the_book_in_the_middle_and_place_it_on_the_cabinet_shelf"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE2_stack_the_middle_black_bowl_on_the_back_black_bowl.bddl",
+      "bddl_sha256": "sha256:5ec3417a41a4a98764a111ac11e10bb1bf36d108d04c16bc2c173ad6e9e8dc6d",
+      "candidate_position": null,
+      "canonical_family_id": "17\u001fplace_on\u001fblack_bowl[initial=middle]\u001fblack_bowl[initial=back]",
+      "destination_identity": "black_bowl",
+      "destination_qualifiers": [
+        "initial=back"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_2",
+          "akita_black_bowl_3"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [
+        "initial=middle"
+      ],
+      "interleave_order": 66,
+      "language": "stack the black bowl in the middle on the black bowl at the front",
+      "normalized_destination": "black_bowl[initial=back]",
+      "normalized_instructed_object": "black_bowl[initial=middle]",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:5df9eca6b8cddd7f8854490c0dd8b66074f3b14907351009f2976a9d4b0fbcce",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 17,
+      "task_name": "KITCHEN_SCENE2_stack_the_middle_black_bowl_on_the_back_black_bowl"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE4_pick_up_the_book_on_the_right_and_place_it_on_the_cabinet_shelf.bddl",
+      "bddl_sha256": "sha256:bae10bd25c00e92750c7bbc68470ba506a94c31cc2d25785262402793875ab04",
+      "candidate_position": null,
+      "canonical_family_id": "88\u001fplace_in\u001fbook[initial=right]\u001fshelf[region=top]",
+      "destination_identity": "shelf",
+      "destination_qualifiers": [
+        "region=top"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "yellow_book_1",
+          "wooden_two_layer_shelf_1_top_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [
+        "initial=right"
+      ],
+      "interleave_order": 67,
+      "language": "pick up the book on the right and place it on the cabinet shelf",
+      "normalized_destination": "shelf[region=top]",
+      "normalized_instructed_object": "book[initial=right]",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:a320fdf152973620fba589592973b0da4e9f9ff027a3c88a05c277ba13ab11af",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 88,
+      "task_name": "STUDY_SCENE4_pick_up_the_book_on_the_right_and_place_it_on_the_cabinet_shelf"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE2_put_the_middle_black_bowl_on_top_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:7d42a8806524b08fa90f67e31e3c80a339f0ecba7a7d6cb378612a6b4648705e",
+      "candidate_position": null,
+      "canonical_family_id": "15\u001fplace_on\u001fblack_bowl[initial=middle]\u001fcabinet[region=top_side]",
+      "destination_identity": "cabinet",
+      "destination_qualifiers": [
+        "region=top_side"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_2",
+          "wooden_cabinet_1_top_side"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [
+        "initial=middle"
+      ],
+      "interleave_order": 68,
+      "language": "put the middle black bowl on top of the cabinet",
+      "normalized_destination": "cabinet[region=top_side]",
+      "normalized_instructed_object": "black_bowl[initial=middle]",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:7ab56c47834f1afb9aaa4e1d07b8dce028da2e1fe4ce5a4487dee0e75058b91b",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 15,
+      "task_name": "KITCHEN_SCENE2_put_the_middle_black_bowl_on_top_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE1_pick_up_the_book_and_place_it_in_the_right_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:4a4ce354be7b6123b80a2d28a21d055cfd775c2841b94e205c32ae83a2902e67",
+      "candidate_position": null,
+      "canonical_family_id": "75\u001fplace_in\u001fbook\u001fcaddy[region=right_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=right_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_right_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 69,
+      "language": "pick up the book and place it in the right compartment of the caddy",
+      "normalized_destination": "caddy[region=right_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:a768ecfda6ce65bfb8383328f76d2666b0d100eae94b5fc8c5c83af5fa4e9d37",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 75,
+      "task_name": "STUDY_SCENE1_pick_up_the_book_and_place_it_in_the_right_compartment_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE1_put_the_black_bowl_on_the_plate.bddl",
+      "bddl_sha256": "sha256:9875b091f27560f75e556353e204e8fb27526e3ee9449c02ef1b127115055450",
+      "candidate_position": null,
+      "canonical_family_id": "9\u001fplace_on\u001fblack_bowl\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 70,
+      "language": "put the black bowl on the plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "black_bowl",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:7e27aa7e6d3e13fe84586717f55df9b6403ed284905a0a60493eadfe2b8ec493",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 9,
+      "task_name": "KITCHEN_SCENE1_put_the_black_bowl_on_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE1_pick_up_the_book_and_place_it_in_the_front_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:9fd25c1eb92bd285325d639bdc5920e4ca38b2e39b346e46202dbe6eca7dd37b",
+      "candidate_position": null,
+      "canonical_family_id": "73\u001fplace_in\u001fbook\u001fcaddy[region=front_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=front_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_front_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 71,
+      "language": "pick up the book and place it in the front compartment of the caddy",
+      "normalized_destination": "caddy[region=front_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:bc13b4759a31a61304f8743e2eeabcee87a34d66257945fec66181326f1e2c74",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 73,
+      "task_name": "STUDY_SCENE1_pick_up_the_book_and_place_it_in_the_front_compartment_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE2_put_the_middle_black_bowl_on_the_plate.bddl",
+      "bddl_sha256": "sha256:a8e33d394ddf23f9707937db18d1a42a43e882989ce36e7cbf95d63dc2bc5645",
+      "candidate_position": null,
+      "canonical_family_id": "14\u001fplace_on\u001fblack_bowl[initial=middle]\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_2",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [
+        "initial=middle"
+      ],
+      "interleave_order": 72,
+      "language": "put the black bowl in the middle on the plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "black_bowl[initial=middle]",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:9053052b6851b1a4cd13ac5b8363cfe8ffc216b963045a2e84eb1f4ab03391e6",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 14,
+      "task_name": "KITCHEN_SCENE2_put_the_middle_black_bowl_on_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE3_pick_up_the_book_and_place_it_in_the_left_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:6634a1c13651a4958442c58879c25e1ece3ffdb9cfba2d7fe233d7d95f9c35ed",
+      "candidate_position": null,
+      "canonical_family_id": "82\u001fplace_in\u001fbook\u001fcaddy[region=left_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=left_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_left_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 73,
+      "language": "pick up the book and place it in the left compartment of the caddy",
+      "normalized_destination": "caddy[region=left_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:caa76d4db85fa304a7dca8f943d516b8a5fff49040bba94815008d98d1723656",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 82,
+      "task_name": "STUDY_SCENE3_pick_up_the_book_and_place_it_in_the_left_compartment_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE5_put_the_black_bowl_on_the_plate.bddl",
+      "bddl_sha256": "sha256:858a18579b18d23aca74f0c1042841c0ae9117f4952eb42be6260b4e46052b50",
+      "candidate_position": null,
+      "canonical_family_id": "30\u001fplace_on\u001fblack_bowl\u001fplate",
+      "destination_identity": "plate",
+      "destination_qualifiers": [],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "plate_1"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 74,
+      "language": "put the black bowl on the plate",
+      "normalized_destination": "plate",
+      "normalized_instructed_object": "black_bowl",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:bb875ef1e21a5ab86b7ed787f1509b80f4046500b89ef4d7a318bf4e631eca63",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 30,
+      "task_name": "KITCHEN_SCENE5_put_the_black_bowl_on_the_plate"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE3_pick_up_the_book_and_place_it_in_the_right_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:63d362bdf1fbca21132b30fccc7a29846aa81f3811c6b6b258818501595f89ec",
+      "candidate_position": null,
+      "canonical_family_id": "83\u001fplace_in\u001fbook\u001fcaddy[region=right_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=right_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_right_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 75,
+      "language": "pick up the book and place it in the right compartment of the caddy",
+      "normalized_destination": "caddy[region=right_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:da4ce8f8a7a019cb3366880aa73c534a61cb1830c3ab107d3530bdeba943b7b2",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 83,
+      "task_name": "STUDY_SCENE3_pick_up_the_book_and_place_it_in_the_right_compartment_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/KITCHEN_SCENE1_put_the_black_bowl_on_top_of_the_cabinet.bddl",
+      "bddl_sha256": "sha256:ccfdf462b617303e43c1d194f03cc667be03dd705a92bfc689938c5952f538fa",
+      "candidate_position": null,
+      "canonical_family_id": "10\u001fplace_on\u001fblack_bowl\u001fcabinet[region=top_side]",
+      "destination_identity": "cabinet",
+      "destination_qualifiers": [
+        "region=top_side"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "akita_black_bowl_1",
+          "wooden_cabinet_1_top_side"
+        ],
+        "predicate": "On"
+      },
+      "instructed_object_identity": "black_bowl",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 76,
+      "language": "put the black bowl on top of the cabinet",
+      "normalized_destination": "cabinet[region=top_side]",
+      "normalized_instructed_object": "black_bowl",
+      "normalized_task_verb": "place_on",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:cd7f6fcb396df9a5b12a68996cf93515cc0633bd8286e888502ebd87c40e78a6",
+      "selected": false,
+      "stratum_digest": "sha256:c12671ee14e4303a12568567e9048dad625ca12673785830cc9ca83eb2d32218",
+      "stratum_id": "place_on\u001fblack_bowl",
+      "task_id": 10,
+      "task_name": "KITCHEN_SCENE1_put_the_black_bowl_on_top_of_the_cabinet"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE2_pick_up_the_book_and_place_it_in_the_back_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:128e625a43bc1b9e2c611befc99c9dbfec29cf06c310609550c88c52b2509a1e",
+      "candidate_position": null,
+      "canonical_family_id": "77\u001fplace_in\u001fbook\u001fcaddy[region=back_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=back_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_back_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 77,
+      "language": "pick up the book and place it in the back compartment of the caddy",
+      "normalized_destination": "caddy[region=back_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:dce74ec5baeadc37492c74f6c773eb79744c9fd8fb97ac5afc21bb35fb1587d0",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 77,
+      "task_name": "STUDY_SCENE2_pick_up_the_book_and_place_it_in_the_back_compartment_of_the_caddy"
+    },
+    {
+      "acceptance_reason": "single_supported_bddl_goal",
+      "bddl_file": "libero/libero/bddl_files/libero_90/STUDY_SCENE2_pick_up_the_book_and_place_it_in_the_front_compartment_of_the_caddy.bddl",
+      "bddl_sha256": "sha256:36918ffce6dc6365de0e9b1c889f7d62f18709c2b3ab1c15cd83e518291d894f",
+      "candidate_position": null,
+      "canonical_family_id": "78\u001fplace_in\u001fbook\u001fcaddy[region=front_contain]",
+      "destination_identity": "caddy",
+      "destination_qualifiers": [
+        "region=front_contain"
+      ],
+      "goal_atom": {
+        "arguments": [
+          "black_book_1",
+          "desk_caddy_1_front_contain_region"
+        ],
+        "predicate": "In"
+      },
+      "instructed_object_identity": "book",
+      "instructed_object_qualifiers": [],
+      "interleave_order": 78,
+      "language": "pick up the book and place it in the front compartment of the caddy",
+      "normalized_destination": "caddy[region=front_contain]",
+      "normalized_instructed_object": "book",
+      "normalized_task_verb": "place_in",
+      "parser_version": "rq024-libero90-family-v1",
+      "pool": null,
+      "pool_position": null,
+      "rank_digest": "sha256:df408f24e20d721b43c426d123c3d2e68f460e7fb151ee62dfa6cf0bd2a02084",
+      "selected": false,
+      "stratum_digest": "sha256:56fc70623bf921e8e9df0d95bf7b601e8db54b8097e9301000db103f3a0ea8fd",
+      "stratum_id": "place_in\u001fbook",
+      "task_id": 78,
+      "task_name": "STUDY_SCENE2_pick_up_the_book_and_place_it_in_the_front_compartment_of_the_caddy"
+    }
+  ],
+  "kind": "rq024.foundation_candidates",
+  "parser_version": "rq024-libero90-family-v1",
+  "program_id": "rq024-controlled-scene-to-behavior",
+  "schema_version": 1,
+  "selected_family_count": 24
+}

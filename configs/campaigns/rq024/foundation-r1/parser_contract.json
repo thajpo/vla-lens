@@ -1,0 +1,102 @@
+{
+  "acceptance": "exactly one supported atom under an And goal",
+  "aliases": {
+    "akita_black_bowl": "black_bowl",
+    "black_book": "book",
+    "chefmate_8_frypan": "frying_pan",
+    "desk_caddy": "caddy",
+    "flat_stove": "stove",
+    "new_salad_dressing": "salad_dressing",
+    "porcelain_mug": "white_mug",
+    "red_coffee_mug": "red_mug",
+    "white_cabinet": "cabinet",
+    "white_yellow_mug": "yellow_and_white_mug",
+    "wooden_cabinet": "cabinet",
+    "wooden_tray": "tray",
+    "wooden_two_layer_shelf": "shelf",
+    "yellow_book": "book"
+  },
+  "authority": "BDDL :goal expression; task language is retained but does not override it",
+  "canonical_family_id": {
+    "encoding": "UTF-8 fields joined by one ASCII unit separator byte 0x1f",
+    "fields": [
+      "base-10 unpadded LIBERO-90 task_id",
+      "normalized_task_verb",
+      "normalized_instructed_object",
+      "normalized_destination_or_empty_string"
+    ]
+  },
+  "family_rank_digest": {
+    "algorithm": "sha256",
+    "encoding": "UTF-8 rq024-family-rank-v1, 0x00, program_id UTF-8, 0x00, canonical_family_id UTF-8"
+  },
+  "interleave": "Sort strata by (stratum_digest, stratum_id), sort each stratum by (rank_digest, canonical_family_id), then take one row from each nonempty stratum per round.",
+  "kind": "rq024.family_parser_contract",
+  "parser_version": "rq024-libero90-family-v1",
+  "qualifiers": {
+    "format": "identity[key=value,key=value] with keys and values ASCII-sorted",
+    "initial_position": [
+      "back",
+      "front",
+      "left",
+      "middle",
+      "right"
+    ],
+    "region": "Every non-init BDDL region suffix is retained as region=<suffix>."
+  },
+  "schema_version": 1,
+  "seed": {
+    "domains": [
+      "layout",
+      "reset",
+      "environment",
+      "policy",
+      "flow_noise"
+    ],
+    "encoding": "Each field is UTF-8, prefixed by its byte length as unsigned 32-bit big-endian; framed fields are concatenated in listed order.",
+    "fields": [
+      "program_id",
+      "child_plan_id",
+      "canonical_family_id",
+      "cell_id",
+      "base-10 replicate_id",
+      "seed_domain"
+    ],
+    "identity": "sha256:<64 lowercase hexadecimal digits> of the encoded bytes",
+    "integer": "unsigned big-endian integer represented by the first four digest bytes (range 0..2^32-1)"
+  },
+  "stratum": {
+    "digest_encoding": "UTF-8 bytes of literal rq024-stratum-v1 immediately followed by stratum_id UTF-8 bytes",
+    "fields": [
+      "normalized_task_verb",
+      "instructed_object_identity_without_qualifiers"
+    ],
+    "id_encoding": "UTF-8 fields joined by one ASCII unit separator byte 0x1f"
+  },
+  "supported_goal_predicates": {
+    "Close": [
+      "close",
+      1
+    ],
+    "In": [
+      "place_in",
+      2
+    ],
+    "On": [
+      "place_on",
+      2
+    ],
+    "Open": [
+      "open",
+      1
+    ],
+    "Turnoff": [
+      "turn_off",
+      1
+    ],
+    "Turnon": [
+      "turn_on",
+      1
+    ]
+  }
+}

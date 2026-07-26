@@ -1,0 +1,201 @@
+{
+  "assignment_rule": "even zero-based positions discovery; odd positions confirmation",
+  "confirmation_count": 12,
+  "discovery_count": 12,
+  "families": [
+    {
+      "candidate_position": 0,
+      "canonical_family_id": "52\u001fplace_in\u001fmilk\u001fbasket[region=contain]",
+      "pool": "discovery",
+      "pool_position": 0,
+      "task_id": 52,
+      "task_name": "LIVING_ROOM_SCENE2_pick_up_the_milk_and_put_it_in_the_basket"
+    },
+    {
+      "candidate_position": 1,
+      "canonical_family_id": "39\u001fturn_off\u001fstove\u001f",
+      "pool": "confirmation",
+      "pool_position": 0,
+      "task_id": 39,
+      "task_name": "KITCHEN_SCENE8_turn_off_the_stove"
+    },
+    {
+      "candidate_position": 2,
+      "canonical_family_id": "56\u001fplace_in\u001fbutter\u001ftray[region=contain]",
+      "pool": "discovery",
+      "pool_position": 1,
+      "task_id": 56,
+      "task_name": "LIVING_ROOM_SCENE3_pick_up_the_butter_and_put_it_in_the_tray"
+    },
+    {
+      "candidate_position": 3,
+      "canonical_family_id": "60\u001fplace_in\u001fblack_bowl[initial=left]\u001ftray[region=contain]",
+      "pool": "confirmation",
+      "pool_position": 1,
+      "task_id": 60,
+      "task_name": "LIVING_ROOM_SCENE4_pick_up_the_black_bowl_on_the_left_and_put_it_in_the_tray"
+    },
+    {
+      "candidate_position": 4,
+      "canonical_family_id": "20\u001fturn_on\u001fstove\u001f",
+      "pool": "discovery",
+      "pool_position": 2,
+      "task_id": 20,
+      "task_name": "KITCHEN_SCENE3_turn_on_the_stove"
+    },
+    {
+      "candidate_position": 5,
+      "canonical_family_id": "47\u001fplace_in\u001fcream_cheese\u001fbasket[region=contain]",
+      "pool": "confirmation",
+      "pool_position": 2,
+      "task_id": 47,
+      "task_name": "LIVING_ROOM_SCENE1_pick_up_the_cream_cheese_box_and_put_it_in_the_basket"
+    },
+    {
+      "candidate_position": 6,
+      "canonical_family_id": "50\u001fplace_in\u001falphabet_soup\u001fbasket[region=contain]",
+      "pool": "discovery",
+      "pool_position": 3,
+      "task_id": 50,
+      "task_name": "LIVING_ROOM_SCENE2_pick_up_the_alphabet_soup_and_put_it_in_the_basket"
+    },
+    {
+      "candidate_position": 7,
+      "canonical_family_id": "87\u001fplace_on\u001fbook[initial=left]\u001fshelf[region=top_side]",
+      "pool": "confirmation",
+      "pool_position": 3,
+      "task_id": 87,
+      "task_name": "STUDY_SCENE4_pick_up_the_book_on_the_left_and_place_it_on_top_of_the_shelf"
+    },
+    {
+      "candidate_position": 8,
+      "canonical_family_id": "36\u001fplace_on\u001fwhite_bowl\u001fplate",
+      "pool": "discovery",
+      "pool_position": 4,
+      "task_id": 36,
+      "task_name": "KITCHEN_SCENE7_put_the_white_bowl_on_the_plate"
+    },
+    {
+      "candidate_position": 9,
+      "canonical_family_id": "74\u001fplace_in\u001fbook\u001fcaddy[region=left_contain]",
+      "pool": "confirmation",
+      "pool_position": 4,
+      "task_id": 74,
+      "task_name": "STUDY_SCENE1_pick_up_the_book_and_place_it_in_the_left_compartment_of_the_caddy"
+    },
+    {
+      "candidate_position": 10,
+      "canonical_family_id": "35\u001fopen\u001fmicrowave\u001f",
+      "pool": "discovery",
+      "pool_position": 5,
+      "task_id": 35,
+      "task_name": "KITCHEN_SCENE7_open_the_microwave"
+    },
+    {
+      "candidate_position": 11,
+      "canonical_family_id": "41\u001fplace_on\u001ffrying_pan\u001fshelf[region=top_side]",
+      "pool": "confirmation",
+      "pool_position": 5,
+      "task_id": 41,
+      "task_name": "KITCHEN_SCENE9_put_the_frying_pan_on_top_of_the_cabinet"
+    },
+    {
+      "candidate_position": 12,
+      "canonical_family_id": "70\u001fplace_on\u001fchocolate_pudding\u001fplate[region=right]",
+      "pool": "discovery",
+      "pool_position": 6,
+      "task_id": 70,
+      "task_name": "LIVING_ROOM_SCENE6_put_the_chocolate_pudding_to_the_right_of_the_plate"
+    },
+    {
+      "candidate_position": 13,
+      "canonical_family_id": "72\u001fplace_on\u001fwhite_mug\u001fplate",
+      "pool": "confirmation",
+      "pool_position": 6,
+      "task_id": 72,
+      "task_name": "LIVING_ROOM_SCENE6_put_the_white_mug_on_the_plate"
+    },
+    {
+      "candidate_position": 14,
+      "canonical_family_id": "58\u001fplace_in\u001fketchup\u001ftray[region=contain]",
+      "pool": "discovery",
+      "pool_position": 7,
+      "task_id": 58,
+      "task_name": "LIVING_ROOM_SCENE3_pick_up_the_ketchup_and_put_it_in_the_tray"
+    },
+    {
+      "candidate_position": 15,
+      "canonical_family_id": "19\u001fplace_on\u001fmoka_pot\u001fstove[region=cook]",
+      "pool": "confirmation",
+      "pool_position": 7,
+      "task_id": 19,
+      "task_name": "KITCHEN_SCENE3_put_the_moka_pot_on_the_stove"
+    },
+    {
+      "candidate_position": 16,
+      "canonical_family_id": "34\u001fplace_on\u001fyellow_and_white_mug\u001fwhite_mug[region=front]",
+      "pool": "discovery",
+      "pool_position": 8,
+      "task_id": 34,
+      "task_name": "KITCHEN_SCENE6_put_the_yellow_and_white_mug_to_the_front_of_the_white_mug"
+    },
+    {
+      "candidate_position": 17,
+      "canonical_family_id": "62\u001fplace_in\u001fsalad_dressing\u001ftray[region=contain]",
+      "pool": "confirmation",
+      "pool_position": 8,
+      "task_id": 62,
+      "task_name": "LIVING_ROOM_SCENE4_pick_up_the_salad_dressing_and_put_it_in_the_tray"
+    },
+    {
+      "candidate_position": 18,
+      "canonical_family_id": "27\u001fplace_on\u001fwine_bottle\u001fwine_rack[region=top]",
+      "pool": "discovery",
+      "pool_position": 9,
+      "task_id": 27,
+      "task_name": "KITCHEN_SCENE4_put_the_wine_bottle_on_the_wine_rack"
+    },
+    {
+      "candidate_position": 19,
+      "canonical_family_id": "53\u001fplace_in\u001forange_juice\u001fbasket[region=contain]",
+      "pool": "confirmation",
+      "pool_position": 9,
+      "task_id": 53,
+      "task_name": "LIVING_ROOM_SCENE2_pick_up_the_orange_juice_and_put_it_in_the_basket"
+    },
+    {
+      "candidate_position": 20,
+      "canonical_family_id": "84\u001fplace_on\u001fred_mug\u001fcaddy[region=right]",
+      "pool": "discovery",
+      "pool_position": 10,
+      "task_id": 84,
+      "task_name": "STUDY_SCENE3_pick_up_the_red_mug_and_place_it_to_the_right_of_the_caddy"
+    },
+    {
+      "candidate_position": 21,
+      "canonical_family_id": "13\u001fplace_on\u001fblack_bowl[initial=front]\u001fplate",
+      "pool": "confirmation",
+      "pool_position": 10,
+      "task_id": 13,
+      "task_name": "KITCHEN_SCENE2_put_the_black_bowl_at_the_front_on_the_plate"
+    },
+    {
+      "candidate_position": 22,
+      "canonical_family_id": "49\u001fplace_in\u001ftomato_sauce\u001fbasket[region=contain]",
+      "pool": "discovery",
+      "pool_position": 11,
+      "task_id": 49,
+      "task_name": "LIVING_ROOM_SCENE1_pick_up_the_tomato_sauce_and_put_it_in_the_basket"
+    },
+    {
+      "candidate_position": 23,
+      "canonical_family_id": "61\u001fplace_in\u001fchocolate_pudding\u001ftray[region=contain]",
+      "pool": "confirmation",
+      "pool_position": 11,
+      "task_id": 61,
+      "task_name": "LIVING_ROOM_SCENE4_pick_up_the_chocolate_pudding_and_put_it_in_the_tray"
+    }
+  ],
+  "kind": "rq024.foundation_pool_assignment",
+  "schema_version": 1
+}
