@@ -1,0 +1,14 @@
+program_ref:
+  id: rq024-controlled-scene-to-behavior-r1
+  type: autonomous_research_program
+  root_id: repo
+  path: configs/campaigns/rq024_controlled_scene_to_behavior.yaml
+  sha256: sha256:80abd12531f73401d4b9fe2a59d9206cdac0c3133c73f2737005d4d10d32a379
+  content_fingerprint: sha256:95fe070240e15e2da44486e3c635ca4dc92f50b4a0d240242c7568976b7123b3
+schema_check_ref:
+  id: rq024-program-check-r1
+  type: research_program_schema_check
+  root_id: repo
+  path: research/rq024/locks/program-check.json
+  sha256: sha256:562ff6339614fa5d9588ed1b0b171bc7a6427e91d980fdb04252ef7348cfa78b
+manifest_commit: 574f162eb819ae3d38310898183090decfb43400
