@@ -7,6 +7,7 @@ from collections import Counter
 from pathlib import Path
 
 import pytest
+import yaml
 
 from vla_lens.rq024_foundation import (
     PARSER_VERSION,
@@ -126,6 +127,16 @@ def test_checked_in_bundle_is_byte_reproducible_and_valid(source_catalog):
     assert result["valid"], result
     assert result["source_tasks"] == 90
     assert result["trial_rows"] == 72
+
+
+def test_foundation_child_template_binds_all_five_seed_domains():
+    template = yaml.safe_load(
+        (REPO_ROOT / "configs/campaigns/rq024_foundation.child.template.yaml").read_text(
+            encoding="utf-8"
+        )
+    )
+
+    assert template["trials"]["seed_domains"] == list(SEED_DOMAINS)
 
 
 def test_csv_is_lf_terminated_and_normal_module_has_no_capture_imports(source_catalog):

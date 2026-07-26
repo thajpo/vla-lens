@@ -56,7 +56,9 @@ trials:
     - pool
     - replicate_id
   seed_domains:
-    - environment_reset
+    - layout
+    - reset
+    - environment
     - policy
     - flow_noise
   expected_independent_units:
@@ -137,7 +139,7 @@ decision:
   invalid_conditions:
     - candidate ordering or pool assignment occurred after outcomes were visible
     - simulator success or task-object-family parsing cannot be reproduced
-    - a policy or flow-noise seed was silently substituted for another seed domain
+    - a layout, reset, environment, policy, or flow-noise seed was silently substituted for another seed domain
 
 runtime:
   model:
