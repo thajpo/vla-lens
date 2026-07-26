@@ -164,6 +164,10 @@ class ExactTraceOutput:
     files: tuple[Mapping[str, Any], ...]
 
 
+class ExactTrialOutputError(ValueError):
+    """Raised when one selected trial lacks an exact, identity-bound output."""
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
@@ -540,6 +544,21 @@ def _capture_commands(
     return commands
 
 
+def build_exact_trial_command(
+    config: Mapping[str, Any],
+    output_root: Path,
+    row: EpisodePlanRow,
+) -> CaptureCommand:
+    """Build exactly one capture command for one fully identified trial row."""
+
+    _validate_batch_config(config, exact=True, has_episode_plan=True)
+    _validate_episode_rows([row], exact=True)
+    commands = _capture_commands(config, output_root, [row], exact=True)
+    if len(commands) != 1 or commands[0].expected_trace_ids != (row.expected_trace_id,):
+        raise ValueError("exact trial must resolve to one command and one expected trace")
+    return commands[0]
+
+
 def _capture_command_group_key(row: EpisodePlanRow) -> tuple[Any, ...]:
     return (
         row.dataset_id,
@@ -811,9 +830,11 @@ def validate_exact_trace_output(
     """Validate one exact trial and return its measured resource use."""
 
     if command.expected_trace_ids != (row.expected_trace_id,):
-        raise ValueError("exact trial command must identify exactly one expected trace")
+        raise ExactTrialOutputError("exact trial command must identify exactly one expected trace")
     if not _expected_trace_exists(command.output_root, row.expected_trace_id):
-        raise ValueError(f"exact trace output is missing or invalid: {row.expected_trace_id}")
+        raise ExactTrialOutputError(
+            f"exact trace output is missing or invalid: {row.expected_trace_id}"
+        )
 
     from vla_lens.traces import TraceDataset
 
@@ -851,7 +872,7 @@ def validate_exact_trace_output(
         or manifest.outcome not in {"success", "failure"}
         or mismatches
     ):
-        raise ValueError(
+        raise ExactTrialOutputError(
             "exact trace identity mismatch: "
             f"trace={manifest.trace_id!r} task={manifest.task_id!r} "
             f"runtime_fields={mismatches}"
@@ -859,7 +880,7 @@ def validate_exact_trace_output(
 
     model_calls = len(bundle.policy_calls)
     if model_calls <= 0:
-        raise ValueError("exact trace has no recorded model policy calls")
+        raise ExactTrialOutputError("exact trace has no recorded model policy calls")
     files = _exact_output_files(bundle, command.output_root)
     return ExactTraceOutput(
         trace_id=manifest.trace_id,
@@ -871,6 +892,81 @@ def validate_exact_trace_output(
         simulator_steps=int(manifest.length),
         output_bytes=sum(int(item["size"]) for item in files),
         files=files,
+    )
+
+
+def validate_exact_trial_output(
+    command: CaptureCommand,
+    row: EpisodePlanRow,
+    *,
+    expected_runtime: Mapping[str, Any] | None = None,
+) -> ExactTraceOutput:
+    """Validate one exact output, optionally including locked runtime identity."""
+
+    if expected_runtime is None:
+        if command.expected_trace_ids != (row.expected_trace_id,):
+            raise ExactTrialOutputError(
+                "exact trial command must identify exactly one expected trace"
+            )
+        if not _expected_trace_exists(command.output_root, row.expected_trace_id):
+            raise ExactTrialOutputError(
+                f"exact trace output is missing or invalid: {row.expected_trace_id}"
+            )
+        from vla_lens.traces import TraceDataset
+
+        bundle = TraceDataset.open(command.output_root).bundle(row.expected_trace_id)
+        manifest = bundle.manifest
+        if (
+            manifest.trace_id != row.expected_trace_id
+            or manifest.task_id != str(row.task_id)
+            or manifest.env_id != row.benchmark
+            or manifest.outcome not in {"success", "failure"}
+        ):
+            raise ExactTrialOutputError("exact trace manifest identity or outcome mismatch")
+        runtime = dict(manifest.metadata.get("runtime_audit") or {})
+        expected_identity = {
+            "trial_id": row.trial_id,
+            "child_plan_id": row.child_plan_id,
+            "canonical_family_id": row.canonical_family_id,
+            "pool": row.pool,
+            "replicate_id": row.replicate_id,
+            "seed_identities": {
+                "layout": row.layout_seed,
+                "reset": row.reset_seed,
+                "environment": row.environment_seed,
+                "policy": row.policy_seed,
+                "flow_noise": row.flow_noise_seed,
+            },
+            "layout_id": row.layout_id,
+        }
+        mismatches = sorted(
+            name for name, expected in expected_identity.items() if runtime.get(name) != expected
+        )
+        if mismatches:
+            raise ExactTrialOutputError(
+                f"exact trace identity mismatch: runtime_fields={mismatches}"
+            )
+        files = _exact_output_files(bundle, command.output_root)
+        calls = len(bundle.policy_calls)
+        if calls <= 0 or int(manifest.length) <= 0:
+            raise ExactTrialOutputError("exact trace lacks measured calls or simulator steps")
+        return ExactTraceOutput(
+            trace_id=manifest.trace_id,
+            terminal_status=(
+                "rollout_success"
+                if manifest.outcome == "success"
+                else "rollout_behavior_failure"
+            ),
+            model_calls=calls,
+            action_generations=calls,
+            simulator_steps=int(manifest.length),
+            output_bytes=sum(int(item["size"]) for item in files),
+            files=files,
+        )
+    return validate_exact_trace_output(
+        command,
+        row,
+        expected_runtime=expected_runtime,
     )
 
 

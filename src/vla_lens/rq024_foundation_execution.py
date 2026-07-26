@@ -5,9 +5,11 @@ from __future__ import annotations
 import argparse
 import csv
 import fcntl
+import hashlib
 import json
 import re
 import subprocess
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -42,6 +44,16 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PROGRAM = Path("configs/campaigns/rq024_controlled_scene_to_behavior.yaml")
 DEFAULT_CHILD = Path("configs/campaigns/rq024/foundation-r1/child.yaml")
 STUDY_ID = "FOUNDATION"
+LOCKED_INPUT_HASHES = {
+    "child.yaml": "sha256:c7852748a162a7f5076995068c2730732629887edcb8a06788b7f5def3f90e6c",
+    "trials.csv": "sha256:abbeb22023c892f545e8ff4ecc0d606b266e81529be5e2204646a8d492c8dae8",
+    "checkpoint.json": "sha256:7359dc789a3237f5c7baeb22a560ef9fc991ef9a3c207082a354835a1073a80f",
+    "environment.json": "sha256:003ad6d756482160be1e894b92794404f758670d9218c4a3d4e127dc007f5271",
+    "runtime_contract.json": (
+        "sha256:c40c0053526af4c8f316638d5050d1ab2443234a39a18066e0c964a29f620bb2"
+    ),
+    "capture.yaml": "sha256:81affbde1fe67ced3189fd1e3377a2c51ee3cf6d2053094b32bfb317417a1a21",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -66,15 +78,16 @@ class FoundationPlan:
     trials: tuple[FoundationTrial, ...]
 
 
-def load_foundation_plan(
-    *,
+def _load_foundation_contract(
     repo_root: Path = REPO_ROOT,
+    *,
     program_path: Path = DEFAULT_PROGRAM,
     child_path: Path = DEFAULT_CHILD,
 ) -> FoundationPlan:
     """Load and hash every locked execution input without writing files."""
 
     repo_root = repo_root.resolve()
+    _require_locked_input_hashes(repo_root)
     program_file = _repo_path(repo_root, program_path)
     child_file = _repo_path(repo_root, child_path)
     program = load_research_plan(program_file)
@@ -111,7 +124,7 @@ def load_foundation_plan(
     environment_path = _repo_path(repo_root, Path(str(environment_ref["path"])))
     _require_file_hash(environment_path, str(environment_ref["sha256"]), "environment receipt")
     environment = load_research_mapping(environment_path)
-    _validate_environment(child, environment)
+    _validate_environment(child, environment, repo_root)
 
     checkpoint = load_research_mapping(child_root / "checkpoint.json")
     _validate_checkpoint(child, checkpoint)
@@ -157,6 +170,35 @@ def load_foundation_plan(
     )
 
 
+def load_foundation_plan(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
+    """Return the immutable, execution-ready 72-row plan as plain data."""
+
+    contract = _load_foundation_contract(repo_root)
+    requested_budget = _requested_budget(contract.child)
+    trials = [
+        {
+            **dict(trial.record),
+            "ordinal": 1,
+            "attempt_id": f"{trial.row.trial_id}-attempt-1",
+            "trial_manifest_row_fingerprint": trial.row_fingerprint,
+            "runtime_config_fingerprint": contract.runtime_fingerprint,
+            "seed_bundle_fingerprint": trial.seed_fingerprint,
+            "requested_budget": dict(requested_budget),
+            "command": list(trial.execution_command),
+        }
+        for trial in contract.trials
+    ]
+    return {
+        "schema_version": 1,
+        "child_plan_id": contract.child["child_plan_id"],
+        "child_fingerprint": contract.child_fingerprint,
+        "trial_manifest_fingerprint": contract.child["trials"]["manifest"]["sha256"],
+        "runtime_config_fingerprint": contract.runtime_fingerprint,
+        "total_trials": len(trials),
+        "trials": trials,
+    }
+
+
 def execute_foundation(
     plan: FoundationPlan,
     *,
@@ -175,12 +217,12 @@ def execute_foundation(
         raise ValueError("--max-trials must be non-negative")
 
     _authorized_ledger(plan, event_root, repo_root, allow_open=True)
-    with _executor_lock(event_root):
+    with foundation_hardware_lock():
         check = _authorized_ledger(plan, event_root, repo_root, allow_open=True)
         _reconcile_open_attempt(plan, check.state, event_root, repo_root, actor_id)
         check = _authorized_ledger(plan, event_root, repo_root)
         _ensure_resolved_plan(plan)
-        selected = select_trials(
+        selected = _select_contract_trials(
             plan,
             check.state,
             trial_id=trial_id,
@@ -229,14 +271,14 @@ def execute_foundation(
                 "event_sha256": start_hash,
             }
             receipt_created_utc = str(start_event.get("created_utc") or attempt_id)
-            result = _run_trial(trial.execution_command, repo_root)
             try:
-                output = validate_exact_trace_output(
-                    trial.command,
-                    trial.row,
-                    expected_runtime=plan.expected_runtime,
+                result = _run_trial(
+                    trial.execution_command,
+                    repo_root,
+                    output_root=trial.command.output_root,
                 )
-            except (OSError, ValueError, KeyError) as exc:
+            except Exception as exc:
+                actual_budget = _measured_budget_or_block(result_or_error=exc)
                 _append_failed_attempt(
                     plan,
                     event_root,
@@ -245,11 +287,13 @@ def execute_foundation(
                     attempt_id,
                     subject_fingerprint,
                     start_ref,
-                    result,
+                    subprocess.CompletedProcess(trial.execution_command, 1, "", str(exc)),
                     error=exc,
+                    actual_budget=actual_budget,
                 )
                 continue
             if result.returncode != 0:
+                actual_budget = _measured_budget_or_block(result_or_error=result)
                 _append_failed_attempt(
                     plan,
                     event_root,
@@ -260,7 +304,28 @@ def execute_foundation(
                     start_ref,
                     result,
                     error=RuntimeError(f"capture subprocess exited {result.returncode}"),
-                    output=output,
+                    actual_budget=actual_budget,
+                )
+                continue
+            try:
+                output = validate_exact_trace_output(
+                    trial.command,
+                    trial.row,
+                    expected_runtime=plan.expected_runtime,
+                )
+            except Exception as exc:
+                actual_budget = _measured_budget_or_block(result_or_error=result)
+                _append_failed_attempt(
+                    plan,
+                    event_root,
+                    repo_root,
+                    actor_id,
+                    attempt_id,
+                    subject_fingerprint,
+                    start_ref,
+                    result,
+                    error=exc,
+                    actual_budget=actual_budget,
                 )
                 continue
             _append_completed_attempt(
@@ -279,7 +344,7 @@ def execute_foundation(
     return completed
 
 
-def select_trials(
+def _select_contract_trials(
     plan: FoundationPlan,
     state: Any | None,
     *,
@@ -304,7 +369,7 @@ def select_trials(
     return tuple(selected)
 
 
-def plan_payload(
+def _contract_plan_payload(
     plan: FoundationPlan,
     *,
     state: Any | None = None,
@@ -312,7 +377,7 @@ def plan_payload(
     max_trials: int | None = None,
     remaining: bool = False,
 ) -> Mapping[str, Any]:
-    selected = select_trials(
+    selected = _select_contract_trials(
         plan,
         state,
         trial_id=trial_id,
@@ -339,59 +404,334 @@ def plan_payload(
     }
 
 
+def select_trials(
+    plan: Mapping[str, Any],
+    state: Any | None,
+    *,
+    trial_id: str | None = None,
+    max_trials: int | None = None,
+    remaining: bool = True,
+) -> list[dict[str, Any]]:
+    """Select trials in manifest order using reducer state as the sole history."""
+
+    trials = [dict(trial) for trial in plan["trials"]]
+    known = {str(trial["trial_id"]) for trial in trials}
+    if trial_id is not None and trial_id not in known:
+        raise ValueError(f"unknown FOUNDATION trial id: {trial_id}")
+    if max_trials is not None and max_trials < 0:
+        raise ValueError("--max-trials must be non-negative")
+
+    open_attempts = list(getattr(state, "open_attempts", {}).values()) if state else []
+    open_trial_ids = {str(attempt.get("trial_id") or "") for attempt in open_attempts}
+    if open_trial_ids:
+        raise RuntimeError("open trial attempt must be resumed or closed before another launch")
+
+    closed_attempts = list(getattr(state, "closed_attempts", {}).values()) if state else []
+    completed = {
+        str(attempt.get("started", {}).get("trial_id") or "")
+        for attempt in closed_attempts
+        if attempt.get("completed") is True
+    }
+    selected: list[dict[str, Any]] = []
+    for trial in trials:
+        current_id = str(trial["trial_id"])
+        if trial_id is not None and current_id != trial_id:
+            continue
+        if remaining and current_id in completed:
+            continue
+        history = [
+            attempt
+            for attempt in (*open_attempts, *closed_attempts)
+            if attempt.get("trial_id") == current_id
+            or attempt.get("started", {}).get("trial_id") == current_id
+        ]
+        ordinal = len(history) + 1
+        trial["ordinal"] = ordinal
+        trial["attempt_id"] = f"{current_id}-attempt-{ordinal}"
+        selected.append(trial)
+    if max_trials is not None:
+        selected = selected[:max_trials]
+    return selected
+
+
+def persist_resolved_plan_once(output_root: Path, plan: Mapping[str, Any]) -> Path:
+    """Create one complete resolved-plan document and never replace it."""
+
+    path = Path(output_root) / "rq024_foundation_resolved_plan.json"
+    content = (json.dumps(plan, indent=2, sort_keys=True) + "\n").encode("utf-8")
+    write_bytes_create_only(path, content)
+    return path
+
+
+class RuntimeAccountingBlocker(RuntimeError):
+    """Raised when a started attempt has no honest actual-usage evidence."""
+
+
+def execute_attempt(
+    trial: Mapping[str, Any],
+    *,
+    append_event: Any,
+    launch: Any,
+    validate_output: Any,
+) -> dict[str, Any]:
+    """Execute one append-only attempt with injectable I/O boundaries."""
+
+    start_payload = {
+        name: trial[name]
+        for name in (
+            "child_lock_event",
+            "reservation_id",
+            "trial_id",
+            "attempt_id",
+            "ordinal",
+            "trial_manifest_row_fingerprint",
+            "runtime_config_fingerprint",
+            "seed_bundle_fingerprint",
+            "requested_budget",
+        )
+    }
+    start_ref = append_event("trial_attempt_started", start_payload)
+    try:
+        result = launch(trial["command"])
+    except OSError as exc:
+        actual_budget = {name: 0 for name in BUDGET_FIELDS}
+        append_event(
+            "trial_attempt_failed",
+            _failed_attempt_payload(
+                start_ref,
+                actual_budget,
+                failure_stage="subprocess_launch",
+                error_code="subprocess_not_started",
+            ),
+        )
+        raise RuntimeError(f"capture process could not start: {exc}") from exc
+    except Exception as exc:
+        actual_budget = _measured_budget_or_block(result_or_error=exc)
+        append_event(
+            "trial_attempt_failed",
+            _failed_attempt_payload(
+                start_ref,
+                actual_budget,
+                failure_stage="capture_subprocess",
+                error_code=type(exc).__name__.lower(),
+            ),
+        )
+        raise
+
+    measured_budget = getattr(result, "measured_actual_budget", None)
+    if int(result.returncode) != 0:
+        actual_budget = _measured_budget_or_block(result_or_error=result)
+        append_event(
+            "trial_attempt_failed",
+            _failed_attempt_payload(
+                start_ref,
+                actual_budget,
+                failure_stage="capture_subprocess",
+                error_code=f"capture_exit_{result.returncode}",
+            ),
+        )
+        raise RuntimeError(f"capture process exited with return code {result.returncode}")
+
+    try:
+        output = validate_output(trial)
+    except Exception as exc:
+        actual_budget = _measured_budget_or_block(result_or_error=result)
+        append_event(
+            "trial_attempt_failed",
+            _failed_attempt_payload(
+                start_ref,
+                actual_budget,
+                failure_stage="output_validation",
+                error_code=type(exc).__name__.lower(),
+            ),
+        )
+        raise
+
+    try:
+        if not isinstance(output, Mapping):
+            raise ValueError("exact output validator must return a mapping")
+        terminal_status = str(output.get("terminal_status") or "")
+        if terminal_status not in {"rollout_success", "rollout_behavior_failure"}:
+            raise ValueError(f"invalid exact trial terminal status: {terminal_status!r}")
+        actual_budget = _validate_actual_budget(output.get("actual_budget"), "validated output")
+        if measured_budget is not None:
+            _validate_actual_budget(measured_budget, "capture process")
+        output_refs = output.get("output_refs")
+        runtime_receipt_ref = output.get("runtime_receipt_ref")
+        if not isinstance(output_refs, list) or not output_refs or not isinstance(
+            runtime_receipt_ref, Mapping
+        ):
+            raise ValueError("exact output must provide output and runtime receipt references")
+        output_bytes = output.get("output_bytes")
+        if (
+            isinstance(output_bytes, bool)
+            or not isinstance(output_bytes, int)
+            or output_bytes < 0
+        ):
+            raise ValueError("exact output must report nonnegative output bytes")
+        completed_payload = {
+            "start_event": start_ref,
+            "terminal_status": terminal_status,
+            "output_refs": output_refs,
+            "actual_budget": actual_budget,
+            "runtime_receipt_ref": runtime_receipt_ref,
+        }
+    except Exception as exc:
+        evidence = output.get("actual_budget") if isinstance(output, Mapping) else None
+        evidence = evidence or measured_budget
+        actual_budget = _validate_actual_budget(evidence, "failed output validation")
+        append_event(
+            "trial_attempt_failed",
+            _failed_attempt_payload(
+                start_ref,
+                actual_budget,
+                failure_stage="output_validation",
+                error_code=type(exc).__name__.lower(),
+            ),
+        )
+        raise
+    append_event("trial_attempt_completed", completed_payload)
+    return {
+        "terminal_event_type": "trial_attempt_completed",
+        "terminal_status": terminal_status,
+        "actual_budget": actual_budget,
+        "output_bytes": output_bytes,
+    }
+
+
+def _failed_attempt_payload(
+    start_ref: Mapping[str, Any],
+    actual_budget: Mapping[str, int | float],
+    *,
+    failure_stage: str,
+    error_code: str,
+) -> dict[str, Any]:
+    return {
+        "start_event": start_ref,
+        "failure_stage": failure_stage,
+        "error_code": error_code,
+        "retryable": True,
+        "log_refs": [],
+        "actual_budget": dict(actual_budget),
+    }
+
+
+def _measured_budget_or_block(*, result_or_error: Any) -> dict[str, int | float]:
+    measured = getattr(result_or_error, "measured_actual_budget", None)
+    if measured is None:
+        raise RuntimeAccountingBlocker(
+            "started attempt cannot be closed honestly: runtime evidence does not provide "
+            "actual model calls, generations, rollouts, simulator steps, and bytes"
+        )
+    return _validate_actual_budget(measured, "runtime evidence")
+
+
+def _validate_actual_budget(value: Any, source: str) -> dict[str, int | float]:
+    if not isinstance(value, Mapping) or set(value) != set(BUDGET_FIELDS):
+        raise RuntimeAccountingBlocker(f"{source} has incomplete actual resource accounting")
+    budget: dict[str, int | float] = {}
+    for name in BUDGET_FIELDS:
+        number = value[name]
+        if isinstance(number, bool) or not isinstance(number, (int, float)) or number < 0:
+            raise RuntimeAccountingBlocker(f"{source} has invalid actual budget field {name}")
+        budget[name] = number
+    return budget
+
+
+@contextmanager
+def foundation_hardware_lock(
+    _caller_path: Path | None = None,
+    *,
+    timeout_s: float = 0.0,
+) -> Iterator[Path]:
+    """Lock the fixed FOUNDATION child/output namespace across all event roots."""
+
+    identity = "rq024-foundation-r1|/mnt/new-volume/vla-lens/rq024/rq024-foundation-r1"
+    digest = hashlib.sha256(identity.encode("ascii")).hexdigest()
+    lock_root = Path("/tmp/vla-lens-hardware-locks")
+    lock_root.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_root / f"{digest}.lock"
+    deadline = time.monotonic() + max(0.0, timeout_s)
+    with lock_path.open("a+b") as lock:
+        while True:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("FOUNDATION hardware lock is already held") from None
+                time.sleep(min(0.05, max(0.0, deadline - time.monotonic())))
+        try:
+            yield lock_path
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group(required=True)
+    mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--plan", action="store_true", help="Print the resolved plan; write nothing.")
     mode.add_argument(
         "--run", action="store_true", help="Execute reducer-authorized hardware trials."
     )
+    parser.add_argument("--repo-root", type=Path, default=REPO_ROOT)
     parser.add_argument("--program", type=Path, default=DEFAULT_PROGRAM)
     parser.add_argument("--child", type=Path, default=DEFAULT_CHILD)
     parser.add_argument("--event-root", type=Path)
     parser.add_argument("--actor-id", default="rq024-foundation-driver")
-    parser.add_argument("--trial-id")
-    parser.add_argument("--max-trials", type=int)
+    selection = parser.add_mutually_exclusive_group()
+    selection.add_argument("--trial-id")
+    selection.add_argument("--max-trials", type=int)
     parser.add_argument("--remaining", action="store_true")
-    parser.add_argument("--force", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
-def main(argv: Sequence[str] | None = None) -> None:
+def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
-    if args.force:
-        raise SystemExit("--force is forbidden for append-only FOUNDATION execution")
-    plan = load_foundation_plan(program_path=args.program, child_path=args.child)
+    repo_root = args.repo_root.resolve()
+    contract = _load_foundation_contract(
+        repo_root,
+        program_path=args.program,
+        child_path=args.child,
+    )
+    plan = load_foundation_plan(repo_root)
     if args.plan:
         state = None
         if args.remaining:
             if args.event_root is None:
                 raise SystemExit("--remaining requires --event-root")
-            state = _verified_ledger(plan, args.event_root.resolve(), REPO_ROOT).state
-        print(
-            json.dumps(
-                plan_payload(
-                    plan,
-                    state=state,
-                    trial_id=args.trial_id,
-                    max_trials=args.max_trials,
-                    remaining=args.remaining,
-                ),
-                indent=2,
-                sort_keys=True,
-            )
+            state = _verified_ledger(contract, args.event_root.resolve(), repo_root).state
+        selected = select_trials(
+            plan,
+            state,
+            trial_id=args.trial_id,
+            max_trials=args.max_trials,
+            remaining=args.remaining,
         )
-        return
-    if args.event_root is None:
-        raise SystemExit("--run requires --event-root")
+        payload = {
+            "schema_version": 1,
+            "mode": "plan",
+            "child_plan_id": plan["child_plan_id"],
+            "child_fingerprint": plan["child_fingerprint"],
+            "trial_manifest_fingerprint": plan["trial_manifest_fingerprint"],
+            "runtime_config_fingerprint": plan["runtime_config_fingerprint"],
+            "total_trials": plan["total_trials"],
+            "selected_trials": len(selected),
+            "trials": selected,
+        }
+        print(json.dumps(payload, indent=2, sort_keys=True))
+        return 0
+    event_root = args.event_root or repo_root / "research/rq024/events"
     completed = execute_foundation(
-        plan,
-        event_root=args.event_root,
+        contract,
+        event_root=event_root,
         actor_id=args.actor_id,
+        repo_root=repo_root,
         trial_id=args.trial_id,
         max_trials=args.max_trials,
     )
     print(json.dumps({"completed_trial_ids": completed}, indent=2, sort_keys=True))
+    return 0
 
 
 def _verified_ledger(plan: FoundationPlan, event_root: Path, repo_root: Path):
@@ -515,26 +855,17 @@ def _reconcile_open_attempt(
     start_event = state.events_by_id[opened["event_id"]]
     start_ref = _state_event_ref(state, opened["event_id"])
     subject_fingerprint = canonical_research_fingerprint(start_event["payload"])
-    result = subprocess.CompletedProcess((), 125, "", "executor resumed an open attempt")
     try:
         output = validate_exact_trace_output(
             trial.command,
             trial.row,
             expected_runtime=plan.expected_runtime,
         )
-    except (OSError, ValueError, KeyError) as exc:
-        _append_failed_attempt(
-            plan,
-            event_root,
-            repo_root,
-            actor_id,
-            str(opened["attempt_id"]),
-            subject_fingerprint,
-            start_ref,
-            result,
-            error=exc,
-        )
-        return
+    except Exception as exc:
+        raise RuntimeAccountingBlocker(
+            "open attempt has neither exact output nor preserved actual-usage evidence; "
+            "refusing fabricated failure accounting"
+        ) from exc
     _append_completed_attempt(
         plan,
         event_root,
@@ -549,9 +880,19 @@ def _reconcile_open_attempt(
     )
 
 
-def _run_trial(command: Sequence[str], repo_root: Path) -> subprocess.CompletedProcess[str]:
+def _run_trial(
+    command: Sequence[str],
+    repo_root: Path,
+    *,
+    output_root: Path,
+) -> subprocess.CompletedProcess[str]:
     try:
-        return subprocess.run(
+        before = _output_snapshot(output_root)
+    except OSError as exc:
+        exc.measured_actual_budget = {name: 0 for name in BUDGET_FIELDS}
+        raise
+    try:
+        result = subprocess.run(
             list(command),
             cwd=repo_root,
             check=False,
@@ -559,7 +900,14 @@ def _run_trial(command: Sequence[str], repo_root: Path) -> subprocess.CompletedP
             text=True,
         )
     except OSError as exc:
-        return subprocess.CompletedProcess(command, 127, "", str(exc))
+        result = subprocess.CompletedProcess(command, 127, "", str(exc))
+        result.measured_actual_budget = {name: 0 for name in BUDGET_FIELDS}
+        return result
+    output_bytes = _changed_output_bytes(before, _output_snapshot(output_root))
+    observed = _observed_output(result, output_bytes=output_bytes)
+    if observed is not None:
+        result.measured_actual_budget = _actual_budget(observed)
+    return result
 
 
 def _append_completed_attempt(
@@ -649,9 +997,9 @@ def _append_failed_attempt(
     result: subprocess.CompletedProcess[str],
     *,
     error: Exception,
-    output: ExactTraceOutput | None = None,
+    actual_budget: Mapping[str, int | float],
 ) -> None:
-    output = output or _observed_output(result)
+    actual_budget = _validate_actual_budget(actual_budget, "failed attempt")
     log_ref = _write_artifact(
         event_root,
         repo_root,
@@ -685,7 +1033,7 @@ def _append_failed_attempt(
             "error_code": "exact_output_invalid" if result.returncode == 0 else "capture_failed",
             "retryable": True,
             "log_refs": [log_ref],
-            "actual_budget": _actual_budget(output),
+            "actual_budget": actual_budget,
         },
         repo_root=repo_root,
         verify_artifacts=True,
@@ -719,21 +1067,23 @@ def _write_artifact(
     }
 
 
-def _actual_budget(output: ExactTraceOutput | None) -> Mapping[str, int | float]:
-    if output is None:
-        return {name: 0 for name in BUDGET_FIELDS}
+def _actual_budget(output: ExactTraceOutput) -> Mapping[str, int | float]:
     return {
         "model_calls": output.model_calls,
         "action_generations": output.action_generations,
         "full_rollouts": 1,
         "simulator_steps": output.simulator_steps,
         "probe_fits": 0,
-        "persistent_gb": output.output_bytes / 1_000_000_000,
+        "persistent_gb": output.output_bytes / (1024**3),
         "ephemeral_gb": 0,
     }
 
 
-def _observed_output(result: subprocess.CompletedProcess[str]) -> ExactTraceOutput | None:
+def _observed_output(
+    result: subprocess.CompletedProcess[str],
+    *,
+    output_bytes: int,
+) -> ExactTraceOutput | None:
     matches = re.findall(r"(\S+) steps=(\d+) calls=(\d+) success=(?:True|False)", result.stdout)
     if not matches:
         return None
@@ -744,8 +1094,29 @@ def _observed_output(result: subprocess.CompletedProcess[str]) -> ExactTraceOutp
         model_calls=int(calls),
         action_generations=int(calls),
         simulator_steps=int(steps),
-        output_bytes=0,
+        output_bytes=output_bytes,
         files=(),
+    )
+
+
+def _output_snapshot(root: Path) -> dict[str, tuple[int, int]]:
+    if not root.exists():
+        return {}
+    return {
+        path.relative_to(root).as_posix(): (path.stat().st_size, path.stat().st_mtime_ns)
+        for path in root.rglob("*")
+        if path.is_file()
+    }
+
+
+def _changed_output_bytes(
+    before: Mapping[str, tuple[int, int]],
+    after: Mapping[str, tuple[int, int]],
+) -> int:
+    return sum(
+        size
+        for path, (size, modified) in after.items()
+        if before.get(path) != (size, modified)
     )
 
 
@@ -786,18 +1157,6 @@ def _ensure_resolved_plan(plan: FoundationPlan) -> None:
         config=plan.config,
         rows=[trial.row for trial in plan.trials],
     )
-
-
-@contextmanager
-def _executor_lock(event_root: Path) -> Iterator[None]:
-    event_root.mkdir(parents=True, exist_ok=True)
-    lock_path = event_root / ".foundation-executor.lock"
-    with lock_path.open("a+b") as lock:
-        try:
-            fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            raise RuntimeError("another FOUNDATION hardware executor is active") from None
-        yield
 
 
 def _state_event_ref(state: Any, event_id: str) -> Mapping[str, Any]:
@@ -847,12 +1206,16 @@ def _validate_runner_contract(
         raise ValueError("driver program path differs from the locked runner parent")
 
 
-def _validate_environment(child: Mapping[str, Any], environment: Mapping[str, Any]) -> None:
+def _validate_environment(
+    child: Mapping[str, Any],
+    environment: Mapping[str, Any],
+    repo_root: Path,
+) -> None:
     locked = child["runtime"]["environment"]
     if environment.get("status") != "pass" or environment.get("backend") != locked["backend"]:
         raise ValueError("environment receipt does not pass for the locked backend")
     contract = load_research_mapping(
-        REPO_ROOT / "configs/campaigns/rq024/foundation-r1/runtime_contract.json"
+        repo_root / "configs/campaigns/rq024/foundation-r1/runtime_contract.json"
     )
     for name in ("camera", "controller", "preprocessor", "postprocessor"):
         if contract.get("components", {}).get(f"{name}_config_sha256") != locked.get(
@@ -863,6 +1226,18 @@ def _validate_environment(child: Mapping[str, Any], environment: Mapping[str, An
 
 def _validate_checkpoint(child: Mapping[str, Any], checkpoint: Mapping[str, Any]) -> None:
     locked = child["runtime"]["model"]
+    expected_fields = {
+        "schema_version",
+        "kind",
+        "repo_id",
+        "requested_revision",
+        "resolved_revision",
+        "snapshot_path",
+        "snapshot_manifest_sha256",
+        "files",
+    }
+    if set(checkpoint) != expected_fields or checkpoint.get("schema_version") != 1:
+        raise ValueError("checkpoint receipt schema or fields changed")
     expected = {
         "repo_id": locked["repo_id"],
         "requested_revision": locked["revision"],
@@ -873,6 +1248,34 @@ def _validate_checkpoint(child: Mapping[str, Any], checkpoint: Mapping[str, Any]
         checkpoint.get(name) != value for name, value in expected.items()
     ):
         raise ValueError("checkpoint receipt differs from the locked model snapshot")
+    snapshot_path = Path(str(checkpoint.get("snapshot_path") or ""))
+    if not snapshot_path.is_absolute() or snapshot_path.name != locked["revision"]:
+        raise ValueError("checkpoint receipt snapshot path does not bind the locked revision")
+    files = checkpoint.get("files")
+    if not isinstance(files, list) or not files:
+        raise ValueError("checkpoint receipt files manifest is empty or invalid")
+    observed_paths: set[str] = set()
+    for index, item in enumerate(files):
+        if not isinstance(item, Mapping) or set(item) != {"path", "sha256", "size"}:
+            raise ValueError(f"checkpoint receipt file {index} schema changed")
+        path = str(item.get("path") or "")
+        pure = Path(path)
+        if (
+            not path
+            or pure.is_absolute()
+            or ".." in pure.parts
+            or path in observed_paths
+            or not _is_sha256(item.get("sha256"))
+            or isinstance(item.get("size"), bool)
+            or not isinstance(item.get("size"), int)
+            or int(item["size"]) < 0
+        ):
+            raise ValueError(f"checkpoint receipt file {index} hash, size, or path is invalid")
+        observed_paths.add(path)
+    if [str(item["path"]) for item in files] != sorted(observed_paths):
+        raise ValueError("checkpoint receipt files are not in canonical path order")
+    if canonical_sha256(files) != checkpoint["snapshot_manifest_sha256"]:
+        raise ValueError("checkpoint receipt file hashes and sizes do not match its bound manifest")
 
 
 def _expected_runtime(
@@ -911,6 +1314,17 @@ def _csv_records(path: Path) -> list[Mapping[str, str]]:
 def _require_file_hash(path: Path, expected: str, label: str) -> None:
     if not path.is_file() or file_sha256(path) != expected:
         raise ValueError(f"{label} is missing or differs from its locked hash: {path}")
+
+
+def _require_locked_input_hashes(repo_root: Path) -> None:
+    root = repo_root / "configs/campaigns/rq024/foundation-r1"
+    for name, expected in LOCKED_INPUT_HASHES.items():
+        _require_file_hash(root / name, expected, f"locked {name}")
+
+
+def _is_sha256(value: Any) -> bool:
+    text = str(value or "")
+    return bool(re.fullmatch(r"sha256:[0-9a-f]{64}", text))
 
 
 def _repo_path(repo_root: Path, path: Path) -> Path:
