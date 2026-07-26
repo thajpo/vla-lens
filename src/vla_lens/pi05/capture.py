@@ -134,6 +134,10 @@ from vla_lens.pi05.capture_writer import (
     _pi05_true_full_missing_sites,
     _write_episode,
 )
+from vla_lens.pi05.context_capture_contacts import (
+    capture_contact_snapshot,
+    contact_capability_audit,
+)
 
 __all__ = [
     "LANDMARK_5_LAYERS",
@@ -160,6 +164,8 @@ __all__ = [
     "CaptureCall",
     "EpisodeBuffer",
     "PI05CaptureRuntime",
+    "capture_contact_snapshot",
+    "contact_capability_audit",
     "_stack_optional_calls",
     "_stack_layer_calls",
     "_array_size_summary",

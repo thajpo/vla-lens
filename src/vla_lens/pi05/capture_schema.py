@@ -371,6 +371,7 @@ class EpisodeBuffer:
     observations: list[dict[str, Any]] = field(default_factory=list)
     scene_snapshots: list[dict[str, Any]] = field(default_factory=list)
     camera_snapshots: list[dict[str, Any]] = field(default_factory=list)
+    contact_snapshots: list[dict[str, Any]] = field(default_factory=list)
     infos: list[dict[str, Any]] = field(default_factory=list)
     terminated: list[bool] = field(default_factory=list)
     truncated: list[bool] = field(default_factory=list)

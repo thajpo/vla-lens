@@ -48,6 +48,7 @@ from vla_lens.pi05.capture_writer import (
 )
 from vla_lens.pi05.context_capture import (
     capture_camera_snapshot,
+    capture_contact_snapshot,
     capture_scene_snapshot,
 )
 from vla_lens.pi05.runtime_identity import (
@@ -326,6 +327,7 @@ def run_pi05_capture_task(
                 buffer.observations.append(dict(observation))
                 buffer.scene_snapshots.append(capture_scene_snapshot(env))
                 buffer.camera_snapshots.append(capture_camera_snapshot(env, observation))
+                buffer.contact_snapshots.append(capture_contact_snapshot(env, timestep=step))
                 frame, wrist = _extract_frames(observation)
                 if frame is not None:
                     buffer.frames.append(frame)
