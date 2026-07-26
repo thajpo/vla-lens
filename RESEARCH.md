@@ -2,7 +2,7 @@
 
 Status: active source of truth for research questions and findings.
 
-Last updated: July 25, 2026.
+Last updated: July 26, 2026.
 
 This file answers three questions:
 
@@ -28,7 +28,7 @@ Probe success means the target is decodable under the saved data and readout
 contract. It does not show that the VLA uses the decoded information. Causal
 claims require interventions.
 
-## Research Framing: Semantics Through Action
+## Research Framing: Scene, Instruction, Robot State, And Action
 
 VLA Lens should study semantics and action together. Semantic questions remain
 important: we still want to know whether the model distinguishes objects,
@@ -38,16 +38,36 @@ human-readable object records.
 
 The main framing is:
 
-> When one part of a scene changes, how does the predicted action change, and
-> where inside the model does that action change take shape?
+> What reusable information lets the model combine the scene, instruction, and
+> robot state into appropriate behavior, and when does that process fail?
 
-Use controlled scene pairs whenever possible. Change one factor, keep the
-instruction, robot, camera, noise, and other objects fixed, and measure the
-effect on translation, rotation, gripper command, action-horizon position, and
-denoising step. Then follow the same difference through visual tokens, the
-visual key/value memory, action-expert layers, predicted action updates, and
-the final action chunk. Preserve token and time structure rather than averaging
-it away by default.
+Test three separate properties rather than collapsing them into one claim:
+
+1. **Readable:** can a trained readout recover the information?
+2. **Reusable:** does the relationship hold across layouts, objects,
+   instructions, robot starts, tasks, and harmless visual changes?
+3. **Used:** does changing the candidate path selectively change the relevant
+   action or closed-loop behavior?
+
+A signal can pass one test and fail another. Known-region identity can be
+readable without being a general identity code. A broad scene patch can affect
+the action without identifying the scene property or mechanism that mattered.
+
+Use crossed controlled conditions whenever possible. Independently change the
+target pose, named target, robot start, appearance, camera, and irrelevant
+objects. Measure the result after action postprocessing and through the actual
+controller in physical units; raw distance over a normalized 50-by-7 action
+chunk is diagnostic, not a behavioral endpoint. Repeat matched flow noise, but
+count tasks and scene clusters—not noise samples, tokens, steps, or action
+elements—as independent evidence.
+
+Then follow a repeatable physical action difference through visual tokens, the
+exact visual key/value memory consumed by each expert layer, expert states,
+predicted action updates, and the final action. At each denoising time, compare
+scene conditions while holding the current noisy action guess fixed. Otherwise
+later differences mix scene conditioning with action trajectories that have
+already diverged. Preserve token, head, action-position, and time structure
+rather than averaging it away by default.
 
 This action-centered view and direct semantic probes are complementary. A
 semantic probe can show that information is available. A consistent link
@@ -57,10 +77,12 @@ after this measurement identifies a small, repeatable model location worth
 testing.
 
 The current evidence is mostly a set of useful constraints, not a discovered
-object model. We have a positive known-region identity result and a broad path
-from early vision to late action state. We do not yet have a reliable object
-position or pose representation, a moving object handle, or a small semantic
-feature set. Future entries must keep that distinction explicit.
+object model. We have a positive known-region identity result, broad visual
+dependence of an open-loop action, and late whole-action-state replacement that
+can force donor-like output. We have not shown that the altered action is
+correct, localized object binding, isolated scene conditioning from the
+evolving action guess, or found a small semantic feature set. Future entries
+must keep those distinctions explicit.
 
 ## Required Record For New Questions
 
@@ -76,6 +98,9 @@ Before running an experiment, record:
 - important confounds;
 - metrics and uncertainty method;
 - allowed conclusion and stopping rule.
+- strongest competing explanations and what would distinguish them;
+- discovery versus prospectively held-out confirmation status;
+- independent sample unit and total search/selection space;
 
 For action-centered scene experiments, also record:
 
@@ -84,7 +109,9 @@ For action-centered scene experiments, also record:
   horizon positions;
 - the internal stages and axes used to follow that action difference;
 - whether the result concerns semantic availability, action relevance, or
-  both.
+  both, and whether it generalizes beyond the discovery cohort;
+- the physical or closed-loop behavior endpoint, or an explicit statement that
+  the run measures only model output.
 
 After the run, add artifact IDs, the result, limitations, and the next decision.
 
@@ -141,9 +168,10 @@ cohort, requires new capture, launches an intervention, or has material cost.
 | RQ-018 | Does the layer-8 object-identity direction causally affect PI0.5's action? | Intervention | Completed; negative semantic-specificity result | Calibrate region and dose controls |
 | RQ-019 | Does exchanging target and distractor poses naturally change PI0.5's action? | Counterfactual | Positive pilot | Yes, across tasks and object pairs |
 | RQ-020 | Where can donor activations transfer that natural action change? | Activation patching | Broad visual-prefix result; narrow object regions negative | Yes, follow the signal into the action stream |
-| RQ-021 | What object property does a successful patch carry? | Counterfactual intervention | Ready after pathway follow-up | Identity, appearance, role, or position |
-| RQ-022 | Which residual, key/value, or action-bridge path carries the effect? | Path intervention | Positive late action-expert localization; exact VLM bridge layer unresolved | Yes, patch prefix key/value cache |
-| RQ-023 | Does a specific action-level transfer change closed-loop behavior? | Rollout intervention | Blocked on validation | Only after action specificity |
+| RQ-021 | What object property does a successful patch carry? | Counterfactual intervention | Planned inside RQ-024 | After controlled behavior result |
+| RQ-022 | Which residual, key/value, or action-bridge path carries the effect? | Path intervention | Late whole-state replacement; scene/action path confounded | After fixed-action-state comparison |
+| RQ-023 | Does a specific action-level transfer change closed-loop behavior? | Rollout intervention | Planned inside RQ-024 | Only after locked causal confirmation |
+| RQ-024 | Does PI0.5 form a reusable scene-instruction-robot-state control relationship? | Crossed behavior/mechanism campaign | Planned | Active campaign |
 
 ## RQ-001: Broad Target Events And Outcome
 
@@ -1026,12 +1054,16 @@ two object poses exchanged exactly, and every other object stayed fixed. Two
 replays per recipient reproduced the saved action exactly (`L2 = 0`, maximum
 error `= 0`). Under shared noise, the pose exchange changed the 50-by-7 action
 chunk by L2 distances `10.43`, `9.79`, `6.13`, `7.52`, and `10.86` (mean
-`8.95`). This is a large, stable direction for a causal patching test.
+`8.95`). This is a reproducible nonzero direction for a causal patching test;
+its size has no physical interpretation under this normalized metric.
 
-**Conclusion.** PI0.5's action depends strongly on this scene change. This does
-not yet separate object identity from position, appearance, occlusion, or the
-fact that two objects changed at once. It establishes the counterfactual and
-allows RQ-020 to proceed.
+**Conclusion.** PI0.5's generated open-loop action chunk changes reproducibly
+under this scene change. The capture used `max_steps: 1`, so it does not show a
+rollout, successful behavior, or an appropriate response. The L2 value mixes
+normalized action dimensions and has no direct physical interpretation. The
+experiment also does not separate object identity from position, appearance,
+occlusion, or the fact that two objects changed at once. It establishes a
+model-output counterfactual and allows RQ-020 to proceed.
 
 **Artifacts.** Capture recipe: `configs/capture/rq019_pose_exchange_pilot.json`.
 Dataset root: `/mnt/new-volume/vla-lens/rq019-pose-exchange-pilot`. Reconstructable
@@ -1099,15 +1131,15 @@ action comparison work. Shuffled and wrong-region controls rule out the narrow
 object-box interpretation. Every runtime hook fired exactly once and was
 removed after its trial.
 
-**Conclusion.** This is a positive causal result at a broad scale. Early PI0.5
-visual-prefix states carry nearly all of the action-relevant effect of swapping
-the two objects. A 12-token box around either object is not a specific semantic
-object node: the usable scene information is distributed across the visual
-prefix, or the chosen image boxes do not match the model's internal grouping.
-The sharp loss of prefix transfer between layers 12 and 16 suggests that the
-information has already moved into the expert/action stream by the last VLM
-layer. That last statement is a hypothesis for the next patching experiment,
-not yet a finding.
+**Conclusion.** This establishes a broad causal dependency: replacing nearly
+all early visual context can reproduce nearly all of the donor action change.
+It does not identify which changed scene property matters. A 12-token box
+around either object did not pass specificity controls, but that does not prove
+that the model lacks an object-local representation. Distributed information,
+globally contextual visual tokens, box/token mismatch, occlusion, and the
+two-object swap remain alternatives. The loss of late residual-output transfer
+also does not locate a single VLM-to-expert handoff because each layer has
+already written its same-layer prefix key/value cache.
 
 **Limits.** One task, one object pair, five initial layouts, and open-loop action
 chunks are not evidence for a general scene graph. The exchange changes two
@@ -1230,18 +1262,21 @@ evidence for a better middle-horizon scene representation.
 **Denoising-step narrowing.** Patching all action positions only during early
 steps 0-2 transferred `4.13%` at layer 16 and `4.11%` at layer 17. Middle steps
 3-6 transferred `13.66%` and `13.58%`; late steps 7-9 transferred `29.58%`
-and `29.84%`. These isolated blocks do not add to the all-step result. The
-supported reading is that the donor action trajectory must be followed across
-the refinement process, while the scene-conditioned velocity difference is
-strongest late. It is not valid to assign a fixed independent percentage to
-each block.
+and `29.84%`. These isolated blocks do not add to the all-step result. After
+the first denoising update, donor and recipient have different current action
+guesses, so later hidden differences mix scene conditioning with an already
+diverged action trajectory. The supported result is only that late partial
+trajectory replacement changes the final output more. A fixed-action-state
+comparison is required before saying that the scene-conditioned correction is
+stronger late.
 
-**Conclusion.** This is a positive causal localization at the whole-action
-level. By expert layer 16, the donor state contains nearly all information
-needed to produce the donor's open-loop action under shared noise. The result
-does not identify an object-specific representation: the intervention swaps
-all 50 high-dimensional action states, and the scene counterfactual changes
-two object poses and their pixels.
+**Conclusion.** This is a whole-action-state replacement result. By expert
+layer 16, replacing all 50 donor action states across every denoising step is
+enough to reproduce nearly all of the donor's open-loop output under shared
+noise. Because this replaces most of the action trajectory close to the output,
+it is a useful plumbing and interchangeability check rather than semantic
+localization. It does not identify an object-specific representation or isolate
+the effect of scene context from the current action guess.
 
 **Architectural correction.** The visual-prefix layer-output hook used in
 RQ-020 runs after that same layer has already written its key/value tensors to
@@ -1267,20 +1302,48 @@ denoising ranges, checkpoint every trial, and expose the saved stream and step
 scope in the existing Intervention page. See
 `docs/pi05-action-stream-patching.md` for commands and artifact behavior.
 
-## RQ-021 and RQ-023: Conditional Follow-Ups
+## RQ-021, RQ-023, And RQ-024: Controlled Scene-To-Behavior Campaign
 
-RQ-021 will split the successful broad effect into identity, appearance/shape,
-task role, and position by changing one factor at a time. RQ-023 will run
-closed-loop rollouts only after a held-out cohort repeats a specific
-action-level transfer. These are separate questions, not automatic extensions
-of a positive pilot.
+RQ-024 is the active campaign-level question: does PI0.5 combine scene,
+instruction, and robot state into appropriate, reusable behavior rather than
+familiar-layout or generic-visual shortcuts? RQ-021 supplies the one-factor
+scene comparisons. RQ-023 supplies the eventual closed-loop causal test. These
+remain separate evidence claims and advance only through explicit gates.
 
-**Validation plan.** A positive pilot advances to roughly 24 valid pairs across
-at least six scene groups. Thresholds and the best site/token rule are locked
-before a fresh confirmation set. Confirmation failure supersedes the exploratory
-positive result. Permanent artifacts keep pair/trial recipes, hashes, action
-arrays, mappings, decisions, and provenance. Full donor layers and key/value
-caches are disposable and may be rebuilt from the saved recipes.
+The auditable plan is
+`configs/campaigns/rq024_controlled_scene_to_behavior.yaml`; the reusable agent
+protocol is `docs/autonomous-research-campaigns.md`, and the human control
+surface is [GitHub issue #37](https://github.com/thajpo/vla-lens/issues/37).
+The program is now an explicit 16-study graph rather than the earlier P0/P1
+campaign sketch.
+
+**Behavior branches.** FOUNDATION deterministically orders 24 task-object
+families, preassigns 12 discovery and 12 confirmation candidates before
+outcomes, runs three baseline rollouts per family, and selects the first six
+eligible families in each already-fixed order. Geometry and named-target
+binding then run as independent discovery and confirmation branches. A failure
+in one branch does not close or select the other.
+
+**Semantics and mechanisms.** Identity readout first uses discovery families
+only. It tests PI0.5 decodability against metadata, wrong-region, and the full
+readout-selection null; generic vision is reported separately as a specificity
+comparison. Geometry and binding each have their own fixed-action-state
+internal, prefix-key/value causal, causal-confirmation, and rollout chain. Their
+metrics never merge. Internal selection is restricted to the discovery pool
+and to sites the next child can actually patch.
+
+**Confirmation access.** Confirmation families expose only baseline fields
+during FOUNDATION and frozen behavior outputs during behavior confirmation.
+No confirmation-family activation, readout, key/value, fixed-action-state, or
+patch output may be opened until every activated phase-two child is committed
+and independently audited. Confirmation is prospective for that unopened
+endpoint, not described as globally untouched.
+
+**Measurement correction.** Internal and narrow causal studies now use an
+explicit dimensionless target in PI0.5's normalized 50-by-7 velocity space.
+They do not project normalized velocity directly onto meters. Physical geometry
+gain and named-target distance return only in their separately confirmed
+closed-loop branches.
 
 ## Not Yet Run
 
@@ -1292,19 +1355,26 @@ caches are disposable and may be rebuilt from the saved recipes.
 - Small signed direction-dose comparison for the RQ-018 recipient
 - PI0.5 prefix key/value-cache patching at matched expert layers
 - One-factor object counterfactuals separating identity, pose, and appearance
+- Controller-level physical action and trajectory comparison
+- Fixed-current-action-state scene comparison across denoising time
 
 ## Current Priority
 
-1. Build controlled scene pairs that change one factor at a time—position,
-   pose, appearance, or task role—and measure the resulting action correction.
-2. Follow those action differences through visual tokens, the exact prefix
-   key/value memory consumed by the expert, expert layers, denoising steps, and
-   final action dimensions. Do not infer a same-layer handoff from the current
-   residual-output hooks.
-3. Use semantic probes alongside this path when they preserve object and token
-   correspondence; do not assume a global pooled state should contain an
-   LLM-like object record.
-4. Repeat positive results on fresh tasks and object pairs before treating them
-   as general.
-5. Keep RQ-018 as a useful negative semantic result; its calibrated dose
-   controls are secondary to the cleaner natural counterfactual direction.
+1. Prepare the exact FOUNDATION child from
+   `configs/campaigns/rq024_foundation.child.template.yaml`: implement and hash
+   the LIBERO-90 family parser, candidate/rejection table, exact 72-trial table,
+   separate environment/policy/flow-noise seeds, checkpoint receipt, and
+   machine-readable capture-environment receipt.
+2. Do not execute FOUNDATION until `scripts/validate_research_child.py` verifies
+   its committed files and a separate lock receipt contains passing schema,
+   design, runner, and budget audits. The current template is intentionally
+   blocked rather than pretending those missing inputs exist.
+3. Add simulator contact telemetry as its own measurement. Existing
+   end-effector-distance logic is a proxy and must not be called contact or
+   collision. FOUNDATION eligibility itself still uses simulator success.
+4. After FOUNDATION passes, run geometry discovery, binding discovery, and
+   reliability design independently. Do not prioritize issue #36's broad prefix
+   patch sweep before a behavior branch is confirmed.
+5. Keep RQ-015 as exploratory readable identity, RQ-018 as a negative
+   specificity result, RQ-019 as an open-loop counterfactual, and RQ-020/RQ-022
+   as broad plumbing constraints until fresh controlled evidence changes them.

@@ -1,0 +1,168 @@
+schema_version: 1
+kind: vla_lens.research_child
+child_plan_id: rq024-foundation-r1
+revision: 1
+prepared_by: REPLACE_WITH_AGENT_OR_RESEARCHER_ID
+
+program:
+  path: configs/campaigns/rq024_controlled_scene_to_behavior.yaml
+  program_id: rq024-controlled-scene-to-behavior
+  fingerprint: sha256:REPLACE_WITH_PROGRAM_HASH
+
+study:
+  id: FOUNDATION
+  fingerprint: sha256:REPLACE_WITH_STUDY_HASH
+  phase: foundation
+
+predecessor_results: []
+
+claim:
+  result_kind: preparation_gate
+  question: Which task-object families support the design and competent base behavior?
+  allowed_conclusions:
+    - The named families do or do not support later controlled comparisons.
+  forbidden_conclusions:
+    - Baseline success demonstrates a semantic representation.
+
+cohort:
+  family_pool: both_baseline_only
+  pool_phase: baseline
+  requires_gate: none
+  read_namespaces:
+    - task_catalog
+  write_namespace: foundation_baseline
+  selection_allowed: true
+  manifest:
+    id: rq024-foundation-candidates-r1
+    type: candidate_and_pool_manifest
+    path: configs/campaigns/rq024/foundation-r1/candidates.json
+    sha256: sha256:REPLACE_WITH_FILE_HASH
+  exposure_log:
+    id: rq024-exposure-log-r1
+    type: prospective_exposure_log
+    path: configs/campaigns/rq024/foundation-r1/exposure_log.json
+    sha256: sha256:REPLACE_WITH_FILE_HASH
+
+trials:
+  manifest:
+    id: rq024-foundation-trials-r1
+    type: rollout_trial_manifest
+    path: configs/campaigns/rq024/foundation-r1/trials.csv
+    sha256: sha256:REPLACE_WITH_FILE_HASH
+  expected_count: 72
+  stable_id_fields:
+    - child_plan_id
+    - canonical_family_id
+    - pool
+    - replicate_id
+  seed_domains:
+    - environment_reset
+    - policy
+    - flow_noise
+
+measurement:
+  primary:
+    metric_id: family_baseline_eligibility
+    formula: eligible = sum(simulator_success over three planned rollouts) >= 2
+    implementation_id: rq024_family_baseline_eligibility_v1
+    unit: binary_per_task_object_family
+    direction: eligible_in_both_preassigned_pools
+    minimum_useful_effect: six eligible families in each fixed pool
+  strongest_control_metric_id: simulator_success_vs_object_motion_consistency
+  inference:
+    method: exact_family_count_with_prespecified_2_of_3_screen
+    level: 0.95
+    grouping_unit: task_object_family
+    replicates: 1
+    seed: 24001
+
+decision:
+  gate_components:
+    - id: discovery_eligible_count
+      operator: greater_than_or_equal
+      threshold: 6
+    - id: confirmation_eligible_count
+      operator: greater_than_or_equal
+      threshold: 6
+    - id: trial_matrix_complete
+      operator: equal
+      threshold: 72
+  positive_combiner: all
+  negative_rule: either fixed pool has fewer than six eligible families after all valid trials
+  inconclusive_rule: technical missingness prevents a complete 72-trial matrix within budget
+  invalid_conditions:
+    - candidate ordering or pool assignment occurred after outcomes were visible
+    - simulator success or task-object-family parsing cannot be reproduced
+    - a policy or flow-noise seed was silently substituted for another seed domain
+
+runtime:
+  model:
+    repo_id: lerobot/pi05_libero_finetuned
+    revision: REPLACE_WITH_EXACT_HUGGING_FACE_COMMIT
+    snapshot_manifest_sha256: sha256:REPLACE_WITH_SNAPSHOT_MANIFEST_HASH
+  environment:
+    backend: REPLACE_WITH_rocm_cuda_OR_mps
+    package_receipt:
+      id: rq024-foundation-environment-r1
+      type: capture_environment_receipt
+      path: configs/campaigns/rq024/foundation-r1/environment.json
+      sha256: sha256:REPLACE_WITH_FILE_HASH
+    camera_config_sha256: sha256:REPLACE_WITH_CAMERA_HASH
+    controller_config_sha256: sha256:REPLACE_WITH_CONTROLLER_HASH
+    preprocessor_config_sha256: sha256:REPLACE_WITH_PREPROCESSOR_HASH
+    postprocessor_config_sha256: sha256:REPLACE_WITH_POSTPROCESSOR_HASH
+  code:
+    implementation_commit: REPLACE_WITH_40_CHARACTER_COMMIT
+    source_tree_sha256: sha256:REPLACE_WITH_SOURCE_TREE_HASH
+  runner:
+    entrypoint: scripts/pi05_batch_capture.sh
+    argv:
+      - --backend
+      - REPLACE_WITH_BACKEND
+      - --config
+      - configs/campaigns/rq024/foundation-r1/capture.yaml
+      - --run
+    config:
+      id: rq024-foundation-capture-r1
+      type: pi05_batch_capture_config
+      path: configs/campaigns/rq024/foundation-r1/capture.yaml
+      sha256: sha256:REPLACE_WITH_FILE_HASH
+
+budget:
+  max_model_calls: 1440
+  max_action_generations: 1440
+  max_full_rollouts: 72
+  max_simulator_steps: 43200
+  max_persistent_gb: 10
+  max_ephemeral_gb: 20
+  min_free_space_gb: 200
+
+output:
+  root: /mnt/new-volume/vla-lens/rq024
+  namespace: rq024-foundation-r1/{child_fingerprint}
+  attempt_ledger: events/trial_attempts
+  required_artifact_types:
+    - candidate_and_rejection_manifest
+    - pool_assignment
+    - baseline_rollout_trials
+    - eligible_family_manifests
+    - physical_trajectories
+    - measurement_capability_audit
+
+completion:
+  valid_trial_statuses:
+    - rollout_success
+    - rollout_behavior_failure
+  technical_retry_rule: append a new attempt; never overwrite an earlier failure
+  resume_identity_fields:
+    - child_fingerprint
+    - trial_id
+    - checkpoint_revision
+    - effective_config_sha256
+    - trace_sha256
+
+required_audits:
+  - schema
+  - design
+  - runner
+  - budget

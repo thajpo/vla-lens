@@ -135,16 +135,20 @@ layers 0, 4, 8, 12, 16, and 17. The aligned layer-16 patch beat shuffled action
 positions (`30.04%`) and norm-matched random values (`2.77%`). Self and
 zero-strength patches were exact no-ops.
 
-This localizes the donor-directed action state late in the expert. It does not
-localize an object representation: all 50 high-dimensional action positions
-were replaced. Negative early-layer transfer also does not mean those layers
-lack scene information; a whole-state transplant can put the recipient on an
-incompatible computation path.
+This shows that replacing the whole donor action state late in the expert is
+enough to reproduce donor-like output. It does not localize an object
+representation or a scene-computation step: all 50 high-dimensional action
+positions were replaced near the output. Negative early-layer transfer also
+does not mean those layers lack scene information; a whole-state transplant
+can put the recipient on an incompatible computation path.
 
 Patching denoising steps 0-2, 3-6, or 7-9 alone transferred about `4.1%`,
-`13.6%`, or `29.7%`. These values are not additive. The practical reading is
-that the donor trajectory must be followed throughout refinement and that its
-scene-conditioned correction is strongest late.
+`13.6%`, or `29.7%`. These values are not additive. After the first update, the
+donor and recipient runs have different current action guesses, so later hidden
+differences mix scene conditioning with an already-diverged action trajectory.
+The result only says that late partial trajectory replacement affects the final
+output more. To isolate the scene contribution, evaluate both scene contexts at
+the same denoising time while holding the current action guess exactly fixed.
 
 ## VLM-To-Expert Timing Caveat
 

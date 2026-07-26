@@ -1,6 +1,6 @@
 # Current State
 
-Last updated: July 16, 2026.
+Last updated: July 26, 2026.
 
 ## What VLA Lens Is
 
@@ -31,20 +31,31 @@ capabilities.
   PI0.5 or GPU dependencies.
 - Replay a selected PI0.5 policy call with the stored observation and initial
   flow noise.
-- Require repeated no-op action agreement before running the current synthetic
-  hook smoke.
+- Require repeated no-op action agreement before a claim-eligible hook.
+- Reconstruct an accepted object-region probe direction in raw PI0.5 hidden
+  space and compare intended, random, wrong-identity, and wrong-region changes.
+- Capture matched pose-exchange scenes and rerun donor and recipient actions
+  under the same saved flow noise.
+- Run resumable visual-prefix and action-expert patch studies with in-memory
+  donor caches, permanent action arrays, controls, hashes, and recomputable
+  summaries.
+- Audit a cross-method autonomous research plan and print a stable content
+  fingerprint plus a compact human or JSON summary.
 
 ## What Does Not Work Yet
 
-The live intervention is not yet a scientific result. It applies a synthetic
-one-hot direction at `pi05.action_head.input`, records a matched random control,
-and deliberately sets `claim_eligible = false`.
+The repository now contains real probe-direction and donor-patching results,
+but no narrow intervention has shown a confirmed semantic or behavioral
+mechanism. Broad visual replacement and near-output whole-action replacement
+are useful dependency and plumbing results, not object localization.
 
-The dashboard cannot yet launch that runtime or render a complete
-stored-original/no-op/intervened/control action comparison.
+The dashboard cannot launch the live PI0.5 runtime. It can inspect saved patch
+studies, but the generic campaign-level plan, audit, claim, and generated result
+envelope is not yet wired into research-run records or the UI.
 
-Dataset-wide policy-call identity, exact reusable example manifests, and a
-method-independent experiment recipe are not yet first-class contracts.
+One-factor scene mutation capture, controller-level physical action comparison,
+fixed-current-action-state denoising analysis, and exact prefix key/value-cache
+patching still need specialized runners.
 
 The generic adapter architecture has synthetic compliance coverage, but no real
 second model or second environment integration yet.
@@ -88,26 +99,35 @@ hardware smoke. MPS capture and replay also remain unverified.
 
 ## Research Conclusion
 
-The broad pooled binary PI0.5 probes did not beat stronger metadata-only
-baselines reliably enough to justify intervention. The geometry campaign was
-mostly negative or diagnostic. Object-local `z` may justify one controlled
-methodological confirmation, but it is not currently an intervention target.
+Broad pooled probes did not reveal a reliable object-position or pose code.
+Known simulator regions contain exploratory object-identity information, but
+the corresponding probe direction failed semantic-specificity controls. A
+two-object pose exchange caused a large normalized open-loop action difference;
+replacing nearly all early visual context reproduced that difference, and
+replacing whole late expert action states forced donor-like output. These do not
+show correct behavior, object binding, or a small semantic mechanism.
 
-See [Probe evidence](probe-evidence.md) for interpretation and the
-[broad-1000 research record](pi05_broad_1000_probe_experiments.md) for the full
-results.
+The next campaign therefore starts with untouched rollout competence and
+physical scene-to-behavior measurements. It then compares scene contexts at the
+same denoising time and the exact same current action guess before attempting a
+narrow intervention. See the [research log](../RESEARCH.md) and
+[autonomous campaign protocol](autonomous-research-campaigns.md).
 
-## Active Work
+## Immediate Priorities
 
-The active backlog is in GitHub:
+The full active backlog is in GitHub. The immediate priorities are:
 
-- [#14: dataset-level policy-call index](https://github.com/thajpo/vla-lens/issues/14)
-- [#15: exact example manifests](https://github.com/thajpo/vla-lens/issues/15)
-- [#16: reusable experiment recipes](https://github.com/thajpo/vla-lens/issues/16)
-- [#17: unified selection and source-example drilldowns](https://github.com/thajpo/vla-lens/issues/17)
-- [#18: first claim-eligible PI0.5 intervention](https://github.com/thajpo/vla-lens/issues/18)
-- [#19: live Intervention Lab comparison](https://github.com/thajpo/vla-lens/issues/19)
-- [#20: sweep and cohort execution](https://github.com/thajpo/vla-lens/issues/20)
+- [#37: controlled scene-to-behavior research program](https://github.com/thajpo/vla-lens/issues/37)
+- [#21: tiered storage and managed feature caches](https://github.com/thajpo/vla-lens/issues/21)
+
+The exact next action in #37 is to prepare and independently audit the locked
+FOUNDATION child: deterministic task-object-family parsing, candidate and
+rejection tables, the 72-rollout seed-separated manifest, checkpoint and
+environment receipts, and runner config. It is not ready for hardware execution
+yet. [#20: broad intervention sweeps](https://github.com/thajpo/vla-lens/issues/20)
+and [#36: prefix key/value patching](https://github.com/thajpo/vla-lens/issues/36)
+are conditional on a factor-specific behavior branch surviving prospective
+confirmation; they are not immediate work.
 
 There are currently zero temporary implementation specs. When an issue is
 selected, its body becomes the plan unless cross-cutting architecture or a

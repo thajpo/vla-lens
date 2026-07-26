@@ -64,11 +64,12 @@ derived and disposable.
 
 ## Current Research Result
 
-The broad PI0.5 probe campaign found that stronger metadata baselines explain
-the pooled binary probe candidates as well as or better than the activations.
-The geometry campaign was mostly negative or diagnostic. Object-local `z` may
-justify one controlled methodological confirmation, but it is not currently an
-intervention target.
+The broad pooled PI0.5 probes did not reveal a reliable held-out object-position
+or pose code beyond stronger physical and metadata baselines. A later
+known-region study found exploratory object-identity information when the
+correct simulator region was supplied, but its probe direction did not beat
+semantic-specificity controls in an intervention. These results constrain the
+methods tested; they do not show that PI0.5 lacks object binding generally.
 
 The full scientific record, including null results, remains in
 [pi05_broad_1000_probe_experiments.md](pi05_broad_1000_probe_experiments.md).
@@ -76,15 +77,11 @@ Those results are history, not an implementation plan.
 
 ## Remaining Work
 
-The shared research-data work is tracked in GitHub:
-
-- [#14: dataset-level policy-call index](https://github.com/thajpo/vla-lens/issues/14)
-- [#15: exact example manifests](https://github.com/thajpo/vla-lens/issues/15)
-- [#16: reusable experiment recipes](https://github.com/thajpo/vla-lens/issues/16)
-- [#17: unified selection and exact source-example drilldowns](https://github.com/thajpo/vla-lens/issues/17)
-
-New SAE, transcoder, attribution, clustering, or broad comparison surfaces are
-deferred until this shared evidence spine is reliable.
+The current work is the
+[controlled scene-to-behavior campaign](autonomous-research-campaigns.md).
+Probe methods remain useful for its readable and reusable-information tests,
+but a positive probe does not skip the behavior, control, and confirmation
+gates.
 
 ## Code Map
 

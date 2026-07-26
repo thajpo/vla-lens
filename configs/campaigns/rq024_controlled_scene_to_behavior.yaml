@@ -1,0 +1,1645 @@
+schema_version: 1
+kind: autonomous_research_program
+program_id: rq024-controlled-scene-to-behavior
+title: Controlled scene, instruction, and robot-state use in PI0.5
+revision: 1
+control_issue: https://github.com/thajpo/vla-lens/issues/37
+question: >-
+  Does PI0.5 combine the scene, instruction, and robot state into appropriate,
+  reusable behavior, or does it mainly rely on familiar layouts and generic
+  visual sensitivity?
+decision_unlocked: >-
+  Decide whether to pursue a factor-specific internal mechanism, treat PI0.5
+  primarily as a shortcut or reliability-analysis target, or stop because the
+  policy lacks the behavior required for this mechanistic question.
+research_question_ids:
+  - RQ-021
+  - RQ-023
+  - RQ-024
+
+protocol_defaults:
+  version: 1
+  documentation: docs/autonomous-research-campaigns.md
+
+decision_protocol:
+  completion_outcomes:
+    - positive
+    - negative
+    - inconclusive
+    - not_applicable
+  entry_rule: >-
+    A study becomes eligible only when every requires_all_completed study has a
+    valid terminal result and, when present, at least one requires_any_positive
+    study has a positive audited result. Invalid studies must be revised; they
+    never satisfy an entry condition.
+  branch_rule: >-
+    Geometry and binding have separate named nodes from behavior discovery
+    through rollout. Every source-bound child names exactly one predecessor.
+    When both sources are positive, both branches activate independently; an
+    agent may not merge them or choose only the easier-looking branch.
+
+execution_gates:
+  discovery_sealed:
+    all_terminal:
+      - GEOMETRY-DISCOVERY
+      - BINDING-DISCOVERY
+      - SEMANTIC-DISCOVERY
+    lock_before_next_pool_access:
+      - child_study_id: GEOMETRY-CONFIRMATION
+        source_study_id: GEOMETRY-DISCOVERY
+        source_outcome: positive
+      - child_study_id: BINDING-CONFIRMATION
+        source_study_id: BINDING-DISCOVERY
+        source_outcome: positive
+    rule: >-
+      Geometry and binding discovery run independently. Semantic discovery uses
+      discovery families only. Before the first behavior-confirmation trial,
+      every confirmation child activated by a positive behavior discovery result
+      is committed and has a passing independent design audit.
+  behavior_results_sealed:
+    all_activated_terminal:
+      - GEOMETRY-CONFIRMATION
+      - BINDING-CONFIRMATION
+    rule: >-
+      A behavior branch activates its matching internal branch only after a
+      confirmed positive. The other behavior branch never selects or closes it.
+  phase_two_locked:
+    all_activated_discovery_terminal:
+      - GEOMETRY-CAUSAL-DISCOVERY
+      - BINDING-CAUSAL-DISCOVERY
+    lock_before_next_pool_access:
+      - child_study_id: SEMANTIC-CONFIRMATION
+        source_study_id: SEMANTIC-DISCOVERY
+        source_outcome: positive
+      - child_study_id: GEOMETRY-CAUSAL-CONFIRMATION
+        source_study_id: GEOMETRY-CAUSAL-DISCOVERY
+        source_outcome: positive
+      - child_study_id: BINDING-CAUSAL-CONFIRMATION
+        source_study_id: BINDING-CAUSAL-DISCOVERY
+        source_outcome: positive
+    rule: >-
+      All activated semantic and causal confirmation jobs are committed and
+      independently audited before any confirmation-family activation, key/value,
+      readout, or patch output is produced or inspected.
+  program_terminal:
+    rule: >-
+      No activated study is runnable or active, every activated branch has a
+      terminal audited result, and no unresolved audit error or unhandled event remains.
+
+synthesis_rules:
+  - id: behavior_and_identity
+    when: At least one behavior confirmation and semantic confirmation are positive.
+    interpretation: Controlled behavior and identity decodability both survived prospective tests.
+  - id: behavior_without_detected_identity_readout
+    when: A behavior confirmation is positive and semantic confirmation is negative.
+    interpretation: Behavior is reusable, but the tested identity readout did not survive its controls.
+  - id: readable_but_behavior_not_confirmed
+    when: Semantic confirmation is positive and both behavior confirmations are nonpositive.
+    interpretation: This is the H5 readable-but-unused pattern for the tested behaviors, not proof of no use elsewhere.
+  - id: fixed_x_effect_disappears
+    when: A behavior confirmation is positive and its matching internal discovery is negative.
+    interpretation: The older late-state effect is consistent with H4 action-path dependence.
+  - id: source_specific_causal_path
+    when: One source's causal confirmation is positive.
+    interpretation: Only that exact source and path gain a confirmed local causal claim.
+
+scope:
+  model:
+    family: pi05
+    checkpoint_name: lerobot/pi05_libero_finetuned
+    checkpoint_revision_rule: Resolve and hash the exact revision in every child contract.
+  environment:
+    benchmark: libero_90
+    simulator_rule: Lock LIBERO, robosuite, MuJoCo, task, camera, and controller versions.
+    execution_rule: Use only the dedicated PI0.5 hardware environment and wrappers.
+  prior_evidence:
+    - RQ-015 found exploratory identity information when the simulator region was supplied.
+    - RQ-019 found a reproducible open-loop action difference in five layouts of one task.
+    - RQ-020 established broad visual dependence but no object-specific location.
+    - RQ-022 replaced whole late action states but confounded scene and action-path effects.
+  freshness: >-
+    Existing broad-1000 tasks and test data have been inspected and are discovery
+    data. Confirmation in this program means prospectively held out from RQ-024
+    counterfactual selection, using new scene instances and an exposure log. It
+    must not be described as globally untouched unless a prior-artifact audit
+    proves that stronger statement.
+
+hypotheses:
+  - id: H1-relational-control
+    statement: >-
+      PI0.5 binds the instructed object to current scene and robot geometry and
+      computes a reusable target-relative control response.
+    distinguishing_predictions:
+      - Target displacement produces a matching physical trajectory correction.
+      - Changing the named target routes behavior while pixels remain fixed.
+      - The relationship repeats across task-object families, layouts, and robot starts.
+      - A narrow internal path can transfer the relevant correction selectively.
+  - id: H2-layout-shortcut
+    statement: >-
+      Task and layout patterns explain behavior better than an episode-specific
+      scene relationship.
+    distinguishing_predictions:
+      - Discovery effects fail on prospectively held-out task-object families.
+      - Task, layout, prompt, or prior-action predictors rival model internals.
+      - Within-task shuffled scene signals retain most apparent predictive power.
+  - id: H3-generic-visual-sensitivity
+    statement: >-
+      Scene changes perturb the output without a task-specific physical response.
+    distinguishing_predictions:
+      - Irrelevant-object changes rival target changes after image salience is matched.
+      - Action deltas do not point toward the required target-relative correction.
+      - Intended internal patches do not beat natural wrong-factor controls.
+  - id: H4-denoising-path-dependence
+    statement: >-
+      Late expert differences mostly reflect action guesses that have already
+      diverged, not a progressively stronger scene signal.
+    distinguishing_predictions:
+      - The action-state main effect is large when scene and current action guess are crossed.
+      - Late scene effects shrink or change meaning when the current action guess is fixed.
+      - Whole late-state replacement remains strong while a narrow scene path does not.
+  - id: H5-readable-but-unused
+    statement: >-
+      Object information is readable under controlled variation but is not used
+      for the tested behavior, or becomes relevant only under another instruction.
+    distinguishing_predictions:
+      - Identity decoding survives layout and pose changes without a matching behavior effect.
+      - Instruction changes reveal behavioral use absent under a fixed instruction.
+      - Intervening on the readable signal does not selectively change relevant behavior.
+
+population:
+  primary_independent_unit: task_object_family
+  nested_units:
+    - scene layout within task-object family
+    - matched flow-noise sample within scene condition
+    - policy call, action position, token, head, layer, and denoising time within trial
+  candidate_pool:
+    max_families: 24
+    canonical_family_id: >-
+      libero_90 task ID, normalized task verb, normalized instructed object,
+      normalized destination or secondary object, joined with ASCII unit separators.
+    rank_digest: >-
+      sha256 of rq024-family-rank-v1, a null byte, program_id, a null byte, and
+      canonical_family_id encoded as UTF-8. Break digest ties by canonical_family_id.
+    stratum: normalized task verb and normalized instructed-object identity
+    interleave_rule: >-
+      Sort strata by sha256 of rq024-stratum-v1 plus the stratum ID. Sort families
+      within each stratum by rank_digest. Repeatedly take one family from each
+      nonempty stratum in that fixed order until 24 are selected.
+    selection_rule: >-
+      Before rollout outcomes are known, enumerate every LIBERO-90 task, parse it
+      with a versioned family parser, preserve every rejection and reason, then
+      apply the exact interleave and rank rules above. Commit the task-catalog,
+      parser, source-universe, candidate-table, and rejection-table hashes.
+  pool_assignment:
+    discovery_candidates: 12
+    confirmation_candidates: 12
+    assignment_rule: >-
+      Assign even zero-based candidate positions to discovery and odd positions
+      to confirmation until each has twelve families. This assignment is locked
+      before baseline screening. Do not move a family after seeing success or
+      any counterfactual result.
+  baseline_screen:
+    untouched_rollouts_per_family: 3
+    eligibility_rule: at_least_2_of_3_successes
+    interpretation: Operational screen only, not a precise policy-success estimate.
+    permitted_confirmation_exposure: >-
+      Baseline competence may be inspected in both pools. Counterfactual actions,
+      internal sites, and intervention outcomes in the confirmation pool may not.
+  required_eligible:
+    discovery: 6
+    confirmation: 6
+    failure_rule: >-
+      If either preassigned pool has fewer than six eligible families, stop the
+      general mechanism program. Do not refill one pool from the other.
+  cohort_selection:
+    base_rule: >-
+      Within each pool, select the first six baseline-eligible families in the
+      precomputed outcome-blind order. Preserve every other eligible family as
+      nonselected evidence; never substitute it after counterfactual results.
+    child_structural_rule: >-
+      If a child needs additional structural support, apply its predeclared
+      outcome-blind structural filter to the same ordered pool and select the
+      first six passing families before any child model output is generated.
+      If fewer than six pass, that child is not applicable; do not backfill it
+      after inspecting another child's result.
+  identity_support:
+    vocabulary_rule: >-
+      Lock identity labels before the semantic readout. Each claim-bearing label
+      must occur in at least three distinct selected discovery families, and at
+      least three labels must pass. Unsupported labels remain listed but cannot
+      count as decoding failures. This program makes no zero-shot identity claim.
+  pool_exposure:
+    discovery: >-
+      Geometry and binding discovery, semantic readout, internal selection, and
+      causal discovery use only discovery families.
+    confirmation: >-
+      Before a causal-confirmation child is locked, agents may inspect baseline
+      and frozen behavior-confirmation outputs only. They may not compute or
+      inspect confirmation-family activations, token or layer scores, fixed-x
+      outputs, keys/values, patches, or semantic readouts. The first-access log
+      records exposure type, study, agent, artifact hash, and time.
+  discovery_design:
+    families: 6
+    new_layouts_per_family: 4
+    matched_flow_noise_per_cell: 4
+  confirmation_design:
+    families: 6
+    new_layouts_per_family: 4
+    matched_flow_noise_per_cell: 4
+  deterministic_seed_rule: >-
+    Derive layout, reset, environment, policy, and flow-noise seeds in separate
+    domains from sha256(program_id, child_plan_id, canonical_family_id, cell_id,
+    replicate_id, seed_domain). The child trial manifest stores the resolved
+    integer seeds before execution; one seed may not silently stand in for another.
+  inference_rule: >-
+    Weight task-object families equally and resample hierarchically by family,
+    then layout. Report n_families, n_layouts, n_noise, and n_rollouts. Noise,
+    action elements, tokens, and denoising steps never increase independent n.
+
+child_contract_defaults:
+  required_lock_fields:
+    - question_and_allowed_claim
+    - exact_model_checkpoint_hash
+    - environment_camera_controller_and_preprocessor_versions
+    - cohort_split_and_prior_exposure_hashes
+    - metric_id_and_formula
+    - minimum_useful_effect
+    - controls
+    - trial_matrix_and_seed_schedule
+    - analysis_code_commit
+    - runner_config_hash
+    - output_root_and_storage_budget
+    - stop_and_transition_rules
+    - precision_or_bounded_replication_justification
+    - small_sample_family_level_inference
+  required_evidence:
+    - immutable child plan and fingerprint
+    - exact job and trial manifest with expected count
+    - preflight, command, environment, code, model, dataset, and seed identities
+    - append-only attempts, failures, exclusions, and deviations
+    - full physical action or behavior outputs needed to recompute metrics
+    - strongest controls and all candidate-selection results
+    - independent schema, execution, calculation, and claim audits
+    - machine result card and generated human summary
+  lock_rule: >-
+    A child study cannot execute model or simulator trials until its exact job
+    manifest is content-hashed, committed, and independently audited. Any change
+    to a claim-bearing field creates a new child revision.
+
+studies:
+  - id: FOUNDATION
+    title: Task support and untouched behavior screen
+    kind: preparation
+    phase: foundation
+    question: Which task-object families support the design and competent base behavior?
+    entry_conditions:
+      requires_all_completed: []
+      requires_any_positive: []
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: both_baseline_only
+      pool_phase: baseline
+      requires_gate: none
+      read_namespaces:
+        - task_catalog
+      write_namespace: foundation_baseline
+      selection_allowed: true
+      exposure_class: baseline_behavior
+    entry_gate: Program schema is valid and no model execution has begun.
+    actions:
+      - Build the outcome-blind 24-family candidate and rejection manifest.
+      - Preassign twelve discovery and twelve confirmation candidates.
+      - Run three untouched full rollouts per family using locked reset and rollout seeds.
+      - Record simulator success, end-effector and object trajectories, object motion, and per-axis action variation.
+      - Audit simulator contact telemetry separately; never rename an end-effector distance proxy as contact or collision.
+      - Select the first six eligible families in each precomputed pool order.
+      - Preserve later eligible families without using them as outcome-driven replacements.
+      - Create eligible discovery and confirmation manifests without cross-pool replacement.
+      - Lock the family-level precision or bounded-replication interpretation for n equals six.
+    primary_claim:
+      metric_id: family_baseline_eligibility
+      definition: A family is eligible when at least two of three untouched rollouts succeed.
+      unit: binary_per_task_object_family
+      direction: eligible_in_both_preassigned_pools
+    independent_unit: task_object_family
+    controls:
+      - deterministic outcome-blind candidate ordering
+      - environment reset and seed identity
+      - simulator success versus contact and object-motion consistency
+      - controller action-unit and postprocessing audit
+      - prior-research exposure manifest
+    child_contract:
+      additional_lock_fields:
+        - candidate_task_manifest_and_rejection_rules
+        - preassigned_pool_membership
+        - exact_rollout_reset_seeds
+        - maximum_72_rollouts
+        - deterministic_first_six_eligible_rule
+        - family_level_precision_and_small_sample_method
+        - simulator_contact_telemetry_capability_status
+    required_outputs:
+      - candidate_and_rejection_manifest.parquet
+      - pool_assignment.json
+      - baseline_rollout_trials.parquet
+      - eligible_family_manifests.json
+      - physical_trajectories
+      - measurement_capability_audit.json
+      - foundation_audit.json
+    advance_gate: Each preassigned pool contains at least six eligible families.
+    stop_rules:
+      - Stop the mechanism program if either pool has fewer than six eligible families.
+      - Preserve failed families for a separate reliability-design decision.
+      - Do not reinterpret baseline screening as counterfactual confirmation.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: stop_branch
+      invalid: revise_child
+    allowed_conclusions:
+      - The named families do or do not support later controlled comparisons.
+    forbidden_conclusions:
+      - Baseline success demonstrates a semantic representation.
+    budget:
+      max_instances: 1
+      max_model_calls: 1440
+      max_action_generations: 1440
+      max_full_rollouts: 72
+      max_simulator_steps: 43200
+      max_additional_persistent_gb: 10
+      max_ephemeral_gb: 20
+    required_audits:
+      - candidate selection and pool assignment predate outcomes
+      - expected versus observed 72-rollout matrix
+      - physical units, controller path, failures, and exclusions
+
+  - id: GEOMETRY-DISCOVERY
+    title: Target-displacement behavior discovery
+    kind: behavior_discovery
+    phase: discovery
+    question: Does moving the target cause the appropriate target-relative physical correction?
+    entry_conditions:
+      requires_all_completed:
+        - FOUNDATION
+      requires_any_positive:
+        - FOUNDATION
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: discovery
+      pool_phase: discovery
+      requires_gate: none
+      read_namespaces:
+        - foundation_baseline
+        - discovery_scene_state
+      write_namespace: geometry_discovery
+      selection_allowed: true
+      exposure_class: counterfactual_behavior
+    entry_gate: Six eligible discovery families and a locked geometry child contract exist.
+    actions:
+      - Move only the target by zero, plus or minus x, and plus or minus y in table coordinates.
+      - Use 0.01 meter displacement; test 0.02 meter only as a predeclared dose check.
+      - Keep instruction, robot, camera, distractors, reset state, and matched noise fixed.
+      - Simulate action chunks through the actual postprocessor and controller.
+      - Run controlled rollouts on a predeclared subset before any internal localization.
+      - Report camera and appearance changes separately as robustness stresses, not harmless controls.
+    primary_claim:
+      metric_id: geometry_response_gain
+      definition: >-
+        dot(eef_endpoint_mutated minus eef_endpoint_original, target_xy_displacement)
+        divided by squared target_xy_displacement, at the prelocked physical horizon.
+      unit: dimensionless_gain
+      direction: larger_positive_gain
+    independent_unit: task_object_family
+    controls:
+      - zero mutation replay
+      - same-scene sampling variation under matched noise schedule
+      - irrelevant-object move chosen from task semantics before policy execution
+      - task, layout, robot-state, and previous-action predictors
+    child_contract:
+      additional_lock_fields:
+        - target_displacement_frame_axis_and_validity_range
+        - physical_horizon_and_task_phase
+        - controller_or_oracle_derived_minimum_gain
+        - irrelevant_object_selection_and_image_salience_match
+        - controlled_rollout_subset_and_contact_endpoint
+    required_outputs:
+      - geometry_trial_manifest.parquet
+      - simulator_state_diff_and_validity.json
+      - controller_level_trajectories
+      - geometry_discovery_analysis.json
+      - geometry_discovery_audit.json
+      - geometry_discovery_claim.json
+    advance_gate: >-
+      The family-weighted gain exceeds the externally calibrated useful margin,
+      its hierarchical interval is above zero, it exceeds the irrelevant-object
+      control by a locked margin, and the controlled-rollout endpoint changes in
+      the expected direction without a material collision increase.
+    stop_rules:
+      - Stop if controller reconstruction or one-factor simulator validity fails.
+      - Stop mechanistic follow-up if only normalized action L2 changes.
+      - Treat camera and appearance sensitivity as robustness evidence, not automatic failure.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Exploratory physical target-relative response on the discovery families.
+    forbidden_conclusions:
+      - General object-position representation or confirmed behavior.
+    budget:
+      max_instances: 1
+      max_model_calls: 1200
+      max_action_generations: 1200
+      max_full_rollouts: 36
+      max_simulator_steps: 21600
+      max_additional_persistent_gb: 10
+      max_ephemeral_gb: 30
+    required_audits:
+      - exact one-factor state diff and trial count
+      - hierarchical family then layout analysis
+      - metric and minimum effect locked without using policy response magnitude
+      - strongest matched control and controlled-rollout consequence
+
+  - id: GEOMETRY-CONFIRMATION
+    title: Prospectively held-out target-displacement confirmation
+    kind: behavior_confirmation
+    phase: behavior_confirmation
+    question: Does the frozen geometry response repeat on the confirmation pool?
+    entry_conditions:
+      requires_all_completed:
+        - GEOMETRY-DISCOVERY
+      requires_any_positive:
+        - GEOMETRY-DISCOVERY
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: confirmation
+      pool_phase: behavior_confirmation
+      requires_gate: discovery_sealed
+      read_namespaces:
+        - foundation_baseline
+        - geometry_confirmation_scene_state
+      write_namespace: geometry_confirmation
+      selection_allowed: false
+      exposure_class: counterfactual_behavior
+    entry_gate: Geometry discovery is positive and its metric, margin, conditions, and code are frozen.
+    actions:
+      - Run the frozen geometry job on six preassigned confirmation families and new scene instances.
+      - Make no layer, metric, subgroup, condition, or threshold change.
+      - Supersede the discovery claim if this confirmation fails.
+    primary_claim:
+      metric_id: geometry_response_gain
+      definition: Exact frozen definition and horizon from GEOMETRY-DISCOVERY.
+      unit: dimensionless_gain
+      direction: larger_positive_gain
+    independent_unit: task_object_family
+    controls:
+      - frozen zero, sampling, irrelevant-object, and metadata controls
+      - prospective exposure and first-access log
+      - discovery and confirmation family and scene disjointness
+    child_contract:
+      additional_lock_fields:
+        - prospective_cohort_hash
+        - discovery_claim_and_method_hash
+        - metric_id_and_formula
+        - minimum_useful_effect
+        - controls
+        - analysis_code_commit
+        - model_checkpoint_hash
+        - runner_config_hash
+    required_outputs:
+      - geometry_confirmation_trials.parquet
+      - controller_level_trajectories
+      - geometry_confirmation_analysis.json
+      - geometry_confirmation_audit.json
+      - geometry_confirmation_claim.json
+    advance_gate: The unchanged discovery gate passes on the confirmation families.
+    stop_rules:
+      - Any retuning creates a new discovery study instead of confirmation.
+      - Confirmation failure supersedes the exploratory geometry result.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: supersede_source_and_reevaluate
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Confirmed geometry response for this checkpoint and declared population.
+    forbidden_conclusions:
+      - Globally untouched tasks or generality beyond the declared displacement range.
+    budget:
+      max_instances: 1
+      max_model_calls: 1200
+      max_action_generations: 1200
+      max_full_rollouts: 36
+      max_simulator_steps: 21600
+      max_additional_persistent_gb: 10
+      max_ephemeral_gb: 30
+    required_audits:
+      - lock commit and plan hash predate confirmation outputs
+      - prospective exposure, unchanged method, and no selection
+      - claim values recomputed from raw trials
+
+  - id: BINDING-DISCOVERY
+    title: Named-target binding behavior discovery
+    kind: behavior_discovery
+    phase: discovery
+    question: Does behavior follow the named object rather than a familiar position?
+    entry_conditions:
+      requires_all_completed:
+        - FOUNDATION
+      requires_any_positive:
+        - FOUNDATION
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: discovery
+      pool_phase: discovery
+      requires_gate: none
+      read_namespaces:
+        - foundation_baseline
+        - discovery_scene_state
+      write_namespace: binding_discovery
+      selection_allowed: true
+      exposure_class: counterfactual_behavior
+    entry_gate: Six eligible discovery families support two physically valid named targets.
+    actions:
+      - Cross two object-position assignments, two valid target instructions, and two robot starts.
+      - Keep pixels fixed for instruction comparisons and use four matched noise samples per cell.
+      - Treat robot-start changes as whole robot-state changes because the wrist camera also moves.
+      - Use target approach or contact rather than task reward when prompt overrides lack valid reward semantics.
+      - Run controlled rollouts on one predeclared layout per family before internal localization.
+    primary_claim:
+      metric_id: named_target_preference_m
+      definition: >-
+        Minimum distance to the unnamed object minus minimum distance to the
+        named object during the prelocked physical time window.
+      unit: meters
+      direction: larger_positive_preference
+    independent_unit: task_object_family
+    controls:
+      - meaning-preserving instruction paraphrase
+      - position assignment with instruction held fixed
+      - robot start crossed with both instructions
+      - task, layout, prompt-form, and prior-action predictors
+    child_contract:
+      additional_lock_fields:
+        - valid_dual_target_instruction_and_reward_semantics
+        - exact_object_assignments_and_robot_start_states
+        - physical_time_window_and_contact_definition
+        - prompt_token_and_quantized_robot_state_segmentation
+        - controlled_rollout_subset
+        - first_six_structurally_valid_families_in_precomputed_order
+    required_outputs:
+      - binding_trial_manifest.parquet
+      - instruction_and_simulator_validity.json
+      - controller_level_trajectories
+      - binding_discovery_analysis.json
+      - binding_discovery_audit.json
+      - binding_discovery_claim.json
+    advance_gate: >-
+      The family-weighted named-target preference exceeds the prelocked physical
+      margin, repeats across position assignments and robot starts, and produces
+      the expected controlled-rollout contact or approach consequence.
+    stop_rules:
+      - Stop if both instructions are not physically and linguistically valid for a family.
+      - Stop mechanistic follow-up if behavior follows position rather than the named target.
+      - Do not interpret a prompt-only out-of-distribution failure as absent semantics.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Exploratory named-target binding on the discovery families.
+    forbidden_conclusions:
+      - Confirmed language grounding or a localized object representation.
+    budget:
+      max_instances: 1
+      max_model_calls: 1728
+      max_action_generations: 1728
+      max_full_rollouts: 48
+      max_simulator_steps: 28800
+      max_additional_persistent_gb: 10
+      max_ephemeral_gb: 30
+    required_audits:
+      - instruction validity, task semantics, and complete factorial matrix
+      - family-level analysis with noise and layouts nested
+      - physical endpoint and controlled-rollout consequence
+
+  - id: BINDING-CONFIRMATION
+    title: Prospectively held-out named-target binding confirmation
+    kind: behavior_confirmation
+    phase: behavior_confirmation
+    question: Does the frozen binding relationship repeat on the confirmation pool?
+    entry_conditions:
+      requires_all_completed:
+        - BINDING-DISCOVERY
+      requires_any_positive:
+        - BINDING-DISCOVERY
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: confirmation
+      pool_phase: behavior_confirmation
+      requires_gate: discovery_sealed
+      read_namespaces:
+        - foundation_baseline
+        - binding_confirmation_scene_state
+      write_namespace: binding_confirmation
+      selection_allowed: false
+      exposure_class: counterfactual_behavior
+    entry_gate: Binding discovery is positive and its exact comparison is frozen.
+    actions:
+      - Run the unchanged binding job on six preassigned confirmation families.
+      - Preserve the exact prompt, robot-state, object-assignment, metric, and control rules.
+      - Supersede the discovery claim if confirmation fails.
+    primary_claim:
+      metric_id: named_target_preference_m
+      definition: Exact frozen definition and time window from BINDING-DISCOVERY.
+      unit: meters
+      direction: larger_positive_preference
+    independent_unit: task_object_family
+    controls:
+      - frozen paraphrase, position, robot-state, and metadata controls
+      - prospective exposure and first-access log
+      - discovery and confirmation family and scene disjointness
+    child_contract:
+      additional_lock_fields:
+        - prospective_cohort_hash
+        - discovery_claim_and_method_hash
+        - metric_id_and_formula
+        - minimum_useful_effect
+        - controls
+        - analysis_code_commit
+        - model_checkpoint_hash
+        - runner_config_hash
+    required_outputs:
+      - binding_confirmation_trials.parquet
+      - controller_level_trajectories
+      - binding_confirmation_analysis.json
+      - binding_confirmation_audit.json
+      - binding_confirmation_claim.json
+    advance_gate: The unchanged discovery gate passes on confirmation families.
+    stop_rules:
+      - Any retuning creates a new discovery study.
+      - Confirmation failure supersedes the exploratory binding result.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: supersede_source_and_reevaluate
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Confirmed named-target binding for the declared checkpoint and population.
+    forbidden_conclusions:
+      - General language understanding or generality beyond declared instructions.
+    budget:
+      max_instances: 1
+      max_model_calls: 1728
+      max_action_generations: 1728
+      max_full_rollouts: 48
+      max_simulator_steps: 28800
+      max_additional_persistent_gb: 10
+      max_ephemeral_gb: 30
+    required_audits:
+      - lock predates outputs and method is unchanged
+      - prospective exposure, full factorial matrix, and raw-trial recomputation
+
+  - id: SEMANTIC-DISCOVERY
+    title: Controlled identity-readout discovery
+    kind: semantic_readout
+    phase: discovery
+    question: Is object identity readable from PI0.5 across controlled scene changes?
+    entry_conditions:
+      requires_all_completed:
+        - GEOMETRY-DISCOVERY
+        - BINDING-DISCOVERY
+      requires_any_positive: []
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: discovery
+      pool_phase: discovery
+      requires_gate: none
+      read_namespaces:
+        - geometry_discovery
+        - binding_discovery
+        - discovery_activations
+      write_namespace: semantic_discovery
+      selection_allowed: true
+      exposure_class: semantic_internal
+    entry_gate: >-
+      Discovery captures have valid correspondence, the complete readout grid is
+      locked, and at least three labels have support in three discovery families each.
+    actions:
+      - Train linear and small-MLP readouts on the locked layer, token, feature, and object-conditioned grid.
+      - Use nested leave-one-family-out selection only within discovery families.
+      - Repeat the complete selection pipeline under shuffled labels.
+      - Compare metadata and wrong-region controls; report generic vision separately as specificity.
+    primary_claim:
+      metric_id: identity_decoding_over_selection_null
+      definition: >-
+        Held-out macro balanced accuracy of the selected VLA readout minus the
+        locked upper quantile of the full-pipeline shuffled-label selection null.
+      unit: balanced_accuracy_points
+      direction: larger_positive_margin
+    independent_unit: task_object_family
+    controls:
+      - metadata and task-layout prediction
+      - wrong-region input
+      - complete shuffled-label selection pipeline
+      - fixed generic vision representation reported as a separate specificity comparison
+      - performance by supported identity, pose, layout, appearance, and robot start
+    child_contract:
+      additional_lock_fields:
+        - identity_vocabulary_and_minimum_family_support
+        - complete_candidate_grid_and_selection_rule
+        - nested_family_folds_and_full_pipeline_null
+        - fixed_generic_vision_baseline_and_preprocessing
+        - known_region_and_correspondence_source
+    required_outputs:
+      - replayable_probe_artifacts
+      - complete_candidate_and_null_tables
+      - per_family_predictions.parquet
+      - semantic_discovery_audit.json
+      - semantic_discovery_claim.json
+    advance_gate: >-
+      The nested held-out VLA readout exceeds the full-pipeline null, metadata,
+      and wrong-region margins. Generic vision changes the specificity wording,
+      not whether the VLA representation is decodable.
+    stop_rules:
+      - Mark the study not applicable if label support fails; do not call unsupported labels decoding failures.
+      - Keep readable, reusable, and behaviorally used as separate claims.
+      - Do not inspect confirmation-family activations or readout scores in this child.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Exploratory identity decodability for the supported labels and discovery population.
+    forbidden_conclusions:
+      - Confirmed identity decoding, VLA-specific advantage, binding, or causal use.
+    budget:
+      max_instances: 1
+      max_model_calls: 0
+      max_action_generations: 0
+      max_full_rollouts: 0
+      max_simulator_steps: 0
+      max_additional_persistent_gb: 5
+      max_ephemeral_gb: 20
+      max_probe_fits: 160
+    required_audits:
+      - vocabulary support, nested folds, complete search, and full-pipeline null
+      - exact replayable probe, metadata, wrong-region, and generic-vision contracts
+
+  - id: GEOMETRY-INTERNAL-DISCOVERY
+    title: Geometry path discovery at fixed action state
+    kind: internal_discovery
+    phase: mechanism_discovery
+    source_claim_study: GEOMETRY-CONFIRMATION
+    question: Where does confirmed target displacement alter PI0.5's action update at fixed x_t?
+    entry_conditions:
+      requires_all_completed:
+        - GEOMETRY-CONFIRMATION
+      requires_any_positive:
+        - GEOMETRY-CONFIRMATION
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: discovery
+      pool_phase: mechanism_discovery
+      requires_gate: behavior_results_sealed
+      read_namespaces:
+        - geometry_confirmation
+        - geometry_discovery
+        - discovery_fixed_x_activations
+      write_namespace: geometry_internal_discovery
+      selection_allowed: true
+      exposure_class: mechanistic_internal
+    entry_gate: The geometry confirmation result and exact model-action-space target are frozen.
+    actions:
+      - Cross scene A or B with recipient, donor, and midpoint current action guesses at identical times.
+      - Quantify scene, action-state, and interaction effects on the normalized 50-by-7 velocity update.
+      - Search only prefix key/value sites consumed by the action expert and therefore patchable by the causal child.
+      - Use nested leave-one-family-out selection and repeat the full search under scene shuffling.
+      - Report pixels and generic vision as information and specificity comparisons, not disqualifiers.
+    primary_claim:
+      metric_id: fixed_x_scene_velocity_delta_r2_over_null
+      definition: >-
+        Nested held-out explained variance for predicting the full model's paired
+        normalized 50-by-7 scene-induced velocity delta at identical t and x_t,
+        minus the locked full-pipeline scene-shuffle null.
+      unit: explained_variance_points
+      direction: larger_positive_margin
+    independent_unit: task_object_family
+    controls:
+      - same scene crossed with recipient, donor, and midpoint x_t
+      - irrelevant-object scene change
+      - metadata and within-task scene-shuffle selection nulls
+      - pixels and fixed generic vision reported separately
+    child_contract:
+      additional_lock_fields:
+        - exact_geometry_confirmation_result_hash
+        - normalized_velocity_schedule_formula_shape_and_unit
+        - patchable_prefix_key_value_candidate_universe
+        - nested_family_selection_and_evaluation_splits
+        - fixed_t_x_t_paths_and_interpolation_rule
+        - scene_action_state_main_effect_and_interaction_formulas
+        - maximum_two_selected_sites
+    required_outputs:
+      - geometry_fixed_x_trial_manifest.parquet
+      - paired_scene_action_state_outputs
+      - full_candidate_and_null_tables
+      - geometry_selected_site_lock.json
+      - geometry_internal_audit.json
+      - geometry_internal_claim.json
+    advance_gate: >-
+      At most two patchable sites exceed the locked selection-null and metadata
+      margins on nested held-out discovery families, while the scene effect is
+      distinguishable from action-state and interaction effects.
+    stop_rules:
+      - Stop if the scene effect disappears when x_t is fixed.
+      - Stop if only action-state or interaction effects explain the result.
+      - Do not require the VLA site to beat pixels or generic vision to establish decodability.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - A patchable PI0.5 prefix site tracks the geometry-linked model velocity change at fixed x_t.
+    forbidden_conclusions:
+      - The site represents meters, is causal, or explains the confirmed physical behavior.
+    budget:
+      max_instances: 1
+      max_model_calls: 1250
+      max_action_generations: 1250
+      max_full_rollouts: 0
+      max_simulator_steps: 0
+      max_additional_persistent_gb: 6
+      max_ephemeral_gb: 40
+    required_audits:
+      - exact scene-by-action-state matrix and velocity definition
+      - patchable candidate universe, nested selection, and full-pipeline null
+      - discovery-pool-only exposure and claim wording
+
+  - id: BINDING-INTERNAL-DISCOVERY
+    title: Named-target path discovery at fixed action state
+    kind: internal_discovery
+    phase: mechanism_discovery
+    source_claim_study: BINDING-CONFIRMATION
+    question: Where does confirmed named-target binding alter PI0.5's action update at fixed x_t?
+    entry_conditions:
+      requires_all_completed:
+        - BINDING-CONFIRMATION
+      requires_any_positive:
+        - BINDING-CONFIRMATION
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: discovery
+      pool_phase: mechanism_discovery
+      requires_gate: behavior_results_sealed
+      read_namespaces:
+        - binding_confirmation
+        - binding_discovery
+        - discovery_fixed_x_activations
+      write_namespace: binding_internal_discovery
+      selection_allowed: true
+      exposure_class: mechanistic_internal
+    entry_gate: The binding confirmation result and exact model-action-space target are frozen.
+    actions:
+      - Cross named target A or B with recipient, donor, and midpoint current action guesses at identical times.
+      - Quantify instruction, action-state, and interaction effects on the normalized 50-by-7 velocity update.
+      - Search only prefix key/value sites consumed by the action expert and patchable by the causal child.
+      - Use nested leave-one-family-out selection and the full instruction-shuffle selection null.
+      - Report pixels and generic vision separately; they do not decide VLA decodability.
+    primary_claim:
+      metric_id: fixed_x_instruction_velocity_delta_r2_over_null
+      definition: >-
+        Nested held-out explained variance for predicting the full model's paired
+        normalized 50-by-7 instruction-induced velocity delta at identical t and
+        x_t, minus the locked full-pipeline instruction-shuffle null.
+      unit: explained_variance_points
+      direction: larger_positive_margin
+    independent_unit: task_object_family
+    controls:
+      - same instruction crossed with recipient, donor, and midpoint x_t
+      - meaning-preserving paraphrase and wrong-target instruction
+      - metadata and full-pipeline instruction-shuffle selection nulls
+      - pixels and fixed generic vision reported separately
+    child_contract:
+      additional_lock_fields:
+        - exact_binding_confirmation_result_hash
+        - normalized_velocity_schedule_formula_shape_and_unit
+        - patchable_prefix_key_value_candidate_universe
+        - nested_family_selection_and_evaluation_splits
+        - fixed_t_x_t_paths_and_interpolation_rule
+        - instruction_action_state_main_effect_and_interaction_formulas
+        - maximum_two_selected_sites
+    required_outputs:
+      - binding_fixed_x_trial_manifest.parquet
+      - paired_instruction_action_state_outputs
+      - full_candidate_and_null_tables
+      - binding_selected_site_lock.json
+      - binding_internal_audit.json
+      - binding_internal_claim.json
+    advance_gate: >-
+      At most two patchable sites exceed the selection-null and metadata margins
+      on nested held-out discovery families, with instruction effects distinct
+      from action-state and interaction effects.
+    stop_rules:
+      - Stop if the instruction effect disappears when x_t is fixed.
+      - Stop if only action-state or interaction effects explain the result.
+      - Do not require the VLA site to beat pixels or generic vision.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - A patchable PI0.5 prefix site tracks the binding-linked model velocity change at fixed x_t.
+    forbidden_conclusions:
+      - The site contains a general object graph, is causal, or explains physical behavior.
+    budget:
+      max_instances: 1
+      max_model_calls: 1250
+      max_action_generations: 1250
+      max_full_rollouts: 0
+      max_simulator_steps: 0
+      max_additional_persistent_gb: 6
+      max_ephemeral_gb: 40
+    required_audits:
+      - exact instruction-by-action-state matrix and velocity definition
+      - patchable candidate universe, nested selection, and full-pipeline null
+      - discovery-pool-only exposure and claim wording
+
+  - id: GEOMETRY-CAUSAL-DISCOVERY
+    title: Geometry prefix-path causal discovery
+    kind: causal_discovery
+    phase: mechanism_discovery
+    source_claim_study: GEOMETRY-INTERNAL-DISCOVERY
+    question: Does the selected geometry prefix path cause the local fixed-x velocity correction?
+    entry_conditions:
+      requires_all_completed:
+        - GEOMETRY-INTERNAL-DISCOVERY
+      requires_any_positive:
+        - GEOMETRY-INTERNAL-DISCOVERY
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: discovery
+      pool_phase: mechanism_discovery
+      requires_gate: behavior_results_sealed
+      read_namespaces:
+        - geometry_internal_discovery
+        - discovery_prefix_key_values
+      write_namespace: geometry_causal_discovery
+      selection_allowed: true
+      exposure_class: causal_patch
+    entry_gate: At most two geometry sites, exact x_t values, and the velocity metric are locked.
+    actions:
+      - Patch the selected prefix keys/values consumed by the action expert at fixed x_t.
+      - Run both scene directions, signed doses, key-only, value-only, and joint patches.
+      - Compare self, zero, shuffled, wrong-factor, unrelated-donor, and covariance-matched controls.
+      - Separate one-step local velocity transfer from propagated final-action transfer.
+    primary_claim:
+      metric_id: geometry_local_velocity_transfer_fraction_over_control
+      definition: >-
+        dot(v_patch minus v_recipient, v_donor minus v_recipient) divided by the
+        squared norm of v_donor minus v_recipient, minus the strongest locked
+        control, using normalized 50-by-7 velocity at the identical t and x_t.
+      unit: dimensionless_transfer_fraction
+      direction: larger_positive_margin_in_both_directions
+    independent_unit: task_object_family
+    controls:
+      - self, zero, shuffled-site, wrong-factor, and unrelated natural donors
+      - covariance-matched natural-difference control
+      - signed dose and reverse direction
+      - unrelated action-dimension noninferiority margin
+    child_contract:
+      additional_lock_fields:
+        - exact_geometry_internal_result_and_site_hashes
+        - exact_key_value_head_token_layer_time_and_position_scope
+        - normalized_local_velocity_transfer_formula
+        - control_construction_effect_and_noninferiority_margins
+    required_outputs:
+      - geometry_causal_discovery_trials.parquet
+      - local_velocity_and_propagated_action_arrays
+      - geometry_causal_discovery_analysis.json
+      - geometry_causal_discovery_audit.json
+      - geometry_causal_discovery_claim.json
+    advance_gate: >-
+      Local transfer exceeds the strongest control by the locked margin in both
+      directions and preserves unrelated dimensions. Propagated-action evidence
+      is reported separately and cannot rescue a failed local gate.
+    stop_rules:
+      - Stop on replay, hook-count, alignment, or fixed-x failure.
+      - Stop if wrong-factor or generic patch controls match the intended patch.
+      - Do not call a local velocity effect a physical behavior mechanism.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Exploratory local causal contribution of the exact geometry prefix path.
+    forbidden_conclusions:
+      - Confirmed mechanism or closed-loop physical consequence.
+    budget:
+      max_instances: 1
+      max_model_calls: 1000
+      max_action_generations: 1000
+      max_full_rollouts: 0
+      max_simulator_steps: 0
+      max_additional_persistent_gb: 5
+      max_ephemeral_gb: 40
+    required_audits:
+      - replay, hook, alignment, bidirectionality, and exact control construction
+      - local versus propagated claim separation and discovery-only exposure
+
+  - id: BINDING-CAUSAL-DISCOVERY
+    title: Named-target prefix-path causal discovery
+    kind: causal_discovery
+    phase: mechanism_discovery
+    source_claim_study: BINDING-INTERNAL-DISCOVERY
+    question: Does the selected binding prefix path cause the local fixed-x velocity correction?
+    entry_conditions:
+      requires_all_completed:
+        - BINDING-INTERNAL-DISCOVERY
+      requires_any_positive:
+        - BINDING-INTERNAL-DISCOVERY
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: discovery
+      pool_phase: mechanism_discovery
+      requires_gate: behavior_results_sealed
+      read_namespaces:
+        - binding_internal_discovery
+        - discovery_prefix_key_values
+      write_namespace: binding_causal_discovery
+      selection_allowed: true
+      exposure_class: causal_patch
+    entry_gate: At most two binding sites, exact x_t values, and the velocity metric are locked.
+    actions:
+      - Patch the selected prefix keys/values consumed by the action expert at fixed x_t.
+      - Run both instruction directions, signed doses, key-only, value-only, and joint patches.
+      - Compare self, zero, shuffled, wrong-factor, unrelated-donor, and covariance-matched controls.
+      - Separate one-step local velocity transfer from propagated final-action transfer.
+    primary_claim:
+      metric_id: binding_local_velocity_transfer_fraction_over_control
+      definition: >-
+        dot(v_patch minus v_recipient, v_donor minus v_recipient) divided by the
+        squared norm of v_donor minus v_recipient, minus the strongest locked
+        control, using normalized 50-by-7 velocity at identical t and x_t.
+      unit: dimensionless_transfer_fraction
+      direction: larger_positive_margin_in_both_directions
+    independent_unit: task_object_family
+    controls:
+      - self, zero, shuffled-site, wrong-factor, and unrelated natural donors
+      - covariance-matched natural-difference control
+      - signed dose and reverse direction
+      - unrelated action-dimension noninferiority margin
+    child_contract:
+      additional_lock_fields:
+        - exact_binding_internal_result_and_site_hashes
+        - exact_key_value_head_token_layer_time_and_position_scope
+        - normalized_local_velocity_transfer_formula
+        - control_construction_effect_and_noninferiority_margins
+    required_outputs:
+      - binding_causal_discovery_trials.parquet
+      - local_velocity_and_propagated_action_arrays
+      - binding_causal_discovery_analysis.json
+      - binding_causal_discovery_audit.json
+      - binding_causal_discovery_claim.json
+    advance_gate: >-
+      Local transfer exceeds the strongest control by the locked margin in both
+      directions and preserves unrelated dimensions; propagated transfer is a
+      separate claim.
+    stop_rules:
+      - Stop on replay, hook-count, alignment, or fixed-x failure.
+      - Stop if wrong-factor or generic controls match the intended patch.
+      - Do not call a local velocity effect a physical behavior mechanism.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Exploratory local causal contribution of the exact binding prefix path.
+    forbidden_conclusions:
+      - Confirmed mechanism or closed-loop physical consequence.
+    budget:
+      max_instances: 1
+      max_model_calls: 1000
+      max_action_generations: 1000
+      max_full_rollouts: 0
+      max_simulator_steps: 0
+      max_additional_persistent_gb: 5
+      max_ephemeral_gb: 40
+    required_audits:
+      - replay, hook, alignment, bidirectionality, and exact control construction
+      - local versus propagated claim separation and discovery-only exposure
+
+  - id: SEMANTIC-CONFIRMATION
+    title: Prospectively held-out identity-readout confirmation
+    kind: semantic_confirmation
+    phase: mechanism_confirmation
+    source_claim_study: SEMANTIC-DISCOVERY
+    question: Does the frozen identity readout repeat for supported labels on confirmation families?
+    entry_conditions:
+      requires_all_completed:
+        - SEMANTIC-DISCOVERY
+      requires_any_positive:
+        - SEMANTIC-DISCOVERY
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: confirmation
+      pool_phase: mechanism_confirmation
+      requires_gate: phase_two_locked
+      read_namespaces:
+        - foundation_baseline
+        - semantic_confirmation_activations
+      write_namespace: semantic_confirmation
+      selection_allowed: false
+      exposure_class: semantic_internal
+    entry_gate: >-
+      The phase-two lock is closed: the semantic readout and every activated
+      causal-confirmation child are committed and audited before any phase-two access.
+    actions:
+      - Apply only the frozen readout, vocabulary, metric, and baselines to confirmation families.
+      - Make no new layer, token, representation, label, threshold, or subgroup selection.
+      - Record unsupported labels separately and supersede discovery if confirmation fails.
+    primary_claim:
+      metric_id: identity_decoding_over_selection_null
+      definition: Exact frozen definition from SEMANTIC-DISCOVERY.
+      unit: balanced_accuracy_points
+      direction: larger_positive_margin
+    independent_unit: task_object_family
+    controls:
+      - frozen metadata, wrong-region, and full-pipeline-null thresholds
+      - generic vision reported separately as VLA-specificity context
+      - phase-two first-access and prospective exposure log
+    child_contract:
+      additional_lock_fields:
+        - prospective_cohort_hash
+        - exact_semantic_discovery_result_and_readout_hashes
+        - supported_cross_pool_identity_vocabulary
+        - phase_two_lock_receipt_hash
+    required_outputs:
+      - semantic_confirmation_predictions.parquet
+      - semantic_confirmation_analysis.json
+      - semantic_confirmation_audit.json
+      - semantic_confirmation_claim.json
+    advance_gate: The unchanged discovery gate passes for supported labels on confirmation families.
+    stop_rules:
+      - Any retuning creates a new semantic discovery revision.
+      - Confirmation failure supersedes exploratory decodability.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: supersede_source_and_reevaluate
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Confirmed identity decodability for the supported labels and declared population.
+    forbidden_conclusions:
+      - VLA-specific advantage, location binding, or causal behavioral use.
+    budget:
+      max_instances: 1
+      max_model_calls: 0
+      max_action_generations: 0
+      max_full_rollouts: 0
+      max_simulator_steps: 0
+      max_additional_persistent_gb: 3
+      max_ephemeral_gb: 20
+    required_audits:
+      - phase-two lock, vocabulary support, unchanged readout, and first access
+      - raw prediction recomputation and discovery supersession rule
+
+  - id: GEOMETRY-CAUSAL-CONFIRMATION
+    title: Prospectively held-out geometry-path causal confirmation
+    kind: causal_confirmation
+    phase: mechanism_confirmation
+    source_claim_study: GEOMETRY-CAUSAL-DISCOVERY
+    question: Does the frozen geometry prefix path repeat on confirmation families?
+    entry_conditions:
+      requires_all_completed:
+        - GEOMETRY-CAUSAL-DISCOVERY
+      requires_any_positive:
+        - GEOMETRY-CAUSAL-DISCOVERY
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: confirmation
+      pool_phase: mechanism_confirmation
+      requires_gate: phase_two_locked
+      read_namespaces:
+        - geometry_confirmation
+        - confirmation_prefix_key_values
+      write_namespace: geometry_causal_confirmation
+      selection_allowed: false
+      exposure_class: causal_patch
+    entry_gate: >-
+      The phase-two lock is closed with every activated causal and semantic
+      confirmation child committed before any phase-two internal output is opened.
+    actions:
+      - Run the exact frozen geometry site, directions, doses, and controls.
+      - Make no layer, token, head, time, dose, metric, or subgroup selection.
+      - Supersede geometry causal discovery if the unchanged gate fails.
+    primary_claim:
+      metric_id: geometry_local_velocity_transfer_fraction_over_control
+      definition: Exact frozen definition from GEOMETRY-CAUSAL-DISCOVERY.
+      unit: dimensionless_transfer_fraction
+      direction: larger_positive_margin_in_both_directions
+    independent_unit: task_object_family
+    controls:
+      - exact frozen geometry causal-discovery controls
+      - phase-two first-access and prospective exposure log
+      - frozen method, site, and analysis hashes
+    child_contract:
+      additional_lock_fields:
+        - prospective_cohort_hash
+        - exact_geometry_causal_discovery_result_and_method_hashes
+        - phase_two_lock_receipt_hash
+    required_outputs:
+      - geometry_causal_confirmation_trials.parquet
+      - geometry_causal_confirmation_analysis.json
+      - geometry_causal_confirmation_audit.json
+      - geometry_causal_confirmation_claim.json
+    advance_gate: The unchanged bidirectional geometry causal gate passes on confirmation families.
+    stop_rules:
+      - Any retuning creates a new causal discovery revision.
+      - Confirmation failure supersedes the exploratory geometry causal result.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: supersede_source_and_reevaluate
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Confirmed local causal contribution of the exact geometry prefix path.
+    forbidden_conclusions:
+      - Closed-loop physical consequence or a complete object representation.
+    budget:
+      max_instances: 1
+      max_model_calls: 500
+      max_action_generations: 500
+      max_full_rollouts: 0
+      max_simulator_steps: 0
+      max_additional_persistent_gb: 3
+      max_ephemeral_gb: 30
+    required_audits:
+      - phase-two lock, unchanged method, first access, and raw-trial recomputation
+
+  - id: BINDING-CAUSAL-CONFIRMATION
+    title: Prospectively held-out binding-path causal confirmation
+    kind: causal_confirmation
+    phase: mechanism_confirmation
+    source_claim_study: BINDING-CAUSAL-DISCOVERY
+    question: Does the frozen binding prefix path repeat on confirmation families?
+    entry_conditions:
+      requires_all_completed:
+        - BINDING-CAUSAL-DISCOVERY
+      requires_any_positive:
+        - BINDING-CAUSAL-DISCOVERY
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: confirmation
+      pool_phase: mechanism_confirmation
+      requires_gate: phase_two_locked
+      read_namespaces:
+        - binding_confirmation
+        - confirmation_prefix_key_values
+      write_namespace: binding_causal_confirmation
+      selection_allowed: false
+      exposure_class: causal_patch
+    entry_gate: >-
+      The phase-two lock is closed with every activated causal and semantic
+      confirmation child committed before any phase-two internal output is opened.
+    actions:
+      - Run the exact frozen binding site, directions, doses, and controls.
+      - Make no layer, token, head, time, dose, metric, or subgroup selection.
+      - Supersede binding causal discovery if the unchanged gate fails.
+    primary_claim:
+      metric_id: binding_local_velocity_transfer_fraction_over_control
+      definition: Exact frozen definition from BINDING-CAUSAL-DISCOVERY.
+      unit: dimensionless_transfer_fraction
+      direction: larger_positive_margin_in_both_directions
+    independent_unit: task_object_family
+    controls:
+      - exact frozen binding causal-discovery controls
+      - phase-two first-access and prospective exposure log
+      - frozen method, site, and analysis hashes
+    child_contract:
+      additional_lock_fields:
+        - prospective_cohort_hash
+        - exact_binding_causal_discovery_result_and_method_hashes
+        - phase_two_lock_receipt_hash
+    required_outputs:
+      - binding_causal_confirmation_trials.parquet
+      - binding_causal_confirmation_analysis.json
+      - binding_causal_confirmation_audit.json
+      - binding_causal_confirmation_claim.json
+    advance_gate: The unchanged bidirectional binding causal gate passes on confirmation families.
+    stop_rules:
+      - Any retuning creates a new causal discovery revision.
+      - Confirmation failure supersedes the exploratory binding causal result.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: supersede_source_and_reevaluate
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - Confirmed local causal contribution of the exact binding prefix path.
+    forbidden_conclusions:
+      - Closed-loop physical consequence or a complete semantic mechanism.
+    budget:
+      max_instances: 1
+      max_model_calls: 500
+      max_action_generations: 500
+      max_full_rollouts: 0
+      max_simulator_steps: 0
+      max_additional_persistent_gb: 3
+      max_ephemeral_gb: 30
+    required_audits:
+      - phase-two lock, unchanged method, first access, and raw-trial recomputation
+
+  - id: GEOMETRY-ROLLOUT-INTERVENTION
+    title: Geometry-path closed-loop consequence
+    kind: behavior_intervention
+    phase: rollout
+    source_claim_study: GEOMETRY-CAUSAL-CONFIRMATION
+    question: Does the confirmed geometry path selectively change the confirmed physical geometry response?
+    entry_conditions:
+      requires_all_completed:
+        - GEOMETRY-CAUSAL-CONFIRMATION
+      requires_any_positive:
+        - GEOMETRY-CAUSAL-CONFIRMATION
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: confirmation
+      pool_phase: rollout
+      requires_gate: phase_two_locked
+      read_namespaces:
+        - geometry_causal_confirmation
+        - geometry_confirmation_scene_state
+      write_namespace: geometry_rollout_intervention
+      selection_allowed: false
+      exposure_class: closed_loop_intervention
+    entry_gate: The geometry causal path, geometry response metric, and rollout schedule are frozen.
+    actions:
+      - Run no intervention, intended intervention, and strongest negative control as paired rollouts.
+      - Compare one-call and persistent schedules only when both were predeclared.
+      - Reuse the exact geometry response horizon and controller-level metric.
+      - Lock simulator contact, unintended-object motion, and unrelated-behavior margins.
+    primary_claim:
+      metric_id: geometry_response_gain_intervention_delta
+      definition: >-
+        Geometry response gain under the intended intervention minus the strongest
+        locked intervention control at the frozen physical horizon.
+      unit: dimensionless_gain
+      direction: intended_change_without_safety_regression
+    independent_unit: task_object_family
+    controls:
+      - no intervention and no-op replay
+      - strongest confirmed negative intervention control
+      - paired reset, policy-noise seed, and intervention schedule
+      - simulator contact and unrelated-behavior noninferiority margins
+    child_contract:
+      additional_lock_fields:
+        - exact_geometry_behavior_and_causal_confirmation_hashes
+        - intervention_schedule_and_rollout_trial_count
+        - simulator_contact_and_unintended_motion_measurements
+        - safety_and_unrelated_behavior_margins
+    required_outputs:
+      - geometry_rollout_intervention_trials.parquet
+      - physical_rollout_trajectories
+      - geometry_rollout_intervention_analysis.json
+      - geometry_rollout_intervention_audit.json
+      - geometry_rollout_intervention_claim.json
+    advance_gate: >-
+      The intervention changes geometry response gain beyond the strongest control
+      without crossing contact, unintended-motion, or unrelated-behavior margins.
+    stop_rules:
+      - Stop if model output changes without the named physical consequence.
+      - Stop if required simulator contact telemetry is unavailable or safety margins fail.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - The confirmed geometry prefix path has the declared closed-loop consequence.
+    forbidden_conclusions:
+      - General safety, usefulness, or a complete scene representation.
+    budget:
+      max_instances: 1
+      max_model_calls: 720
+      max_action_generations: 720
+      max_full_rollouts: 36
+      max_simulator_steps: 21600
+      max_additional_persistent_gb: 5
+      max_ephemeral_gb: 30
+    required_audits:
+      - inherited metric, exact rollout matrix, contact telemetry, and paired-trial integrity
+
+  - id: BINDING-ROLLOUT-INTERVENTION
+    title: Binding-path closed-loop consequence
+    kind: behavior_intervention
+    phase: rollout
+    source_claim_study: BINDING-CAUSAL-CONFIRMATION
+    question: Does the confirmed binding path selectively change named-target approach behavior?
+    entry_conditions:
+      requires_all_completed:
+        - BINDING-CAUSAL-CONFIRMATION
+      requires_any_positive:
+        - BINDING-CAUSAL-CONFIRMATION
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: confirmation
+      pool_phase: rollout
+      requires_gate: phase_two_locked
+      read_namespaces:
+        - binding_causal_confirmation
+        - binding_confirmation_scene_state
+      write_namespace: binding_rollout_intervention
+      selection_allowed: false
+      exposure_class: closed_loop_intervention
+    entry_gate: The binding causal path, named-target metric, and rollout schedule are frozen.
+    actions:
+      - Run no intervention, intended intervention, and strongest negative control as paired rollouts.
+      - Compare one-call and persistent schedules only when both were predeclared.
+      - Reuse the exact named-target physical window and distance metric.
+      - Lock simulator contact, unintended-object motion, and unrelated-behavior margins.
+    primary_claim:
+      metric_id: named_target_preference_intervention_delta_m
+      definition: >-
+        Named-target preference under the intended intervention minus the strongest
+        locked intervention control during the frozen physical time window.
+      unit: meters
+      direction: intended_change_without_safety_regression
+    independent_unit: task_object_family
+    controls:
+      - no intervention and no-op replay
+      - strongest confirmed negative intervention control
+      - paired reset, policy-noise seed, and intervention schedule
+      - simulator contact and unrelated-behavior noninferiority margins
+    child_contract:
+      additional_lock_fields:
+        - exact_binding_behavior_and_causal_confirmation_hashes
+        - intervention_schedule_and_rollout_trial_count
+        - simulator_contact_and_unintended_motion_measurements
+        - safety_and_unrelated_behavior_margins
+    required_outputs:
+      - binding_rollout_intervention_trials.parquet
+      - physical_rollout_trajectories
+      - binding_rollout_intervention_analysis.json
+      - binding_rollout_intervention_audit.json
+      - binding_rollout_intervention_claim.json
+    advance_gate: >-
+      The intervention changes named-target preference beyond the strongest control
+      without crossing contact, unintended-motion, or unrelated-behavior margins.
+    stop_rules:
+      - Stop if model output changes without the named physical consequence.
+      - Stop if required simulator contact telemetry is unavailable or safety margins fail.
+    outcome_actions:
+      positive: reevaluate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - The confirmed binding prefix path has the declared closed-loop consequence.
+    forbidden_conclusions:
+      - General safety, usefulness, or a complete semantic mechanism.
+    budget:
+      max_instances: 1
+      max_model_calls: 720
+      max_action_generations: 720
+      max_full_rollouts: 36
+      max_simulator_steps: 21600
+      max_additional_persistent_gb: 5
+      max_ephemeral_gb: 30
+    required_audits:
+      - inherited metric, exact rollout matrix, contact telemetry, and paired-trial integrity
+
+  - id: RELIABILITY-DESIGN
+    title: Decide whether failures support a separate reliability program
+    kind: reliability_design
+    phase: discovery
+    question: Is there enough natural failure data for an independent failure-prediction study?
+    entry_conditions:
+      requires_all_completed:
+        - FOUNDATION
+      requires_any_positive: []
+      branch_mode: single
+      source_priority: []
+    data_scope:
+      family_pool: both_baseline_only
+      pool_phase: baseline
+      requires_gate: none
+      read_namespaces:
+        - foundation_baseline
+      write_namespace: reliability_design
+      selection_allowed: false
+      exposure_class: reliability_design
+    entry_gate: Untouched failures are preserved with exact task and scene identities.
+    actions:
+      - Count natural failures separately from mutation-induced failures.
+      - Audit whether task, scene, and outcome strata can support nested family-level selection.
+      - Estimate the cohort required for calibration and prospective reliability confirmation.
+      - Create a separate research program only if the data and decision are worthwhile.
+    primary_claim:
+      metric_id: eligible_natural_failure_family_count
+      definition: Number of task-object families with both natural failures and successes under one distribution.
+      unit: task_object_families
+      direction: sufficient_for_a_separate_powered_design
+    independent_unit: task_object_family
+    controls:
+      - natural and mutation-induced failures remain separate strata
+      - no feature search on a future reliability confirmation set
+      - metadata and output-variability baselines are specified before any internal probe
+    child_contract:
+      additional_lock_fields:
+        - failure_taxonomy_and_distribution
+        - power_and_calibration_target
+        - dedicated_discovery_and_confirmation_plan
+    required_outputs:
+      - failure_cohort_audit.json
+      - reliability_program_decision.json
+    advance_gate: A separate adequately supported reliability program can be specified without mixing failure distributions.
+    stop_rules:
+      - Do not train up to hundreds of readouts on the small RQ-024 scene cohort.
+      - Do not equate failure prediction with causal explanation.
+    outcome_actions:
+      positive: create_separate_program
+      negative: reevaluate_program
+      inconclusive: stop_branch
+      not_applicable: reevaluate_program
+      invalid: revise_child
+    allowed_conclusions:
+      - The available failures can or cannot support a separate reliability design.
+    forbidden_conclusions:
+      - Any failure predictor or cause has been established.
+    budget:
+      max_instances: 1
+      max_model_calls: 0
+      max_action_generations: 0
+      max_full_rollouts: 0
+      max_simulator_steps: 0
+      max_additional_persistent_gb: 0
+      max_ephemeral_gb: 1
+    required_audits:
+      - failure distributions, independent units, and prospective split feasibility
+
+program_budget:
+  max_persistent_gb: 100
+  max_ephemeral_gb: 150
+  min_free_space_gb: 200
+  max_full_rollouts: 500
+  max_action_generations: 18000
+  max_model_calls: 18000
+  max_simulator_steps: 250000
+  max_concurrent_hardware_children: 1
+  check_before_every_hardware_child: true
+
+authority:
+  automatic:
+    - Read-only data, prior-artifact, feasibility, and schema checks.
+    - Focused normal-environment tooling and tests required by the next child study.
+    - Preparing a child job manifest and requesting an independent agent audit.
+    - Executing a content-hashed, committed, independently audited child job inside its budget.
+    - Resuming unchanged jobs, recomputing results, and stopping on declared gates.
+  requires_human:
+    - A new scientific question or materially different model, environment, or population.
+    - A larger compute, rollout, or storage budget.
+    - External paid compute, publication, or destructive source-capture removal.
+    - Changing a locked primary metric, cohort, threshold, control, site, or confirmation rule.
+
+program_stop_rules:
+  - Never relax competence, control, budget, or confirmation gates after seeing results.
+  - Do not localize internals until a controlled physical behavior effect survives a rollout check.
+  - Behavioral confirmation proceeds independently of success or failure in internal localization.
+  - Any unresolved audit error blocks execution or claim promotion.
+  - A confirmation failure supersedes its exploratory positive without erasing either artifact.
+  - Negative, invalid, failed, and superseded studies remain visible.

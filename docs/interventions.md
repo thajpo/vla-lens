@@ -1,7 +1,8 @@
 # Interventions
 
-Status: implemented evidence foundation and donor source-patching runtime;
-counterfactual scene capture and cohort execution remain in progress.
+Status: implemented evidence foundation, live probe-direction intervention,
+matched counterfactual capture, and resumable donor patch studies. A confirmed
+narrow semantic or behavioral intervention remains open.
 
 ## What This Part Of VLA Lens Does
 
@@ -137,9 +138,13 @@ command and replay gate.
 
 The active work is tracked in GitHub rather than another planning document:
 
-- [#19: live Intervention Lab execution and action comparison](https://github.com/thajpo/vla-lens/issues/19)
 - [#20: sweep and cohort execution](https://github.com/thajpo/vla-lens/issues/20)
-- [#35: follow the scene signal into the PI0.5 action stream](https://github.com/thajpo/vla-lens/issues/35)
+- [#36: patch PI0.5 prefix key/value cache](https://github.com/thajpo/vla-lens/issues/36)
+
+The active scientific order is governed by the
+[controlled scene-to-behavior campaign](autonomous-research-campaigns.md).
+Exact prefix-cache patching should follow a factor-specific physical behavior
+result rather than extend the old two-object pilot by default.
 
 There is no active temporary implementation spec. When one of these issues is
 selected, its issue body becomes the plan by default.

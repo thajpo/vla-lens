@@ -1,0 +1,23 @@
+schema_version: 1
+kind: vla_lens.research_child_lock
+lock_id: REPLACE_WITH_LOCK_ID
+program_id: rq024-controlled-scene-to-behavior
+program_fingerprint: sha256:REPLACE_WITH_PROGRAM_HASH
+study_id: REPLACE_WITH_STUDY_ID
+study_fingerprint: sha256:REPLACE_WITH_STUDY_HASH
+child_plan_id: REPLACE_WITH_CHILD_ID
+child_plan_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+manifest_commit: REPLACE_WITH_COMMIT_CONTAINING_CHILD_PLAN
+locked_utc: REPLACE_WITH_ISO_8601_UTC_STRING
+prepared_by: REPLACE_WITH_CHILD_PREPARER_ID
+first_output_absent: true
+audits:
+  - audit_type: schema
+    auditor_id: REPLACE_WITH_INDEPENDENT_AUDITOR_ID
+    verdict: pass
+    subject_child_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+    artifact:
+      id: REPLACE_WITH_AUDIT_ID
+      type: research_child_audit
+      path: REPLACE_WITH_REPO_RELATIVE_AUDIT_PATH
+      sha256: sha256:REPLACE_WITH_FILE_HASH

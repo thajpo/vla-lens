@@ -1,12 +1,14 @@
 # PI0.5 Broad 1000 Probe Experiments
 
-Status: active experiment registry.
+Status: historical campaign record. `RESEARCH.md` is the current question and
+findings log.
 
 Last updated: July 22, 2026.
 
-This document is the review surface for the PI0.5 broad 1000 probe campaign.
-The probes are not new capture. They train on the existing mech-light activation
-features plus post-processed interaction labels.
+This document preserves the detailed review history for the PI0.5 broad 1000
+probe campaign. It is not the active experiment registry or current method
+guidance. The probes are not new capture; they train on the existing mech-light
+activation features plus post-processed interaction labels.
 
 ## Dataset Contract
 
@@ -17,9 +19,9 @@ features plus post-processed interaction labels.
 - Train split: `train`
 - Selection split: `val_heldout_task`
 - Final report split: `test_heldout_task`
-- Primary model: linear probe
-- Current first-pass configs use linear probes. MLP capacity checks should be
-  separate exploratory branches, not part of the first claim-bearing run.
+- Historical primary model: linear probe. Current generic probe work trains the
+  standard linear and small-MLP battery together; see
+  [probe hypothesis guidance](probe_hypothesis_guidance.md).
 - Primary classification metric: balanced accuracy
 - Saved diagnostics: predictions, per-split metrics, per-group metrics, null metrics, metadata baselines, linear weights when available
 - Runtime contract: normal repo work, saved-trace analysis, probe training, UI

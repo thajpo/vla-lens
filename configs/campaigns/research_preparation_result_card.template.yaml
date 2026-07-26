@@ -1,0 +1,80 @@
+schema_version: 2
+result_card_id: rq024-foundation-r1-result
+result_kind: preparation_gate
+program_id: rq024-controlled-scene-to-behavior
+program_fingerprint: sha256:REPLACE_WITH_PROGRAM_HASH
+study_id: FOUNDATION
+child_plan_id: rq024-foundation-r1
+child_plan_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+question: Which task-object families support the design and competent base behavior?
+one_sentence_answer: Replace with whether both fixed pools supplied six eligible families.
+verdict: inconclusive
+claim_type: preparation
+behavior_level: closed_loop_rollout
+confirmation_status: preparation
+predecessor_result_fingerprints: []
+supersedes_result_fingerprints: []
+what_changed:
+  - task-object family, reset seed, and rollout replicate
+held_fixed:
+  - checkpoint, environment, camera, controller, and eligibility rule
+trial_manifest:
+  id: rq024-foundation-trials-r1
+  sha256: sha256:REPLACE_WITH_TRIAL_MANIFEST_HASH
+analysis_package:
+  id: rq024-foundation-analysis-r1
+  sha256: sha256:REPLACE_WITH_ANALYSIS_PACKAGE_HASH
+gate_result:
+  discovery_eligible: 0
+  discovery_total: 12
+  confirmation_eligible: 0
+  confirmation_total: 12
+  gate_passed: false
+  selection_rule: first six eligible in each pre-outcome pool rank
+  diagnostics: []
+trial_accounting:
+  expected: 72
+  completed: 0
+  technical_failed: 72
+  excluded: 0
+  attempts: 72
+supported_conclusion: The named families do or do not support later controlled comparisons.
+forbidden_conclusions:
+  - Baseline success demonstrates a semantic representation.
+strongest_surviving_alternative: The available task set may not support the controlled design.
+artifact_refs:
+  - id: rq024-foundation-analysis-r1
+    type: preparation_gate_analysis
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_ANALYSIS_PACKAGE_HASH
+metric_ids:
+  - family_baseline_eligibility
+decision:
+  integrity_checks:
+    - id: complete_valid_trial_matrix
+      passed: true
+      evidence_artifact_id: rq024-foundation-analysis-r1
+  applicability_checks: []
+  positive_checks:
+    - id: six_eligible_in_each_pool
+      passed: false
+      evidence_artifact_id: rq024-foundation-analysis-r1
+  negative_checks:
+    - id: a_fixed_pool_has_fewer_than_six_eligible
+      passed: false
+      evidence_artifact_id: rq024-foundation-analysis-r1
+  derived_outcome: inconclusive
+  next_action: stop_branch
+audit:
+  status: pass
+  report_id: replace_audit_report_id
+  report_sha256: sha256:REPLACE_WITH_AUDIT_HASH
+  auditor_id: REPLACE_WITH_INDEPENDENT_AUDITOR
+  subject_child_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+  subject_trial_manifest_sha256: sha256:REPLACE_WITH_TRIAL_MANIFEST_HASH
+  subject_analysis_package_sha256: sha256:REPLACE_WITH_ANALYSIS_PACKAGE_HASH
+  checks:
+    execution: pass
+    calculation: pass
+    claim: pass
+  unresolved_errors: []

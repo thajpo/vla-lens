@@ -30,6 +30,9 @@ Open these only for the task you are performing:
 - [Dashboard API](dashboard-api.md): backend routes and payload conventions.
 - [Workbench frontend](workbench-frontend.md): frontend modules and development
   commands.
+- [Autonomous research campaigns](autonomous-research-campaigns.md): program
+  decision graphs, independently locked child studies, hash-chained event
+  history, audit roles, evidence retention, and generated result summaries.
 
 ## Understand The System
 

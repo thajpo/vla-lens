@@ -1,0 +1,102 @@
+schema_version: 2
+result_card_id: REPLACE_WITH_RESULT_CARD_ID
+result_kind: effect_estimate
+program_id: rq024-controlled-scene-to-behavior
+program_fingerprint: sha256:REPLACE_WITH_PROGRAM_HASH
+study_id: REPLACE_WITH_STUDY_ID
+child_plan_id: REPLACE_WITH_CHILD_ID
+child_plan_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+question: Replace with the exact locked child question.
+one_sentence_answer: Replace with the direct answer and its scope.
+verdict: inconclusive
+claim_type: behavioral_response
+behavior_level: closed_loop_rollout
+confirmation_status: discovery
+predecessor_result_fingerprints: []
+supersedes_result_fingerprints: []
+what_changed:
+  - Replace with the manipulated factor.
+held_fixed:
+  - Replace with the paired controls.
+trial_manifest:
+  id: REPLACE_WITH_TRIAL_MANIFEST_ID
+  sha256: sha256:REPLACE_WITH_TRIAL_MANIFEST_HASH
+analysis_package:
+  id: REPLACE_WITH_ANALYSIS_PACKAGE_ID
+  sha256: sha256:REPLACE_WITH_ANALYSIS_PACKAGE_HASH
+primary_result:
+  metric_id: replace_metric_id
+  estimate: 0.0
+  unit: replace_unit
+  null_value: 0.0
+  minimum_useful_effect: 0.0
+  interval:
+    low: 0.0
+    high: 0.0
+    method: replace_interval_method
+    level: 0.95
+    grouping_unit: task_object_family
+    replicates: 10000
+    seed: 24001
+    source_artifact_id: replace_per_family_metric_artifact
+  independent_units:
+    task_families: 0
+    scene_clusters: 0
+    noise_repeats: 0
+    rollouts: 0
+strongest_control:
+  metric_id: replace_control_metric_id
+  name: Replace with the strongest comparable control.
+  estimate: 0.0
+  unit: replace_unit
+  interval:
+    low: 0.0
+    high: 0.0
+  source_artifact_id: replace_control_metric_artifact
+trial_accounting:
+  expected: 0
+  completed: 0
+  technical_failed: 0
+  excluded: 0
+  attempts: 0
+supported_conclusion: Replace with one exact allowed conclusion from the child.
+forbidden_conclusions:
+  - Copy every forbidden conclusion from the child.
+strongest_surviving_alternative: Replace with the strongest explanation not ruled out.
+artifact_refs:
+  - id: replace_per_family_metric_artifact
+    type: per_family_metrics
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_ARTIFACT_HASH
+metric_ids:
+  - replace_metric_id
+  - replace_control_metric_id
+decision:
+  integrity_checks:
+    - id: trial_matrix_and_calculation_valid
+      passed: true
+      evidence_artifact_id: replace_audit_artifact
+  applicability_checks: []
+  positive_checks:
+    - id: locked_positive_gate
+      passed: false
+      evidence_artifact_id: replace_analysis_artifact
+  negative_checks:
+    - id: locked_equivalence_or_below_useful_effect_gate
+      passed: false
+      evidence_artifact_id: replace_analysis_artifact
+  derived_outcome: inconclusive
+  next_action: stop_branch
+audit:
+  status: pass
+  report_id: replace_audit_report_id
+  report_sha256: sha256:REPLACE_WITH_AUDIT_HASH
+  auditor_id: REPLACE_WITH_INDEPENDENT_AUDITOR
+  subject_child_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+  subject_trial_manifest_sha256: sha256:REPLACE_WITH_TRIAL_MANIFEST_HASH
+  subject_analysis_package_sha256: sha256:REPLACE_WITH_ANALYSIS_PACKAGE_HASH
+  checks:
+    execution: pass
+    calculation: pass
+    claim: pass
+  unresolved_errors: []
