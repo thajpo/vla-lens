@@ -22,6 +22,8 @@ from vla_lens.pi05.batch_capture import (
     _load_config,
     _preflight_storage,
     _read_episode_plan,
+    _validate_batch_config,
+    _validate_episode_rows,
     _write_plan_files,
 )
 from vla_lens.traces import TraceDataset
@@ -37,6 +39,8 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--episode-plan", type=Path, required=True)
     parser.add_argument("--output-root", type=Path, help="Override config output_root.")
     parser.add_argument("--run", action="store_true", help="Execute capture.")
+    parser.add_argument("--validate-exact", action="store_true")
+    parser.add_argument("--validate-only", action="store_true")
     parser.add_argument("--limit-commands", type=int)
     parser.add_argument(
         "--max-executed-commands",
@@ -55,13 +59,18 @@ def main(argv: list[str] | None = None) -> None:
     config = _load_config(args.config)
     if args.output_root:
         config["output_root"] = str(args.output_root)
+    _validate_batch_config(config, exact=args.validate_exact, has_episode_plan=True)
     output_root = Path(str(config["output_root"])).expanduser()
-    output_root.mkdir(parents=True, exist_ok=True)
 
-    rows = _read_episode_plan(args.episode_plan)
+    rows = _read_episode_plan(args.episode_plan, exact=args.validate_exact)
     if not rows:
         raise SystemExit("episode plan is empty")
-    commands = _capture_commands(config, output_root, rows)
+    _validate_episode_rows(rows, exact=args.validate_exact)
+    if args.validate_only:
+        print(f"validated config={args.config} episodes={len(rows)} exact={args.validate_exact}")
+        return
+    output_root.mkdir(parents=True, exist_ok=True)
+    commands = _capture_commands(config, output_root, rows, exact=args.validate_exact)
     if args.limit_commands is not None:
         commands = commands[: max(0, args.limit_commands)]
 
@@ -81,7 +90,7 @@ def main(argv: list[str] | None = None) -> None:
 
     status_path = output_root / "capture_status.jsonl"
     runtime = None
-    runtime_key: tuple[str, str, str] | None = None
+    runtime_key: tuple[str, str, str, str] | None = None
     executed_commands = 0
     for index, item in enumerate(commands, start=1):
         expected_exists = _command_expected_traces_exist(item)
@@ -147,8 +156,13 @@ def capture_args_from_command(command: Sequence[str]) -> argparse.Namespace:
     return capture.parse_args(args[module_index + 1 :])
 
 
-def _runtime_key(args: argparse.Namespace) -> tuple[str, str, str]:
-    return (str(args.model_id), str(args.device), str(args.dtype))
+def _runtime_key(args: argparse.Namespace) -> tuple[str, str, str, str]:
+    return (
+        str(args.model_id),
+        str(args.model_revision or ""),
+        str(args.device),
+        str(args.dtype),
+    )
 
 
 def _command_expected_traces_exist(item: CaptureCommand) -> bool:

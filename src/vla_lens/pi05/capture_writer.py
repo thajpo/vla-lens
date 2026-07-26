@@ -22,6 +22,7 @@ from vla_lens.pi05.capture_arrays import (
 from vla_lens.pi05.capture_metadata import (
     _capture_design_metadata,
     _capture_design_request_metadata,
+    trial_runtime_metadata,
 )
 from vla_lens.pi05.capture_schema import (
     CaptureCall,
@@ -57,6 +58,7 @@ from vla_lens.pi05.full_capture import (
     pi05_full_site_declarations,
     required_pi05_full_site_names,
 )
+from vla_lens.pi05.runtime_identity import canonical_sha256
 from vla_lens.traces import ModelSiteSpec, TraceManifest
 
 
@@ -87,6 +89,24 @@ def _write_episode(
     evaluation = _evaluation_table(buffer, length)
     capture_plan = plan.to_metadata()
     capture_report = _capture_report(buffer, plan, context, model_arrays=model_arrays)
+    runtime_identity = dict(getattr(policy, "vla_lens_runtime_identity", {}) or {})
+    runtime_audit = {
+        **trial_runtime_metadata(args, legacy_seed=buffer.seed),
+        "runtime_identity_sha256": canonical_sha256(runtime_identity),
+        "runtime_identity_path": "runtime_identity.json",
+        "model_revision": str(args.model_revision or ""),
+        "snapshot_manifest_sha256": runtime_identity.get("model", {}).get(
+            "snapshot_manifest_sha256", ""
+        ),
+        **{
+            key: value
+            for key, value in runtime_identity.get("components", {}).items()
+            if key.endswith("_sha256")
+        },
+        "capture_environment_sha256": runtime_identity.get(
+            "capture_environment_sha256", ""
+        ),
+    }
     metadata = {
         "capture_profile": args.capture_profile,
         "requested_profile": args.capture_profile,
@@ -99,6 +119,7 @@ def _write_episode(
         "seed": buffer.seed,
         "layout_id": args.layout_id,
         "scene_mutation": dict(buffer.scene_mutation_report),
+        "runtime_audit": runtime_audit,
         "capture_capabilities": {
             "raw_capture_fallback": False,
             "trace_native_capture": True,
@@ -142,6 +163,7 @@ def _write_episode(
                 "obs_size": args.obs_size,
                 "layout_id": args.layout_id,
                 "scene_mutation": dict(buffer.scene_mutation_report),
+                **runtime_audit,
             },
         ),
         tokens=tokens,
@@ -161,6 +183,7 @@ def _write_episode(
             "capture_design": str(args.capture_design or "single_trace"),
             "layout_id": args.layout_id,
             "scene_mutation": dict(buffer.scene_mutation_report),
+            "runtime_audit": runtime_audit,
             **_capture_design_request_metadata(args),
             **({"dataset_id": dataset_id} if dataset_id else {}),
         },
@@ -171,6 +194,7 @@ def _write_episode(
         descriptor=ModelDescriptor(
             model_family="pi05",
             model_id=args.model_id,
+            checkpoint_sha=str(args.model_revision or "") or None,
             metadata={
                 "device": str(policy.config.device),
                 "profile": canonical_profile(plan.profile),

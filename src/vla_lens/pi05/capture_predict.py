@@ -37,6 +37,9 @@ def _predict_action_chunk(
     call_index: int,
     step: int,
     plan: CapturePlan,
+    *,
+    noise: Any | None = None,
+    flow_noise_seed: int | None = None,
 ) -> CaptureCall:
     import torch
     from lerobot.policies.pi05.modeling_pi05 import make_att_2d_masks
@@ -353,7 +356,7 @@ def _predict_action_chunk(
     modeling_gemma.eager_attention_forward = attention_wrapper
     try:
         with torch.no_grad():
-            chunk = policy.predict_action_chunk(obs)
+            chunk = policy.predict_action_chunk(obs, noise=noise)
     finally:
         model.denoise_step = original_denoise
         model.embed_prefix = original_embed_prefix
@@ -439,6 +442,10 @@ def _predict_action_chunk(
         generation_input_embeddings=generation_input_embeddings,
         action_head_input=action_head_input,
         action_head_output=action_head_output,
+        policy_call_metadata={
+            "flow_noise_seed": flow_noise_seed,
+            "flow_noise_source": "explicit_torch_generator",
+        },
         full_site_arrays=full_site_arrays,
     )
 

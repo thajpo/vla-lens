@@ -392,3 +392,4 @@ class PI05CaptureRuntime:
     add_envs_task: Any
     preprocess_observation: Any
     get_benchmark: Any
+    runtime_identity: dict[str, Any] = field(default_factory=dict)

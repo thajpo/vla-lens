@@ -99,7 +99,10 @@ EOF
   exit 2
 fi
 
-"$ROOT/scripts/check_pi05_env.sh" --backend "$BACKEND" >/dev/null
+ENV_RECEIPT="$(mktemp "${TMPDIR:-/tmp}/vla-lens-pi05-env.XXXXXX.json")"
+trap 'rm -f "$ENV_RECEIPT"' EXIT
+"$ROOT/scripts/check_pi05_env.sh" --backend "$BACKEND" --receipt "$ENV_RECEIPT" >/dev/null
+export VLA_LENS_CAPTURE_ENV_RECEIPT="$ENV_RECEIPT"
 
 if ! has_arg "--device"; then
   args+=("--device" "${PI05_CAPTURE_DEVICE:-$(default_device_for_backend "$BACKEND")}")
@@ -108,4 +111,4 @@ if ! has_arg "--dtype"; then
   args+=("--dtype" "${PI05_CAPTURE_DTYPE:-$(default_dtype_for_backend "$BACKEND")}")
 fi
 
-exec "$VENV/bin/vla-pi05-capture" "${args[@]}"
+"$VENV/bin/vla-pi05-capture" "${args[@]}"

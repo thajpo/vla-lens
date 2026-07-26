@@ -37,6 +37,26 @@ def _capture_design_metadata(args: argparse.Namespace) -> dict[str, Any]:
         )
     return metadata
 
+
+def trial_runtime_metadata(args: argparse.Namespace, *, legacy_seed: int) -> dict[str, Any]:
+    return {
+        "trial_id": str(args.trial_id or ""),
+        "child_plan_id": str(args.child_plan_id or ""),
+        "canonical_family_id": str(args.canonical_family_id or ""),
+        "pool": str(args.pool or ""),
+        "replicate_id": str(args.replicate_id or ""),
+        "seed_identities": {
+            "reset": int(args.reset_seed if args.reset_seed is not None else legacy_seed),
+            "environment": int(
+                args.environment_seed if args.environment_seed is not None else legacy_seed
+            ),
+            "policy": int(args.policy_seed if args.policy_seed is not None else legacy_seed),
+            "flow_noise": int(
+                args.flow_noise_seed if args.flow_noise_seed is not None else legacy_seed
+            ),
+        },
+    }
+
 def _capture_design_request_metadata(args: argparse.Namespace) -> dict[str, Any]:
     metadata = _capture_design_metadata(args)
     metadata.pop("capture_design", None)
