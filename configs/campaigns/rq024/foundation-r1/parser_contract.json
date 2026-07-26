@@ -63,7 +63,8 @@
       "seed_domain"
     ],
     "identity": "sha256:<64 lowercase hexadecimal digits> of the encoded bytes",
-    "integer": "unsigned big-endian integer represented by the first four digest bytes (range 0..2^32-1)"
+    "integer": "unsigned big-endian integer represented by the first four digest bytes (range 0..2^32-1)",
+    "layout_resolution": "layout_id = layout_seed modulo 50, resolving one of the 50 LIBERO-90 pruned initial states before execution"
   },
   "stratum": {
     "digest_encoding": "UTF-8 bytes of literal rq024-stratum-v1 immediately followed by stratum_id UTF-8 bytes",

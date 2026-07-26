@@ -17,6 +17,7 @@ from vla_lens.pi05.capture_runner import _flow_noise_call_seed, _seed_bundle
 from vla_lens.pi05.runtime_identity import (
     canonical_component_identities,
     canonical_sha256,
+    checkpoint_snapshot_receipt,
     require_immutable_revision,
     resolve_immutable_checkpoint,
 )
@@ -53,6 +54,8 @@ def _write_exact_plan(path: Path) -> None:
         "canonical_family_id",
         "pool",
         "replicate_id",
+        "layout_seed",
+        "layout_id",
         "reset_seed",
         "environment_seed",
         "policy_seed",
@@ -74,6 +77,8 @@ def _write_exact_plan(path: Path) -> None:
                 "canonical_family_id": "family-01",
                 "pool": "discovery",
                 "replicate_id": "replicate-1",
+                "layout_seed": 101,
+                "layout_id": 1,
                 "reset_seed": 201,
                 "environment_seed": 301,
                 "policy_seed": 401,
@@ -111,6 +116,7 @@ def test_immutable_checkpoint_receipt_records_exact_snapshot_manifest(tmp_path: 
     assert receipt["resolved_revision"] == REVISION
     assert receipt["snapshot_manifest_sha256"].startswith("sha256:")
     assert receipt["files"][0]["path"] == "config.json"
+    assert checkpoint_snapshot_receipt("org/model", REVISION, snapshot) == receipt
 
 
 def test_mutable_checkpoint_revision_is_rejected() -> None:
@@ -137,6 +143,8 @@ def test_exact_plan_retains_trial_and_independent_seed_identities(tmp_path: Path
         "--child-plan-id": "rq024-foundation-r1",
         "--canonical-family-id": "family-01",
         "--pool": "discovery",
+        "--layout-seed": "101",
+        "--layout-id": "1",
         "--reset-seed": "201",
         "--environment-seed": "301",
         "--policy-seed": "401",
@@ -167,6 +175,10 @@ def test_exact_capture_parser_requires_complete_single_trial() -> None:
             "discovery",
             "--replicate-id",
             "replicate-1",
+            "--layout-seed",
+            "5",
+            "--layout-id",
+            "5",
             "--reset-seed",
             "1",
             "--environment-seed",

@@ -1382,6 +1382,19 @@ next reusable tool. For effect studies, failing a positive gate is
 bound. Confirmations also bind a fingerprint of the actual source child's
 scientific protocol.
 
+**FOUNDATION preparation update.** The accepted program is now event-ledger
+locked. A versioned BDDL-based LIBERO-90 parser preserves all 90 source tasks,
+accepts 79 single-goal families, records 11 compound-goal rejections, and
+deterministically selects 24 families split 12/12 between discovery and
+confirmation before outcomes. The generated 72-row untouched-rollout table has
+three trials per family, separate layout, reset, environment, policy, and flow
+noise identities, and resolved LIBERO layout IDs. The exact ROCm batch preflight
+accepts the table without loading the model or simulator. The checkpoint,
+capture environment, camera/controller/processors, and control-step MuJoCo
+contact capability now have machine-readable receipts. No RQ-024 trial has run;
+the FOUNDATION child still requires independent audits, budget reservation,
+lock, output claim, and an `execution_authorized` event.
+
 ## Not Yet Run
 
 - Feature-level sparse object-location probes beyond the fixed MLP battery

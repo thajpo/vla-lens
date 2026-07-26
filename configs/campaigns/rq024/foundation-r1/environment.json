@@ -1,0 +1,134 @@
+{
+  "accelerator": {
+    "cuda_runtime": null,
+    "device_available": true,
+    "devices": [
+      {
+        "index": 0,
+        "major": 11,
+        "minor": 0,
+        "name": "Radeon RX 7900 XTX",
+        "total_memory": 25753026560
+      }
+    ],
+    "rocm_runtime": "7.2.53211",
+    "torch_version": "2.12.0+rocm7.2"
+  },
+  "backend": "rocm",
+  "capture_components": {
+    "camera": {
+      "lerobot_libero_source": {
+        "path": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/lerobot/envs/libero.py",
+        "sha256": "sha256:02bc214e6b011c7f64b25604c97f1f083a96e151fa239fdc137433b356e542f3",
+        "size": 18060
+      },
+      "names": [
+        "agentview_image",
+        "robot0_eye_in_hand_image"
+      ],
+      "observation_size": [
+        256,
+        256
+      ]
+    },
+    "controller": {
+      "config": {
+        "path": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/robosuite/controllers/config/osc_pose.json",
+        "sha256": "sha256:07f3a8b41d3eecc8a36700a85bd8207ee3fbc36eb73f6a2248340c96770d1e45",
+        "size": 466
+      },
+      "control_mode": "relative",
+      "name": "OSC_POSE"
+    },
+    "environment_processor": {
+      "implementation": "LiberoProcessorStep",
+      "source": {
+        "path": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/lerobot/processor/env_processor.py",
+        "sha256": "sha256:6d6622d69835f0c3c73dd8700d9b9e9af9e50fc4bebaaf3e87322a09d480ba36",
+        "size": 8275
+      }
+    }
+  },
+  "kind": "vla_lens.pi05_capture_environment_receipt",
+  "libero": {
+    "config_path": "/home/j/.libero/config.yaml",
+    "config_sha256": "sha256:4dc72698db3a4ab15ce4928566d4f302d166b322523655d4ebc312c7299c472f",
+    "module": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/libero/__init__.py",
+    "paths": {
+      "bddl_files": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/libero/libero/bddl_files",
+      "benchmark_root": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/libero/libero",
+      "init_states": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/libero/libero/init_files"
+    }
+  },
+  "openpi_transformers": {
+    "check_module": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/transformers/models/siglip/check.py",
+    "check_module_sha256": "sha256:466e8eb7887ac5ccc98118a3169298d6ab65a284d834bae74751e3854dbc4245",
+    "replacement_check": true
+  },
+  "packages": {
+    "datasets": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "4.8.5"
+    },
+    "hf-libero": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "0.1.3"
+    },
+    "lerobot": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "0.4.4"
+    },
+    "mujoco": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "3.8.1"
+    },
+    "numpy": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "2.2.6"
+    },
+    "opencv-python-headless": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "4.12.0.88"
+    },
+    "peft": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "0.19.1"
+    },
+    "pyarrow": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "24.0.0"
+    },
+    "rerun-sdk": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "0.26.2"
+    },
+    "robosuite": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "1.4.0"
+    },
+    "torch": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "2.12.0+rocm7.2"
+    },
+    "torchaudio": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "2.11.0+rocm7.2"
+    },
+    "torchvision": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "0.27.0+rocm7.2"
+    },
+    "transformers": {
+      "location": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages",
+      "version": "4.53.2"
+    }
+  },
+  "runtime": {
+    "executable": "/home/j/Projects/vla-lens/.venv-pi05-rocm/bin/python",
+    "machine": "x86_64",
+    "platform": "Linux-6.8.0-136-generic-x86_64-with-glibc2.39",
+    "python": "3.11.13 (main, Sep 18 2025, 19:46:39) [Clang 20.1.4 ]"
+  },
+  "schema_version": 1,
+  "status": "pass"
+}

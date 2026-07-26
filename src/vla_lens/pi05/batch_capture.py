@@ -44,6 +44,8 @@ PLAN_COLUMNS = (
     "canonical_family_id",
     "pool",
     "replicate_id",
+    "layout_seed",
+    "layout_id",
     "reset_seed",
     "environment_seed",
     "policy_seed",
@@ -75,6 +77,8 @@ PROBE_SPLIT_COLUMNS = (
     "canonical_family_id",
     "pool",
     "replicate_id",
+    "layout_seed",
+    "layout_id",
     "reset_seed",
     "environment_seed",
     "policy_seed",
@@ -106,6 +110,8 @@ class EpisodePlanRow:
     canonical_family_id: str = ""
     pool: str = ""
     replicate_id: str = ""
+    layout_seed: int | None = None
+    layout_id: int | None = None
     reset_seed: int | None = None
     environment_seed: int | None = None
     policy_seed: int | None = None
@@ -344,6 +350,8 @@ def _read_episode_plan(path: Path, *, exact: bool = False) -> list[EpisodePlanRo
                 "canonical_family_id",
                 "pool",
                 "replicate_id",
+                "layout_seed",
+                "layout_id",
                 "reset_seed",
                 "environment_seed",
                 "policy_seed",
@@ -376,6 +384,8 @@ def _episode_plan_row_from_record(record: Mapping[str, Any]) -> EpisodePlanRow:
         canonical_family_id=str(record.get("canonical_family_id") or "").strip(),
         pool=str(record.get("pool") or "").strip(),
         replicate_id=str(record.get("replicate_id") or "").strip(),
+        layout_seed=_optional_int(record.get("layout_seed")),
+        layout_id=_optional_int(record.get("layout_id")),
         reset_seed=_optional_int(record.get("reset_seed")),
         environment_seed=_optional_int(record.get("environment_seed")),
         policy_seed=_optional_int(record.get("policy_seed")),
@@ -508,6 +518,8 @@ def _capture_command_group_key(row: EpisodePlanRow) -> tuple[Any, ...]:
         row.canonical_family_id,
         row.pool,
         row.replicate_id,
+        row.layout_seed,
+        row.layout_id,
         row.reset_seed,
         row.environment_seed,
         row.policy_seed,
@@ -568,6 +580,8 @@ def _trial_identity_command_args(row: EpisodePlanRow) -> tuple[str, ...]:
         ("--canonical-family-id", row.canonical_family_id),
         ("--pool", row.pool),
         ("--replicate-id", row.replicate_id),
+        ("--layout-seed", row.layout_seed),
+        ("--layout-id", row.layout_id),
         ("--reset-seed", row.reset_seed),
         ("--environment-seed", row.environment_seed),
         ("--policy-seed", row.policy_seed),
@@ -616,6 +630,8 @@ def _write_plan_files(
                 "canonical_family_id": row.canonical_family_id,
                 "pool": row.pool,
                 "replicate_id": row.replicate_id,
+                "layout_seed": row.layout_seed if row.layout_seed is not None else "",
+                "layout_id": row.layout_id if row.layout_id is not None else "",
                 "reset_seed": row.reset_seed if row.reset_seed is not None else "",
                 "environment_seed": (
                     row.environment_seed if row.environment_seed is not None else ""
@@ -669,6 +685,8 @@ def _episode_plan_record(output_root: Path, row: EpisodePlanRow) -> dict[str, An
         "canonical_family_id": row.canonical_family_id,
         "pool": row.pool,
         "replicate_id": row.replicate_id,
+        "layout_seed": row.layout_seed if row.layout_seed is not None else "",
+        "layout_id": row.layout_id if row.layout_id is not None else "",
         "reset_seed": row.reset_seed if row.reset_seed is not None else "",
         "environment_seed": row.environment_seed if row.environment_seed is not None else "",
         "policy_seed": row.policy_seed if row.policy_seed is not None else "",
@@ -892,6 +910,7 @@ def _validate_episode_rows(rows: Sequence[EpisodePlanRow], *, exact: bool) -> No
         if empty:
             raise ValueError(f"episode row {index} has empty exact identities: {empty}")
         seeds = {
+            "layout_seed": row.layout_seed,
             "reset_seed": row.reset_seed,
             "environment_seed": row.environment_seed,
             "policy_seed": row.policy_seed,
@@ -900,6 +919,8 @@ def _validate_episode_rows(rows: Sequence[EpisodePlanRow], *, exact: bool) -> No
         missing_seeds = sorted(name for name, value in seeds.items() if value is None)
         if missing_seeds:
             raise ValueError(f"episode row {index} has missing exact seeds: {missing_seeds}")
+        if row.layout_id is None or not 0 <= row.layout_id < 50:
+            raise ValueError(f"episode row {index} has invalid LIBERO layout_id: {row.layout_id}")
         stable_id = (row.child_plan_id, row.trial_id)
         if stable_id in seen:
             raise ValueError(f"duplicate exact trial identity: {stable_id}")

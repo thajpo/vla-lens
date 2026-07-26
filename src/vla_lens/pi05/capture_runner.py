@@ -151,6 +151,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--canonical-family-id")
     parser.add_argument("--pool")
     parser.add_argument("--replicate-id")
+    parser.add_argument("--layout-seed", type=int)
     parser.add_argument("--reset-seed", type=int)
     parser.add_argument("--environment-seed", type=int)
     parser.add_argument("--policy-seed", type=int)
@@ -219,13 +220,15 @@ def load_pi05_capture_runtime(args: argparse.Namespace) -> PI05CaptureRuntime:
     from lerobot.policies.pi05 import PI05Policy
     from libero.libero.benchmark import get_benchmark
 
-    runtime_identity = declared_runtime_identity(args)
     model_source: str | Path = args.model_id
+    checkpoint_receipt = None
     if args.model_revision:
         model_source, checkpoint_receipt = resolve_immutable_checkpoint(
             args.model_id, args.model_revision
         )
-        runtime_identity["model"] = checkpoint_receipt
+    runtime_identity = declared_runtime_identity(
+        args, checkpoint_receipt=checkpoint_receipt
+    )
 
     policy_cfg = PreTrainedConfig.from_pretrained(
         model_source,
@@ -417,11 +420,19 @@ def _validate_capture_args(args: argparse.Namespace) -> None:
         args.pool,
         args.replicate_id,
     )
-    seeds = (args.reset_seed, args.environment_seed, args.policy_seed, args.flow_noise_seed)
+    seeds = (
+        args.layout_seed,
+        args.reset_seed,
+        args.environment_seed,
+        args.policy_seed,
+        args.flow_noise_seed,
+    )
     if not all(str(value or "").strip() for value in identities):
         raise ValueError("exact runtime requires trial/child/family/pool/replicate identities")
     if any(value is None for value in seeds):
-        raise ValueError("exact runtime requires reset/environment/policy/flow-noise seeds")
+        raise ValueError("exact runtime requires layout/reset/environment/policy/flow-noise seeds")
+    if args.layout_id is None or not 0 <= int(args.layout_id) < 50:
+        raise ValueError("exact runtime requires a resolved LIBERO layout_id in [0, 49]")
     if args.seed_list or args.episodes != 1:
         raise ValueError("exact runtime capture commands must contain exactly one trial")
 

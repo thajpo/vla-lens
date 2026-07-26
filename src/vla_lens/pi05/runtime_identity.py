@@ -32,26 +32,66 @@ def canonical_component_identities(
     model_revision: str | None,
     device: str,
     dtype: str,
+    environment_receipt: Mapping[str, Any] | None = None,
+    checkpoint_receipt: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
+    environment_components = dict((environment_receipt or {}).get("capture_components") or {})
+    checkpoint_files = {
+        str(item.get("path")): {
+            "size": item.get("size"),
+            "sha256": item.get("sha256"),
+        }
+        for item in (checkpoint_receipt or {}).get("files", [])
+        if isinstance(item, Mapping)
+    }
+    preprocessor_files = {
+        path: value
+        for path, value in checkpoint_files.items()
+        if "preprocessor" in path
+    }
+    postprocessor_files = {
+        path: value
+        for path, value in checkpoint_files.items()
+        if "postprocessor" in path
+    }
     components = {
         "camera": {
             "camera_name": "agentview_image,robot0_eye_in_hand_image",
             "observation_height": int(obs_size),
             "observation_width": int(obs_size),
+            **(
+                {"environment_evidence": environment_components["camera"]}
+                if "camera" in environment_components
+                else {}
+            ),
         },
-        "controller": {"control_mode": "relative"},
+        "controller": {
+            "control_mode": "relative",
+            **(
+                {"environment_evidence": environment_components["controller"]}
+                if "controller" in environment_components
+                else {}
+            ),
+        },
         "preprocessor": {
             "implementation": "lerobot.make_pre_post_processors",
             "model_id": str(model_id),
             "model_revision": str(model_revision or ""),
             "device_processor": {"device": str(device)},
             "rename_observations_processor": {"rename_map": {}},
+            **(
+                {"environment_processor": environment_components["environment_processor"]}
+                if "environment_processor" in environment_components
+                else {}
+            ),
+            **({"checkpoint_files": preprocessor_files} if preprocessor_files else {}),
         },
         "postprocessor": {
             "implementation": "lerobot.make_pre_post_processors+make_env_pre_post_processors",
             "model_id": str(model_id),
             "model_revision": str(model_revision or ""),
             "dtype": str(dtype),
+            **({"checkpoint_files": postprocessor_files} if postprocessor_files else {}),
         },
     }
     return {
@@ -84,16 +124,30 @@ def resolve_immutable_checkpoint(
         raise ValueError(
             f"checkpoint resolved to {resolved_revision}, expected exact revision {exact_revision}"
         )
-    manifest = checkpoint_snapshot_manifest(snapshot)
-    receipt = {
+    return snapshot, checkpoint_snapshot_receipt(model_id, exact_revision, snapshot)
+
+
+def checkpoint_snapshot_receipt(
+    model_id: str, revision: str, snapshot: Path
+) -> dict[str, Any]:
+    exact_revision = require_immutable_revision(revision)
+    resolved_snapshot = snapshot.resolve()
+    if resolved_snapshot.name.lower() != exact_revision:
+        raise ValueError(
+            f"checkpoint snapshot path resolves to {resolved_snapshot.name}, "
+            f"expected exact revision {exact_revision}"
+        )
+    manifest = checkpoint_snapshot_manifest(resolved_snapshot)
+    return {
+        "schema_version": 1,
+        "kind": "vla_lens.pi05_checkpoint_snapshot_receipt",
         "repo_id": str(model_id),
         "requested_revision": exact_revision,
-        "resolved_revision": resolved_revision,
-        "snapshot_path": str(snapshot),
+        "resolved_revision": exact_revision,
+        "snapshot_path": str(resolved_snapshot),
         "snapshot_manifest_sha256": canonical_sha256(manifest),
         "files": manifest,
     }
-    return snapshot, receipt
 
 
 def checkpoint_snapshot_manifest(snapshot: Path) -> list[dict[str, Any]]:
@@ -115,8 +169,11 @@ def checkpoint_snapshot_manifest(snapshot: Path) -> list[dict[str, Any]]:
     return files
 
 
-def declared_runtime_identity(args: Any) -> dict[str, Any]:
+def declared_runtime_identity(
+    args: Any, *, checkpoint_receipt: Mapping[str, Any] | None = None
+) -> dict[str, Any]:
     revision = str(getattr(args, "model_revision", None) or "")
+    environment = load_environment_receipt()
     payload = {
         "schema_version": 1,
         "kind": "vla_lens.pi05_runtime_identity",
@@ -127,9 +184,12 @@ def declared_runtime_identity(args: Any) -> dict[str, Any]:
             model_revision=revision,
             device=str(args.device),
             dtype=str(args.dtype),
+            environment_receipt=environment,
+            checkpoint_receipt=checkpoint_receipt,
         ),
     }
-    environment = load_environment_receipt()
+    if checkpoint_receipt is not None:
+        payload["model"] = dict(checkpoint_receipt)
     if environment is not None:
         payload["capture_environment"] = environment
         payload["capture_environment_sha256"] = canonical_sha256(environment)

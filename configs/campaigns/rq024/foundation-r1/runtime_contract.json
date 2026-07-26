@@ -1,0 +1,92 @@
+{
+  "backend_device": "cuda",
+  "components": {
+    "camera_config": {
+      "camera_name": "agentview_image,robot0_eye_in_hand_image",
+      "environment_evidence": {
+        "lerobot_libero_source": {
+          "path": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/lerobot/envs/libero.py",
+          "sha256": "sha256:02bc214e6b011c7f64b25604c97f1f083a96e151fa239fdc137433b356e542f3",
+          "size": 18060
+        },
+        "names": [
+          "agentview_image",
+          "robot0_eye_in_hand_image"
+        ],
+        "observation_size": [
+          256,
+          256
+        ]
+      },
+      "observation_height": 256,
+      "observation_width": 256
+    },
+    "camera_config_sha256": "sha256:528712c0bee463d2c8ba01a896277341003ff6d71a08d12bc758a41120a5d5a8",
+    "controller_config": {
+      "control_mode": "relative",
+      "environment_evidence": {
+        "config": {
+          "path": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/robosuite/controllers/config/osc_pose.json",
+          "sha256": "sha256:07f3a8b41d3eecc8a36700a85bd8207ee3fbc36eb73f6a2248340c96770d1e45",
+          "size": 466
+        },
+        "control_mode": "relative",
+        "name": "OSC_POSE"
+      }
+    },
+    "controller_config_sha256": "sha256:0b71939c43f41ca377d3d3bb99c278844b2a3bd8dc2bac7fb5f3d7a15c06f043",
+    "postprocessor_config": {
+      "checkpoint_files": {
+        "policy_postprocessor.json": {
+          "sha256": "sha256:37d719a6584600988e6c343306d2eaee0575109f235ad500313577f73e47e8a1",
+          "size": 660
+        },
+        "policy_postprocessor_step_0_unnormalizer_processor.safetensors": {
+          "sha256": "sha256:a002c0df7f79c5b169c5a899ad151d4ea1bed246c7d82bd93ed1556558d517a9",
+          "size": 7668
+        }
+      },
+      "dtype": "bfloat16",
+      "implementation": "lerobot.make_pre_post_processors+make_env_pre_post_processors",
+      "model_id": "lerobot/pi05_libero_finetuned",
+      "model_revision": "dbf8a3f794a9c4297b44f40b752712f50073d945"
+    },
+    "postprocessor_config_sha256": "sha256:d4765ecb63a0c7bf37edda42147e5ef9e3693a3ef1bbad64a30b526095a6d8c4",
+    "preprocessor_config": {
+      "checkpoint_files": {
+        "policy_preprocessor.json": {
+          "sha256": "sha256:3d669ffc18d0364536735d8203076dcc69d3a6523aa5956ccaada3f9e1e6b748",
+          "size": 1903
+        },
+        "policy_preprocessor_step_2_normalizer_processor.safetensors": {
+          "sha256": "sha256:a002c0df7f79c5b169c5a899ad151d4ea1bed246c7d82bd93ed1556558d517a9",
+          "size": 7668
+        }
+      },
+      "device_processor": {
+        "device": "cuda"
+      },
+      "environment_processor": {
+        "implementation": "LiberoProcessorStep",
+        "source": {
+          "path": "/home/j/Projects/vla-lens/.venv-pi05-rocm/lib/python3.11/site-packages/lerobot/processor/env_processor.py",
+          "sha256": "sha256:6d6622d69835f0c3c73dd8700d9b9e9af9e50fc4bebaaf3e87322a09d480ba36",
+          "size": 8275
+        }
+      },
+      "implementation": "lerobot.make_pre_post_processors",
+      "model_id": "lerobot/pi05_libero_finetuned",
+      "model_revision": "dbf8a3f794a9c4297b44f40b752712f50073d945",
+      "rename_observations_processor": {
+        "rename_map": {}
+      }
+    },
+    "preprocessor_config_sha256": "sha256:75354c1ec7c9bfa2c6c392acd6f9953381e7681e12e7556aefd757d44eca62f4"
+  },
+  "dtype": "bfloat16",
+  "kind": "vla_lens.pi05_runtime_contract",
+  "model_id": "lerobot/pi05_libero_finetuned",
+  "model_revision": "dbf8a3f794a9c4297b44f40b752712f50073d945",
+  "obs_size": 256,
+  "schema_version": 1
+}

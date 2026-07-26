@@ -20,6 +20,7 @@ UNIT_SEPARATOR = "\x1f"
 SEED_DOMAINS = ("layout", "reset", "environment", "policy", "flow_noise")
 SELECTED_FAMILY_COUNT = 24
 REPLICATES_PER_FAMILY = 3
+LIBERO_INIT_STATE_COUNT = 50
 
 _ALIASES = {
     "akita_black_bowl": "black_bowl",
@@ -260,6 +261,10 @@ def parser_contract() -> dict[str, Any]:
             "integer": (
                 "unsigned big-endian integer represented by the first four digest bytes "
                 "(range 0..2^32-1)"
+            ),
+            "layout_resolution": (
+                "layout_id = layout_seed modulo 50, resolving one of the 50 LIBERO-90 "
+                "pruned initial states before execution"
             ),
         },
     }
@@ -564,9 +569,16 @@ def _trial_rows(selected: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
             row = {
                 "trial_id": f"rq024-foundation-{family['candidate_position']:02d}-r{replicate_id}",
                 "child_plan_id": CHILD_PLAN_ID,
+                "dataset_id": "rq024-foundation-r1",
                 "benchmark": BENCHMARK,
                 "task_id": family["task_id"],
                 "task_name": family["task_name"],
+                "split": (
+                    "train_discovery_baseline"
+                    if family["pool"] == "discovery"
+                    else "test_confirmation_baseline"
+                ),
+                "capture_profile": "rollout",
                 "canonical_family_id": family["canonical_family_id"],
                 "candidate_position": family["candidate_position"],
                 "pool": family["pool"],
@@ -580,6 +592,8 @@ def _trial_rows(selected: Sequence[Mapping[str, Any]]) -> list[dict[str, Any]]:
                 )
                 row[f"{domain}_seed_identity"] = identity
                 row[f"{domain}_seed"] = seed
+            row["layout_id"] = int(row["layout_seed"]) % LIBERO_INIT_STATE_COUNT
+            row["seed"] = row["reset_seed"]
             rows.append(row)
     return rows
 

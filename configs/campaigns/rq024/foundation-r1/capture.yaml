@@ -1,0 +1,20 @@
+schema_version: 1
+kind: vla_lens.pi05_batch_capture_config
+name: rq024-foundation-capture-r1
+dataset_id: rq024-foundation-r1
+description: RQ-024 FOUNDATION untouched LIBERO-90 behavior screen.
+
+requires_episode_plan: true
+output_root: /mnt/new-volume/vla-lens/rq024/rq024-foundation-r1
+model_id: lerobot/pi05_libero_finetuned
+model_revision: dbf8a3f794a9c4297b44f40b752712f50073d945
+capture_profile: rollout
+storage_dtype: float16
+obs_size: 256
+
+# ROCm uses PyTorch's CUDA device API. The wrapper verifies the ROCm build.
+device: cuda
+dtype: bfloat16
+group_seed_list: false
+estimated_mb_per_episode: 120
+minimum_free_gb_after_capture: 200

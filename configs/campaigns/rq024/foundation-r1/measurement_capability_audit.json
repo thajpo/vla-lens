@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "kind": "rq024.foundation_measurement_capability_audit",
+  "audit_id": "rq024-foundation-measurement-capability-r1",
+  "simulator_success": {
+    "available": true,
+    "role": "foundation_eligibility",
+    "source": "LIBERO check_success propagated through LeRobot is_success"
+  },
+  "simulator_contact": {
+    "implementation": "mujoco_contact_manifold_v1",
+    "capability_status": "implemented_control_step_pre_action_runtime_verification_pending",
+    "backend_source": "sim.data.contact",
+    "sample_phase": "pre_action_control_step",
+    "physical_contact_rule": "signed_distance_m <= 0",
+    "positive_gap_rule": "signed_distance_m > 0 is proximity within the MuJoCo contact margin",
+    "force_optional": true,
+    "exhaustive_physics_substeps": false,
+    "terminal_post_action_contact_observed_after_autoreset": false,
+    "runtime_smoke_completed": false,
+    "runtime_smoke_blocker": "FOUNDATION execution is not yet authorized"
+  },
+  "legacy_distance_measurement": {
+    "measurement_kind": "eef_object_origin_distance_proxy",
+    "threshold_m": 0.08,
+    "is_contact_telemetry": false,
+    "is_collision_telemetry": false
+  },
+  "foundation_rule": "Eligibility uses simulator success. Contact manifolds, object motion, and EEF distance remain separate measurements."
+}

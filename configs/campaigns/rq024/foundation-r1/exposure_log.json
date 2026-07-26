@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "kind": "rq024.prospective_exposure_log",
+  "log_id": "rq024-exposure-log-r1",
+  "program_id": "rq024-controlled-scene-to-behavior",
+  "child_plan_id": "rq024-foundation-r1",
+  "records": []
+}

@@ -20,13 +20,13 @@
   ],
   "hashes": {
     "candidate_table_sha256": "sha256:0c153586a7e759210bd1c7b1674fb4a3f617b2af507fd66cbd8c95c8ef4b34b0",
-    "parser_contract_sha256": "sha256:098351eafaf155b708115534765bb88d8cde5614fef8a6915abfe66346da7bec",
-    "parser_implementation_sha256": "sha256:b3b452abad2262ba6a001d2dfeb7b70391e1f46ea95e42e06d750c748147966b",
+    "parser_contract_sha256": "sha256:c0a450a82db2e090f2e340a676a374641e6561e79a7cfbc6ab6b76edaf2460ce",
+    "parser_implementation_sha256": "sha256:a3f40a688d217c7773d433bca4fb5e77bd377ffee59ad39d9471a8c71fb284a1",
     "pool_assignment_sha256": "sha256:58e3e868f784742d3272d28d295c12f6ec8bccf93240beb9673512db9507f786",
     "rejection_table_sha256": "sha256:9a811b7d6154a066e4a814bbe401151380e1f19ee5df98e461d39ef5f6467efa",
     "source_universe_sha256": "sha256:081694b8f23a4639d8502c7c3ff5f8c065007f961ea407e873d259fb75a0ebd8",
     "task_catalog_sha256": "sha256:11494fa445924af10cfe7f180548a97a6bf5f003a694e1c9d9a71a3f6ce4d60d",
-    "trial_table_sha256": "sha256:525cccd46664b338c947f8f056cd2e8516aaa9cdfbae99f73cf8b5b3a96b1c9a"
+    "trial_table_sha256": "sha256:abbeb22023c892f545e8ff4ecc0d606b266e81529be5e2204646a8d492c8dae8"
   },
   "kind": "rq024.foundation_catalog_selection_trial_bundle",
   "parser_version": "rq024-libero90-family-v1",

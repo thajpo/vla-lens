@@ -46,6 +46,7 @@ def trial_runtime_metadata(args: argparse.Namespace, *, legacy_seed: int) -> dic
         "pool": str(args.pool or ""),
         "replicate_id": str(args.replicate_id or ""),
         "seed_identities": {
+            "layout": int(args.layout_seed if args.layout_seed is not None else legacy_seed),
             "reset": int(args.reset_seed if args.reset_seed is not None else legacy_seed),
             "environment": int(
                 args.environment_seed if args.environment_seed is not None else legacy_seed
@@ -55,6 +56,7 @@ def trial_runtime_metadata(args: argparse.Namespace, *, legacy_seed: int) -> dic
                 args.flow_noise_seed if args.flow_noise_seed is not None else legacy_seed
             ),
         },
+        "layout_id": args.layout_id,
     }
 
 def _capture_design_request_metadata(args: argparse.Namespace) -> dict[str, Any]:

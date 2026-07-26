@@ -91,7 +91,6 @@ import os
 import platform
 import sys
 from contextlib import redirect_stdout
-from datetime import datetime, timezone
 from pathlib import Path
 
 from packaging.version import Version
@@ -252,6 +251,7 @@ package_names = [
     "peft",
     "hf-libero",
     "robosuite",
+    "mujoco",
 ]
 packages = {
     pkg: {
@@ -274,12 +274,30 @@ if torch.cuda.is_available():
             }
         )
 
+robosuite_root = Path(robosuite.__file__).resolve().parent
+controller_path = robosuite_root / "controllers" / "config" / "osc_pose.json"
+if not controller_path.is_file():
+    fail(f"robosuite OSC_POSE controller config is missing: {controller_path}")
+lerobot_root = Path(md.distribution("lerobot").locate_file("")).resolve() / "lerobot"
+libero_env_path = lerobot_root / "envs" / "libero.py"
+env_processor_path = lerobot_root / "processor" / "env_processor.py"
+for identity_path in (libero_env_path, env_processor_path):
+    if not identity_path.is_file():
+        fail(f"LeRobot runtime source is missing: {identity_path}")
+
+
+def file_ref(path: Path) -> dict[str, object]:
+    return {
+        "path": str(path.resolve()),
+        "size": path.stat().st_size,
+        "sha256": "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest(),
+    }
+
 receipt = {
     "schema_version": 1,
     "kind": "vla_lens.pi05_capture_environment_receipt",
     "status": "pass",
     "backend": backend,
-    "created_utc": datetime.now(timezone.utc).isoformat(),
     "runtime": {
         "python": sys.version,
         "executable": sys.executable,
@@ -299,6 +317,22 @@ receipt = {
         "check_module": str(openpi_check_path),
         "check_module_sha256": "sha256:"
         + hashlib.sha256(openpi_check_path.read_bytes()).hexdigest(),
+    },
+    "capture_components": {
+        "camera": {
+            "names": ["agentview_image", "robot0_eye_in_hand_image"],
+            "observation_size": [256, 256],
+            "lerobot_libero_source": file_ref(libero_env_path),
+        },
+        "controller": {
+            "name": "OSC_POSE",
+            "control_mode": "relative",
+            "config": file_ref(controller_path),
+        },
+        "environment_processor": {
+            "implementation": "LiberoProcessorStep",
+            "source": file_ref(env_processor_path),
+        },
     },
     "libero": {
         "module": str(Path(libero.__file__).resolve()),
