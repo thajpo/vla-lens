@@ -1345,6 +1345,43 @@ They do not project normalized velocity directly onto meters. Physical geometry
 gain and named-target distance return only in their separately confirmed
 closed-loop branches.
 
+**Causal applicability and alignment.** A causal transfer fraction is defined
+only when the natural donor-recipient velocity delta clears a threshold locked
+from replay noise before patch outcomes. Cells below it are unsupported rather
+than divided by a near-zero number. Prefix keys may be paired only at the same
+rotary position, or through a tested de-rotate/re-rotate transform; token maps,
+prefix lengths, masks, position IDs, and transforms are locked first. A direct
+copy between differently rotated key positions invalidates the child.
+
+**Conservative synthesis.** Readable identity plus inconclusive or invalid
+behavior is not called "readable but unused." That interpretation is considered
+only when semantic confirmation is positive and both behavior branches are
+valid confirmed negatives, and even then unusedness is not established. A
+negative internal search also does not establish action-path dependence. The
+fixed-action-state explanation is considered only when the specifically locked
+family-level main-effect bound passes; it remains compatible with, not proof
+of, action-path dependence.
+
+**Autonomous control plane.** Parent-owned formulas, controls, outputs, audits,
+budgets, and claims cannot be weakened by a child. Predecessors are exact
+`result_recorded` event references rather than typed-in verdict rows.
+Confirmation protocols are compared to the actual discovery child. A strict
+event reducer enforces budget reservation, single hardware-child concurrency,
+pool gates, attempt closure, final audits, result validation, and budget release
+before a result becomes a predecessor. Numeric verdicts are derived from a
+typed analysis package and locked thresholds; result prose and hand-entered
+booleans have no authority.
+
+The bounded hardening pass stops here. It protects study identity, predecessor
+order, pre-execution authorization, budgets, typed audits, trial accounting,
+and result-to-ledger binding. It is not a reason to finish a universal research
+engine before running FOUNDATION. Build the smallest typed parser, manifests,
+and runner needed by that study, then let observed workflow friction drive the
+next reusable tool. For effect studies, failing a positive gate is
+`inconclusive`; a negative result requires its separately locked family-level
+bound. Confirmations also bind a fingerprint of the actual source child's
+scientific protocol.
+
 ## Not Yet Run
 
 - Feature-level sparse object-location probes beyond the fixed MLP battery
@@ -1367,7 +1404,11 @@ closed-loop branches.
    machine-readable capture-environment receipt.
 2. Do not execute FOUNDATION until `scripts/validate_research_child.py` verifies
    its committed files and a separate lock receipt contains passing schema,
-   design, runner, and budget audits. The current template is intentionally
+   design, runner, budget, and study-specific audits, and the typed event ledger
+   contains its matching reservation, child lock, and full-preflight
+   `execution_authorized` event. Run
+   `scripts/research_campaign_event.py status` first and require an explicit
+   hardware authorization. The current template is intentionally
    blocked rather than pretending those missing inputs exist.
 3. Add simulator contact telemetry as its own measurement. Existing
    end-effector-distance logic is a proxy and must not be called contact or

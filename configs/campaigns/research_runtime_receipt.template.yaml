@@ -1,0 +1,16 @@
+schema_version: 1
+kind: vla_lens.trial_runtime_receipt
+attempt_id: REPLACE_WITH_ATTEMPT_ID
+trial_id: REPLACE_WITH_TRIAL_ID
+child_lock_fingerprint: sha256:REPLACE_WITH_CHILD_LOCK_HASH
+runtime_config_fingerprint: sha256:REPLACE_WITH_RUNTIME_CONFIG_HASH
+seed_bundle_fingerprint: sha256:REPLACE_WITH_SEED_BUNDLE_HASH
+runtime_check_status: pass
+terminal_status: REPLACE_WITH_LOCKED_TERMINAL_STATUS
+output_refs:
+  - id: REPLACE_WITH_OUTPUT_ID
+    type: REPLACE_WITH_OUTPUT_OR_MANIFEST_TYPE
+    root_id: repo
+    path: REPLACE_WITH_REPO_RELATIVE_PATH
+    sha256: sha256:REPLACE_WITH_OUTPUT_HASH
+created_utc: REPLACE_WITH_ISO_8601_TIME

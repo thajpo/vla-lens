@@ -4,8 +4,25 @@ result_kind: preparation_gate
 program_id: rq024-controlled-scene-to-behavior
 program_fingerprint: sha256:REPLACE_WITH_PROGRAM_HASH
 study_id: FOUNDATION
+study_fingerprint: sha256:REPLACE_WITH_STUDY_HASH
 child_plan_id: rq024-foundation-r1
 child_plan_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+child_lock_id: REPLACE_WITH_CHILD_LOCK_ID
+child_lock_fingerprint: sha256:REPLACE_WITH_CHILD_LOCK_CONTENT_HASH
+reservation_id: REPLACE_WITH_RESERVATION_ID
+ledger_tip_before_result: sha256:REPLACE_WITH_EVENT_HASH_BEFORE_RESULT
+attempt_event_range:
+  first_sequence: 1
+  last_sequence: 1
+authorization_receipt:
+  id: REPLACE_WITH_AUTHORIZATION_RECEIPT_ID
+  sha256: sha256:REPLACE_WITH_AUTHORIZATION_RECEIPT_FILE_HASH
+attempt_ledger:
+  id: REPLACE_WITH_ATTEMPT_LEDGER_ID
+  sha256: sha256:REPLACE_WITH_ATTEMPT_LEDGER_FILE_HASH
+budget_record:
+  id: REPLACE_WITH_BUDGET_RECORD_ID
+  sha256: sha256:REPLACE_WITH_BUDGET_RECORD_FILE_HASH
 question: Which task-object families support the design and competent base behavior?
 one_sentence_answer: Replace with whether both fixed pools supplied six eligible families.
 verdict: inconclusive
@@ -47,22 +64,26 @@ artifact_refs:
     type: preparation_gate_analysis
     uri: replace_with_artifact_uri
     sha256: sha256:REPLACE_WITH_ANALYSIS_PACKAGE_HASH
+  - id: REPLACE_WITH_CHILD_LOCK_ID
+    type: child_lock_receipt
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_CHILD_LOCK_FILE_HASH
+  - id: REPLACE_WITH_AUTHORIZATION_RECEIPT_ID
+    type: child_authorization_receipt
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_AUTHORIZATION_RECEIPT_FILE_HASH
+  - id: REPLACE_WITH_ATTEMPT_LEDGER_ID
+    type: attempt_ledger
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_ATTEMPT_LEDGER_FILE_HASH
+  - id: REPLACE_WITH_BUDGET_RECORD_ID
+    type: budget_record
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_BUDGET_RECORD_FILE_HASH
 metric_ids:
   - family_baseline_eligibility
 decision:
-  integrity_checks:
-    - id: complete_valid_trial_matrix
-      passed: true
-      evidence_artifact_id: rq024-foundation-analysis-r1
-  applicability_checks: []
-  positive_checks:
-    - id: six_eligible_in_each_pool
-      passed: false
-      evidence_artifact_id: rq024-foundation-analysis-r1
-  negative_checks:
-    - id: a_fixed_pool_has_fewer_than_six_eligible
-      passed: false
-      evidence_artifact_id: rq024-foundation-analysis-r1
+  evaluated_gates: []
   derived_outcome: inconclusive
   next_action: stop_branch
 audit:
@@ -71,6 +92,7 @@ audit:
   report_sha256: sha256:REPLACE_WITH_AUDIT_HASH
   auditor_id: REPLACE_WITH_INDEPENDENT_AUDITOR
   subject_child_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+  subject_child_lock_fingerprint: sha256:REPLACE_WITH_CHILD_LOCK_CONTENT_HASH
   subject_trial_manifest_sha256: sha256:REPLACE_WITH_TRIAL_MANIFEST_HASH
   subject_analysis_package_sha256: sha256:REPLACE_WITH_ANALYSIS_PACKAGE_HASH
   checks:

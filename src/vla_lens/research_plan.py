@@ -67,6 +67,7 @@ SOURCE_BOUND_KINDS = frozenset(
 CONFIRMATION_LOCK_FIELDS = frozenset(
     {
         "prospective_cohort_hash",
+        "source_scientific_protocol_fingerprint",
         "metric_id_and_formula",
         "minimum_useful_effect",
         "controls",
@@ -86,6 +87,7 @@ PROGRAM_BUDGET_FIELDS = (
     "max_action_generations",
     "max_model_calls",
     "max_simulator_steps",
+    "max_probe_fits",
     "max_concurrent_hardware_children",
 )
 STUDY_BUDGET_FIELDS = (
@@ -102,7 +104,81 @@ SUMMED_BUDGETS = {
     "max_action_generations": "max_action_generations",
     "max_full_rollouts": "max_full_rollouts",
     "max_simulator_steps": "max_simulator_steps",
+    "max_probe_fits": "max_probe_fits",
     "max_additional_persistent_gb": "max_persistent_gb",
+}
+PROGRAM_FIELDS = frozenset(
+    {
+        "schema_version",
+        "kind",
+        "program_id",
+        "title",
+        "revision",
+        "control_issue",
+        "question",
+        "decision_unlocked",
+        "research_question_ids",
+        "protocol_defaults",
+        "decision_protocol",
+        "execution_gates",
+        "synthesis_rules",
+        "scope",
+        "hypotheses",
+        "population",
+        "child_contract_defaults",
+        "studies",
+        "program_budget",
+        "authority",
+        "program_stop_rules",
+    }
+)
+STUDY_FIELDS = frozenset(
+    {
+        "id",
+        "title",
+        "kind",
+        "phase",
+        "source_claim_study",
+        "question",
+        "entry_conditions",
+        "data_scope",
+        "entry_gate",
+        "actions",
+        "primary_claim",
+        "independent_unit",
+        "controls",
+        "child_contract",
+        "required_outputs",
+        "advance_gate",
+        "stop_rules",
+        "outcome_actions",
+        "allowed_conclusions",
+        "forbidden_conclusions",
+        "budget",
+        "required_audits",
+    }
+)
+STUDY_NESTED_FIELDS = {
+    "entry_conditions": frozenset(
+        {"requires_all_completed", "requires_any_positive", "branch_mode", "source_priority"}
+    ),
+    "data_scope": frozenset(
+        {
+            "family_pool",
+            "pool_phase",
+            "requires_gate",
+            "read_namespaces",
+            "write_namespace",
+            "selection_allowed",
+            "exposure_class",
+        }
+    ),
+    "primary_claim": frozenset({"metric_id", "definition", "unit", "direction"}),
+    "child_contract": frozenset({"additional_lock_fields"}),
+    "outcome_actions": frozenset(
+        {"positive", "negative", "inconclusive", "not_applicable", "invalid"}
+    ),
+    "budget": frozenset({*STUDY_BUDGET_FIELDS, "max_probe_fits"}),
 }
 
 
@@ -195,6 +271,7 @@ def check_research_plan(
 
     plan_path = None if path is None else str(path)
     issues: list[ResearchPlanIssue] = []
+    _reject_unknown_mapping_keys(payload, PROGRAM_FIELDS, "$", issues, plan_path)
     required_paths = (
         "schema_version",
         "kind",
@@ -207,9 +284,12 @@ def check_research_plan(
         "research_question_ids",
         "protocol_defaults.version",
         "protocol_defaults.documentation",
+        "protocol_defaults.event_root",
+        "protocol_defaults.allowed_output_roots",
         "decision_protocol.completion_outcomes",
         "decision_protocol.entry_rule",
         "decision_protocol.branch_rule",
+        "decision_protocol.negative_rule",
         "execution_gates.discovery_sealed",
         "execution_gates.behavior_results_sealed",
         "execution_gates.phase_two_locked",
@@ -236,6 +316,7 @@ def check_research_plan(
         "program_budget.max_action_generations",
         "program_budget.max_model_calls",
         "program_budget.max_simulator_steps",
+        "program_budget.max_probe_fits",
         "program_budget.max_concurrent_hardware_children",
         "program_budget.check_before_every_hardware_child",
         "authority.automatic",
@@ -286,11 +367,13 @@ def check_research_plan(
             "authority.automatic",
             "authority.requires_human",
             "program_stop_rules",
+            "protocol_defaults.allowed_output_roots",
         ),
         issues,
         plan_path,
     )
     _check_hypotheses(payload.get("hypotheses"), issues, plan_path)
+    _check_protocol_defaults(payload, issues, plan_path)
     _check_population(payload, issues, plan_path)
     studies = _check_studies(payload, issues, plan_path)
     _check_budgets(payload, studies, issues, plan_path)
@@ -378,6 +461,34 @@ def format_research_plan_markdown(payload: Mapping[str, Any], check: ResearchPla
         for issue in check.issues:
             lines.append(f"- {issue.severity.upper()} `{issue.code}`: {issue.message}")
     return "\n".join(lines) + "\n"
+
+
+def _check_protocol_defaults(payload, issues, plan_path):
+    event_root = Path(str(_get(payload, "protocol_defaults.event_root") or ""))
+    if (
+        not str(event_root)
+        or event_root.is_absolute()
+        or ".." in event_root.parts
+        or event_root == Path(".")
+    ):
+        issues.append(
+            _issue(
+                "unsafe_campaign_event_root",
+                "Campaign event root must be a specific repo-relative path",
+                plan_path,
+            )
+        )
+    roots = _sequence(_get(payload, "protocol_defaults.allowed_output_roots"))
+    if not roots or any(
+        not Path(str(item)).is_absolute() or Path(str(item)) == Path("/") for item in roots
+    ):
+        issues.append(
+            _issue(
+                "unsafe_campaign_output_roots",
+                "Allowed output roots must be specific absolute directories",
+                plan_path,
+            )
+        )
 
 
 def _check_hypotheses(value: Any, issues: list[ResearchPlanIssue], path: str | None) -> None:
@@ -532,6 +643,23 @@ def _check_studies(
     dependencies: dict[str, list[str]] = {}
     for index, study in enumerate(studies):
         study_id = str(study.get("id") or "")
+        _reject_unknown_mapping_keys(
+            study,
+            STUDY_FIELDS,
+            f"studies[{index}]",
+            issues,
+            path,
+        )
+        for nested_name, allowed_fields in STUDY_NESTED_FIELDS.items():
+            nested = study.get(nested_name)
+            if isinstance(nested, Mapping):
+                _reject_unknown_mapping_keys(
+                    nested,
+                    allowed_fields,
+                    f"studies[{index}].{nested_name}",
+                    issues,
+                    path,
+                )
         missing = []
         for field_name in required_fields:
             present = (
@@ -1033,7 +1161,7 @@ def _check_budgets(
             or value <= 0
             or (
                 name.startswith("max_")
-                and name.endswith(("rollouts", "generations", "calls", "steps", "children"))
+                and name.endswith(("rollouts", "generations", "calls", "steps", "children", "fits"))
                 and not value.is_integer()
             )
         ):
@@ -1069,6 +1197,7 @@ def _check_budgets(
                 "max_action_generations",
                 "max_full_rollouts",
                 "max_simulator_steps",
+                "max_probe_fits",
             }
             invalid = value is None or value < 0 or (count_field and not value.is_integer())
             if name == "max_instances" and value == 0:
@@ -1087,6 +1216,22 @@ def _check_budgets(
                 )
             else:
                 observed[name] = value
+        probe_fits_raw = _get(study, "budget.max_probe_fits")
+        if probe_fits_raw is not None:
+            probe_fits = _number(probe_fits_raw)
+            if probe_fits is None or probe_fits < 0 or not probe_fits.is_integer():
+                issues.append(
+                    _issue(
+                        "invalid_study_budget",
+                        "Probe-fit budget must be a finite nonnegative integer",
+                        path,
+                        study=study.get("id"),
+                        field="max_probe_fits",
+                        observed=probe_fits_raw,
+                    )
+                )
+            else:
+                observed["max_probe_fits"] = probe_fits
         instances = observed.get("max_instances", 0)
         for child_name in SUMMED_BUDGETS:
             totals[child_name] += observed.get(child_name, 0) * instances
@@ -1216,6 +1361,26 @@ def _number(value: Any) -> float | None:
     except (TypeError, ValueError):
         return None
     return number if math.isfinite(number) else None
+
+
+def _reject_unknown_mapping_keys(
+    value: Mapping[str, Any],
+    allowed: frozenset[str],
+    field_path: str,
+    issues: list[ResearchPlanIssue],
+    plan_path: str | None,
+) -> None:
+    unknown = sorted(str(key) for key in set(value) - allowed)
+    if unknown:
+        issues.append(
+            _issue(
+                "unknown_research_plan_fields",
+                "Research plan contains fields the validator would otherwise ignore",
+                plan_path,
+                field_path=field_path,
+                fields=unknown,
+            )
+        )
 
 
 def _issue(code: str, message: str, path: str | None, **details: Any) -> ResearchPlanIssue:

@@ -5,7 +5,18 @@ from __future__ import annotations
 import math
 from typing import Any, Mapping, Sequence
 
-from vla_lens.research_child import check_research_child, child_plan_fingerprint
+from vla_lens.research_analysis import (
+    ResearchAnalysisError,
+    decision_value_by_id,
+    metric_by_id,
+    validate_research_analysis,
+)
+from vla_lens.research_child import (
+    check_research_child,
+    check_research_child_lock,
+    child_plan_fingerprint,
+    study_fingerprint,
+)
 from vla_lens.research_io import canonical_research_fingerprint
 from vla_lens.research_plan import check_research_plan, research_plan_fingerprint
 
@@ -43,6 +54,67 @@ CONFIRMATION_STATUSES = frozenset(
 )
 AUDIT_STATUSES = frozenset({"pass", "warn", "fail"})
 OUTCOMES = frozenset({"positive", "negative", "inconclusive", "not_applicable", "invalid"})
+COMMON_RESULT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "result_card_id",
+        "result_kind",
+        "program_id",
+        "program_fingerprint",
+        "study_id",
+        "study_fingerprint",
+        "child_plan_id",
+        "child_plan_fingerprint",
+        "child_lock_id",
+        "child_lock_fingerprint",
+        "reservation_id",
+        "ledger_tip_before_result",
+        "attempt_event_range",
+        "authorization_receipt",
+        "attempt_ledger",
+        "budget_record",
+        "question",
+        "one_sentence_answer",
+        "verdict",
+        "claim_type",
+        "behavior_level",
+        "confirmation_status",
+        "predecessor_result_fingerprints",
+        "supersedes_result_fingerprints",
+        "what_changed",
+        "held_fixed",
+        "trial_manifest",
+        "analysis_package",
+        "trial_accounting",
+        "supported_conclusion",
+        "forbidden_conclusions",
+        "strongest_surviving_alternative",
+        "artifact_refs",
+        "metric_ids",
+        "decision",
+        "audit",
+    }
+)
+IDENTITY_REF_FIELDS = frozenset({"id", "sha256"})
+ATTEMPT_RANGE_FIELDS = frozenset({"first_sequence", "last_sequence"})
+TRIAL_ACCOUNTING_FIELDS = frozenset(
+    {"expected", "completed", "technical_failed", "excluded", "attempts"}
+)
+DECISION_FIELDS = frozenset({"evaluated_gates", "derived_outcome", "next_action"})
+AUDIT_FIELDS = frozenset(
+    {
+        "status",
+        "report_id",
+        "report_sha256",
+        "auditor_id",
+        "subject_child_fingerprint",
+        "subject_child_lock_fingerprint",
+        "subject_trial_manifest_sha256",
+        "subject_analysis_package_sha256",
+        "checks",
+        "unresolved_errors",
+    }
+)
 
 CLAIM_TYPE_BY_STUDY_KIND = {
     "preparation": "preparation",
@@ -85,10 +157,35 @@ def validate_research_result_card(
     *,
     program: Mapping[str, Any],
     child_plan: Mapping[str, Any],
-    audit_report_sha256: str | None = None,
-    analysis_package_sha256: str | None = None,
+    child_lock: Mapping[str, Any],
+    analysis_package: Mapping[str, Any],
+    lock_receipt_sha256: str,
+    audit_report_sha256: str,
+    analysis_package_sha256: str,
+    authorization_receipt_sha256: str,
+    attempt_ledger_sha256: str,
+    budget_record_sha256: str,
 ) -> None:
     """Reject cards that are incomplete, unbound, or internally inconsistent."""
+
+    variant_fields = {
+        "preparation_gate": {"gate_result"},
+        "effect_estimate": {"primary_result", "strongest_control"},
+        "design_decision": {"design_result"},
+    }.get(str(card.get("result_kind") or ""), set())
+    _exact_fields(card, COMMON_RESULT_FIELDS | variant_fields, "result card")
+    for field in (
+        "authorization_receipt",
+        "attempt_ledger",
+        "budget_record",
+        "trial_manifest",
+        "analysis_package",
+    ):
+        _exact_mapping(_get(card, field), IDENTITY_REF_FIELDS, field)
+    _exact_mapping(_get(card, "trial_accounting"), TRIAL_ACCOUNTING_FIELDS, "trial_accounting")
+    _exact_mapping(_get(card, "decision"), DECISION_FIELDS, "decision")
+    _exact_mapping(_get(card, "audit"), AUDIT_FIELDS, "audit")
+    _exact_mapping(_get(card, "attempt_event_range"), ATTEMPT_RANGE_FIELDS, "attempt_event_range")
 
     required = (
         "schema_version",
@@ -97,8 +194,21 @@ def validate_research_result_card(
         "program_id",
         "program_fingerprint",
         "study_id",
+        "study_fingerprint",
         "child_plan_id",
         "child_plan_fingerprint",
+        "child_lock_id",
+        "child_lock_fingerprint",
+        "reservation_id",
+        "ledger_tip_before_result",
+        "attempt_event_range.first_sequence",
+        "attempt_event_range.last_sequence",
+        "authorization_receipt.id",
+        "authorization_receipt.sha256",
+        "attempt_ledger.id",
+        "attempt_ledger.sha256",
+        "budget_record.id",
+        "budget_record.sha256",
         "question",
         "one_sentence_answer",
         "verdict",
@@ -123,10 +233,7 @@ def validate_research_result_card(
         "strongest_surviving_alternative",
         "artifact_refs",
         "metric_ids",
-        "decision.integrity_checks",
-        "decision.applicability_checks",
-        "decision.positive_checks",
-        "decision.negative_checks",
+        "decision.evaluated_gates",
         "decision.derived_outcome",
         "decision.next_action",
         "audit.status",
@@ -134,6 +241,7 @@ def validate_research_result_card(
         "audit.report_sha256",
         "audit.auditor_id",
         "audit.subject_child_fingerprint",
+        "audit.subject_child_lock_fingerprint",
         "audit.subject_trial_manifest_sha256",
         "audit.subject_analysis_package_sha256",
         "audit.checks",
@@ -160,10 +268,7 @@ def validate_research_result_card(
         "forbidden_conclusions",
         "artifact_refs",
         "metric_ids",
-        "decision.integrity_checks",
-        "decision.applicability_checks",
-        "decision.positive_checks",
-        "decision.negative_checks",
+        "decision.evaluated_gates",
         "audit.unresolved_errors",
     ):
         if not _is_sequence(_get(card, path)):
@@ -175,13 +280,60 @@ def validate_research_result_card(
     child_check = check_research_child(child_plan, program)
     if not child_check.valid:
         raise ResearchResultCardError("Supplied child plan is invalid")
+    lock_check = check_research_child_lock(child_lock, child_plan, program)
+    if not lock_check.valid:
+        raise ResearchResultCardError("Supplied child lock is invalid")
     study = _study(program, str(card["study_id"]))
     if study is None:
         raise ResearchResultCardError("Result-card study does not exist in the program")
     _validate_bindings(card, program, child_plan, study)
     _validate_artifacts(card)
+    actual_external = {
+        "authorization_receipt": authorization_receipt_sha256,
+        "attempt_ledger": attempt_ledger_sha256,
+        "budget_record": budget_record_sha256,
+    }
+    for field, observed_hash in actual_external.items():
+        if observed_hash != _get(card, f"{field}.sha256"):
+            raise ResearchResultCardError(f"Supplied {field} bytes do not match the result card")
+        if observed_hash != analysis_package[f"{field}_sha256"]:
+            raise ResearchResultCardError(
+                f"Analysis {field} hash differs from the card and supplied bytes"
+            )
     _validate_trials(card)
-    outcome = _derive_outcome(card)
+    if card["study_fingerprint"] != study_fingerprint(study):
+        raise ResearchResultCardError("Result card does not match the exact study definition")
+    expected_lock_fingerprint = canonical_research_fingerprint(child_lock)
+    if (
+        card["child_lock_id"] != child_lock.get("lock_id")
+        or card["child_lock_fingerprint"] != expected_lock_fingerprint
+    ):
+        raise ResearchResultCardError("Result card does not match the supplied child lock")
+    if card["reservation_id"] != child_lock.get("reservation_id"):
+        raise ResearchResultCardError("Result card reservation differs from the child lock")
+    if not _sha256(card["ledger_tip_before_result"]):
+        raise ResearchResultCardError("Result card needs the exact prior event-chain tip")
+    first_sequence = _positive_int(
+        _get(card, "attempt_event_range.first_sequence"), "attempt range first sequence"
+    )
+    last_sequence = _positive_int(
+        _get(card, "attempt_event_range.last_sequence"), "attempt range last sequence"
+    )
+    if first_sequence > last_sequence:
+        raise ResearchResultCardError("Result attempt-event range is reversed")
+    try:
+        evaluated_gates, outcome = validate_research_analysis(
+            analysis_package,
+            program=program,
+            child_plan=child_plan,
+            child_lock_fingerprint=expected_lock_fingerprint,
+        )
+    except ResearchAnalysisError as exc:
+        raise ResearchResultCardError(str(exc)) from exc
+    if card["trial_accounting"] != analysis_package["trial_accounting"]:
+        raise ResearchResultCardError("Result trial accounting differs from the analysis package")
+    if card["decision"]["evaluated_gates"] != [gate.to_dict() for gate in evaluated_gates]:
+        raise ResearchResultCardError("Result decision gates differ from the locked analysis")
     if card["decision"]["derived_outcome"] != outcome:
         raise ResearchResultCardError("Declared outcome does not match the structured checks")
     expected_verdict = _verdict_for(card, outcome)
@@ -196,15 +348,17 @@ def validate_research_result_card(
         card,
         child_plan,
         outcome,
+        child_lock=child_lock,
+        lock_receipt_sha256=lock_receipt_sha256,
         audit_report_sha256=audit_report_sha256,
         analysis_package_sha256=analysis_package_sha256,
     )
 
     result_kind = str(card["result_kind"])
     if result_kind == "effect_estimate":
-        _validate_effect_result(card, child_plan)
+        _validate_effect_result(card, child_plan, analysis_package)
     elif result_kind == "preparation_gate":
-        _validate_preparation_gate(card)
+        _validate_preparation_gate(card, analysis_package)
     else:
         _validate_design_decision(card)
 
@@ -214,8 +368,14 @@ def format_research_result_markdown(
     *,
     program: Mapping[str, Any],
     child_plan: Mapping[str, Any],
-    audit_report_sha256: str | None = None,
-    analysis_package_sha256: str | None = None,
+    child_lock: Mapping[str, Any],
+    analysis_package: Mapping[str, Any],
+    lock_receipt_sha256: str,
+    audit_report_sha256: str,
+    analysis_package_sha256: str,
+    authorization_receipt_sha256: str,
+    attempt_ledger_sha256: str,
+    budget_record_sha256: str,
 ) -> str:
     """Render the fixed human summary only after full contract validation."""
 
@@ -223,8 +383,14 @@ def format_research_result_markdown(
         card,
         program=program,
         child_plan=child_plan,
+        child_lock=child_lock,
+        analysis_package=analysis_package,
+        lock_receipt_sha256=lock_receipt_sha256,
         audit_report_sha256=audit_report_sha256,
         analysis_package_sha256=analysis_package_sha256,
+        authorization_receipt_sha256=authorization_receipt_sha256,
+        attempt_ledger_sha256=attempt_ledger_sha256,
+        budget_record_sha256=budget_record_sha256,
     )
     audit = dict(card["audit"])
     trials = dict(card["trial_accounting"])
@@ -311,8 +477,8 @@ def _validate_bindings(
     if card["confirmation_status"] != expected_status:
         raise ResearchResultCardError("Confirmation status is incompatible with the study kind")
     child_predecessors = {
-        str(item.get("fingerprint"))
-        for item in _sequence(child.get("predecessor_results"))
+        str(item.get("event_sha256"))
+        for item in _sequence(child.get("predecessor_result_events"))
         if isinstance(item, Mapping)
     }
     if set(str(item) for item in card["predecessor_result_fingerprints"]) != child_predecessors:
@@ -346,24 +512,30 @@ def _validate_artifacts(card: Mapping[str, Any]) -> None:
         if reference["id"] in ids:
             raise ResearchResultCardError("Artifact IDs must be unique")
         ids.add(str(reference["id"]))
-    for field in ("trial_manifest", "analysis_package"):
+    for field in (
+        "trial_manifest",
+        "analysis_package",
+        "authorization_receipt",
+        "attempt_ledger",
+        "budget_record",
+    ):
         if not _sha256(_get(card, f"{field}.sha256")):
             raise ResearchResultCardError(f"{field} needs a full sha256")
     by_id = {str(reference["id"]): reference for reference in refs}
-    for field in ("analysis_package", "audit"):
+    for field in (
+        "analysis_package",
+        "authorization_receipt",
+        "attempt_ledger",
+        "budget_record",
+        "audit",
+    ):
         identifier = str(_get(card, f"{field}.id") or _get(card, f"{field}.report_id") or "")
         expected_hash = _get(card, f"{field}.sha256") or _get(card, f"{field}.report_sha256")
         if identifier not in by_id or by_id[identifier]["sha256"] != expected_hash:
             raise ResearchResultCardError(f"{field} must have a matching typed artifact reference")
     evidence_ids = {
         str(check["evidence_artifact_id"])
-        for group in (
-            "integrity_checks",
-            "applicability_checks",
-            "positive_checks",
-            "negative_checks",
-        )
-        for check in _get(card, f"decision.{group}")
+        for check in _get(card, "decision.evaluated_gates")
         if isinstance(check, Mapping)
     }
     if not evidence_ids <= set(by_id):
@@ -438,8 +610,10 @@ def _validate_audit(
     child: Mapping[str, Any],
     outcome: str,
     *,
-    audit_report_sha256: str | None,
-    analysis_package_sha256: str | None,
+    child_lock: Mapping[str, Any],
+    lock_receipt_sha256: str,
+    audit_report_sha256: str,
+    analysis_package_sha256: str,
 ) -> None:
     audit = card["audit"]
     unresolved = list(audit["unresolved_errors"])
@@ -449,6 +623,7 @@ def _validate_audit(
         raise ResearchResultCardError("A passing audit cannot list unresolved errors")
     expected = {
         "subject_child_fingerprint": child_plan_fingerprint(child),
+        "subject_child_lock_fingerprint": canonical_research_fingerprint(child_lock),
         "subject_trial_manifest_sha256": _get(card, "trial_manifest.sha256"),
         "subject_analysis_package_sha256": _get(card, "analysis_package.sha256"),
     }
@@ -468,17 +643,41 @@ def _validate_audit(
         raise ResearchResultCardError("Audit checks must cover execution, calculation, and claim")
     if outcome != "invalid" and set(checks.values()) != {"pass"}:
         raise ResearchResultCardError("Every required result audit must pass")
-    if audit_report_sha256 is not None and audit_report_sha256 != audit["report_sha256"]:
+    if audit_report_sha256 != audit["report_sha256"]:
         raise ResearchResultCardError("Supplied audit-report bytes do not match the result card")
-    if analysis_package_sha256 is not None and analysis_package_sha256 != _get(
-        card, "analysis_package.sha256"
-    ):
+    if analysis_package_sha256 != _get(card, "analysis_package.sha256"):
         raise ResearchResultCardError(
             "Supplied analysis-package bytes do not match the result card"
         )
+    lock_id = str(child_lock.get("lock_id") or "")
+    refs = {str(item["id"]): item for item in card["artifact_refs"]}
+    if lock_id not in refs or refs[lock_id]["sha256"] != lock_receipt_sha256:
+        raise ResearchResultCardError("Supplied lock-receipt bytes lack a matching artifact")
 
 
-def _validate_effect_result(card: Mapping[str, Any], child: Mapping[str, Any]) -> None:
+def _validate_effect_result(
+    card: Mapping[str, Any], child: Mapping[str, Any], analysis: Mapping[str, Any]
+) -> None:
+    _exact_mapping(
+        card.get("primary_result"),
+        frozenset(
+            {
+                "metric_id",
+                "estimate",
+                "unit",
+                "null_value",
+                "minimum_useful_effect",
+                "interval",
+                "independent_units",
+            }
+        ),
+        "primary_result",
+    )
+    _exact_mapping(
+        card.get("strongest_control"),
+        frozenset({"metric_id", "name", "estimate", "unit", "interval", "source_artifact_id"}),
+        "strongest_control",
+    )
     required = (
         "primary_result.metric_id",
         "primary_result.estimate",
@@ -503,6 +702,11 @@ def _validate_effect_result(card: Mapping[str, Any], child: Mapping[str, Any]) -
         "strongest_control.unit",
         "strongest_control.interval.low",
         "strongest_control.interval.high",
+        "strongest_control.interval.method",
+        "strongest_control.interval.level",
+        "strongest_control.interval.grouping_unit",
+        "strongest_control.interval.replicates",
+        "strongest_control.interval.seed",
         "strongest_control.source_artifact_id",
     )
     missing = [path for path in required if not _has_path(card, path)]
@@ -510,6 +714,27 @@ def _validate_effect_result(card: Mapping[str, Any], child: Mapping[str, Any]) -
         raise ResearchResultCardError(f"Effect result is missing fields: {missing}")
     primary = card["primary_result"]
     interval = primary["interval"]
+    _exact_mapping(
+        interval,
+        frozenset(
+            {
+                "low",
+                "high",
+                "method",
+                "level",
+                "grouping_unit",
+                "replicates",
+                "seed",
+                "source_artifact_id",
+            }
+        ),
+        "primary_result.interval",
+    )
+    _exact_mapping(
+        primary["independent_units"],
+        frozenset({"task_families", "scene_clusters", "noise_repeats", "rollouts"}),
+        "primary_result.independent_units",
+    )
     estimate = _number(primary["estimate"], "primary estimate")
     low = _number(interval["low"], "interval low")
     high = _number(interval["high"], "interval high")
@@ -527,7 +752,16 @@ def _validate_effect_result(card: Mapping[str, Any], child: Mapping[str, Any]) -
     if primary["minimum_useful_effect"] != _get(child, "measurement.primary.minimum_useful_effect"):
         raise ResearchResultCardError("Minimum useful effect does not match the child")
     control = card["strongest_control"]
-    _number(control["estimate"], "control estimate")
+    _exact_mapping(
+        control["interval"],
+        frozenset({"low", "high", "method", "level", "grouping_unit", "replicates", "seed"}),
+        "strongest_control.interval",
+    )
+    control_estimate = _number(control["estimate"], "control estimate")
+    control_low = _number(control["interval"]["low"], "control interval low")
+    control_high = _number(control["interval"]["high"], "control interval high")
+    if not control_low <= control_estimate <= control_high:
+        raise ResearchResultCardError("Control estimate must lie inside its interval")
     if control["unit"] != primary["unit"]:
         raise ResearchResultCardError("Strongest control must use the primary-result unit")
     if control["metric_id"] != _get(child, "measurement.strongest_control_metric_id"):
@@ -541,6 +775,34 @@ def _validate_effect_result(card: Mapping[str, Any], child: Mapping[str, Any]) -
         or control["source_artifact_id"] not in artifact_ids
     ):
         raise ResearchResultCardError("Metric intervals must cite typed evidence artifacts")
+    primary_analysis = metric_by_id(analysis, str(primary["metric_id"]))
+    control_analysis = metric_by_id(analysis, str(control["metric_id"]))
+    for result, source, label in (
+        (primary, primary_analysis, "primary"),
+        (control, control_analysis, "control"),
+    ):
+        for field in ("metric_id", "estimate", "unit"):
+            if result[field] != source[field]:
+                raise ResearchResultCardError(
+                    f"Result {label} field {field!r} differs from the analysis package"
+                )
+    primary_interval = {
+        key: value for key, value in primary["interval"].items() if key != "source_artifact_id"
+    }
+    if (
+        primary_interval != primary_analysis["interval"]
+        or primary["interval"]["source_artifact_id"] != primary_analysis["source_artifact_id"]
+    ):
+        raise ResearchResultCardError("Primary interval differs from the analysis package")
+    if (
+        control["interval"] != control_analysis["interval"]
+        or control["source_artifact_id"] != control_analysis["source_artifact_id"]
+    ):
+        raise ResearchResultCardError("Control interval differs from the analysis package")
+    if primary["independent_units"] != primary_analysis["independent_units"]:
+        raise ResearchResultCardError(
+            "Result evidence-unit counts differ from the analysis package"
+        )
     counts = {
         name: _nonnegative_int(primary["independent_units"][name], name)
         for name in ("task_families", "scene_clusters", "noise_repeats", "rollouts")
@@ -553,7 +815,22 @@ def _validate_effect_result(card: Mapping[str, Any], child: Mapping[str, Any]) -
         raise ResearchResultCardError("Closed-loop evidence requires positive rollout count")
 
 
-def _validate_preparation_gate(card: Mapping[str, Any]) -> None:
+def _validate_preparation_gate(card: Mapping[str, Any], analysis: Mapping[str, Any]) -> None:
+    _exact_mapping(
+        card.get("gate_result"),
+        frozenset(
+            {
+                "discovery_eligible",
+                "discovery_total",
+                "confirmation_eligible",
+                "confirmation_total",
+                "gate_passed",
+                "selection_rule",
+                "diagnostics",
+            }
+        ),
+        "gate_result",
+    )
     required = (
         "gate_result.discovery_eligible",
         "gate_result.discovery_total",
@@ -583,6 +860,18 @@ def _validate_preparation_gate(card: Mapping[str, Any]) -> None:
         )
     if card["verdict"] == "gate_passed" and not passed:
         raise ResearchResultCardError("Preparation verdict disagrees with its gate counts")
+    expected_values = {
+        "discovery_eligible": "discovery_eligible_count",
+        "confirmation_eligible": "confirmation_eligible_count",
+        "discovery_total": "discovery_total_count",
+        "confirmation_total": "confirmation_total_count",
+    }
+    for card_field, value_id in expected_values.items():
+        observed = decision_value_by_id(analysis, value_id)["value"]
+        if _get(card, f"gate_result.{card_field}") != observed:
+            raise ResearchResultCardError(
+                f"Preparation count {card_field!r} differs from the analysis package"
+            )
 
 
 def _validate_design_decision(card: Mapping[str, Any]) -> None:
@@ -747,6 +1036,23 @@ def _artifact_summary(value: Any) -> str:
 
 def _display(value: Any) -> str:
     return f"{float(value):.6g}"
+
+
+def _exact_fields(
+    value: Mapping[str, Any], expected: frozenset[str] | set[str], label: str
+) -> None:
+    observed = set(value)
+    if observed != set(expected):
+        raise ResearchResultCardError(
+            f"{label} fields differ: missing={sorted(set(expected) - observed)}, "
+            f"unknown={sorted(observed - set(expected))}"
+        )
+
+
+def _exact_mapping(value: Any, expected: frozenset[str], label: str) -> None:
+    if not isinstance(value, Mapping):
+        raise ResearchResultCardError(f"{label} must be a mapping")
+    _exact_fields(value, expected, label)
 
 
 __all__ = [

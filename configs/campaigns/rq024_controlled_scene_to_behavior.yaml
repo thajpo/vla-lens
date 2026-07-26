@@ -20,6 +20,9 @@ research_question_ids:
 protocol_defaults:
   version: 1
   documentation: docs/autonomous-research-campaigns.md
+  event_root: research/rq024/events
+  allowed_output_roots:
+    - /mnt/new-volume/vla-lens/rq024
 
 decision_protocol:
   completion_outcomes:
@@ -37,6 +40,12 @@ decision_protocol:
     through rollout. Every source-bound child names exactly one predecessor.
     When both sources are positive, both branches activate independently; an
     agent may not merge them or choose only the easier-looking branch.
+  negative_rule: >-
+    For an effect study, negative means a prelocked family-level bound shows
+    that the minimum useful effect or required control margin is absent. Merely
+    failing the positive gate is inconclusive. Only a valid confirmed_negative
+    may supersede an exploratory positive; invalid, not_applicable, and
+    inconclusive results never do.
 
 execution_gates:
   discovery_sealed:
@@ -94,11 +103,24 @@ synthesis_rules:
     when: A behavior confirmation is positive and semantic confirmation is negative.
     interpretation: Behavior is reusable, but the tested identity readout did not survive its controls.
   - id: readable_but_behavior_not_confirmed
-    when: Semantic confirmation is positive and both behavior confirmations are nonpositive.
-    interpretation: This is the H5 readable-but-unused pattern for the tested behaviors, not proof of no use elsewhere.
-  - id: fixed_x_effect_disappears
-    when: A behavior confirmation is positive and its matching internal discovery is negative.
-    interpretation: The older late-state effect is consistent with H4 action-path dependence.
+    when: >-
+      SEMANTIC-CONFIRMATION is confirmed_positive and both
+      GEOMETRY-CONFIRMATION and BINDING-CONFIRMATION are confirmed_negative.
+    interpretation: >-
+      Identity was decodable, while neither tested behavior relationship survived
+      prospective confirmation. This is compatible with H5 for these behaviors;
+      it does not show that the readable signal is unused.
+  - id: fixed_x_effect_not_detected
+    when: >-
+      A behavior confirmation is confirmed_positive and the matching internal
+      discovery is exploratory_negative with a passed decision check named
+      fixed_x_main_effect_below_useful_effect, while every integrity and
+      applicability check passed.
+    interpretation: >-
+      The tested fixed-x analysis did not recover a useful scene or instruction
+      main effect despite confirmed behavior. This is compatible with H4
+      action-state or path dependence, but does not establish H4 or explain the
+      negative result.
   - id: source_specific_causal_path
     when: One source's causal confirmation is positive.
     interpretation: Only that exact source and path gain a confirmed local causal claim.
@@ -157,10 +179,11 @@ hypotheses:
       - The action-state main effect is large when scene and current action guess are crossed.
       - Late scene effects shrink or change meaning when the current action guess is fixed.
       - Whole late-state replacement remains strong while a narrow scene path does not.
-  - id: H5-readable-but-unused
+  - id: H5-readable-without-demonstrated-use
     statement: >-
-      Object information is readable under controlled variation but is not used
-      for the tested behavior, or becomes relevant only under another instruction.
+      Object information is readable under controlled variation, but its use in
+      the tested behavior has not been demonstrated, or it becomes relevant only
+      under another instruction.
     distinguishing_predictions:
       - Identity decoding survives layout and pose changes without a matching behavior effect.
       - Instruction changes reveal behavioral use absent under a fixed instruction.
@@ -490,7 +513,7 @@ studies:
     actions:
       - Run the frozen geometry job on six preassigned confirmation families and new scene instances.
       - Make no layer, metric, subgroup, condition, or threshold change.
-      - Supersede the discovery claim if this confirmation fails.
+      - Supersede the discovery claim only if a valid confirmed_negative bound passes.
     primary_claim:
       metric_id: geometry_response_gain
       definition: Exact frozen definition and horizon from GEOMETRY-DISCOVERY.
@@ -504,6 +527,7 @@ studies:
     child_contract:
       additional_lock_fields:
         - prospective_cohort_hash
+        - source_scientific_protocol_fingerprint
         - discovery_claim_and_method_hash
         - metric_id_and_formula
         - minimum_useful_effect
@@ -520,7 +544,7 @@ studies:
     advance_gate: The unchanged discovery gate passes on the confirmation families.
     stop_rules:
       - Any retuning creates a new discovery study instead of confirmation.
-      - Confirmation failure supersedes the exploratory geometry result.
+      - A valid confirmed_negative supersedes the exploratory geometry result.
     outcome_actions:
       positive: reevaluate_program
       negative: supersede_source_and_reevaluate
@@ -658,7 +682,7 @@ studies:
     actions:
       - Run the unchanged binding job on six preassigned confirmation families.
       - Preserve the exact prompt, robot-state, object-assignment, metric, and control rules.
-      - Supersede the discovery claim if confirmation fails.
+      - Supersede the discovery claim only if a valid confirmed_negative bound passes.
     primary_claim:
       metric_id: named_target_preference_m
       definition: Exact frozen definition and time window from BINDING-DISCOVERY.
@@ -672,6 +696,7 @@ studies:
     child_contract:
       additional_lock_fields:
         - prospective_cohort_hash
+        - source_scientific_protocol_fingerprint
         - discovery_claim_and_method_hash
         - metric_id_and_formula
         - minimum_useful_effect
@@ -688,7 +713,7 @@ studies:
     advance_gate: The unchanged discovery gate passes on confirmation families.
     stop_rules:
       - Any retuning creates a new discovery study.
-      - Confirmation failure supersedes the exploratory binding result.
+      - A valid confirmed_negative supersedes the exploratory binding result.
     outcome_actions:
       positive: reevaluate_program
       negative: supersede_source_and_reevaluate
@@ -854,6 +879,7 @@ studies:
         - fixed_t_x_t_paths_and_interpolation_rule
         - scene_action_state_main_effect_and_interaction_formulas
         - maximum_two_selected_sites
+        - fixed_x_main_effect_negative_check_id_equivalence_margin_and_family_level_interval
     required_outputs:
       - geometry_fixed_x_trial_manifest.parquet
       - paired_scene_action_state_outputs
@@ -891,6 +917,7 @@ studies:
       - exact scene-by-action-state matrix and velocity definition
       - patchable candidate universe, nested selection, and full-pipeline null
       - discovery-pool-only exposure and claim wording
+      - fixed-x main-effect negative check uses a bounded family-level interval, not failure of the positive site-selection gate
 
   - id: BINDING-INTERNAL-DISCOVERY
     title: Named-target path discovery at fixed action state
@@ -946,6 +973,7 @@ studies:
         - fixed_t_x_t_paths_and_interpolation_rule
         - instruction_action_state_main_effect_and_interaction_formulas
         - maximum_two_selected_sites
+        - fixed_x_main_effect_negative_check_id_equivalence_margin_and_family_level_interval
     required_outputs:
       - binding_fixed_x_trial_manifest.parquet
       - paired_instruction_action_state_outputs
@@ -983,6 +1011,7 @@ studies:
       - exact instruction-by-action-state matrix and velocity definition
       - patchable candidate universe, nested selection, and full-pipeline null
       - discovery-pool-only exposure and claim wording
+      - fixed-x main-effect negative check uses a bounded family-level interval, not failure of the positive site-selection gate
 
   - id: GEOMETRY-CAUSAL-DISCOVERY
     title: Geometry prefix-path causal discovery
@@ -1010,15 +1039,20 @@ studies:
     entry_gate: At most two geometry sites, exact x_t values, and the velocity metric are locked.
     actions:
       - Patch the selected prefix keys/values consumed by the action expert at fixed x_t.
+      - Lock the natural donor-recipient velocity-delta norm floor from replay noise and unpatched natural pairs before any patch output is inspected; all six families must support both directions.
+      - Mark cells below that floor unsupported; do not divide them, replace their families, or lower the floor after patch outputs are visible.
+      - Patch only locked donor-recipient token pairs. Keys must share rotary position IDs, or be de-rotated at the donor position and re-rotated at the recipient position with a tested transform. Lock token IDs, prefix lengths, attention masks, and any transform before outcomes; values use the same token map.
       - Run both scene directions, signed doses, key-only, value-only, and joint patches.
       - Compare self, zero, shuffled, wrong-factor, unrelated-donor, and covariance-matched controls.
       - Separate one-step local velocity transfer from propagated final-action transfer.
     primary_claim:
       metric_id: geometry_local_velocity_transfer_fraction_over_control
       definition: >-
+        For cells passing the prelocked natural velocity-delta support check,
         dot(v_patch minus v_recipient, v_donor minus v_recipient) divided by the
         squared norm of v_donor minus v_recipient, minus the strongest locked
-        control, using normalized 50-by-7 velocity at the identical t and x_t.
+        control, using normalized 50-by-7 velocity at identical t and x_t.
+        Unsupported cells are not divided and cannot enter this estimate.
       unit: dimensionless_transfer_fraction
       direction: larger_positive_margin_in_both_directions
     independent_unit: task_object_family
@@ -1033,6 +1067,8 @@ studies:
         - exact_key_value_head_token_layer_time_and_position_scope
         - normalized_local_velocity_transfer_formula
         - control_construction_effect_and_noninferiority_margins
+        - natural_velocity_delta_norm_floor_minimum_supported_family_count_and_not_applicable_rule
+        - donor_recipient_token_map_prefix_lengths_attention_masks_rotary_position_ids_and_key_transform
     required_outputs:
       - geometry_causal_discovery_trials.parquet
       - local_velocity_and_propagated_action_arrays
@@ -1040,11 +1076,14 @@ studies:
       - geometry_causal_discovery_audit.json
       - geometry_causal_discovery_claim.json
     advance_gate: >-
-      Local transfer exceeds the strongest control by the locked margin in both
-      directions and preserves unrelated dimensions. Propagated-action evidence
-      is reported separately and cannot rescue a failed local gate.
+      The natural velocity-delta applicability check passes, and local transfer
+      exceeds the strongest control by the locked margin in both directions and
+      preserves unrelated dimensions. Propagated-action evidence is reported
+      separately and cannot rescue a failed local gate.
     stop_rules:
       - Stop on replay, hook-count, alignment, or fixed-x failure.
+      - Return not applicable when any of the six families lacks support in either direction; do not replace families or revise the floor after patch outcomes.
+      - Stop on token-map, prefix-length, attention-mask, or rotary-position mismatch; never copy a rotated key directly to a different position.
       - Stop if wrong-factor or generic patch controls match the intended patch.
       - Do not call a local velocity effect a physical behavior mechanism.
     outcome_actions:
@@ -1066,7 +1105,7 @@ studies:
       max_additional_persistent_gb: 5
       max_ephemeral_gb: 40
     required_audits:
-      - replay, hook, alignment, bidirectionality, and exact control construction
+      - replay, hook, donor-recipient token and rotary alignment, denominator support, bidirectionality, and exact control construction
       - local versus propagated claim separation and discovery-only exposure
 
   - id: BINDING-CAUSAL-DISCOVERY
@@ -1095,15 +1134,20 @@ studies:
     entry_gate: At most two binding sites, exact x_t values, and the velocity metric are locked.
     actions:
       - Patch the selected prefix keys/values consumed by the action expert at fixed x_t.
+      - Lock the natural donor-recipient velocity-delta norm floor from replay noise and unpatched natural pairs before any patch output is inspected; all six families must support both directions.
+      - Mark cells below that floor unsupported; do not divide them, replace their families, or lower the floor after patch outputs are visible.
+      - Patch only locked donor-recipient token pairs. Keys must share rotary position IDs, or be de-rotated at the donor position and re-rotated at the recipient position with a tested transform. Lock token IDs, prefix lengths, attention masks, and any transform before outcomes; values use the same token map.
       - Run both instruction directions, signed doses, key-only, value-only, and joint patches.
       - Compare self, zero, shuffled, wrong-factor, unrelated-donor, and covariance-matched controls.
       - Separate one-step local velocity transfer from propagated final-action transfer.
     primary_claim:
       metric_id: binding_local_velocity_transfer_fraction_over_control
       definition: >-
+        For cells passing the prelocked natural velocity-delta support check,
         dot(v_patch minus v_recipient, v_donor minus v_recipient) divided by the
         squared norm of v_donor minus v_recipient, minus the strongest locked
         control, using normalized 50-by-7 velocity at identical t and x_t.
+        Unsupported cells are not divided and cannot enter this estimate.
       unit: dimensionless_transfer_fraction
       direction: larger_positive_margin_in_both_directions
     independent_unit: task_object_family
@@ -1118,6 +1162,8 @@ studies:
         - exact_key_value_head_token_layer_time_and_position_scope
         - normalized_local_velocity_transfer_formula
         - control_construction_effect_and_noninferiority_margins
+        - natural_velocity_delta_norm_floor_minimum_supported_family_count_and_not_applicable_rule
+        - donor_recipient_token_map_prefix_lengths_attention_masks_rotary_position_ids_and_key_transform
     required_outputs:
       - binding_causal_discovery_trials.parquet
       - local_velocity_and_propagated_action_arrays
@@ -1125,11 +1171,13 @@ studies:
       - binding_causal_discovery_audit.json
       - binding_causal_discovery_claim.json
     advance_gate: >-
-      Local transfer exceeds the strongest control by the locked margin in both
-      directions and preserves unrelated dimensions; propagated transfer is a
-      separate claim.
+      The natural velocity-delta applicability check passes, and local transfer
+      exceeds the strongest control by the locked margin in both directions and
+      preserves unrelated dimensions; propagated transfer is a separate claim.
     stop_rules:
       - Stop on replay, hook-count, alignment, or fixed-x failure.
+      - Return not applicable when any of the six families lacks support in either direction; do not replace families or revise the floor after patch outcomes.
+      - Stop on token-map, prefix-length, attention-mask, or rotary-position mismatch; never copy a rotated key directly to a different position.
       - Stop if wrong-factor or generic controls match the intended patch.
       - Do not call a local velocity effect a physical behavior mechanism.
     outcome_actions:
@@ -1151,7 +1199,7 @@ studies:
       max_additional_persistent_gb: 5
       max_ephemeral_gb: 40
     required_audits:
-      - replay, hook, alignment, bidirectionality, and exact control construction
+      - replay, hook, donor-recipient token and rotary alignment, denominator support, bidirectionality, and exact control construction
       - local versus propagated claim separation and discovery-only exposure
 
   - id: SEMANTIC-CONFIRMATION
@@ -1183,7 +1231,9 @@ studies:
     actions:
       - Apply only the frozen readout, vocabulary, metric, and baselines to confirmation families.
       - Make no new layer, token, representation, label, threshold, or subgroup selection.
-      - Record unsupported labels separately and supersede discovery if confirmation fails.
+      - Lock at least three shared labels with each label supported by at least three confirmation families.
+      - If that support is absent, return not_applicable; do not call it negative or supersede discovery.
+      - Scope any supported-subset result to the exact frozen label vocabulary.
     primary_claim:
       metric_id: identity_decoding_over_selection_null
       definition: Exact frozen definition from SEMANTIC-DISCOVERY.
@@ -1197,6 +1247,7 @@ studies:
     child_contract:
       additional_lock_fields:
         - prospective_cohort_hash
+        - source_scientific_protocol_fingerprint
         - exact_semantic_discovery_result_and_readout_hashes
         - supported_cross_pool_identity_vocabulary
         - phase_two_lock_receipt_hash
@@ -1208,7 +1259,7 @@ studies:
     advance_gate: The unchanged discovery gate passes for supported labels on confirmation families.
     stop_rules:
       - Any retuning creates a new semantic discovery revision.
-      - Confirmation failure supersedes exploratory decodability.
+      - Only a valid confirmed_negative on the frozen vocabulary supersedes exploratory decodability.
     outcome_actions:
       positive: reevaluate_program
       negative: supersede_source_and_reevaluate
@@ -1260,7 +1311,7 @@ studies:
     actions:
       - Run the exact frozen geometry site, directions, doses, and controls.
       - Make no layer, token, head, time, dose, metric, or subgroup selection.
-      - Supersede geometry causal discovery if the unchanged gate fails.
+      - Supersede geometry causal discovery only if its frozen negative bound passes.
     primary_claim:
       metric_id: geometry_local_velocity_transfer_fraction_over_control
       definition: Exact frozen definition from GEOMETRY-CAUSAL-DISCOVERY.
@@ -1274,6 +1325,7 @@ studies:
     child_contract:
       additional_lock_fields:
         - prospective_cohort_hash
+        - source_scientific_protocol_fingerprint
         - exact_geometry_causal_discovery_result_and_method_hashes
         - phase_two_lock_receipt_hash
     required_outputs:
@@ -1284,7 +1336,7 @@ studies:
     advance_gate: The unchanged bidirectional geometry causal gate passes on confirmation families.
     stop_rules:
       - Any retuning creates a new causal discovery revision.
-      - Confirmation failure supersedes the exploratory geometry causal result.
+      - A valid confirmed_negative supersedes the exploratory geometry causal result.
     outcome_actions:
       positive: reevaluate_program
       negative: supersede_source_and_reevaluate
@@ -1304,7 +1356,7 @@ studies:
       max_additional_persistent_gb: 3
       max_ephemeral_gb: 30
     required_audits:
-      - phase-two lock, unchanged method, first access, and raw-trial recomputation
+      - phase-two lock, unchanged method including denominator support and token and rotary alignment, first access, and raw-trial recomputation
 
   - id: BINDING-CAUSAL-CONFIRMATION
     title: Prospectively held-out binding-path causal confirmation
@@ -1335,7 +1387,7 @@ studies:
     actions:
       - Run the exact frozen binding site, directions, doses, and controls.
       - Make no layer, token, head, time, dose, metric, or subgroup selection.
-      - Supersede binding causal discovery if the unchanged gate fails.
+      - Supersede binding causal discovery only if its frozen negative bound passes.
     primary_claim:
       metric_id: binding_local_velocity_transfer_fraction_over_control
       definition: Exact frozen definition from BINDING-CAUSAL-DISCOVERY.
@@ -1349,6 +1401,7 @@ studies:
     child_contract:
       additional_lock_fields:
         - prospective_cohort_hash
+        - source_scientific_protocol_fingerprint
         - exact_binding_causal_discovery_result_and_method_hashes
         - phase_two_lock_receipt_hash
     required_outputs:
@@ -1359,7 +1412,7 @@ studies:
     advance_gate: The unchanged bidirectional binding causal gate passes on confirmation families.
     stop_rules:
       - Any retuning creates a new causal discovery revision.
-      - Confirmation failure supersedes the exploratory binding causal result.
+      - A valid confirmed_negative supersedes the exploratory binding causal result.
     outcome_actions:
       positive: reevaluate_program
       negative: supersede_source_and_reevaluate
@@ -1379,7 +1432,7 @@ studies:
       max_additional_persistent_gb: 3
       max_ephemeral_gb: 30
     required_audits:
-      - phase-two lock, unchanged method, first access, and raw-trial recomputation
+      - phase-two lock, unchanged method including denominator support and token and rotary alignment, first access, and raw-trial recomputation
 
   - id: GEOMETRY-ROLLOUT-INTERVENTION
     title: Geometry-path closed-loop consequence
@@ -1620,6 +1673,7 @@ program_budget:
   max_action_generations: 18000
   max_model_calls: 18000
   max_simulator_steps: 250000
+  max_probe_fits: 160
   max_concurrent_hardware_children: 1
   check_before_every_hardware_child: true
 
@@ -1641,5 +1695,5 @@ program_stop_rules:
   - Do not localize internals until a controlled physical behavior effect survives a rollout check.
   - Behavioral confirmation proceeds independently of success or failure in internal localization.
   - Any unresolved audit error blocks execution or claim promotion.
-  - A confirmation failure supersedes its exploratory positive without erasing either artifact.
+  - Only a valid confirmed_negative supersedes its exploratory positive without erasing either artifact.
   - Negative, invalid, failed, and superseded studies remain visible.

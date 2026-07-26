@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import re
 from collections import Counter
@@ -18,6 +19,7 @@ from vla_lens.research_io import (
     write_bytes_create_only,
 )
 from vla_lens.research_plan import research_plan_fingerprint
+from vla_lens.research_state import CampaignState, campaign_status, reduce_campaign_events
 
 EVENT_SCHEMA_VERSION = 1
 EVENT_TYPES = frozenset(
@@ -25,6 +27,7 @@ EVENT_TYPES = frozenset(
         "program_locked",
         "child_prepared",
         "child_locked",
+        "execution_authorized",
         "budget_reserved",
         "budget_released",
         "pool_accessed",
@@ -40,6 +43,22 @@ EVENT_TYPES = frozenset(
     }
 )
 ID_RE = re.compile(r"^[a-z0-9][a-z0-9._-]{2,127}$")
+EVENT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "program_id",
+        "program_fingerprint",
+        "sequence",
+        "event_id",
+        "event_type",
+        "created_utc",
+        "actor_id",
+        "subject_id",
+        "subject_fingerprint",
+        "previous_event_sha256",
+        "payload",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +76,7 @@ class EventLedgerCheck:
     event_count: int
     last_event_sha256: str | None
     type_counts: Mapping[str, int]
+    state: CampaignState
     issues: tuple[EventLedgerIssue, ...]
 
     @property
@@ -70,6 +90,7 @@ class EventLedgerCheck:
             "event_count": self.event_count,
             "last_event_sha256": self.last_event_sha256,
             "type_counts": dict(self.type_counts),
+            "state": self.state.to_dict() if not self.issues else None,
             "issues": [issue.to_dict() for issue in self.issues],
         }
 
@@ -85,6 +106,8 @@ def append_research_event(
     subject_fingerprint: str,
     payload: Mapping[str, Any],
     created_utc: str | None = None,
+    repo_root: str | Path | None = None,
+    verify_artifacts: bool = False,
 ) -> tuple[Path, str]:
     """Append one immutable event while serializing concurrent agents."""
 
@@ -105,7 +128,12 @@ def append_research_event(
     with lock_path.open("a+b") as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         existing = _event_paths(event_root)
-        check = verify_research_event_ledger(event_root, program)
+        check = verify_research_event_ledger(
+            event_root,
+            program,
+            repo_root=repo_root,
+            verify_artifacts=verify_artifacts,
+        )
         if not check.valid:
             raise ValueError("Refusing to append to an invalid campaign event ledger")
         if any(path.name.endswith(f"-{event_id}.json") for path in existing):
@@ -126,13 +154,30 @@ def append_research_event(
             "payload": payload,
         }
         content = _event_bytes(event)
+        documents = _load_event_documents(existing)
+        candidate_hash = _bytes_sha256(content)
+        state_check = reduce_campaign_events(
+            [*documents, (event, candidate_hash)],
+            program,
+            repo_root=repo_root,
+            verify_artifacts=verify_artifacts,
+        )
+        if not state_check.valid:
+            summary = ", ".join(issue.code for issue in state_check.issues[-3:])
+            raise ValueError(f"Refusing illegal campaign transition: {summary}")
         destination = event_root / f"{sequence:06d}-{event_id}.json"
         write_bytes_create_only(destination, content)
         return destination, file_sha256(destination)
 
 
-def verify_research_event_ledger(root: str | Path, program: Mapping[str, Any]) -> EventLedgerCheck:
-    """Verify sequence, program binding, and the exact prior-event hash chain."""
+def verify_research_event_ledger(
+    root: str | Path,
+    program: Mapping[str, Any],
+    *,
+    repo_root: str | Path | None = None,
+    verify_artifacts: bool = False,
+) -> EventLedgerCheck:
+    """Verify the hash chain, typed payloads, and every derived state transition."""
 
     event_root = Path(root)
     paths = _event_paths(event_root) if event_root.exists() else []
@@ -141,6 +186,7 @@ def verify_research_event_ledger(root: str | Path, program: Mapping[str, Any]) -
     counts: Counter[str] = Counter()
     seen_ids: set[str] = set()
     expected_program = research_plan_fingerprint(program)
+    documents: list[tuple[Mapping[str, Any], str]] = []
     for expected_sequence, path in enumerate(paths, start=1):
         try:
             event = load_research_mapping(path)
@@ -151,6 +197,18 @@ def verify_research_event_ledger(root: str | Path, program: Mapping[str, Any]) -
                 )
             )
             continue
+        unknown = sorted(set(event) - EVENT_FIELDS)
+        missing = sorted(EVENT_FIELDS - set(event))
+        if unknown or missing:
+            issues.append(
+                _issue(
+                    "event_envelope_fields_mismatch",
+                    "Event envelope fields must match exactly",
+                    path=str(path),
+                    unknown=unknown,
+                    missing=missing,
+                )
+            )
         if event.get("schema_version") != EVENT_SCHEMA_VERSION:
             issues.append(
                 _issue("invalid_event_schema", "Event schema is unsupported", path=str(path))
@@ -204,15 +262,34 @@ def verify_research_event_ledger(root: str | Path, program: Mapping[str, Any]) -
                 )
             )
         previous = file_sha256(path)
+        documents.append((event, previous))
+    state_check = reduce_campaign_events(
+        documents,
+        program,
+        repo_root=repo_root,
+        verify_artifacts=verify_artifacts,
+    )
+    issues.extend(
+        _issue(
+            item.code,
+            item.message,
+            sequence=item.sequence,
+            **dict(item.details),
+        )
+        for item in state_check.issues
+    )
     return EventLedgerCheck(
         event_count=len(paths),
         last_event_sha256=previous,
         type_counts=dict(sorted(counts.items())),
+        state=state_check.state,
         issues=tuple(issues),
     )
 
 
-def format_event_ledger_markdown(check: EventLedgerCheck) -> str:
+def format_event_ledger_markdown(
+    check: EventLedgerCheck, program: Mapping[str, Any] | None = None
+) -> str:
     """Render a compact audit status for agents and humans."""
 
     lines = [
@@ -234,6 +311,23 @@ def format_event_ledger_markdown(check: EventLedgerCheck) -> str:
         lines.extend(f"- `{issue.code}`: {issue.message}" for issue in check.issues)
     else:
         lines.append("- None.")
+    if program is not None and check.valid:
+        status = campaign_status(check.state, program)
+        next_action = status["next_action"]
+        lines.extend(
+            [
+                "",
+                "## Derived state",
+                "",
+                f"- Lifecycle: `{status['lifecycle']}`",
+                f"- Phase: `{status['phase']}`",
+                f"- Active gate: `{status['active_gate_id']}`",
+                f"- Hardware authorized: `{str(status['hardware_authorized']).lower()}`",
+                f"- Next action: `{next_action['action_id']}`",
+                f"- Next study: `{next_action['study_id']}`",
+                f"- Reason: `{next_action['reason_code']}`",
+            ]
+        )
     return "\n".join(lines) + "\n"
 
 
@@ -243,6 +337,14 @@ def _event_paths(root: Path) -> list[Path]:
 
 def _event_bytes(event: Mapping[str, Any]) -> bytes:
     return (json.dumps(event, indent=2, sort_keys=True) + "\n").encode("utf-8")
+
+
+def _bytes_sha256(content: bytes) -> str:
+    return f"sha256:{hashlib.sha256(content).hexdigest()}"
+
+
+def _load_event_documents(paths: list[Path]) -> list[tuple[Mapping[str, Any], str]]:
+    return [(load_research_mapping(path), file_sha256(path)) for path in paths]
 
 
 def _sha256(value: Any) -> bool:

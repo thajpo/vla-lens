@@ -1,0 +1,74 @@
+schema_version: 1
+kind: vla_lens.research_analysis
+analysis_id: REPLACE_WITH_ANALYSIS_ID
+program_id: rq024-controlled-scene-to-behavior
+program_fingerprint: sha256:REPLACE_WITH_PROGRAM_HASH
+study_id: REPLACE_WITH_STUDY_ID
+child_plan_id: REPLACE_WITH_CHILD_ID
+child_plan_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+child_lock_fingerprint: sha256:REPLACE_WITH_CHILD_LOCK_CONTENT_HASH
+trial_manifest_sha256: sha256:REPLACE_WITH_TRIAL_MANIFEST_HASH
+authorization_receipt_sha256: sha256:REPLACE_WITH_AUTHORIZATION_RECEIPT_HASH
+attempt_ledger_sha256: sha256:REPLACE_WITH_ATTEMPT_LEDGER_HASH
+budget_record_sha256: sha256:REPLACE_WITH_BUDGET_RECORD_HASH
+trial_accounting:
+  expected: 0
+  completed: 0
+  technical_failed: 0
+  excluded: 0
+  attempts: 0
+metric_results:
+  - metric_id: REPLACE_WITH_PRIMARY_METRIC_ID
+    estimate: 0.0
+    unit: REPLACE_WITH_LOCKED_UNIT
+    interval:
+      low: 0.0
+      high: 0.0
+      method: REPLACE_WITH_LOCKED_INFERENCE_METHOD
+      level: 0.95
+      grouping_unit: task_object_family
+      replicates: 10000
+      seed: 24001
+    planned_independent_units:
+      task_families: 0
+      scene_clusters: 0
+      noise_repeats: 0
+      rollouts: 0
+    independent_units:
+      task_families: 0
+      scene_clusters: 0
+      noise_repeats: 0
+      rollouts: 0
+    source_artifact_id: REPLACE_WITH_PRIMARY_EVIDENCE_ID
+  - metric_id: REPLACE_WITH_STRONGEST_CONTROL_METRIC_ID
+    estimate: 0.0
+    unit: REPLACE_WITH_LOCKED_UNIT
+    interval:
+      low: 0.0
+      high: 0.0
+      method: REPLACE_WITH_LOCKED_INFERENCE_METHOD
+      level: 0.95
+      grouping_unit: task_object_family
+      replicates: 10000
+      seed: 24001
+    planned_independent_units:
+      task_families: 0
+      scene_clusters: 0
+      noise_repeats: 0
+      rollouts: 0
+    independent_units:
+      task_families: 0
+      scene_clusters: 0
+      noise_repeats: 0
+      rollouts: 0
+    source_artifact_id: REPLACE_WITH_CONTROL_EVIDENCE_ID
+decision_values:
+  - id: REPLACE_WITH_LOCKED_GATE_VALUE_ID
+    value: 0.0
+    unit: REPLACE_WITH_LOCKED_GATE_UNIT
+    evidence_artifact_id: REPLACE_WITH_GATE_EVIDENCE_ID
+artifact_refs:
+  - id: REPLACE_WITH_PRIMARY_EVIDENCE_ID
+    type: REPLACE_WITH_EVIDENCE_TYPE
+    uri: REPLACE_WITH_ARTIFACT_URI
+    sha256: sha256:REPLACE_WITH_ARTIFACT_HASH

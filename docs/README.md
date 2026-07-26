@@ -31,8 +31,9 @@ Open these only for the task you are performing:
 - [Workbench frontend](workbench-frontend.md): frontend modules and development
   commands.
 - [Autonomous research campaigns](autonomous-research-campaigns.md): program
-  decision graphs, independently locked child studies, hash-chained event
-  history, audit roles, evidence retention, and generated result summaries.
+  decision graphs, independently locked child studies, typed reducer-checked
+  event history, numeric decision gates, audit roles, evidence retention, and
+  generated result summaries.
 
 ## Understand The System
 

@@ -1,0 +1,18 @@
+schema_version: 1
+kind: vla_lens.research_audit
+audit_id: REPLACE_WITH_AUDIT_ID
+audit_type: REPLACE_WITH_PARENT_REQUIRED_AUDIT_TYPE
+subject_kind: child_plan
+subject_fingerprint: sha256:REPLACE_WITH_SUBJECT_HASH
+auditor_id: REPLACE_WITH_AUDITOR_ID
+created_utc: REPLACE_WITH_ISO_8601_TIME
+verdict: pass
+checks:
+  - id: REPLACE_WITH_CHECK_ID
+    status: pass
+    evidence_refs:
+      - id: REPLACE_WITH_EVIDENCE_ID
+        type: REPLACE_WITH_EVIDENCE_TYPE
+        path: REPLACE_WITH_REPO_RELATIVE_PATH
+        sha256: sha256:REPLACE_WITH_EVIDENCE_HASH
+unresolved_errors: []

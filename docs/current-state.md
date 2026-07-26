@@ -39,8 +39,9 @@ capabilities.
 - Run resumable visual-prefix and action-expert patch studies with in-memory
   donor caches, permanent action arrays, controls, hashes, and recomputable
   summaries.
-- Audit a cross-method autonomous research plan and print a stable content
-  fingerprint plus a compact human or JSON summary.
+- Audit a cross-method autonomous research plan, lock exact child jobs, reduce
+  typed campaign events into one legal next action, and derive result verdicts
+  from locked numeric gates and exact analysis/audit bytes.
 
 ## What Does Not Work Yet
 
@@ -50,8 +51,9 @@ mechanism. Broad visual replacement and near-output whole-action replacement
 are useful dependency and plumbing results, not object localization.
 
 The dashboard cannot launch the live PI0.5 runtime. It can inspect saved patch
-studies, but the generic campaign-level plan, audit, claim, and generated result
-envelope is not yet wired into research-run records or the UI.
+studies, but the campaign reducer, authorization receipts, audit state, and
+generated result envelope are not yet wired into research-run records or the
+UI. The CLI is the current control surface.
 
 One-factor scene mutation capture, controller-level physical action comparison,
 fixed-current-action-state denoising analysis, and exact prefix key/value-cache

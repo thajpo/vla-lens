@@ -1,11 +1,26 @@
 from __future__ import annotations
 
+import json
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
 
-from vla_lens.research_child import child_plan_fingerprint, study_fingerprint
+from tests._support.research_summary_child import (
+    child as _child,
+)
+from tests._support.research_summary_child import (
+    locked_ref as _locked_ref,
+)
+from vla_lens.research_analysis import validate_research_analysis
+from vla_lens.research_child import (
+    check_research_child,
+    child_plan_fingerprint,
+    study_fingerprint,
+)
+from vla_lens.research_io import canonical_research_fingerprint
 from vla_lens.research_plan import load_research_plan, research_plan_fingerprint
+from vla_lens.research_state import CampaignState
 from vla_lens.research_summary import (
     ResearchResultCardError,
     format_research_result_markdown,
@@ -20,13 +35,17 @@ SHA_A = "sha256:" + "a" * 64
 SHA_B = "sha256:" + "b" * 64
 SHA_C = "sha256:" + "c" * 64
 SHA_D = "sha256:" + "d" * 64
+SHA_E = "sha256:" + "e" * 64
+SHA_F = "sha256:" + "f" * 64
 
 
 def test_effect_result_renders_fixed_audited_human_summary():
     child = _child("GEOMETRY-DISCOVERY")
-    card = _effect_card(child)
+    lock = _lock(child)
+    analysis = _effect_analysis(child, lock)
+    card = _effect_card(child, lock, analysis)
 
-    rendered = format_research_result_markdown(card, program=PROGRAM, child_plan=child)
+    rendered = _format(card, child, lock, analysis)
 
     assert rendered.startswith("# Result: GEOMETRY-DISCOVERY")
     assert "Question: Does moving the target" in rendered
@@ -38,78 +57,83 @@ def test_effect_result_renders_fixed_audited_human_summary():
 
 def test_result_rejects_trial_drift_nonfinite_and_zero_independent_counts():
     child = _child("GEOMETRY-DISCOVERY")
-    drift = _effect_card(child)
+    lock = _lock(child)
+    analysis = _effect_analysis(child, lock)
+    drift = _effect_card(child, lock, analysis)
     drift["trial_accounting"]["technical_failed"] = 2
-    nonfinite = _effect_card(child)
+    nonfinite = _effect_card(child, lock, analysis)
     nonfinite["primary_result"]["estimate"] = float("nan")
-    zero = _effect_card(child)
+    zero = _effect_card(child, lock, analysis)
     zero["primary_result"]["independent_units"]["task_families"] = 0
 
     with pytest.raises(ResearchResultCardError, match="must equal expected"):
-        validate_research_result_card(drift, program=PROGRAM, child_plan=child)
+        _validate(drift, child, lock, analysis)
     with pytest.raises(ResearchResultCardError, match="finite"):
-        validate_research_result_card(nonfinite, program=PROGRAM, child_plan=child)
-    with pytest.raises(ResearchResultCardError, match="independent-unit"):
-        validate_research_result_card(zero, program=PROGRAM, child_plan=child)
+        _validate(nonfinite, child, lock, analysis)
+    with pytest.raises(ResearchResultCardError, match="evidence-unit"):
+        _validate(zero, child, lock, analysis)
 
 
 def test_result_derives_verdict_and_next_action_instead_of_trusting_text():
     child = _child("GEOMETRY-DISCOVERY")
-    wrong_verdict = _effect_card(child)
+    lock = _lock(child)
+    analysis = _effect_analysis(child, lock)
+    wrong_verdict = _effect_card(child, lock, analysis)
     wrong_verdict["verdict"] = "confirmed_positive"
-    wrong_action = _effect_card(child)
+    wrong_action = _effect_card(child, lock, analysis)
     wrong_action["decision"]["next_action"] = "revise_child"
 
     with pytest.raises(ResearchResultCardError, match="Verdict must be derived"):
-        validate_research_result_card(wrong_verdict, program=PROGRAM, child_plan=child)
+        _validate(wrong_verdict, child, lock, analysis)
     with pytest.raises(ResearchResultCardError, match="Next action"):
-        validate_research_result_card(wrong_action, program=PROGRAM, child_plan=child)
+        _validate(wrong_action, child, lock, analysis)
 
 
 def test_result_requires_clean_independent_audit_bound_to_actual_bytes():
     child = _child("GEOMETRY-DISCOVERY")
-    failed = _effect_card(child)
+    lock = _lock(child)
+    analysis = _effect_analysis(child, lock)
+    failed = _effect_card(child, lock, analysis)
     failed["audit"]["status"] = "fail"
-    same_agent = _effect_card(child)
+    same_agent = _effect_card(child, lock, analysis)
     same_agent["audit"]["auditor_id"] = child["prepared_by"]
-    mismatched_bytes = _effect_card(child)
+    mismatched_bytes = _effect_card(child, lock, analysis)
 
     with pytest.raises(ResearchResultCardError, match="clean passing audit"):
-        validate_research_result_card(failed, program=PROGRAM, child_plan=child)
+        _validate(failed, child, lock, analysis)
     with pytest.raises(ResearchResultCardError, match="differ from"):
-        validate_research_result_card(same_agent, program=PROGRAM, child_plan=child)
+        _validate(same_agent, child, lock, analysis)
     with pytest.raises(ResearchResultCardError, match="audit-report bytes"):
-        validate_research_result_card(
-            mismatched_bytes,
-            program=PROGRAM,
-            child_plan=child,
-            audit_report_sha256=SHA_D,
-        )
+        _validate(mismatched_bytes, child, lock, analysis, audit_report_sha256=SHA_D)
 
 
 def test_result_rejects_program_child_metric_and_trial_manifest_drift():
     child = _child("GEOMETRY-DISCOVERY")
-    program_drift = _effect_card(child)
+    lock = _lock(child)
+    analysis = _effect_analysis(child, lock)
+    program_drift = _effect_card(child, lock, analysis)
     program_drift["program_fingerprint"] = SHA_D
-    metric_drift = _effect_card(child)
+    metric_drift = _effect_card(child, lock, analysis)
     metric_drift["primary_result"]["metric_id"] = "after_the_fact_metric"
-    trial_drift = _effect_card(child)
+    trial_drift = _effect_card(child, lock, analysis)
     trial_drift["trial_manifest"]["sha256"] = SHA_D
     trial_drift["audit"]["subject_trial_manifest_sha256"] = SHA_D
 
     with pytest.raises(ResearchResultCardError, match="program_fingerprint"):
-        validate_research_result_card(program_drift, program=PROGRAM, child_plan=child)
+        _validate(program_drift, child, lock, analysis)
     with pytest.raises(ResearchResultCardError, match="Primary metric"):
-        validate_research_result_card(metric_drift, program=PROGRAM, child_plan=child)
+        _validate(metric_drift, child, lock, analysis)
     with pytest.raises(ResearchResultCardError, match="trial manifest"):
-        validate_research_result_card(trial_drift, program=PROGRAM, child_plan=child)
+        _validate(trial_drift, child, lock, analysis)
 
 
 def test_preparation_gate_has_counts_not_a_fake_effect_interval():
     child = _child("FOUNDATION", result_kind="preparation_gate")
-    card = _preparation_card(child)
+    lock = _lock(child)
+    analysis = _preparation_analysis(child, lock)
+    card = _preparation_card(child, lock, analysis)
 
-    rendered = format_research_result_markdown(card, program=PROGRAM, child_plan=child)
+    rendered = _format(card, child, lock, analysis)
 
     assert card["verdict"] == "gate_passed"
     assert "Discovery pool: 7 of 12 eligible" in rendered
@@ -120,136 +144,85 @@ def test_preparation_gate_has_counts_not_a_fake_effect_interval():
 
 def test_preparation_gate_rejects_flag_that_disagrees_with_counts():
     child = _child("FOUNDATION", result_kind="preparation_gate")
-    card = _preparation_card(child)
+    lock = _lock(child)
+    analysis = _preparation_analysis(child, lock)
+    card = _preparation_card(child, lock, analysis)
     card["gate_result"]["gate_passed"] = False
 
     with pytest.raises(ResearchResultCardError, match="six-and-six"):
-        validate_research_result_card(card, program=PROGRAM, child_plan=child)
+        _validate(card, child, lock, analysis)
 
 
-def _child(study_id: str, *, result_kind: str = "effect_estimate") -> dict:
-    study = next(item for item in PROGRAM["studies"] if item["id"] == study_id)
-    predecessors = []
-    for predecessor in study["entry_conditions"]["requires_all_completed"]:
-        predecessors.append(
-            {
-                "study_id": predecessor,
-                "result_card_id": f"{predecessor.lower()}-result",
-                "fingerprint": SHA_D,
-                "verdict": "gate_passed" if predecessor == "FOUNDATION" else "exploratory_positive",
-            }
-        )
-    return {
-        "schema_version": 1,
-        "kind": "vla_lens.research_child",
-        "child_plan_id": f"rq024-{study_id.lower()}-r1",
-        "revision": 1,
-        "prepared_by": "planner-agent",
-        "program": {
-            "path": "configs/campaigns/rq024_controlled_scene_to_behavior.yaml",
-            "program_id": PROGRAM["program_id"],
-            "fingerprint": research_plan_fingerprint(PROGRAM),
-        },
-        "study": {
-            "id": study_id,
-            "fingerprint": study_fingerprint(study),
-            "phase": study["phase"],
-        },
-        "predecessor_results": predecessors,
-        "claim": {
-            "result_kind": result_kind,
-            "question": study["question"],
-            "allowed_conclusions": list(study["allowed_conclusions"]),
-            "forbidden_conclusions": list(study["forbidden_conclusions"]),
-        },
-        "cohort": {
-            "family_pool": study["data_scope"]["family_pool"],
-            "pool_phase": study["data_scope"]["pool_phase"],
-            "requires_gate": study["data_scope"]["requires_gate"],
-            "read_namespaces": list(study["data_scope"]["read_namespaces"]),
-            "write_namespace": study["data_scope"]["write_namespace"],
-            "selection_allowed": study["data_scope"]["selection_allowed"],
-            "manifest": _locked_ref("cohort", SHA_A),
-            "exposure_log": _locked_ref("exposure", SHA_B),
-        },
-        "trials": {
-            "manifest": _locked_ref("trials", SHA_C),
-            "expected_count": 72 if study_id == "FOUNDATION" else 10,
-            "stable_id_fields": ["child_plan_id", "trial_id"],
-            "seed_domains": ["environment", "policy", "flow_noise"],
-        },
-        "measurement": {
-            "primary": {
-                "metric_id": study["primary_claim"]["metric_id"],
-                "formula": study["primary_claim"]["definition"],
-                "implementation_id": f"{study_id.lower()}-metric-v1",
-                "unit": study["primary_claim"]["unit"],
-                "direction": study["primary_claim"]["direction"],
-                "minimum_useful_effect": (
-                    "six eligible families in each fixed pool" if study_id == "FOUNDATION" else 0.2
-                ),
-            },
-            "strongest_control_metric_id": "irrelevant_object_gain",
-            "inference": {
-                "method": "hierarchical_bootstrap",
-                "level": 0.95,
-                "grouping_unit": "task_object_family",
-                "replicates": 10000,
-                "seed": 24001,
-            },
-        },
-        "decision": {
-            "gate_components": [{"id": "locked_gate", "operator": "greater", "threshold": 0}],
-            "positive_combiner": "all",
-            "negative_rule": "locked equivalence or below-useful-effect gate",
-            "inconclusive_rule": "neither positive nor negative gate passes",
-            "invalid_conditions": ["trial matrix invalid"],
-        },
-        "runtime": {
-            "model": {"repo_id": "pi05", "revision": "commit", "snapshot_manifest_sha256": SHA_A},
-            "environment": {
-                "backend": "rocm",
-                "package_receipt": _locked_ref("environment", SHA_A),
-                "camera_config_sha256": SHA_A,
-                "controller_config_sha256": SHA_A,
-                "preprocessor_config_sha256": SHA_A,
-                "postprocessor_config_sha256": SHA_A,
-            },
-            "code": {"implementation_commit": "a" * 40, "source_tree_sha256": SHA_A},
-            "runner": {
-                "entrypoint": "scripts/pi05_batch_capture.sh",
-                "argv": ["--backend", "rocm"],
-                "config": _locked_ref("runner", SHA_A),
-            },
-        },
-        "budget": {
-            "max_model_calls": min(10, study["budget"]["max_model_calls"]),
-            "max_action_generations": min(10, study["budget"]["max_action_generations"]),
-            "max_full_rollouts": (
-                72 if study_id == "FOUNDATION" else min(10, study["budget"]["max_full_rollouts"])
-            ),
-            "max_simulator_steps": min(100, study["budget"]["max_simulator_steps"]),
-            "max_persistent_gb": min(1, study["budget"]["max_additional_persistent_gb"]),
-            "max_ephemeral_gb": min(1, study["budget"]["max_ephemeral_gb"]),
-            "min_free_space_gb": PROGRAM["program_budget"]["min_free_space_gb"],
-        },
-        "output": {
-            "root": "/tmp/rq024-test",
-            "namespace": study_id.lower(),
-            "attempt_ledger": "events/trials",
-            "required_artifact_types": ["analysis"],
-        },
-        "completion": {
-            "valid_trial_statuses": ["completed"],
-            "technical_retry_rule": "append only",
-            "resume_identity_fields": ["child_fingerprint", "trial_id"],
-        },
-        "required_audits": ["schema", "design"],
+def test_result_cannot_claim_positive_when_locked_numeric_gates_are_negative():
+    child = _child("GEOMETRY-DISCOVERY")
+    lock = _lock(child)
+    analysis = deepcopy(_effect_analysis(child, lock))
+    analysis["metric_results"][0]["estimate"] = 0.0
+    analysis["metric_results"][0]["interval"].update({"low": -0.1, "high": 0.1})
+    by_id = {item["id"]: item for item in analysis["decision_values"]}
+    by_id["primary_interval_low"]["value"] = -0.1
+    by_id["primary_interval_high"]["value"] = 0.1
+    card = _effect_card(child, lock, analysis)
+    card["primary_result"].update({"estimate": 0.0})
+    card["primary_result"]["interval"].update({"low": -0.1, "high": 0.1})
+
+    with pytest.raises(ResearchResultCardError, match="Declared outcome"):
+        _validate(card, child, lock, analysis)
+
+
+def test_result_rejects_nested_fields_that_would_otherwise_be_ignored():
+    child = _child("GEOMETRY-DISCOVERY")
+    lock = _lock(child)
+    analysis = _effect_analysis(child, lock)
+    card = _effect_card(child, lock, analysis)
+    card["decision"]["posthoc_override"] = True
+
+    with pytest.raises(ResearchResultCardError, match="unknown"):
+        _validate(card, child, lock, analysis)
+
+
+def test_confirmation_cannot_change_the_actual_discovery_protocol(tmp_path):
+    source = _child("GEOMETRY-DISCOVERY")
+    confirmation = _child("GEOMETRY-CONFIRMATION")
+    confirmation["measurement"] = deepcopy(source["measurement"])
+    confirmation["decision"] = deepcopy(source["decision"])
+    confirmation["runtime"]["model"] = deepcopy(source["runtime"]["model"])
+    confirmation["runtime"]["code"] = deepcopy(source["runtime"]["code"])
+    confirmation["runtime"]["runner"]["entrypoint"] = source["runtime"]["runner"]["entrypoint"]
+    confirmation["runtime"]["runner"]["config"] = deepcopy(source["runtime"]["runner"]["config"])
+    confirmation["measurement"]["primary"]["minimum_useful_effect"] = 999
+    source_path = tmp_path / "source-child.json"
+    source_path.write_text(json.dumps(source), encoding="utf-8")
+    state = CampaignState(program_locked=True)
+    state.terminal_results["GEOMETRY-DISCOVERY"] = {
+        "result_event_id": "source-result",
+        "result_event_sha256": SHA_D,
+        "outcome": "positive",
     }
+    state.events_by_id["source-result"] = {
+        "payload": {"child_lock_event": {"event_id": "source-lock"}}
+    }
+    state.events_by_id["source-lock"] = {"payload": {"child_ref": {"path": source_path.name}}}
+
+    check = check_research_child(
+        confirmation,
+        PROGRAM,
+        repo_root=tmp_path,
+        verify_files=True,
+        campaign_state=state,
+    )
+
+    assert "confirmation_protocol_drift" in {issue.code for issue in check.issues}
 
 
-def _effect_card(child: dict) -> dict:
+def _effect_card(child: dict, lock: dict, analysis: dict) -> dict:
     study = next(item for item in PROGRAM["studies"] if item["id"] == child["study"]["id"])
+    gates, _ = validate_research_analysis(
+        analysis,
+        program=PROGRAM,
+        child_plan=child,
+        child_lock_fingerprint=canonical_research_fingerprint(lock),
+    )
     return {
         "schema_version": 2,
         "result_card_id": "rq024-geometry-discovery-result-r1",
@@ -257,8 +230,17 @@ def _effect_card(child: dict) -> dict:
         "program_id": PROGRAM["program_id"],
         "program_fingerprint": research_plan_fingerprint(PROGRAM),
         "study_id": study["id"],
+        "study_fingerprint": study_fingerprint(study),
         "child_plan_id": child["child_plan_id"],
         "child_plan_fingerprint": child_plan_fingerprint(child),
+        "child_lock_id": lock["lock_id"],
+        "child_lock_fingerprint": canonical_research_fingerprint(lock),
+        "reservation_id": lock["reservation_id"],
+        "ledger_tip_before_result": SHA_F,
+        "attempt_event_range": {"first_sequence": 1, "last_sequence": 10},
+        "authorization_receipt": {"id": "authorization-r1", "sha256": SHA_C},
+        "attempt_ledger": {"id": "attempts-r1", "sha256": SHA_D},
+        "budget_record": {"id": "budget-r1", "sha256": SHA_E},
         "question": study["question"],
         "one_sentence_answer": "PI0.5 followed target displacement on discovery families.",
         "verdict": "exploratory_positive",
@@ -299,7 +281,15 @@ def _effect_card(child: dict) -> dict:
             "name": "irrelevant-object displacement",
             "estimate": 0.08,
             "unit": "dimensionless_gain",
-            "interval": {"low": -0.02, "high": 0.16},
+            "interval": {
+                "low": -0.02,
+                "high": 0.16,
+                "method": "hierarchical_bootstrap",
+                "level": 0.95,
+                "grouping_unit": "task_object_family",
+                "replicates": 10000,
+                "seed": 24001,
+            },
             "source_artifact_id": "control",
         },
         "trial_accounting": {
@@ -343,13 +333,14 @@ def _effect_card(child: dict) -> dict:
                 "uri": "artifact://audit-r1",
                 "sha256": SHA_A,
             },
+            _result_artifact(lock["lock_id"], "child_lock_receipt", SHA_F),
+            _result_artifact("authorization-r1", "child_authorization_receipt", SHA_C),
+            _result_artifact("attempts-r1", "attempt_ledger", SHA_D),
+            _result_artifact("budget-r1", "budget_record", SHA_E),
         ],
         "metric_ids": ["geometry_response_gain", "irrelevant_object_gain"],
         "decision": {
-            "integrity_checks": [_check("valid", True, "audit-evidence")],
-            "applicability_checks": [],
-            "positive_checks": [_check("positive-gate", True, "per-family")],
-            "negative_checks": [_check("negative-gate", False, "per-family")],
+            "evaluated_gates": [gate.to_dict() for gate in gates],
             "derived_outcome": "positive",
             "next_action": "reevaluate_program",
         },
@@ -359,6 +350,7 @@ def _effect_card(child: dict) -> dict:
             "report_sha256": SHA_A,
             "auditor_id": "audit-agent",
             "subject_child_fingerprint": child_plan_fingerprint(child),
+            "subject_child_lock_fingerprint": canonical_research_fingerprint(lock),
             "subject_trial_manifest_sha256": SHA_C,
             "subject_analysis_package_sha256": SHA_B,
             "checks": {"execution": "pass", "calculation": "pass", "claim": "pass"},
@@ -367,8 +359,14 @@ def _effect_card(child: dict) -> dict:
     }
 
 
-def _preparation_card(child: dict) -> dict:
+def _preparation_card(child: dict, lock: dict, analysis: dict) -> dict:
     study = next(item for item in PROGRAM["studies"] if item["id"] == "FOUNDATION")
+    gates, _ = validate_research_analysis(
+        analysis,
+        program=PROGRAM,
+        child_plan=child,
+        child_lock_fingerprint=canonical_research_fingerprint(lock),
+    )
     return {
         "schema_version": 2,
         "result_card_id": "rq024-foundation-result-r1",
@@ -376,8 +374,17 @@ def _preparation_card(child: dict) -> dict:
         "program_id": PROGRAM["program_id"],
         "program_fingerprint": research_plan_fingerprint(PROGRAM),
         "study_id": "FOUNDATION",
+        "study_fingerprint": study_fingerprint(study),
         "child_plan_id": child["child_plan_id"],
         "child_plan_fingerprint": child_plan_fingerprint(child),
+        "child_lock_id": lock["lock_id"],
+        "child_lock_fingerprint": canonical_research_fingerprint(lock),
+        "reservation_id": lock["reservation_id"],
+        "ledger_tip_before_result": SHA_F,
+        "attempt_event_range": {"first_sequence": 1, "last_sequence": 73},
+        "authorization_receipt": {"id": "authorization-r1", "sha256": SHA_C},
+        "attempt_ledger": {"id": "attempts-r1", "sha256": SHA_D},
+        "budget_record": {"id": "budget-r1", "sha256": SHA_E},
         "question": study["question"],
         "one_sentence_answer": "Both fixed pools supplied six eligible families.",
         "verdict": "gate_passed",
@@ -428,13 +435,14 @@ def _preparation_card(child: dict) -> dict:
                 "uri": "artifact://audit",
                 "sha256": SHA_A,
             },
+            _result_artifact(lock["lock_id"], "child_lock_receipt", SHA_F),
+            _result_artifact("authorization-r1", "child_authorization_receipt", SHA_C),
+            _result_artifact("attempts-r1", "attempt_ledger", SHA_D),
+            _result_artifact("budget-r1", "budget_record", SHA_E),
         ],
         "metric_ids": ["family_baseline_eligibility"],
         "decision": {
-            "integrity_checks": [_check("valid", True, "foundation")],
-            "applicability_checks": [],
-            "positive_checks": [_check("six-and-six", True, "foundation")],
-            "negative_checks": [_check("pool-shortfall", False, "foundation")],
+            "evaluated_gates": [gate.to_dict() for gate in gates],
             "derived_outcome": "positive",
             "next_action": "reevaluate_program",
         },
@@ -444,6 +452,7 @@ def _preparation_card(child: dict) -> dict:
             "report_sha256": SHA_A,
             "auditor_id": "audit-agent",
             "subject_child_fingerprint": child_plan_fingerprint(child),
+            "subject_child_lock_fingerprint": canonical_research_fingerprint(lock),
             "subject_trial_manifest_sha256": SHA_C,
             "subject_analysis_package_sha256": SHA_B,
             "checks": {"execution": "pass", "calculation": "pass", "claim": "pass"},
@@ -452,9 +461,220 @@ def _preparation_card(child: dict) -> dict:
     }
 
 
-def _locked_ref(name: str, sha256: str) -> dict:
-    return {"id": name, "type": f"{name}_manifest", "path": f"locked/{name}.json", "sha256": sha256}
+def _lock(child: dict) -> dict:
+    study = next(item for item in PROGRAM["studies"] if item["id"] == child["study"]["id"])
+    audit_types = ["schema", "design", "runner", "budget", *study["required_audits"]]
+    return {
+        "schema_version": 1,
+        "kind": "vla_lens.research_child_lock",
+        "lock_id": f"{child['child_plan_id']}-lock",
+        "program_id": PROGRAM["program_id"],
+        "program_fingerprint": research_plan_fingerprint(PROGRAM),
+        "study_id": study["id"],
+        "study_fingerprint": study_fingerprint(study),
+        "child_plan_id": child["child_plan_id"],
+        "child_plan_fingerprint": child_plan_fingerprint(child),
+        "manifest_commit": "b" * 40,
+        "locked_utc": "2026-07-26T12:00:00+00:00",
+        "prepared_by": child["prepared_by"],
+        "reservation_id": f"{child['child_plan_id']}-reservation",
+        "prior_ledger_tip": SHA_F,
+        "audits": [
+            {
+                "audit_type": audit_type,
+                "auditor_id": f"audit-agent-{index}",
+                "verdict": "pass",
+                "subject_child_fingerprint": child_plan_fingerprint(child),
+                "artifact": _locked_ref(f"lock-audit-{index}", SHA_A),
+            }
+            for index, audit_type in enumerate(audit_types)
+        ],
+    }
 
 
-def _check(check_id: str, passed: bool, artifact_id: str) -> dict:
-    return {"id": check_id, "passed": passed, "evidence_artifact_id": artifact_id}
+def _effect_analysis(child: dict, lock: dict) -> dict:
+    inference = child["measurement"]["inference"]
+    units = child["trials"]["expected_independent_units"]
+    return _analysis(
+        child,
+        lock,
+        trial_accounting={
+            "expected": 10,
+            "completed": 9,
+            "technical_failed": 1,
+            "excluded": 0,
+            "attempts": 10,
+        },
+        metrics=[
+            {
+                "metric_id": "geometry_response_gain",
+                "estimate": 0.62,
+                "unit": "dimensionless_gain",
+                "interval": {
+                    "low": 0.31,
+                    "high": 0.81,
+                    **inference,
+                },
+                "planned_independent_units": dict(units),
+                "independent_units": dict(units),
+                "source_artifact_id": "per-family",
+            },
+            {
+                "metric_id": "irrelevant_object_gain",
+                "estimate": 0.08,
+                "unit": "dimensionless_gain",
+                "interval": {
+                    "low": -0.02,
+                    "high": 0.16,
+                    **inference,
+                },
+                "planned_independent_units": dict(units),
+                "independent_units": dict(units),
+                "source_artifact_id": "control",
+            },
+        ],
+        values=[
+            _analysis_value("accounted_trial_count", 10, "trials", "per-family"),
+            _analysis_value("primary_interval_low", 0.31, "dimensionless_gain", "per-family"),
+            _analysis_value("primary_interval_high", 0.81, "dimensionless_gain", "per-family"),
+        ],
+        artifact_refs=[
+            _result_artifact("per-family", "per_family_metrics", SHA_A),
+            _result_artifact("control", "control_metrics", SHA_B),
+        ],
+    )
+
+
+def _preparation_analysis(child: dict, lock: dict) -> dict:
+    inference = child["measurement"]["inference"]
+    units = child["trials"]["expected_independent_units"]
+    return _analysis(
+        child,
+        lock,
+        trial_accounting={
+            "expected": 72,
+            "completed": 72,
+            "technical_failed": 0,
+            "excluded": 0,
+            "attempts": 73,
+        },
+        metrics=[
+            {
+                "metric_id": "family_baseline_eligibility",
+                "estimate": 1.0,
+                "unit": "binary_per_task_object_family",
+                "interval": {"low": 1.0, "high": 1.0, **inference},
+                "planned_independent_units": dict(units),
+                "independent_units": dict(units),
+                "source_artifact_id": "foundation",
+            },
+            {
+                "metric_id": "irrelevant_object_gain",
+                "estimate": 0.0,
+                "unit": "binary_per_task_object_family",
+                "interval": {"low": 0.0, "high": 0.0, **inference},
+                "planned_independent_units": dict(units),
+                "independent_units": dict(units),
+                "source_artifact_id": "control",
+            },
+        ],
+        values=[
+            _analysis_value("discovery_eligible_count", 7, "task_object_families", "foundation"),
+            _analysis_value("confirmation_eligible_count", 6, "task_object_families", "foundation"),
+            _analysis_value("discovery_total_count", 12, "task_object_families", "foundation"),
+            _analysis_value("confirmation_total_count", 12, "task_object_families", "foundation"),
+            _analysis_value("completed_trial_count", 72, "rollout_trials", "foundation"),
+            _analysis_value("minimum_pool_eligible_count", 6, "task_object_families", "foundation"),
+        ],
+        artifact_refs=[
+            _result_artifact("foundation", "gate_analysis", SHA_B),
+            _result_artifact("control", "control_metrics", SHA_A),
+        ],
+    )
+
+
+def _analysis(
+    child: dict,
+    lock: dict,
+    *,
+    trial_accounting: dict,
+    metrics: list[dict],
+    values: list[dict],
+    artifact_refs: list[dict],
+) -> dict:
+    return {
+        "schema_version": 1,
+        "kind": "vla_lens.research_analysis",
+        "analysis_id": "analysis",
+        "program_id": PROGRAM["program_id"],
+        "program_fingerprint": research_plan_fingerprint(PROGRAM),
+        "study_id": child["study"]["id"],
+        "child_plan_id": child["child_plan_id"],
+        "child_plan_fingerprint": child_plan_fingerprint(child),
+        "child_lock_fingerprint": canonical_research_fingerprint(lock),
+        "trial_manifest_sha256": SHA_C,
+        "authorization_receipt_sha256": SHA_C,
+        "attempt_ledger_sha256": SHA_D,
+        "budget_record_sha256": SHA_E,
+        "trial_accounting": trial_accounting,
+        "metric_results": metrics,
+        "decision_values": values,
+        "artifact_refs": artifact_refs,
+    }
+
+
+def _analysis_value(value_id: str, value: float, unit: str, artifact_id: str) -> dict:
+    return {
+        "id": value_id,
+        "value": value,
+        "unit": unit,
+        "evidence_artifact_id": artifact_id,
+    }
+
+
+def _result_artifact(artifact_id: str, artifact_type: str, sha256: str) -> dict:
+    return {
+        "id": artifact_id,
+        "type": artifact_type,
+        "uri": f"artifact://{artifact_id}",
+        "sha256": sha256,
+    }
+
+
+def _validate(
+    card: dict,
+    child: dict,
+    lock: dict,
+    analysis: dict,
+    *,
+    audit_report_sha256: str = SHA_A,
+) -> None:
+    validate_research_result_card(
+        card,
+        program=PROGRAM,
+        child_plan=child,
+        child_lock=lock,
+        analysis_package=analysis,
+        lock_receipt_sha256=SHA_F,
+        audit_report_sha256=audit_report_sha256,
+        analysis_package_sha256=SHA_B,
+        authorization_receipt_sha256=SHA_C,
+        attempt_ledger_sha256=SHA_D,
+        budget_record_sha256=SHA_E,
+    )
+
+
+def _format(card: dict, child: dict, lock: dict, analysis: dict) -> str:
+    return format_research_result_markdown(
+        card,
+        program=PROGRAM,
+        child_plan=child,
+        child_lock=lock,
+        analysis_package=analysis,
+        lock_receipt_sha256=SHA_F,
+        audit_report_sha256=SHA_A,
+        analysis_package_sha256=SHA_B,
+        authorization_receipt_sha256=SHA_C,
+        attempt_ledger_sha256=SHA_D,
+        budget_record_sha256=SHA_E,
+    )

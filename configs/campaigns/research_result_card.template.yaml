@@ -4,8 +4,25 @@ result_kind: effect_estimate
 program_id: rq024-controlled-scene-to-behavior
 program_fingerprint: sha256:REPLACE_WITH_PROGRAM_HASH
 study_id: REPLACE_WITH_STUDY_ID
+study_fingerprint: sha256:REPLACE_WITH_STUDY_HASH
 child_plan_id: REPLACE_WITH_CHILD_ID
 child_plan_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+child_lock_id: REPLACE_WITH_CHILD_LOCK_ID
+child_lock_fingerprint: sha256:REPLACE_WITH_CHILD_LOCK_CONTENT_HASH
+reservation_id: REPLACE_WITH_RESERVATION_ID
+ledger_tip_before_result: sha256:REPLACE_WITH_EVENT_HASH_BEFORE_RESULT
+attempt_event_range:
+  first_sequence: 1
+  last_sequence: 1
+authorization_receipt:
+  id: REPLACE_WITH_AUTHORIZATION_RECEIPT_ID
+  sha256: sha256:REPLACE_WITH_AUTHORIZATION_RECEIPT_FILE_HASH
+attempt_ledger:
+  id: REPLACE_WITH_ATTEMPT_LEDGER_ID
+  sha256: sha256:REPLACE_WITH_ATTEMPT_LEDGER_FILE_HASH
+budget_record:
+  id: REPLACE_WITH_BUDGET_RECORD_ID
+  sha256: sha256:REPLACE_WITH_BUDGET_RECORD_FILE_HASH
 question: Replace with the exact locked child question.
 one_sentence_answer: Replace with the direct answer and its scope.
 verdict: inconclusive
@@ -33,6 +50,11 @@ primary_result:
   interval:
     low: 0.0
     high: 0.0
+    method: replace_interval_method
+    level: 0.95
+    grouping_unit: task_object_family
+    replicates: 10000
+    seed: 24001
     method: replace_interval_method
     level: 0.95
     grouping_unit: task_object_family
@@ -68,23 +90,36 @@ artifact_refs:
     type: per_family_metrics
     uri: replace_with_artifact_uri
     sha256: sha256:REPLACE_WITH_ARTIFACT_HASH
+  - id: REPLACE_WITH_CHILD_LOCK_ID
+    type: child_lock_receipt
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_CHILD_LOCK_FILE_HASH
+  - id: REPLACE_WITH_AUTHORIZATION_RECEIPT_ID
+    type: child_authorization_receipt
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_AUTHORIZATION_RECEIPT_FILE_HASH
+  - id: REPLACE_WITH_ATTEMPT_LEDGER_ID
+    type: attempt_ledger
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_ATTEMPT_LEDGER_FILE_HASH
+  - id: REPLACE_WITH_BUDGET_RECORD_ID
+    type: budget_record
+    uri: replace_with_artifact_uri
+    sha256: sha256:REPLACE_WITH_BUDGET_RECORD_FILE_HASH
 metric_ids:
   - replace_metric_id
   - replace_control_metric_id
 decision:
-  integrity_checks:
-    - id: trial_matrix_and_calculation_valid
+  evaluated_gates:
+    - id: REPLACE_WITH_LOCKED_GATE_ID
+      role: integrity
+      value_id: REPLACE_WITH_ANALYSIS_VALUE_ID
+      observed: 0.0
+      operator: greater_than_or_equal
+      threshold: 0.0
+      unit: replace_unit
       passed: true
-      evidence_artifact_id: replace_audit_artifact
-  applicability_checks: []
-  positive_checks:
-    - id: locked_positive_gate
-      passed: false
-      evidence_artifact_id: replace_analysis_artifact
-  negative_checks:
-    - id: locked_equivalence_or_below_useful_effect_gate
-      passed: false
-      evidence_artifact_id: replace_analysis_artifact
+      evidence_artifact_id: replace_per_family_metric_artifact
   derived_outcome: inconclusive
   next_action: stop_branch
 audit:
@@ -93,6 +128,7 @@ audit:
   report_sha256: sha256:REPLACE_WITH_AUDIT_HASH
   auditor_id: REPLACE_WITH_INDEPENDENT_AUDITOR
   subject_child_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
+  subject_child_lock_fingerprint: sha256:REPLACE_WITH_CHILD_LOCK_CONTENT_HASH
   subject_trial_manifest_sha256: sha256:REPLACE_WITH_TRIAL_MANIFEST_HASH
   subject_analysis_package_sha256: sha256:REPLACE_WITH_ANALYSIS_PACKAGE_HASH
   checks:

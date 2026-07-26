@@ -14,7 +14,7 @@ study:
   fingerprint: sha256:REPLACE_WITH_STUDY_HASH
   phase: foundation
 
-predecessor_results: []
+predecessor_result_events: []
 
 claim:
   result_kind: preparation_gate
@@ -59,15 +59,26 @@ trials:
     - environment_reset
     - policy
     - flow_noise
+  expected_independent_units:
+    task_families: 24
+    scene_clusters: 24
+    noise_repeats: 0
+    rollouts: 72
 
 measurement:
   primary:
     metric_id: family_baseline_eligibility
-    formula: eligible = sum(simulator_success over three planned rollouts) >= 2
+    formula: A family is eligible when at least two of three untouched rollouts succeed.
     implementation_id: rq024_family_baseline_eligibility_v1
     unit: binary_per_task_object_family
     direction: eligible_in_both_preassigned_pools
     minimum_useful_effect: six eligible families in each fixed pool
+  controls:
+    - deterministic outcome-blind candidate ordering
+    - environment reset and seed identity
+    - simulator success versus contact and object-motion consistency
+    - controller action-unit and postprocessing audit
+    - prior-research exposure manifest
   strongest_control_metric_id: simulator_success_vs_object_motion_consistency
   inference:
     method: exact_family_count_with_prespecified_2_of_3_screen
@@ -79,16 +90,49 @@ measurement:
 decision:
   gate_components:
     - id: discovery_eligible_count
+      role: positive
+      value_id: discovery_eligible_count
       operator: greater_than_or_equal
       threshold: 6
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
     - id: confirmation_eligible_count
+      role: positive
+      value_id: confirmation_eligible_count
       operator: greater_than_or_equal
       threshold: 6
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
+    - id: discovery_total_count
+      role: integrity
+      value_id: discovery_total_count
+      operator: equal
+      threshold: 12
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
+    - id: confirmation_total_count
+      role: integrity
+      value_id: confirmation_total_count
+      operator: equal
+      threshold: 12
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
     - id: trial_matrix_complete
+      role: integrity
+      value_id: completed_trial_count
       operator: equal
       threshold: 72
+      unit: rollout_trials
+      evidence_artifact_type: gate_analysis
+    - id: either_pool_below_six
+      role: negative
+      value_id: minimum_pool_eligible_count
+      operator: less
+      threshold: 6
+      unit: task_object_families
+      evidence_artifact_type: gate_analysis
   positive_combiner: all
-  negative_rule: either fixed pool has fewer than six eligible families after all valid trials
+  negative_combiner: all
   inconclusive_rule: technical missingness prevents a complete 72-trial matrix within budget
   invalid_conditions:
     - candidate ordering or pool assignment occurred after outcomes were visible
@@ -133,6 +177,7 @@ budget:
   max_action_generations: 1440
   max_full_rollouts: 72
   max_simulator_steps: 43200
+  max_probe_fits: 0
   max_persistent_gb: 10
   max_ephemeral_gb: 20
   min_free_space_gb: 200
@@ -142,12 +187,13 @@ output:
   namespace: rq024-foundation-r1/{child_fingerprint}
   attempt_ledger: events/trial_attempts
   required_artifact_types:
-    - candidate_and_rejection_manifest
-    - pool_assignment
-    - baseline_rollout_trials
-    - eligible_family_manifests
+    - candidate_and_rejection_manifest.parquet
+    - pool_assignment.json
+    - baseline_rollout_trials.parquet
+    - eligible_family_manifests.json
     - physical_trajectories
-    - measurement_capability_audit
+    - measurement_capability_audit.json
+    - foundation_audit.json
 
 completion:
   valid_trial_statuses:
@@ -161,8 +207,34 @@ completion:
     - effective_config_sha256
     - trace_sha256
 
-required_audits:
-  - schema
-  - design
-  - runner
-  - budget
+protocol_lock:
+  required_lock_fields:
+    - question_and_allowed_claim
+    - exact_model_checkpoint_hash
+    - environment_camera_controller_and_preprocessor_versions
+    - cohort_split_and_prior_exposure_hashes
+    - metric_id_and_formula
+    - minimum_useful_effect
+    - controls
+    - trial_matrix_and_seed_schedule
+    - analysis_code_commit
+    - runner_config_hash
+    - output_root_and_storage_budget
+    - stop_and_transition_rules
+    - precision_or_bounded_replication_justification
+    - small_sample_family_level_inference
+    - candidate_task_manifest_and_rejection_rules
+    - preassigned_pool_membership
+    - exact_rollout_reset_seeds
+    - maximum_72_rollouts
+    - deterministic_first_six_eligible_rule
+    - family_level_precision_and_small_sample_method
+    - simulator_contact_telemetry_capability_status
+  locked_choices:
+    candidate_task_manifest_and_rejection_rules: REPLACE_WITH_MANIFEST_ID_AND_PARSER_VERSION
+    preassigned_pool_membership: REPLACE_WITH_POOL_ASSIGNMENT_ID
+    exact_rollout_reset_seeds: REPLACE_WITH_TRIAL_MANIFEST_ID
+    maximum_72_rollouts: 72
+    deterministic_first_six_eligible_rule: first_six_eligible_in_precomputed_pool_order
+    family_level_precision_and_small_sample_method: REPLACE_WITH_LOCKED_METHOD_ID
+    simulator_contact_telemetry_capability_status: unavailable_use_success_object_motion_and_distance_separately

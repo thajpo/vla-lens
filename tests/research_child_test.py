@@ -44,6 +44,30 @@ def test_child_contract_rejects_unknown_fields_and_weakened_parent_budget():
     assert "child_budget_exceeds_study" in codes
 
 
+def test_child_rejects_nested_unknown_fields_weakened_formula_and_unsafe_output():
+    child = _valid_foundation_child()
+    child["measurement"]["surprise"] = "ignored by runner"
+    child["measurement"]["primary"]["formula"] = "always true"
+    child["output"]["root"] = "/"
+    child["output"]["namespace"] = "../../etc"
+
+    check = check_research_child(child, PROGRAM)
+    codes = {issue.code for issue in check.issues}
+
+    assert {"unknown_contract_fields", "child_formula_mismatch"} <= codes
+    assert {"unsafe_output_root", "unsafe_output_path"} <= codes
+
+
+def test_child_rejects_malformed_nested_mapping_without_crashing():
+    child = _valid_foundation_child()
+    child["program"] = "not-a-map"
+
+    check = check_research_child(child, PROGRAM)
+
+    assert not check.valid
+    assert "invalid_contract_mapping" in {issue.code for issue in check.issues}
+
+
 def test_lock_receipt_is_separate_bound_and_independently_audited():
     child = _valid_foundation_child()
     receipt = _lock_receipt(child)
@@ -75,7 +99,8 @@ def test_foundation_template_is_honestly_blocked_until_exact_inputs_exist():
 def _lock_receipt(child: dict) -> dict:
     study = next(item for item in PROGRAM["studies"] if item["id"] == child["study"]["id"])
     audits = []
-    for audit_type in child["required_audits"]:
+    required_audits = ["schema", "design", "runner", "budget", *study["required_audits"]]
+    for index, audit_type in enumerate(required_audits):
         audits.append(
             {
                 "audit_type": audit_type,
@@ -86,7 +111,7 @@ def _lock_receipt(child: dict) -> dict:
                     "id": f"{audit_type}-audit",
                     "type": "research_child_audit",
                     "path": f"audits/{audit_type}.json",
-                    "sha256": SHA_A if audit_type == "schema" else SHA_B,
+                    "sha256": SHA_A if index % 2 == 0 else SHA_B,
                 },
             }
         )
@@ -103,7 +128,8 @@ def _lock_receipt(child: dict) -> dict:
         "manifest_commit": "b" * 40,
         "locked_utc": "2026-07-26T12:00:00+00:00",
         "prepared_by": child["prepared_by"],
-        "first_output_absent": True,
+        "reservation_id": "foundation-reservation-r1",
+        "prior_ledger_tip": SHA_C,
         "audits": audits,
     }
 

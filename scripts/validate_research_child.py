@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import shutil
 import subprocess
@@ -14,10 +15,13 @@ from typing import Any, Mapping
 from vla_lens.research_child import (
     check_research_child,
     check_research_child_lock,
+    child_plan_fingerprint,
     load_research_child,
 )
+from vla_lens.research_events import verify_research_event_ledger
 from vla_lens.research_io import (
     canonical_research_fingerprint,
+    file_sha256,
     load_research_mapping,
     write_bytes_create_only,
 )
@@ -30,9 +34,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--program", type=Path, required=True, help="Parent program YAML.")
     parser.add_argument("--lock-receipt", type=Path, help="Post-audit child lock receipt.")
     parser.add_argument(
+        "--event-root", type=Path, help="Authoritative typed campaign event directory."
+    )
+    parser.add_argument(
         "--verify-files",
         action="store_true",
         help="Verify every locked input/audit file and Git lock evidence.",
+    )
+    parser.add_argument(
+        "--claim-output",
+        action="store_true",
+        help="Atomically claim the child-fingerprint output directory during full preflight.",
     )
     parser.add_argument("--json", action="store_true", help="Print the machine check.")
     parser.add_argument("--output", type=Path, help="Create-only JSON check snapshot.")
@@ -45,11 +57,22 @@ def main() -> None:
     child = load_research_child(args.child)
     program = load_research_plan(args.program)
     program_check = check_research_plan(program, path=args.program)
+    ledger_check = (
+        verify_research_event_ledger(
+            args.event_root,
+            program,
+            repo_root=repo_root,
+            verify_artifacts=args.verify_files,
+        )
+        if args.event_root
+        else None
+    )
     child_check = check_research_child(
         child,
         program,
         repo_root=repo_root,
         verify_files=args.verify_files,
+        campaign_state=None if ledger_check is None else ledger_check.state,
     )
     receipt: Mapping[str, Any] | None = None
     lock_check = None
@@ -64,7 +87,7 @@ def main() -> None:
         )
     git_check = _git_lock_check(args, child, receipt, repo_root) if args.verify_files else None
     storage_check = _storage_check(child, repo_root) if args.verify_files else None
-    authorized = bool(
+    ready_to_claim = bool(
         program_check.valid
         and child_check.valid
         and child_check.files_verified
@@ -75,6 +98,22 @@ def main() -> None:
         and git_check["valid"]
         and storage_check
         and storage_check["valid"]
+        and ledger_check is not None
+        and ledger_check.valid
+    )
+    output_check = (
+        _output_freshness_check(
+            child,
+            claim=bool(args.claim_output and ready_to_claim),
+            blocked_reason=(
+                None if ready_to_claim or not args.claim_output else "other_preflight_checks_failed"
+            ),
+        )
+        if args.verify_files
+        else None
+    )
+    authorized = bool(
+        ready_to_claim and output_check and output_check["valid"] and output_check["claimed"]
     )
     snapshot: dict[str, Any] = {
         "schema_version": 1,
@@ -82,8 +121,10 @@ def main() -> None:
         "program_check": program_check.to_dict(),
         "child_check": child_check.to_dict(),
         "lock_check": None if lock_check is None else lock_check.to_dict(),
+        "campaign_ledger_check": None if ledger_check is None else ledger_check.to_dict(),
         "git_lock_check": git_check,
         "storage_check": storage_check,
+        "output_freshness_check": output_check,
         "authorized_to_start_child": authorized,
         "limits": {
             "model_or_simulator_started": False,
@@ -116,6 +157,10 @@ def _print_human(args: argparse.Namespace, snapshot: Mapping[str, Any]) -> None:
             "Execution authorization was not evaluated; rerun with --verify-files "
             "and --lock-receipt."
         )
+    elif not args.event_root:
+        print("Execution authorization also requires --event-root.")
+    elif not args.claim_output:
+        print("Execution authorization also requires --claim-output.")
     for section in ("program_check", "child_check", "lock_check"):
         check = snapshot.get(section)
         if isinstance(check, Mapping):
@@ -130,8 +175,6 @@ def _git_lock_check(
     repo_root: Path,
 ) -> dict[str, Any]:
     paths = [args.child, args.program]
-    if args.lock_receipt:
-        paths.append(args.lock_receipt)
     for dotted in (
         "cohort.manifest.path",
         "cohort.exposure_log.path",
@@ -166,7 +209,58 @@ def _git_lock_check(
         ).stdout.strip()
         if observed != receipt.get("manifest_commit"):
             errors.append("manifest_commit_does_not_match_child_file")
-    return {"valid": not errors, "checked_paths": relative, "errors": errors}
+    head = _git(repo_root, "rev-parse", "HEAD").stdout.strip()
+    implementation_commit = str(_get(child, "runtime.code.implementation_commit") or "")
+    if (
+        receipt is not None
+        and _git(
+            repo_root,
+            "merge-base",
+            "--is-ancestor",
+            str(receipt.get("manifest_commit") or ""),
+            head,
+        ).returncode
+        != 0
+    ):
+        errors.append("manifest_commit_is_not_an_ancestor")
+    if _git(repo_root, "merge-base", "--is-ancestor", implementation_commit, head).returncode != 0:
+        errors.append("implementation_commit_is_not_an_ancestor")
+    tree = _git(
+        repo_root,
+        "ls-tree",
+        "-r",
+        "--full-tree",
+        implementation_commit,
+        "--",
+        "src",
+        "scripts",
+    )
+    observed_tree = (
+        f"sha256:{hashlib.sha256(tree.stdout.encode('utf-8')).hexdigest()}"
+        if tree.returncode == 0
+        else None
+    )
+    if observed_tree != _get(child, "runtime.code.source_tree_sha256"):
+        errors.append("source_tree_sha256_mismatch")
+    head_tree = _git(
+        repo_root,
+        "ls-tree",
+        "-r",
+        "--full-tree",
+        head,
+        "--",
+        "src",
+        "scripts",
+    )
+    if tree.returncode == 0 and head_tree.stdout != tree.stdout:
+        errors.append("implementation_code_changed_after_lock")
+    return {
+        "valid": not errors,
+        "checked_paths": relative,
+        "head": head,
+        "source_tree_sha256": observed_tree,
+        "errors": errors,
+    }
 
 
 def _storage_check(child: Mapping[str, Any], repo_root: Path) -> dict[str, Any]:
@@ -182,6 +276,152 @@ def _storage_check(child: Mapping[str, Any], repo_root: Path) -> dict[str, Any]:
         "free_gb": free_gb,
         "required_free_gb": required_gb,
     }
+
+
+def _output_freshness_check(
+    child: Mapping[str, Any], *, claim: bool, blocked_reason: str | None
+) -> dict[str, Any]:
+    root = Path(str(_get(child, "output.root") or ""))
+    fingerprint = child_plan_fingerprint(child).removeprefix("sha256:")
+    namespace_text = str(_get(child, "output.namespace") or "").replace(
+        "{child_fingerprint}", fingerprint
+    )
+    namespace = Path(namespace_text)
+    destination = root / namespace
+    if blocked_reason:
+        return {
+            "valid": False,
+            "claimed": False,
+            "destination": str(destination),
+            "claim_marker": None,
+            "reason": blocked_reason,
+        }
+    if not claim:
+        return {
+            "valid": not destination.exists(),
+            "claimed": False,
+            "destination": str(destination),
+            "claim_marker": None,
+            "reason": (
+                "claim_output_required"
+                if not destination.exists()
+                else "output_namespace_already_exists"
+            ),
+        }
+    if not root.is_dir() or root.is_symlink():
+        return {
+            "valid": False,
+            "claimed": False,
+            "destination": str(destination),
+            "claim_marker": None,
+            "reason": "trusted_output_root_missing_or_symlinked",
+        }
+    current = root
+    for part in namespace.parent.parts:
+        current = current / part
+        try:
+            current.mkdir()
+        except FileExistsError:
+            if current.is_symlink() or not current.is_dir():
+                return {
+                    "valid": False,
+                    "claimed": False,
+                    "destination": str(destination),
+                    "claim_marker": None,
+                    "reason": "output_namespace_parent_is_unsafe",
+                }
+    resolved_root = root.resolve()
+    resolved_parent = destination.parent.resolve()
+    try:
+        resolved_parent.relative_to(resolved_root)
+    except ValueError:
+        return {
+            "valid": False,
+            "claimed": False,
+            "destination": str(destination),
+            "claim_marker": None,
+            "reason": "output_namespace_escapes_root",
+        }
+    if any(part.is_symlink() for part in _path_prefixes(root, destination.parent)):
+        return {
+            "valid": False,
+            "claimed": False,
+            "destination": str(destination),
+            "claim_marker": None,
+            "reason": "output_namespace_contains_symlink",
+        }
+    try:
+        destination.mkdir()
+    except FileExistsError:
+        existing = _resume_existing_output_claim(destination, child)
+        if existing is not None:
+            return existing
+        return {
+            "valid": False,
+            "claimed": False,
+            "destination": str(destination),
+            "claim_marker": None,
+            "reason": "output_namespace_already_exists",
+        }
+    marker = destination / ".vla-lens-output-claim.json"
+    marker_payload = {
+        "schema_version": 1,
+        "kind": "vla_lens.output_claim",
+        "child_plan_fingerprint": child_plan_fingerprint(child),
+        "destination": str(destination),
+        "created_utc": datetime.now(UTC).isoformat(),
+    }
+    write_bytes_create_only(
+        marker,
+        (json.dumps(marker_payload, indent=2, sort_keys=True) + "\n").encode("utf-8"),
+    )
+    return {
+        "valid": True,
+        "claimed": True,
+        "destination": str(destination),
+        "claim_marker": {"path": str(marker), "sha256": file_sha256(marker)},
+        "reason": None,
+    }
+
+
+def _resume_existing_output_claim(
+    destination: Path, child: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    marker = destination / ".vla-lens-output-claim.json"
+    if destination.is_symlink() or not destination.is_dir() or not marker.is_file():
+        return None
+    if {item.name for item in destination.iterdir()} != {marker.name}:
+        return None
+    try:
+        payload = load_research_mapping(marker)
+    except (OSError, ValueError):
+        return None
+    if (
+        payload.get("kind") != "vla_lens.output_claim"
+        or payload.get("child_plan_fingerprint") != child_plan_fingerprint(child)
+        or payload.get("destination") != str(destination)
+    ):
+        return None
+    return {
+        "valid": True,
+        "claimed": True,
+        "destination": str(destination),
+        "claim_marker": {"path": str(marker), "sha256": file_sha256(marker)},
+        "reason": "resumed_same_child_claim",
+    }
+
+
+def _path_prefixes(root: Path, target: Path) -> list[Path]:
+    prefixes = [root]
+    current = root
+    try:
+        relative = target.relative_to(root)
+    except ValueError:
+        return prefixes
+    for part in relative.parts:
+        current = current / part
+        prefixes.append(current)
+    return prefixes
 
 
 def _repo_root(path: Path) -> Path:

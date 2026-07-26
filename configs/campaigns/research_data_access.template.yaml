@@ -1,0 +1,14 @@
+schema_version: 1
+kind: vla_lens.research_data_access
+access_id: REPLACE_WITH_ACCESS_ID
+child_lock_fingerprint: sha256:REPLACE_WITH_CHILD_LOCK_HASH
+family_pool: REPLACE_WITH_LOCKED_FAMILY_POOL
+namespace: REPLACE_WITH_LOCKED_READ_NAMESPACE
+access_mode: measurement
+accessed_utc: REPLACE_WITH_ISO_8601_TIME
+data_refs:
+  - id: REPLACE_WITH_DATA_ID
+    type: REPLACE_WITH_DATA_TYPE
+    root_id: repo
+    path: REPLACE_WITH_REPO_RELATIVE_PATH
+    sha256: sha256:REPLACE_WITH_DATA_HASH

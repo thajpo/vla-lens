@@ -10,7 +10,8 @@ child_plan_fingerprint: sha256:REPLACE_WITH_CHILD_HASH
 manifest_commit: REPLACE_WITH_COMMIT_CONTAINING_CHILD_PLAN
 locked_utc: REPLACE_WITH_ISO_8601_UTC_STRING
 prepared_by: REPLACE_WITH_CHILD_PREPARER_ID
-first_output_absent: true
+reservation_id: REPLACE_WITH_LEDGER_RESERVATION_ID
+prior_ledger_tip: sha256:REPLACE_WITH_EVENT_HASH_BEFORE_CHILD_LOCK
 audits:
   - audit_type: schema
     auditor_id: REPLACE_WITH_INDEPENDENT_AUDITOR_ID
