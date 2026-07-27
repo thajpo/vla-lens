@@ -1395,6 +1395,32 @@ contact capability now have machine-readable receipts. No RQ-024 trial has run;
 the FOUNDATION child still requires independent audits, budget reservation,
 lock, output claim, and an `execution_authorized` event.
 
+**Implementation reliability handoff (not scientific evidence, 2026-07-26).**
+FOUNDATION execution remains blocked on merge-ready implementations of GitHub
+issues #38 (append-only execution) and #39 (external evidence indexing). The
+workflow comparison is tracked in GitHub issue #40 from common base `e936214`.
+Its amended protocol runs both arms to acceptance rather than stopping after a
+failed repair: rejected attempts and all tokens remain counted, direct Sol may
+repair its own candidate, and the delegated arm keeps production implementation
+with bounded DeepSeek workers while Sol owns contracts, tests, review, and
+integration. The final comparison occurs only after both implementations pass
+the same independent tests, full normal validation, and fresh blind review with
+no critical or high correctness findings. These software-agent outcomes do not
+answer RQ-024 and no hardware trial has run.
+
+The direct candidates currently pass their independent contract suites and full
+normal tests at `5e961fe` for #38 and `6f84df0` for #39, but still require the
+common final blind gate. In the delegated #38 arm, M1A input receipts, M2A
+one-row commands, M1B trial rows, and M3 reducer-derived attempt planning are
+accepted on `benchmark/38-delegated-contract`; M2B exact output identity remains
+under DeepSeek repair, with M2C and attempt termination blocked behind it. In
+the delegated #39 arm, M1A source contracts and M1B canonical ledger verification
+are accepted on `benchmark/39-delegated-contract`; the thin CLI candidate
+`313ec19` is accepted but parked for final merge order, and repaired M1C candidate
+`5cfc14d` awaits architect review before M2 evidence and M3 manifest work. Resume
+from issue #40 and these branch/commit identities; do not merge rejected pilot or
+intermediate worker commits merely because their focused tests pass.
+
 ## Not Yet Run
 
 - Feature-level sparse object-location probes beyond the fixed MLP battery
@@ -1410,22 +1436,20 @@ lock, output claim, and an `execution_authorized` event.
 
 ## Current Priority
 
-1. Prepare the exact FOUNDATION child from
-   `configs/campaigns/rq024_foundation.child.template.yaml`: implement and hash
-   the LIBERO-90 family parser, candidate/rejection table, exact 72-trial table,
-   separate environment/policy/flow-noise seeds, checkpoint receipt, and
-   machine-readable capture-environment receipt.
+1. Finish issues #38 and #39 through the acceptance-to-convergence protocol in
+   issue #40. Preserve cumulative Sol and DeepSeek usage, keep the delegated
+   implementation DeepSeek-owned, run the common final blind gate, and merge
+   only candidates with no critical or high correctness findings.
 2. Do not execute FOUNDATION until `scripts/validate_research_child.py` verifies
    its committed files and a separate lock receipt contains passing schema,
    design, runner, budget, and study-specific audits, and the typed event ledger
    contains its matching reservation, child lock, and full-preflight
    `execution_authorized` event. Run
    `scripts/research_campaign_event.py status` first and require an explicit
-   hardware authorization. The current template is intentionally
-   blocked rather than pretending those missing inputs exist.
-3. Add simulator contact telemetry as its own measurement. Existing
-   end-effector-distance logic is a proxy and must not be called contact or
-   collision. FOUNDATION eligibility itself still uses simulator success.
+   hardware authorization.
+3. After #38 and #39 merge and authorization is present, execute FOUNDATION
+   through the capture-specific PI0.5 environment, then build the immutable
+   external evidence index before making any eligibility claim.
 4. After FOUNDATION passes, run geometry discovery, binding discovery, and
    reliability design independently. Do not prioritize issue #36's broad prefix
    patch sweep before a behavior branch is confirmed.
