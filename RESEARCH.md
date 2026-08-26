@@ -1395,31 +1395,36 @@ contact capability now have machine-readable receipts. No RQ-024 trial has run;
 the FOUNDATION child still requires independent audits, budget reservation,
 lock, output claim, and an `execution_authorized` event.
 
-**Implementation reliability handoff (not scientific evidence, 2026-07-26).**
-FOUNDATION execution remains blocked on merge-ready implementations of GitHub
-issues #38 (append-only execution) and #39 (external evidence indexing). The
-workflow comparison is tracked in GitHub issue #40 from common base `e936214`.
-Its amended protocol runs both arms to acceptance rather than stopping after a
-failed repair: rejected attempts and all tokens remain counted, direct Sol may
-repair its own candidate, and the delegated arm keeps production implementation
-with bounded DeepSeek workers while Sol owns contracts, tests, review, and
-integration. The final comparison occurs only after both implementations pass
-the same independent tests, full normal validation, and fresh blind review with
-no critical or high correctness findings. These software-agent outcomes do not
-answer RQ-024 and no hardware trial has run.
+**Implementation reliability handoff (historical, 2026-07-26).** FOUNDATION
+execution was blocked on merge-ready implementations of GitHub issues #38
+(append-only execution) and #39 (external evidence indexing). The benchmark
+comparison used common base `e936214` and initially required both direct Sol and
+Sol-architected DeepSeek arms to reach the same acceptance gate. These
+software-agent outcomes do not answer RQ-024 and no hardware trial has run.
 
-The direct candidates currently pass their independent contract suites and full
-normal tests at `5e961fe` for #38 and `6f84df0` for #39, but still require the
-common final blind gate. In the delegated #38 arm, M1A input receipts, M2A
-one-row commands, M1B trial rows, and M3 reducer-derived attempt planning are
-accepted on `benchmark/38-delegated-contract`; M2B exact output identity remains
-under DeepSeek repair, with M2C and attempt termination blocked behind it. In
-the delegated #39 arm, M1A source contracts and M1B canonical ledger verification
-are accepted on `benchmark/39-delegated-contract`; the thin CLI candidate
-`313ec19` is accepted but parked for final merge order, and repaired M1C candidate
-`5cfc14d` awaits architect review before M2 evidence and M3 manifest work. Resume
-from issue #40 and these branch/commit identities; do not merge rejected pilot or
-intermediate worker commits merely because their focused tests pass.
+The historical direct candidates were `5e961fe` for #38 and `6f84df0` for #39.
+The delegated #38 contract branch recorded accepted M1A, M2A, M1B, and M3
+components before M2B exact output identity blocked further work. The delegated
+#39 contract branch recorded accepted M1A and M1B components before repaired M1C
+review blocked later evidence and manifest work. Rejected pilots and
+intermediate worker commits are not product candidates merely because focused
+tests passed.
+
+**Benchmark retirement update (2026-08-18).** The Sol-direct versus
+Sol-architected DeepSeek comparison in GitHub issue #40 is retired as a product
+decision. The completed benchmark conclusion remains that neither workflow
+reached the quality gate, so the token-savings metric is invalid and the result
+only bounds this workflow on the tested system-sized tasks. Do not recreate the
+deleted delegated microtask branches or continue the comparative convergence
+protocol.
+
+Issues #38 and #39 remain active product acceptance work. Accept the strongest
+implementation for each against its immutable issue contract, relevant
+normal-environment validation, and fresh correctness review; comparative arm
+completion is no longer required. After both are accepted, continue the RQ-024
+FOUNDATION authorization and execution sequence. Issues #41–#44 are historical
+benchmark records and should be closed or annotated when GitHub issue mutation
+is available.
 
 ## Not Yet Run
 
@@ -1436,10 +1441,11 @@ intermediate worker commits merely because their focused tests pass.
 
 ## Current Priority
 
-1. Finish issues #38 and #39 through the acceptance-to-convergence protocol in
-   issue #40. Preserve cumulative Sol and DeepSeek usage, keep the delegated
-   implementation DeepSeek-owned, run the common final blind gate, and merge
-   only candidates with no critical or high correctness findings.
+1. Finish issues #38 and #39 against their immutable contracts. The benchmark
+   comparison in #40 is retired, so delegated-arm completion and comparative
+   token accounting are no longer required; retain the failed benchmark as
+   historical evidence and require fresh correctness review for each product
+   candidate.
 2. Do not execute FOUNDATION until `scripts/validate_research_child.py` verifies
    its committed files and a separate lock receipt contains passing schema,
    design, runner, budget, and study-specific audits, and the typed event ledger

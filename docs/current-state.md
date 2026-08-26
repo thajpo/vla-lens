@@ -117,18 +117,26 @@ narrow intervention. See the [research log](../RESEARCH.md) and
 
 ## Immediate Priorities
 
-The full active backlog is in GitHub. The immediate priorities are:
+The benchmark comparison in GitHub issue #40 is retired as a product decision.
+Its failed-arm conclusion remains research history; the token-savings metric is
+not valid. Issues #41–#44 are historical benchmark records.
 
+The active implementation path is:
+
+- [#38: append-only FOUNDATION trial execution driver](https://github.com/thajpo/vla-lens/issues/38)
+- [#39: immutable FOUNDATION external evidence index](https://github.com/thajpo/vla-lens/issues/39)
 - [#37: controlled scene-to-behavior research program](https://github.com/thajpo/vla-lens/issues/37)
-- [#21: tiered storage and managed feature caches](https://github.com/thajpo/vla-lens/issues/21)
 
-The exact next action in #37 is to prepare and independently audit the locked
-FOUNDATION child: deterministic task-object-family parsing, candidate and
-rejection tables, the 72-rollout seed-separated manifest, checkpoint and
-environment receipts, and runner config. It is not ready for hardware execution
-yet. [#20: broad intervention sweeps](https://github.com/thajpo/vla-lens/issues/20)
+Accept the strongest #38 and #39 implementations against their immutable issue
+contracts, relevant normal-environment validation, and fresh correctness review.
+Comparative benchmark-arm completion is no longer required. Then independently
+audit and authorize the locked FOUNDATION child before any PI0.5 execution.
+
+[#21: tiered storage and managed feature caches](https://github.com/thajpo/vla-lens/issues/21)
+is an independent, lower-risk software task that can proceed without hardware.
+[#20: broad intervention sweeps](https://github.com/thajpo/vla-lens/issues/20)
 and [#36: prefix key/value patching](https://github.com/thajpo/vla-lens/issues/36)
-are conditional on a factor-specific behavior branch surviving prospective
+remain conditional on a factor-specific behavior branch surviving prospective
 confirmation; they are not immediate work.
 
 There are currently zero temporary implementation specs. When an issue is
