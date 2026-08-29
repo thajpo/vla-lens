@@ -88,6 +88,9 @@ class FoundationContract:
     trial_rows: tuple[Mapping[str, str], ...]
     trials_by_id: Mapping[str, Mapping[str, str]]
     checkpoint_revision: str
+    runtime_config_sha256: str
+    runtime_config_path: str
+    runtime_config_fingerprint: str
     runtime_contract_sha256: str
     runtime_contract_path: str
     runtime_contract_fingerprint: str
@@ -125,6 +128,13 @@ def seed_bundle_fingerprint(row: Mapping[str, str]) -> str:
     return canonical_research_fingerprint(seed_bundle(row))
 
 
+def _expected_trace_id(row: Mapping[str, str]) -> str:
+    return (
+        f"pi05_{row['capture_profile']}_{row['benchmark']}"
+        f"_task{row['task_id']}_seed{row['seed']}"
+    )
+
+
 def directory_sha256(path: str | Path) -> str:
     """Return the v1 tree hash used for directory artifact references."""
 
@@ -151,6 +161,20 @@ def load_foundation_contract(
     trials_file = trials_file.resolve()
     child = load_research_mapping(child_file)
     rows = _load_trials(trials_file, child)
+    config_ref = child.get("runtime", {}).get("runner", {}).get("config", {})
+    config_path_value = config_ref.get("path") if isinstance(config_ref, Mapping) else None
+    if config_path_value:
+        config_file = _confined_file(config_path_value, root, "runtime config")
+        config_payload = load_research_mapping(config_file)
+        runtime_config_sha256 = file_sha256(config_file)
+        runtime_config_path = config_file.relative_to(root).as_posix()
+        runtime_config_fingerprint = canonical_research_fingerprint(config_payload)
+    else:
+        runtime_config_sha256 = str(config_ref.get("sha256") or "")
+        runtime_config_path = ""
+        runtime_config_fingerprint = runtime_config_sha256
+    if not _is_sha256(runtime_config_sha256) or not _is_sha256(runtime_config_fingerprint):
+        _fail("runtime_binding_mismatch", "locked runtime config has no usable identity")
     runtime_path = child_file.parent / "runtime_contract.json"
     runtime_fingerprint = _validate_runtime_contract(child_file.parent, child)
     return FoundationContract(
@@ -161,6 +185,9 @@ def load_foundation_contract(
         trial_rows=tuple(rows),
         trials_by_id={row["trial_id"]: row for row in rows},
         checkpoint_revision=str(child["runtime"]["model"]["revision"]),
+        runtime_config_sha256=runtime_config_sha256,
+        runtime_config_path=runtime_config_path,
+        runtime_config_fingerprint=runtime_config_fingerprint,
         runtime_contract_sha256=file_sha256(runtime_path),
         runtime_contract_path=runtime_path.relative_to(root).as_posix(),
         runtime_contract_fingerprint=runtime_fingerprint,
@@ -231,7 +258,8 @@ def build_foundation_evidence_index(
     child_fingerprint = contract.child_fingerprint
     program = _validate_program_binding(child, repo_root)
     rows = contract.trial_rows
-    runtime_fingerprint = contract.runtime_contract_fingerprint
+    runtime_config_fingerprint = contract.runtime_config_fingerprint
+    runtime_contract_fingerprint = contract.runtime_contract_fingerprint
     lock = _validate_campaign_state(campaign_state, child, child_fingerprint)
     exclusions = _accepted_exclusions(
         accepted_events,
@@ -263,7 +291,8 @@ def build_foundation_evidence_index(
                 lock,
                 child,
                 child_fingerprint,
-                runtime_fingerprint,
+                runtime_config_fingerprint,
+                runtime_contract_fingerprint,
                 artifacts,
                 dataset_cache,
             )
@@ -291,6 +320,12 @@ def build_foundation_evidence_index(
             "fingerprint": research_plan_fingerprint(program),
         },
         "runtime": {
+            "config": {
+                "root_id": "repo",
+                "path": contract.runtime_config_path,
+                "sha256": contract.runtime_config_sha256,
+                "fingerprint": contract.runtime_config_fingerprint,
+            },
             "contract": {
                 "root_id": "repo",
                 "path": contract.runtime_contract_path,
@@ -299,7 +334,8 @@ def build_foundation_evidence_index(
                 "fingerprint": contract.runtime_contract_fingerprint,
             }
         },
-        "runtime_contract_fingerprint": runtime_fingerprint,
+        "runtime_config_fingerprint": runtime_config_fingerprint,
+        "runtime_contract_fingerprint": contract.runtime_contract_fingerprint,
         "measurement_contract": {"foundation_rule": MEASUREMENT_RULE},
         "trials": trial_records,
         "artifacts": artifacts.records(),
@@ -663,7 +699,8 @@ def _build_trial(
     lock: Mapping[str, Any],
     child: Mapping[str, Any],
     child_fingerprint: str,
-    runtime_fingerprint: str,
+    runtime_config_fingerprint: str,
+    runtime_contract_fingerprint: str,
     artifacts: "_ArtifactInventory",
     dataset_cache: dict[tuple[str, str], dict[str, Any]],
 ) -> dict[str, Any]:
@@ -703,7 +740,8 @@ def _build_trial(
                 lock=lock,
                 child=child,
                 child_fingerprint=child_fingerprint,
-                runtime_fingerprint=runtime_fingerprint,
+                runtime_config_fingerprint=runtime_config_fingerprint,
+                runtime_contract_fingerprint=runtime_contract_fingerprint,
                 artifacts=artifacts,
                 dataset_cache=dataset_cache,
             )
@@ -726,7 +764,8 @@ def _build_attempt(
     lock: Mapping[str, Any],
     child: Mapping[str, Any],
     child_fingerprint: str,
-    runtime_fingerprint: str,
+    runtime_config_fingerprint: str,
+    runtime_contract_fingerprint: str,
     artifacts: "_ArtifactInventory",
     dataset_cache: dict[tuple[str, str], dict[str, Any]],
 ) -> dict[str, Any]:
@@ -747,7 +786,7 @@ def _build_attempt(
     seed_fingerprint = canonical_research_fingerprint(seeds)
     if started.get("seed_bundle_fingerprint") != seed_fingerprint:
         _fail("seed_binding_mismatch", f"{attempt_id} does not bind all seed domains")
-    if started.get("runtime_config_fingerprint") != runtime_fingerprint:
+    if started.get("runtime_config_fingerprint") != runtime_config_fingerprint:
         _fail("runtime_binding_mismatch", f"{attempt_id} does not bind the runtime contract")
 
     completed = attempt.get("completed") is True
@@ -772,8 +811,8 @@ def _build_attempt(
         "child_fingerprint": child_fingerprint,
         "trial_row_fingerprint": row_fingerprint,
         "checkpoint_revision": child["runtime"]["model"]["revision"],
-        "runtime_contract_fingerprint": runtime_fingerprint,
-        "runtime_config_fingerprint": runtime_fingerprint,
+        "runtime_contract_fingerprint": runtime_contract_fingerprint,
+        "runtime_config_fingerprint": runtime_config_fingerprint,
         "effective_config_sha256": None,
         "seed_bundle_fingerprint": seed_fingerprint,
         "seed_identities": seeds,
@@ -787,7 +826,13 @@ def _build_attempt(
         receipt_artifact = artifacts.resolve(receipt_ref)
         evidence.append(receipt_artifact)
         receipt = load_research_mapping(artifacts.path(receipt_artifact))
-        _validate_runtime_receipt(receipt, started, attempt, lock, runtime_fingerprint)
+        _validate_runtime_receipt(
+            receipt,
+            started,
+            attempt,
+            lock,
+            runtime_config_fingerprint,
+        )
         trace = _select_trace_episode(
             row,
             started,
@@ -795,7 +840,7 @@ def _build_attempt(
             receipt,
             child,
             child_fingerprint,
-            runtime_fingerprint,
+            runtime_config_fingerprint,
             artifacts,
             dataset_cache,
         )
@@ -845,7 +890,7 @@ def _validate_runtime_receipt(
     started: Mapping[str, Any],
     terminal: Mapping[str, Any],
     lock: Mapping[str, Any],
-    runtime_fingerprint: str,
+    runtime_config_fingerprint: str,
 ) -> None:
     expected = {
         "schema_version": 1,
@@ -853,7 +898,7 @@ def _validate_runtime_receipt(
         "attempt_id": started["attempt_id"],
         "trial_id": started["trial_id"],
         "child_lock_fingerprint": lock["lock_receipt_ref"]["content_fingerprint"],
-        "runtime_config_fingerprint": runtime_fingerprint,
+        "runtime_config_fingerprint": runtime_config_fingerprint,
         "seed_bundle_fingerprint": started["seed_bundle_fingerprint"],
         "runtime_check_status": "pass",
         "terminal_status": terminal["terminal_status"],
@@ -872,7 +917,7 @@ def _select_trace_episode(
     receipt: Mapping[str, Any],
     child: Mapping[str, Any],
     child_fingerprint: str,
-    runtime_fingerprint: str,
+    runtime_config_fingerprint: str,
     artifacts: "_ArtifactInventory",
     dataset_cache: dict[tuple[str, str], dict[str, Any]],
 ) -> dict[str, Any]:
@@ -883,23 +928,71 @@ def _select_trace_episode(
         dataset = _dataset_for_artifact(artifact, target, artifacts, dataset_cache)
         if dataset is not None and dataset not in datasets:
             datasets.append(dataset)
+        if dataset is None and target.is_file():
+            output_manifest = load_research_mapping(target)
+            if output_manifest.get("kind") != "vla_lens.trial_output_manifest":
+                _fail(
+                    "trace_binding_mismatch",
+                    "completed output reference is not a trace manifest",
+                )
+            if (
+                output_manifest.get("attempt_id") != started.get("attempt_id")
+                or output_manifest.get("trial_id") != row["trial_id"]
+                or output_manifest.get("trace_id") != _expected_trace_id(row)
+                or output_manifest.get("runtime_config_fingerprint")
+                != runtime_config_fingerprint
+                or output_manifest.get("seed_bundle_fingerprint")
+                != started.get("seed_bundle_fingerprint")
+            ):
+                _fail("trace_binding_mismatch", "output manifest identity differs from its trial")
+            files = output_manifest.get("files")
+            if not isinstance(files, list) or not files:
+                _fail("trace_binding_mismatch", "output manifest has no immutable trace files")
+            for file_reference in files:
+                external = artifacts.resolve_external_file(file_reference)
+                external_target = artifacts.path(external)
+                dataset = _dataset_for_artifact(
+                    external,
+                    external_target,
+                    artifacts,
+                    dataset_cache,
+                )
+                if dataset is not None and dataset not in datasets:
+                    datasets.append(dataset)
     if len(datasets) != 1:
         _fail("trace_binding_mismatch", "completed attempt must bind one capture root")
     dataset = datasets[0]
+    environment = child["runtime"]["environment"]
     expected = {
-        "child_plan_id": child["child_plan_id"],
-        "child_fingerprint": child_fingerprint,
         "trial_id": row["trial_id"],
-        "checkpoint_revision": child["runtime"]["model"]["revision"],
-        "runtime_config_fingerprint": runtime_fingerprint,
-        "seed_bundle_fingerprint": started["seed_bundle_fingerprint"],
-        "seed_identities": seed_bundle(row),
+        "child_plan_id": child["child_plan_id"],
+        "canonical_family_id": row["canonical_family_id"],
+        "pool": row["pool"],
+        "replicate_id": row["replicate_id"],
+        "layout_id": int(row["layout_id"]),
+        "model_revision": child["runtime"]["model"]["revision"],
+        "snapshot_manifest_sha256": child["runtime"]["model"]["snapshot_manifest_sha256"],
+        "camera_config_sha256": environment["camera_config_sha256"],
+        "controller_config_sha256": environment["controller_config_sha256"],
+        "preprocessor_config_sha256": environment["preprocessor_config_sha256"],
+        "postprocessor_config_sha256": environment["postprocessor_config_sha256"],
+        "seed_identities": {
+            domain: int(row[f"{domain}_seed"])
+            for domain in SEED_DOMAINS
+        },
     }
     matches = []
     for episode in dataset["episodes"]:
-        metadata = episode["manifest"].get("metadata")
-        if isinstance(metadata, Mapping) and all(
-            metadata.get(key) == value for key, value in expected.items()
+        manifest = episode["manifest"]
+        metadata = manifest.get("metadata")
+        audit = metadata.get("runtime_audit") if isinstance(metadata, Mapping) else None
+        if (
+            manifest.get("task_id") == str(row["task_id"])
+            and manifest.get("env_id") == row["benchmark"]
+            and manifest.get("model_id") == child["runtime"]["model"]["repo_id"]
+            and isinstance(audit, Mapping)
+            and all(audit.get(key) == value for key, value in expected.items())
+            and manifest.get("trace_id") == _expected_trace_id(row)
         ):
             matches.append(episode)
     if len(matches) != 1:
@@ -909,7 +1002,7 @@ def _select_trace_episode(
         )
     episode = matches[0]
     metadata = episode["manifest"]["metadata"]
-    effective = metadata.get("effective_config_sha256")
+    effective = _effective_config_fingerprint(metadata)
     if not _is_sha256(effective) or effective != dataset["effective_config_sha256"]:
         _fail("effective_config_binding_mismatch", "trace effective config is ambiguous")
     for source in (started, receipt):
@@ -991,8 +1084,9 @@ def _load_dataset(
         if str(record["trace_id"]) != str(manifest.get("trace_id")):
             _fail("invalid_lerobot_trace", "overlay trace ID differs from episode manifest")
         metadata = manifest.get("metadata")
-        if isinstance(metadata, Mapping) and _is_sha256(metadata.get("effective_config_sha256")):
-            effective_configs.add(str(metadata["effective_config_sha256"]))
+        effective = _effective_config_fingerprint(metadata)
+        if effective is not None:
+            effective_configs.add(effective)
         episodes.append(
             {
                 "episode_index": int(record["episode_index"]),
@@ -1010,6 +1104,20 @@ def _load_dataset(
         "episodes": episodes,
         "effective_config_sha256": next(iter(effective_configs)),
     }
+
+
+def _effective_config_fingerprint(metadata: Any) -> str | None:
+    """Return the explicit or capture-plan identity for one trace."""
+
+    if not isinstance(metadata, Mapping):
+        return None
+    explicit = metadata.get("effective_config_sha256")
+    if _is_sha256(explicit):
+        return str(explicit)
+    capture_plan = metadata.get("capture_plan")
+    if isinstance(capture_plan, Mapping):
+        return canonical_research_fingerprint(capture_plan)
+    return None
 
 
 def _validate_measurements(metadata: Mapping[str, Any], episode_path: Path) -> dict[str, Any]:
@@ -1165,6 +1273,49 @@ class _ArtifactInventory:
                     file_sha256(file_path),
                     None,
                 )
+
+    def resolve_external_file(self, reference: Any) -> dict[str, Any]:
+        """Resolve a measured file path against one of the approved roots."""
+
+        if not isinstance(reference, Mapping):
+            _fail("artifact_hash_mismatch", "output file reference is not an object")
+        allowed = {"path", "sha256", "size"}
+        if set(reference) == {"root_id", "path", "sha256", "size"}:
+            root_id = str(reference["root_id"])
+            root = self.roots.get(root_id)
+            if root is None:
+                _fail("unapproved_artifact_root", f"root {root_id!r} was not approved")
+            relative = _safe_relative(str(reference["path"]), "output file path")
+            target = root / relative
+        elif set(reference) == allowed and Path(str(reference["path"])).is_absolute():
+            target = Path(str(reference["path"]))
+            candidates = [
+                (root_id, root)
+                for root_id, root in self.roots.items()
+                if _is_within(target.resolve(), root)
+            ]
+            if not candidates:
+                _fail("unapproved_artifact_root", "output file is outside approved roots")
+            root_id, root = max(candidates, key=lambda item: len(item[1].parts))
+            relative = _safe_relative(
+                target.resolve().relative_to(root).as_posix(), "output file path"
+            )
+        else:
+            _fail("artifact_hash_mismatch", "output file reference has the wrong fields")
+        if _path_has_symlink(target) or not target.is_file():
+            _fail("unsafe_artifact_path", "output file is missing or symlinked")
+        expected_size = reference.get("size")
+        if (
+            isinstance(expected_size, bool)
+            or not isinstance(expected_size, int)
+            or expected_size < 0
+        ):
+            _fail("artifact_hash_mismatch", "output file size is invalid")
+        observed_size = target.stat().st_size
+        observed_hash = file_sha256(target)
+        if observed_size != expected_size or observed_hash != reference.get("sha256"):
+            _fail("artifact_hash_mismatch", "output file bytes changed")
+        return self._add(root_id, relative.as_posix(), observed_size, observed_hash, None)
 
     def path(self, artifact: Mapping[str, Any]) -> Path:
         return self.roots[str(artifact["root_id"])] / str(artifact["path"])

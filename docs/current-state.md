@@ -123,14 +123,13 @@ not valid. Issues #41–#44 are historical benchmark records.
 
 The active implementation path is:
 
-- [#38: append-only FOUNDATION trial execution driver](https://github.com/thajpo/vla-lens/issues/38)
-- [#39: immutable FOUNDATION external evidence index](https://github.com/thajpo/vla-lens/issues/39)
 - [#37: controlled scene-to-behavior research program](https://github.com/thajpo/vla-lens/issues/37)
 
-Accept the strongest #38 and #39 implementations against their immutable issue
-contracts, relevant normal-environment validation, and fresh correctness review.
-Comparative benchmark-arm completion is no longer required. Then independently
-audit and authorize the locked FOUNDATION child before any PI0.5 execution.
+The #38 append-only execution driver and #39 immutable evidence index have
+passed fresh correctness review and the full normal-environment suite. They
+are now the implementation boundary for FOUNDATION: independently audit and
+authorize the locked child before any PI0.5 execution. No model or hardware
+capture has run as part of this handoff.
 
 [#21: tiered storage and managed feature caches](https://github.com/thajpo/vla-lens/issues/21)
 is an independent, lower-risk software task that can proceed without hardware.

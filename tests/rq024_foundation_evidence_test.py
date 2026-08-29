@@ -8,12 +8,15 @@ from pathlib import Path
 import pandas as pd
 import pytest
 
-from vla_lens.research_io import canonical_research_fingerprint, file_sha256
+from vla_lens.research_io import canonical_research_fingerprint, file_sha256, load_research_mapping
 from vla_lens.rq024_foundation_evidence import (
     FOUNDATION_TRIAL_FIELDS,
     FoundationEvidenceError,
+    _ArtifactInventory,
+    _effective_config_fingerprint,
     create_foundation_evidence_index,
     directory_sha256,
+    load_foundation_contract,
     seed_bundle_fingerprint,
     trial_row_fingerprint,
 )
@@ -103,6 +106,62 @@ def test_rejects_duplicate_trial_rows_before_reading_attempts(tmp_path: Path) ->
             event_root=repo / "missing-events",
             output_path=repo / "evidence.json",
         )
+
+
+def test_loads_locked_runtime_config_as_a_distinct_identity() -> None:
+    repo = Path(__file__).parents[1]
+    child_path = repo / "configs/campaigns/rq024/foundation-r1/child.yaml"
+    trials_path = repo / "configs/campaigns/rq024/foundation-r1/trials.csv"
+    config_path = repo / "configs/campaigns/rq024/foundation-r1/capture.yaml"
+
+    contract = load_foundation_contract(
+        child_path=child_path,
+        trial_manifest_path=trials_path,
+        repo_root=repo,
+    )
+
+    assert contract.runtime_config_path == str(config_path.relative_to(repo))
+    assert contract.runtime_config_sha256 == file_sha256(config_path)
+    assert contract.runtime_config_fingerprint == canonical_research_fingerprint(
+        load_research_mapping(config_path)
+    )
+    assert contract.runtime_config_fingerprint != contract.runtime_contract_fingerprint
+
+
+def test_resolves_absolute_driver_output_files_only_inside_approved_roots(
+    tmp_path: Path,
+) -> None:
+    repo = tmp_path / "repo"
+    external = tmp_path / "external"
+    repo.mkdir()
+    external.mkdir()
+    output = external / "trace" / "manifest.json"
+    output.parent.mkdir()
+    output.write_text("{\"trace_id\": \"trace-000\"}\n", encoding="utf-8")
+    inventory = _ArtifactInventory({"repo": repo, "capture": external})
+
+    record = inventory.resolve_external_file(
+        {
+            "path": str(output),
+            "sha256": file_sha256(output),
+            "size": output.stat().st_size,
+        }
+    )
+
+    assert record == {
+        "root_id": "capture",
+        "path": "trace/manifest.json",
+        "size": output.stat().st_size,
+        "sha256": file_sha256(output),
+    }
+
+
+def test_effective_config_identity_falls_back_to_capture_plan() -> None:
+    capture_plan = {"dataset_id": "foundation", "capture_profile": "rollout"}
+
+    assert _effective_config_fingerprint({"capture_plan": capture_plan}) == (
+        canonical_research_fingerprint(capture_plan)
+    )
 
 
 def _write_complete_fixture(tmp_path: Path) -> dict[str, object]:

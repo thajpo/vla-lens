@@ -86,6 +86,15 @@ def test_execution_appends_started_before_launch_and_completed_after_validation(
     check = SimpleNamespace(state=state, valid=True, issues=())
     operations: list[str] = []
     sequence = 1
+    measured_budget = {
+        "model_calls": 2,
+        "action_generations": 2,
+        "full_rollouts": 1,
+        "simulator_steps": 10,
+        "probe_fits": 0,
+        "persistent_gb": 100 / (1024**3),
+        "ephemeral_gb": 0,
+    }
 
     def append_event(root, program, **kwargs):
         nonlocal sequence
@@ -105,9 +114,11 @@ def test_execution_appends_started_before_launch_and_completed_after_validation(
         )
         return path, "sha256:" + f"{sequence:064x}"
 
-    def run_trial(command, repo_root):
+    def run_trial(command, repo_root, *, output_root):
         operations.append("run")
-        return subprocess.CompletedProcess(command, 0, "ok", "")
+        result = subprocess.CompletedProcess(command, 0, "ok", "")
+        result.measured_actual_budget = measured_budget
+        return result
 
     def validate(command, row, *, expected_runtime):
         operations.append("validate")
@@ -180,7 +191,12 @@ def test_execution_records_validation_failure_without_model_or_simulator_work(
     monkeypatch.setattr(
         execution,
         "_run_trial",
-        lambda command, repo_root: subprocess.CompletedProcess(command, 0, "", ""),
+        lambda command, repo_root, *, output_root: _completed_process_with_budget(
+            command,
+            0,
+            "",
+            "",
+        ),
     )
     monkeypatch.setattr(
         execution,
@@ -198,6 +214,20 @@ def test_execution_records_validation_failure_without_model_or_simulator_work(
 
     assert completed == []
     assert event_types == ["trial_attempt_started", "trial_attempt_failed"]
+
+
+def _completed_process_with_budget(command, returncode, stdout, stderr):
+    result = subprocess.CompletedProcess(command, returncode, stdout, stderr)
+    result.measured_actual_budget = {
+        "model_calls": 0,
+        "action_generations": 0,
+        "full_rollouts": 0,
+        "simulator_steps": 0,
+        "probe_fits": 0,
+        "persistent_gb": 0,
+        "ephemeral_gb": 0,
+    }
+    return result
 
 
 def test_force_is_explicitly_rejected():

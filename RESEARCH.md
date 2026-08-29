@@ -1418,13 +1418,20 @@ only bounds this workflow on the tested system-sized tasks. Do not recreate the
 deleted delegated microtask branches or continue the comparative convergence
 protocol.
 
-Issues #38 and #39 remain active product acceptance work. Accept the strongest
-implementation for each against its immutable issue contract, relevant
-normal-environment validation, and fresh correctness review; comparative arm
-completion is no longer required. After both are accepted, continue the RQ-024
-FOUNDATION authorization and execution sequence. Issues #41–#44 are historical
-benchmark records and should be closed or annotated when GitHub issue mutation
-is available.
+**Stabilization acceptance update (2026-08-29).** The direct #38 execution
+driver and #39 evidence-index implementations passed fresh correctness review
+and the full normal-environment suite (`591 passed`; `ruff check scripts src
+tests`). The driver restores its public plan/selection API, rejects forced
+execution, records measured output budgets, and keeps append-only retry and
+resume semantics. The evidence index binds the ledger to the frozen child,
+runtime config and contract identities, follows the driver's repo-side output
+manifest to approved external files, validates the actual PI0.5 runtime-audit
+schema, derives the effective capture-plan identity, and preserves separate
+success, contact, proximity, motion, and evaluation measurements. No model,
+simulator, or hardware capture was run. FOUNDATION remains at preparation:
+independent audits, reservation, lock, and explicit `execution_authorized`
+are still required before capture. Issues #41–#44 remain historical benchmark
+records and should stay closed.
 
 ## Not Yet Run
 
@@ -1441,19 +1448,15 @@ is available.
 
 ## Current Priority
 
-1. Finish issues #38 and #39 against their immutable contracts. The benchmark
-   comparison in #40 is retired, so delegated-arm completion and comparative
-   token accounting are no longer required; retain the failed benchmark as
-   historical evidence and require fresh correctness review for each product
-   candidate.
-2. Do not execute FOUNDATION until `scripts/validate_research_child.py` verifies
-   its committed files and a separate lock receipt contains passing schema,
-   design, runner, budget, and study-specific audits, and the typed event ledger
-   contains its matching reservation, child lock, and full-preflight
-   `execution_authorized` event. Run
-   `scripts/research_campaign_event.py status` first and require an explicit
-   hardware authorization.
-3. After #38 and #39 merge and authorization is present, execute FOUNDATION
+1. Complete the independent FOUNDATION audits: `scripts/validate_research_child.py`
+   must verify its committed files, the separate lock receipt must contain
+   passing schema, design, runner, budget, and study-specific audits, and the
+   typed event ledger must contain the matching reservation, child lock, and
+   full-preflight `execution_authorized` event. The benchmark comparison in #40
+   is retired; retain it only as historical evidence.
+2. Before capture, run `scripts/research_campaign_event.py status` and require
+   explicit hardware authorization.
+3. After authorization is present, execute FOUNDATION
    through the capture-specific PI0.5 environment, then build the immutable
    external evidence index before making any eligibility claim.
 4. After FOUNDATION passes, run geometry discovery, binding discovery, and

@@ -170,33 +170,19 @@ def _load_foundation_contract(
     )
 
 
-def load_foundation_plan(repo_root: Path = REPO_ROOT) -> dict[str, Any]:
-    """Return the immutable, execution-ready 72-row plan as plain data."""
+def load_foundation_plan(
+    repo_root: Path = REPO_ROOT,
+    *,
+    program_path: Path = DEFAULT_PROGRAM,
+    child_path: Path = DEFAULT_CHILD,
+) -> FoundationPlan:
+    """Load the immutable, execution-ready 72-row plan without writing files."""
 
-    contract = _load_foundation_contract(repo_root)
-    requested_budget = _requested_budget(contract.child)
-    trials = [
-        {
-            **dict(trial.record),
-            "ordinal": 1,
-            "attempt_id": f"{trial.row.trial_id}-attempt-1",
-            "trial_manifest_row_fingerprint": trial.row_fingerprint,
-            "runtime_config_fingerprint": contract.runtime_fingerprint,
-            "seed_bundle_fingerprint": trial.seed_fingerprint,
-            "requested_budget": dict(requested_budget),
-            "command": list(trial.execution_command),
-        }
-        for trial in contract.trials
-    ]
-    return {
-        "schema_version": 1,
-        "child_plan_id": contract.child["child_plan_id"],
-        "child_fingerprint": contract.child_fingerprint,
-        "trial_manifest_fingerprint": contract.child["trials"]["manifest"]["sha256"],
-        "runtime_config_fingerprint": contract.runtime_fingerprint,
-        "total_trials": len(trials),
-        "trials": trials,
-    }
+    return _load_foundation_contract(
+        repo_root,
+        program_path=program_path,
+        child_path=child_path,
+    )
 
 
 def execute_foundation(
@@ -369,7 +355,7 @@ def _select_contract_trials(
     return tuple(selected)
 
 
-def _contract_plan_payload(
+def plan_payload(
     plan: FoundationPlan,
     *,
     state: Any | None = None,
@@ -405,53 +391,22 @@ def _contract_plan_payload(
 
 
 def select_trials(
-    plan: Mapping[str, Any],
+    plan: FoundationPlan,
     state: Any | None,
     *,
     trial_id: str | None = None,
     max_trials: int | None = None,
     remaining: bool = True,
-) -> list[dict[str, Any]]:
+) -> tuple[FoundationTrial, ...]:
     """Select trials in manifest order using reducer state as the sole history."""
 
-    trials = [dict(trial) for trial in plan["trials"]]
-    known = {str(trial["trial_id"]) for trial in trials}
-    if trial_id is not None and trial_id not in known:
-        raise ValueError(f"unknown FOUNDATION trial id: {trial_id}")
-    if max_trials is not None and max_trials < 0:
-        raise ValueError("--max-trials must be non-negative")
-
-    open_attempts = list(getattr(state, "open_attempts", {}).values()) if state else []
-    open_trial_ids = {str(attempt.get("trial_id") or "") for attempt in open_attempts}
-    if open_trial_ids:
-        raise RuntimeError("open trial attempt must be resumed or closed before another launch")
-
-    closed_attempts = list(getattr(state, "closed_attempts", {}).values()) if state else []
-    completed = {
-        str(attempt.get("started", {}).get("trial_id") or "")
-        for attempt in closed_attempts
-        if attempt.get("completed") is True
-    }
-    selected: list[dict[str, Any]] = []
-    for trial in trials:
-        current_id = str(trial["trial_id"])
-        if trial_id is not None and current_id != trial_id:
-            continue
-        if remaining and current_id in completed:
-            continue
-        history = [
-            attempt
-            for attempt in (*open_attempts, *closed_attempts)
-            if attempt.get("trial_id") == current_id
-            or attempt.get("started", {}).get("trial_id") == current_id
-        ]
-        ordinal = len(history) + 1
-        trial["ordinal"] = ordinal
-        trial["attempt_id"] = f"{current_id}-attempt-{ordinal}"
-        selected.append(trial)
-    if max_trials is not None:
-        selected = selected[:max_trials]
-    return selected
+    return _select_contract_trials(
+        plan,
+        state,
+        trial_id=trial_id,
+        max_trials=max_trials,
+        remaining=remaining,
+    )
 
 
 def persist_resolved_plan_once(output_root: Path, plan: Mapping[str, Any]) -> Path:
@@ -669,7 +624,7 @@ def foundation_hardware_lock(
 
 def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    mode = parser.add_mutually_exclusive_group()
+    mode = parser.add_mutually_exclusive_group(required=True)
     mode.add_argument("--plan", action="store_true", help="Print the resolved plan; write nothing.")
     mode.add_argument(
         "--run", action="store_true", help="Execute reducer-authorized hardware trials."
@@ -683,48 +638,45 @@ def parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     selection.add_argument("--trial-id")
     selection.add_argument("--max-trials", type=int)
     parser.add_argument("--remaining", action="store_true")
+    parser.add_argument("--force", action="store_true", help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = parse_args(argv)
+    if args.force:
+        raise SystemExit("--force is forbidden for append-only FOUNDATION execution")
     repo_root = args.repo_root.resolve()
-    contract = _load_foundation_contract(
+    plan = load_foundation_plan(
         repo_root,
         program_path=args.program,
         child_path=args.child,
     )
-    plan = load_foundation_plan(repo_root)
     if args.plan:
         state = None
         if args.remaining:
             if args.event_root is None:
                 raise SystemExit("--remaining requires --event-root")
-            state = _verified_ledger(contract, args.event_root.resolve(), repo_root).state
-        selected = select_trials(
-            plan,
-            state,
-            trial_id=args.trial_id,
-            max_trials=args.max_trials,
-            remaining=args.remaining,
+            state = _verified_ledger(plan, args.event_root.resolve(), repo_root).state
+        print(
+            json.dumps(
+                plan_payload(
+                    plan,
+                    state=state,
+                    trial_id=args.trial_id,
+                    max_trials=args.max_trials,
+                    remaining=args.remaining,
+                ),
+                indent=2,
+                sort_keys=True,
+            )
         )
-        payload = {
-            "schema_version": 1,
-            "mode": "plan",
-            "child_plan_id": plan["child_plan_id"],
-            "child_fingerprint": plan["child_fingerprint"],
-            "trial_manifest_fingerprint": plan["trial_manifest_fingerprint"],
-            "runtime_config_fingerprint": plan["runtime_config_fingerprint"],
-            "total_trials": plan["total_trials"],
-            "selected_trials": len(selected),
-            "trials": selected,
-        }
-        print(json.dumps(payload, indent=2, sort_keys=True))
         return 0
-    event_root = args.event_root or repo_root / "research/rq024/events"
+    if args.event_root is None:
+        raise SystemExit("--run requires --event-root")
     completed = execute_foundation(
-        contract,
-        event_root=event_root,
+        plan,
+        event_root=args.event_root,
         actor_id=args.actor_id,
         repo_root=repo_root,
         trial_id=args.trial_id,
