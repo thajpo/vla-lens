@@ -290,6 +290,7 @@ class CacheManager:
             (item for item in manifests if item.complete and not item.pinned),
             key=lambda item: (item.last_accessed_utc, item.created_utc, item.namespace, item.key),
         )
+        pinned_blocked = sum(item.size_bytes for item in candidates) < need
         chosen: list[CacheEntryManifest] = []
         reclaimed = 0
         for item in candidates:
@@ -299,6 +300,7 @@ class CacheManager:
             reclaimed += item.size_bytes
 
         applied: list[CacheEntryManifest] = []
+        skipped_pinned = False
         if apply:
             for item in chosen:
                 with self.lock_for(item.namespace, item.key):
@@ -306,8 +308,14 @@ class CacheManager:
                     _assert_within(entry, self.root)
                     if not entry.exists():
                         continue
-                    current = self.manifest(item.namespace, item.key)
+                    # The plan may have been made before another worker
+                    # rebuilt this key. Never delete a replacement that was
+                    # not the manifest selected by this prune pass.
+                    current = self._read_manifest(entry)
+                    if current is None or current.to_dict() != item.to_dict():
+                        continue
                     if current.pinned:
+                        skipped_pinned = True
                         continue
                     shutil.rmtree(entry)
                     applied.append(item)
@@ -320,7 +328,7 @@ class CacheManager:
             after_bytes=max(0, before - actual_reclaimed),
             reclaimed_bytes=actual_reclaimed,
             entries=tuple(f"{item.namespace}/{item.key}" for item in removed),
-            blocked_by_pins=actual_reclaimed < need,
+            blocked_by_pins=actual_reclaimed < need and (pinned_blocked or skipped_pinned),
         )
 
     def _valid_manifest(

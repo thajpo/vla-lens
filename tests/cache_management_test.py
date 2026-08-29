@@ -157,6 +157,39 @@ def test_prune_is_dry_run_by_default_and_never_removes_pins(tmp_path):
         CacheManager(tmp_path / "not-cache").prune(max_bytes=0, min_free_bytes=0)
 
 
+def test_prune_does_not_delete_entry_replaced_after_plan(tmp_path, monkeypatch):
+    manager = CacheManager(tmp_path / ".vla_cache")
+
+    def build(path: Path, payload: bytes) -> CacheBuildMetadata:
+        (path / "payload.bin").write_bytes(payload)
+        return CacheBuildMetadata()
+
+    _, stale, _ = manager.get_or_build(
+        namespace="features",
+        key="replaced",
+        recipe={"version": 1},
+        source_fingerprint="sha256:stale",
+        builder=lambda path: build(path, b"stale"),
+    )
+    entry, replacement, _ = manager.get_or_build(
+        namespace="features",
+        key="replaced",
+        recipe={"version": 1},
+        source_fingerprint="sha256:replacement",
+        builder=lambda path: build(path, b"replacement"),
+    )
+    assert replacement.source_fingerprint != stale.source_fingerprint
+
+    # Simulate a prune plan becoming stale before its apply phase. In
+    # production this is another worker rebuilding the same cache key.
+    monkeypatch.setattr(manager, "entries", lambda: [stale])
+    result = manager.prune(max_bytes=0, min_free_bytes=0, apply=True)
+
+    assert result.entries == ()
+    assert not result.blocked_by_pins
+    assert (entry / "payload.bin").read_bytes() == b"replacement"
+
+
 def test_campaign_prepare_deduplicates_identical_selectors(tmp_path):
     dataset = create_synthetic_trace_dataset(tmp_path / "dataset", num_episodes=2, timesteps=4)
     selector = {
