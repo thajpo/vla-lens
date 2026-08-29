@@ -152,6 +152,36 @@ def _print_human(args: argparse.Namespace, snapshot: Mapping[str, Any]) -> None:
     print(f"Locked input files verified: {child['files_verified']}")
     print(f"Independent lock: {bool(lock and lock['valid'])}")
     print(f"Authorized to start child: {snapshot['authorized_to_start_child']}")
+    ledger = snapshot.get("campaign_ledger_check")
+    if isinstance(ledger, Mapping):
+        print(f"Campaign ledger: {'VALID' if ledger.get('valid') else 'INVALID'}")
+        state = ledger.get("state")
+        status = state.get("status") if isinstance(state, Mapping) else None
+        next_action = status.get("next_action") if isinstance(status, Mapping) else None
+        if isinstance(next_action, Mapping):
+            print(
+                "Ledger next action: "
+                f"{next_action.get('action_id')} ({next_action.get('reason_code')})"
+            )
+        print(
+            "Hardware authorized by ledger: "
+            f"{bool(status and status.get('hardware_authorized'))}"
+        )
+    git_check = snapshot.get("git_lock_check")
+    if isinstance(git_check, Mapping):
+        print(f"Git lock: {'VALID' if git_check.get('valid') else 'INVALID'}")
+        for error in git_check.get("errors", []):
+            print(f"- git_lock_check: {error}")
+    storage = snapshot.get("storage_check")
+    if isinstance(storage, Mapping):
+        print(f"Storage check: {'VALID' if storage.get('valid') else 'INVALID'}")
+    output = snapshot.get("output_freshness_check")
+    if isinstance(output, Mapping):
+        print(
+            "Output claim: "
+            f"{'CLAIMED' if output.get('claimed') else 'NOT CLAIMED'}"
+            f" ({output.get('reason') or 'ready'})"
+        )
     if not args.verify_files:
         print(
             "Execution authorization was not evaluated; rerun with --verify-files "
@@ -161,7 +191,7 @@ def _print_human(args: argparse.Namespace, snapshot: Mapping[str, Any]) -> None:
         print("Execution authorization also requires --event-root.")
     elif not args.claim_output:
         print("Execution authorization also requires --claim-output.")
-    for section in ("program_check", "child_check", "lock_check"):
+    for section in ("program_check", "child_check", "lock_check", "campaign_ledger_check"):
         check = snapshot.get(section)
         if isinstance(check, Mapping):
             for issue in check.get("issues", []):
